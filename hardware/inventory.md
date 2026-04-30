@@ -2,7 +2,6 @@
 
 ## Conventions
 
-- **Status**: `ordered` / `on-hand` / `deployed` / `broken` / `retired`
 - **Qty**: current count in working stock
 - **Unit ID**: physical label attached to the part
 - **Notes**: short one-line note; deeper documentation belongs in the component-specific README
@@ -13,29 +12,29 @@
 
 ### Microcontrollers
 
-| Part | Description | Qty | Status | Notes |
-|---|---:|---:|---|---|
-| ESP32-WROOM-32D DevKit | ESP32 development board | 2 | `ordered` | |
+| Part | Description | Qty | Notes |
+|---|---:|---:|---|
+| ESP32-WROOM-32D DevKit | ESP32 development board | 2 | |
 
 ### Environmental sensors
 
-| Part | Description | Qty | Status | Notes |
-|---|---:|---:|---|---|
-| GY-BME280 | Temperature, humidity, and pressure sensor | 3 | `ordered` | |
-| DS18B20 | Waterproof stainless-steel temperature probe | 5 | `ordered` | |
-| Soil Moisture Capacitive Module V1.2 | Capacitive soil moisture sensor | 5 | `ordered` | |
+| Part | Description | Qty | Notes |
+|---|---:|---:|---|
+| GY-BME280 | Temperature, humidity, and pressure sensor | 3 | |
+| DS18B20 | Waterproof stainless-steel temperature probe | 5 | |
+| Soil Moisture Capacitive Module V1.2 | Capacitive soil moisture sensor | 5 | |
 
 ### Prototyping
 
-| Part | Description | Qty | Status | Notes |
-|---|---:|---:|---|---|
-| Breadboard | 830-point, 2.54 mm pitch, 165 × 55 mm | 2 | `ordered` | Split in the middle |
+| Part | Description | Qty | Notes |
+|---|---:|---:|---|
+| Breadboard | 830-point, 2.54 mm pitch, 165 × 55 mm | 2 | Split in the middle |
 
 ### Cables / connectors
 
-| Part | Description | Qty | Status | Notes |
-|---|---:|---:|---|---|
-| CABLEPELADO Micro USB Sync and Charge | USB-A to Micro USB-B cable, 1 m | 1 | `ordered` | USB 2.0; supports data transfer up to 480 Mbit/s |
+| Part | Description | Qty | Notes |
+|---|---:|---:|---|
+| CABLEPELADO Micro USB Sync and Charge | USB-A to Micro USB-B cable, 1 m | 1 | USB 2.0; supports data transfer up to 480 Mbit/s |
 
 ---
 
@@ -55,13 +54,13 @@
 
 ### Capacitive soil moisture units
 
-| Unit ID | Dry ADC (air) | Wet ADC (submerged) | Notes |
+| Unit ID | Dry ADC (air) mV | Wet ADC (submerged) mV | Notes |
 |---|---:|---:|---|
-| CSM-01 | ? | ? | |
-| CSM-02 | ? | ? | |
-| CSM-03 | ? | ? | |
-| CSM-04 | ? | ? | |
-| CSM-05 | ? | ? | |
+| 1 | 2180 | 718 | |
+| 2 | ? | ? | |
+| 3 | ? | ? | |
+| 4 | ? | ? | |
+| 5 | ? | ? | |
 
 ---
 

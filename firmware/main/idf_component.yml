@@ -1,0 +1,5 @@
+dependencies:
+  esp-idf-lib/bmp280: "^1.0.7"
+  espressif/ds18b20: "^0.3.1"
+  espressif/onewire_bus: "^1.1.0"
+  joltwallet/littlefs: "~=1.21.0"

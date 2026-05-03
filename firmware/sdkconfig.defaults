@@ -1,0 +1,16 @@
+# Partitions 
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Flash
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+CONFIG_SPI_FLASH_SUPPORT_BOYA_CHIP=y
+
+# Crystal freq
+CONFIG_XTAL_FREQ_40=y
+CONFIG_XTAL_FREQ=40
+
+# Use the internal 8 MHz oscillator for v0 since we need better logs at the
+# cost of more power used
+CONFIG_RTC_CLK_SRC_INT_8MD256=y

@@ -51,5 +51,15 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
+# ESP-IDF
+firmware/build/
+firmware/managed_components/
+firmware/sdkconfig
+firmware/sdkconfig.old
+
 # debug information files
 *.dwo
+
+# agents
+.codex
+.claude

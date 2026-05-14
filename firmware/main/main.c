@@ -51,18 +51,18 @@ typedef struct __attribute__((packed)) {
   uint32_t magic;
   uint16_t schema_version;
   uint16_t header_size;
-  uint16_t record_size;           // Size, in bytes, of each reading.
-  uint64_t sleep_duration_us;     // Requested sleep duration.
-  uint16_t soil_gpio;             // GPIO that reads soil sensor voltage.
-  uint16_t soil_dry_mv;           // Soil sensor mV when reading air.
-  uint16_t soil_wet_mv;           // Soil sensor mV when reading water.
-  uint16_t ds18b20_gpio;          // GPIO used for the 1-Wire bus.
-  uint8_t ds18b20_resolution;     // ds18b20_resolution_t value.
-  uint8_t env280_i2c_addr;        // BME/BMP280 I2C address.
-  uint16_t env280_sda_gpio;       // GPIO used for I2C SDA.
-  uint16_t env280_scl_gpio;       // GPIO used for I2C SCL.
-  uint16_t env280_i2c_freq_khz;   // I2C frequency in kHz.
-  uint8_t env280_i2c_port;        // i2c_port_t value.
+  uint16_t record_size;         // Size, in bytes, of each reading.
+  uint64_t sleep_duration_us;   // Requested sleep duration.
+  uint16_t soil_gpio;           // GPIO that reads soil sensor voltage.
+  uint16_t soil_dry_mv;         // Soil sensor mV when reading air.
+  uint16_t soil_wet_mv;         // Soil sensor mV when reading water.
+  uint16_t ds18b20_gpio;        // GPIO used for the 1-Wire bus.
+  uint8_t ds18b20_resolution;   // ds18b20_resolution_t value.
+  uint8_t env280_i2c_addr;      // BME/BMP280 I2C address.
+  uint16_t env280_sda_gpio;     // GPIO used for I2C SDA.
+  uint16_t env280_scl_gpio;     // GPIO used for I2C SCL.
+  uint16_t env280_i2c_freq_khz; // I2C frequency in kHz.
+  uint8_t env280_i2c_port;      // i2c_port_t value.
   uint8_t reserved[1];
 } file_header_t;
 
@@ -77,16 +77,20 @@ typedef struct __attribute__((packed)) {
 
 typedef struct __attribute__((packed)) {
   uint32_t bootno; // Monotonic across deep-sleep wakes, reset on cold boot.
+
+  /* wake_cause and run_ms should be kept just for dev versions since they're
+   * usefull for debugging. */
   uint32_t wake_causes; // Bitmask returned by esp_sleep_get_wakeup_causes().
-  uint16_t run_ms;           // How long this wake cycle took before sleep.
-  uint16_t soil_raw;         // Raw ADC reading of soil sensor.
-  uint16_t soil_mv;          // ADC reading converted in mV.
-  int16_t ds18b20_centi_c;   // DS18B20 temperature in 0.01 degree C.
-  int16_t env280_centi_c;    // BME/BMP280 temperature in 0.01 degree C.
+  uint16_t run_ms;      // How long this wake cycle took before sleep.
+
+  uint16_t soil_raw;           // Raw ADC reading of soil sensor.
+  uint16_t soil_mv;            // ADC reading converted in mV.
+  int16_t ds18b20_centi_c;     // DS18B20 temperature in 0.01 degree C.
+  int16_t env280_centi_c;      // BME/BMP280 temperature in 0.01 degree C.
   uint32_t env280_pressure_pa; // BME/BMP280 pressure in Pa.
   uint16_t env280_humidity_centi_pct; // BME280 relative humidity in 0.01%.
-  uint8_t env280_chip_id;    // BMP280_CHIP_ID or BME280_CHIP_ID.
-  uint8_t flags;             // Bitmask of valid fields.
+  uint8_t env280_chip_id;             // BMP280_CHIP_ID or BME280_CHIP_ID.
+  uint8_t flags;                      // Bitmask of valid fields.
   uint8_t reserved[2];
 } reading_t;
 
@@ -143,14 +147,16 @@ static uint16_t relative_humidity_to_centi_pct(float humidity_pct) {
   return clamp_u16(rounded);
 }
 
-static void log_temperature_centi_c(const char *prefix, int16_t temperature_centi_c) {
+static void log_temperature_centi_c(const char *prefix,
+                                    int16_t temperature_centi_c) {
   const int temp = temperature_centi_c;
   const int abs_temp = temp < 0 ? -temp : temp;
   ESP_LOGI(TAG, "%s%s%d.%02dC", prefix, temp < 0 ? "-" : "", abs_temp / 100,
            abs_temp % 100);
 }
 
-static void log_humidity_centi_pct(const char *prefix, uint16_t humidity_centi_pct) {
+static void log_humidity_centi_pct(const char *prefix,
+                                   uint16_t humidity_centi_pct) {
   ESP_LOGI(TAG, "%s%" PRIu16 ".%02" PRIu16 "%%", prefix,
            humidity_centi_pct / 100, humidity_centi_pct % 100);
 }
@@ -162,10 +168,10 @@ typedef enum {
 } adc_cali_scheme_used_t;
 
 /* Returns the calibration mode used to convert raw ADC readings to mV. */
-static adc_cali_scheme_used_t init_adc_calibration(adc_unit_t unit,
-                                                   adc_channel_t channel,
-                                                   adc_atten_t atten,
-                                                   adc_cali_handle_t *handle) {
+static adc_cali_scheme_used_t get_adc_calibration(adc_unit_t unit,
+                                                  adc_channel_t channel,
+                                                  adc_atten_t atten,
+                                                  adc_cali_handle_t *handle) {
   *handle = NULL;
 
 #if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
@@ -225,15 +231,22 @@ static void delete_adc_calibration(adc_cali_scheme_used_t scheme,
   }
 }
 
+/* Modifies 'reading' by writing the sampled mV data from the soil sensor and
+ * the corresponding flag. Returns ESP_OK when everything went ok, else the
+ * error and does not modify 'reading'. */
 static esp_err_t read_soil(reading_t *reading) {
   adc_unit_t unit;
   adc_channel_t channel;
+  // Find the analog-to-digital converter for the choosed GPIO.
   esp_err_t ret = adc_oneshot_io_to_channel(SOIL_ADC_GPIO, &unit, &channel);
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "GPIO %d is not an ADC-capable pin: %s", SOIL_ADC_GPIO,
              esp_err_to_name(ret));
     return ret;
   }
+
+  // On the classic ESP32, ADC2 conflicts with Wi-Fi when Wi-Fi is enabled.
+  // So we use ADC1.
   if (unit != ADC_UNIT_1) {
     ESP_LOGE(TAG, "GPIO %d maps to ADC unit %d, expected ADC1", SOIL_ADC_GPIO,
              unit);
@@ -251,6 +264,8 @@ static esp_err_t read_soil(reading_t *reading) {
     return ret;
   }
 
+  // ESP32's ADC natively measure 0 to ~1.1V, so we need 12 dB af attenuation
+  // to read up to ~4.4V.
   adc_oneshot_chan_cfg_t channel_config = {
       .atten = SOIL_ADC_ATTEN,
       .bitwidth = ADC_BITWIDTH_DEFAULT,
@@ -264,7 +279,7 @@ static esp_err_t read_soil(reading_t *reading) {
 
   adc_cali_handle_t cali_handle = NULL;
   adc_cali_scheme_used_t cali_scheme =
-      init_adc_calibration(unit, channel, SOIL_ADC_ATTEN, &cali_handle);
+      get_adc_calibration(unit, channel, SOIL_ADC_ATTEN, &cali_handle);
 
   int raw_sum = 0;
   int sample_count = 0;
@@ -306,6 +321,9 @@ static esp_err_t read_soil(reading_t *reading) {
   return sample_count > 0 ? ESP_OK : ret;
 }
 
+/* Modifies 'reading' by writing the sampled Celsius data from the ds18b20 and
+ * the corresponding flag. Returns ESP_OK when everything went ok, else the
+ * error and does not modify 'reading'. */
 static esp_err_t read_ds18b20(reading_t *reading) {
   esp_err_t ret = gpio_pulldown_dis((gpio_num_t)DS18B20_GPIO);
   if (ret != ESP_OK) {
@@ -314,14 +332,15 @@ static esp_err_t read_ds18b20(reading_t *reading) {
     return ret;
   }
 
-  if (!DS18B20_ENABLE_INTERNAL_PULLUP) {
-    ret = gpio_pullup_dis((gpio_num_t)DS18B20_GPIO);
-    if (ret != ESP_OK) {
-      ESP_LOGE(TAG, "DS18B20 GPIO %d pullup disable failed: %s", DS18B20_GPIO,
-               esp_err_to_name(ret));
-      return ret;
-    }
+  // We don't use the internal ESP32 pull-up, we use an external 4.7k resistor.
+#if !DS18B20_ENABLE_INTERNAL_PULLUP
+  ret = gpio_pullup_dis((gpio_num_t)DS18B20_GPIO);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "DS18B20 GPIO %d pullup disable failed: %s", DS18B20_GPIO,
+             esp_err_to_name(ret));
+    return ret;
   }
+#endif
 
   onewire_bus_handle_t bus = NULL;
   onewire_bus_config_t bus_config = {
@@ -332,7 +351,8 @@ static esp_err_t read_ds18b20(reading_t *reading) {
           },
   };
   onewire_bus_rmt_config_t rmt_config = {
-      .max_rx_bytes = 10,
+      .max_rx_bytes =
+          10, // 1byte ROM command + 8byte ROM number + 1byte device command
   };
 
   ret = onewire_new_bus_rmt(&bus_config, &rmt_config, &bus);
@@ -356,6 +376,10 @@ static esp_err_t read_ds18b20(reading_t *reading) {
     goto cleanup;
   }
 
+  // This is the blocking call that waits for the conversion to finish.
+  // Right now we use the highest resolutions even if it takes around 750ms,
+  // worth choosing a slower resolution for the sake of power consumption
+  // later on.
   ret = ds18b20_trigger_temperature_conversion(sensor);
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "DS18B20 temperature conversion failed: %s",
@@ -383,7 +407,8 @@ cleanup:
   }
   esp_err_t bus_del_ret = onewire_bus_del(bus);
   if (bus_del_ret != ESP_OK) {
-    ESP_LOGW(TAG, "1-Wire bus cleanup failed: %s", esp_err_to_name(bus_del_ret));
+    ESP_LOGW(TAG, "1-Wire bus cleanup failed: %s",
+             esp_err_to_name(bus_del_ret));
   }
   return ret;
 }
@@ -434,6 +459,10 @@ static esp_err_t read_env280(reading_t *reading) {
   reading->env280_chip_id = sensor.id;
   reading->flags |= READING_ENV280_CHIP_ID_OK;
 
+  // We use forced mode;
+  // It is a power-saving operational state for the BMP280 sensor where it
+  // performs a single measurement upon request and then automatically returns
+  // to Sleep mode
   ret = bmp280_force_measurement(&sensor);
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "BME/BMP280 forced measurement failed: %s",
@@ -596,10 +625,9 @@ static esp_err_t ensure_file_header(int fd) {
     ESP_LOGE(TAG,
              "Reading file BME/BMP280 config differs from current config: "
              "file_addr=0x%02x firmware_addr=0x%02x "
-             "file_sda=%" PRIu16 " firmware_sda=%" PRIu16
-             " file_scl=%" PRIu16 " firmware_scl=%" PRIu16
-             " file_freq=%" PRIu16 "kHz firmware_freq=%" PRIu16
-             "kHz file_port=%u firmware_port=%u",
+             "file_sda=%" PRIu16 " firmware_sda=%" PRIu16 " file_scl=%" PRIu16
+             " firmware_scl=%" PRIu16 " file_freq=%" PRIu16
+             "kHz firmware_freq=%" PRIu16 "kHz file_port=%u firmware_port=%u",
              (unsigned)actual.env280_i2c_addr,
              (unsigned)expected.env280_i2c_addr, actual.env280_sda_gpio,
              expected.env280_sda_gpio, actual.env280_scl_gpio,
@@ -717,8 +745,7 @@ void app_main(void) {
   };
 
   ESP_LOGI(TAG,
-           "boot=%" PRIu32
-           " wake_causes=0x%08" PRIx32
+           "boot=%" PRIu32 " wake_causes=0x%08" PRIx32
            " soil_sensor=%s soil_adc_gpio=%d dry=%dmV wet=%dmV "
            "temp_sensor=%s ds18b20_gpio=%d ds18b20_pullup=%d "
            "env_sensor=%s i2c_sda=%d i2c_scl=%d i2c_addr=0x%02x",

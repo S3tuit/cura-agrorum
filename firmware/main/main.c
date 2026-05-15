@@ -1,10 +1,3 @@
-/*
- * SPDX-FileCopyrightText: 2023 Brian Pugh
- * SPDX-FileCopyrightText: 2023-2024 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: Unlicense OR CC0-1.0
- */
-
 #include "bmp280.h"
 #include "driver/gpio.h"
 #include "ds18b20.h"
@@ -105,6 +98,39 @@ _Static_assert(sizeof(reading_t) == 28, "unexpected reading size");
  * the time of each reading. */
 RTC_DATA_ATTR int32_t bootno = -1;
 
+#ifndef PROFILE_ENABLED
+#define PROFILE_ENABLED 0
+#endif
+
+#if PROFILE_ENABLED
+static int64_t profile_t0_us;
+
+#define DEBUG_LOGI(tag, ...)                                                   \
+  do {                                                                         \
+  } while (0)
+
+#define PROFILE_START()                                                        \
+  do {                                                                         \
+    profile_t0_us = esp_timer_get_time();                                      \
+  } while (0)
+
+#define PROFILE_MARK(label)                                                    \
+  do {                                                                         \
+    const int64_t profile_now_us = esp_timer_get_time();                       \
+    const int64_t profile_elapsed_us = profile_now_us - profile_t0_us;         \
+    profile_t0_us = profile_now_us;                                            \
+    ESP_LOGE(TAG, "profile %s=%" PRId64 "us", (label), profile_elapsed_us);    \
+  } while (0)
+#else
+#define DEBUG_LOGI(tag, ...) ESP_LOGI(tag, __VA_ARGS__)
+#define PROFILE_START()                                                        \
+  do {                                                                         \
+  } while (0)
+#define PROFILE_MARK(label)                                                    \
+  do {                                                                         \
+  } while (0)
+#endif
+
 static uint16_t clamp_u16(int value) {
   if (value < 0) {
     return 0;
@@ -151,14 +177,14 @@ static void log_temperature_centi_c(const char *prefix,
                                     int16_t temperature_centi_c) {
   const int temp = temperature_centi_c;
   const int abs_temp = temp < 0 ? -temp : temp;
-  ESP_LOGI(TAG, "%s%s%d.%02dC", prefix, temp < 0 ? "-" : "", abs_temp / 100,
-           abs_temp % 100);
+  DEBUG_LOGI(TAG, "%s%s%d.%02dC", prefix, temp < 0 ? "-" : "", abs_temp / 100,
+             abs_temp % 100);
 }
 
 static void log_humidity_centi_pct(const char *prefix,
                                    uint16_t humidity_centi_pct) {
-  ESP_LOGI(TAG, "%s%" PRIu16 ".%02" PRIu16 "%%", prefix,
-           humidity_centi_pct / 100, humidity_centi_pct % 100);
+  DEBUG_LOGI(TAG, "%s%" PRIu16 ".%02" PRIu16 "%%", prefix,
+             humidity_centi_pct / 100, humidity_centi_pct % 100);
 }
 
 typedef enum {
@@ -413,6 +439,9 @@ cleanup:
   return ret;
 }
 
+/* Modifies 'reading' by writing the sampled temperature, pressure, and humidity
+ * from the bme280 and the corresponding flags. Returns ESP_OK when everything
+ * went ok, else the error and does not modify 'reading'. */
 static esp_err_t read_env280(reading_t *reading) {
   esp_err_t ret = i2cdev_init();
   if (ret != ESP_OK) {
@@ -428,8 +457,7 @@ static esp_err_t read_env280(reading_t *reading) {
                          (gpio_num_t)ENV280_I2C_SDA_GPIO,
                          (gpio_num_t)ENV280_I2C_SCL_GPIO);
   if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "BME/BMP280 descriptor init failed: %s",
-             esp_err_to_name(ret));
+    ESP_LOGE(TAG, "BME280 descriptor init failed: %s", esp_err_to_name(ret));
     goto cleanup;
   }
   desc_ready = true;
@@ -440,10 +468,11 @@ static esp_err_t read_env280(reading_t *reading) {
   bmp280_params_t params;
   ret = bmp280_init_default_params(&params);
   if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "BME/BMP280 default params init failed: %s",
+    ESP_LOGE(TAG, "BME280 default params init failed: %s",
              esp_err_to_name(ret));
     goto cleanup;
   }
+
   params.mode = BMP280_MODE_FORCED;
   params.filter = BMP280_FILTER_OFF;
   params.oversampling_pressure = BMP280_STANDARD;
@@ -452,7 +481,14 @@ static esp_err_t read_env280(reading_t *reading) {
 
   ret = bmp280_init(&sensor, &params);
   if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "BME/BMP280 init failed: %s", esp_err_to_name(ret));
+    ESP_LOGE(TAG, "BME280 init failed: %s", esp_err_to_name(ret));
+    goto cleanup;
+  }
+
+  // Make sure we're not using BMP which has no humidity sensor.
+  if (sensor.id != BME280_CHIP_ID) {
+    ESP_LOGE(TAG, "Expected chip id BME280 (%d), got : %d", BME280_CHIP_ID,
+             sensor.id);
     goto cleanup;
   }
 
@@ -489,8 +525,7 @@ static esp_err_t read_env280(reading_t *reading) {
   float temperature_c = 0.0f;
   float pressure_pa = 0.0f;
   float humidity_pct = 0.0f;
-  float *humidity_ptr = sensor.id == BME280_CHIP_ID ? &humidity_pct : NULL;
-  ret = bmp280_read_float(&sensor, &temperature_c, &pressure_pa, humidity_ptr);
+  ret = bmp280_read_float(&sensor, &temperature_c, &pressure_pa, &humidity_pct);
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "BME/BMP280 read failed: %s", esp_err_to_name(ret));
     goto cleanup;
@@ -498,12 +533,10 @@ static esp_err_t read_env280(reading_t *reading) {
 
   reading->env280_centi_c = celsius_to_centi_c(temperature_c);
   reading->env280_pressure_pa = pascal_to_u32(pressure_pa);
-  reading->flags |= READING_ENV280_TEMP_OK | READING_ENV280_PRESSURE_OK;
-  if (humidity_ptr != NULL) {
-    reading->env280_humidity_centi_pct =
-        relative_humidity_to_centi_pct(humidity_pct);
-    reading->flags |= READING_ENV280_HUMIDITY_OK;
-  }
+  reading->env280_humidity_centi_pct =
+      relative_humidity_to_centi_pct(humidity_pct);
+  reading->flags |= READING_ENV280_TEMP_OK | READING_ENV280_PRESSURE_OK |
+                    READING_ENV280_HUMIDITY_OK;
 
 cleanup:
   if (desc_ready) {
@@ -556,9 +589,6 @@ static esp_err_t ensure_file_header(int fd) {
     }
     return ESP_OK;
   }
-
-  // TODO: maybe validating the header each time is overkill, maybe do this each
-  // 10/100 boots.
 
   if (st.st_size < (off_t)sizeof(file_header_t)) {
     ESP_LOGE(TAG, "Reading file is smaller than its header");
@@ -677,6 +707,7 @@ static esp_err_t append_reading(const reading_t *reading) {
     goto unmount;
   }
 
+  // Maybe validating the header each time is overkill, but it takes just ~2ms.
   ret = ensure_file_header(fd);
   if (ret != ESP_OK) {
     goto unmount;
@@ -709,13 +740,13 @@ unmount:
     }
   }
   esp_vfs_littlefs_unregister(conf.partition_label);
-  ESP_LOGI(TAG, "LittleFS unmounted");
+  DEBUG_LOGI(TAG, "LittleFS unmounted");
   return ret;
 }
 
 static void enter_deep_sleep(void) {
   ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(SLEEP_DURATION_US));
-  ESP_LOGI(TAG, "Sleeping for %" PRIu64 " us", SLEEP_DURATION_US);
+  DEBUG_LOGI(TAG, "Sleeping for %" PRIu64 " us", SLEEP_DURATION_US);
   esp_deep_sleep_start();
 }
 
@@ -744,27 +775,31 @@ void app_main(void) {
       .reserved = {0},
   };
 
-  ESP_LOGI(TAG,
-           "boot=%" PRIu32 " wake_causes=0x%08" PRIx32
-           " soil_sensor=%s soil_adc_gpio=%d dry=%dmV wet=%dmV "
-           "temp_sensor=%s ds18b20_gpio=%d ds18b20_pullup=%d "
-           "env_sensor=%s i2c_sda=%d i2c_scl=%d i2c_addr=0x%02x",
-           reading.bootno, wake_causes, SOIL_SENSOR_ID, SOIL_ADC_GPIO,
-           SOIL_DRY_MV, SOIL_WET_MV, DS18B20_SENSOR_ID, DS18B20_GPIO,
-           DS18B20_ENABLE_INTERNAL_PULLUP, ENV280_SENSOR_ID,
-           ENV280_I2C_SDA_GPIO, ENV280_I2C_SCL_GPIO, ENV280_I2C_ADDR);
+  DEBUG_LOGI(TAG,
+             "boot=%" PRIu32 " wake_causes=0x%08" PRIx32
+             " soil_sensor=%s soil_adc_gpio=%d dry=%dmV wet=%dmV "
+             "temp_sensor=%s ds18b20_gpio=%d ds18b20_pullup=%d "
+             "env_sensor=%s i2c_sda=%d i2c_scl=%d i2c_addr=0x%02x",
+             reading.bootno, wake_causes, SOIL_SENSOR_ID, SOIL_ADC_GPIO,
+             SOIL_DRY_MV, SOIL_WET_MV, DS18B20_SENSOR_ID, DS18B20_GPIO,
+             DS18B20_ENABLE_INTERNAL_PULLUP, ENV280_SENSOR_ID,
+             ENV280_I2C_SDA_GPIO, ENV280_I2C_SCL_GPIO, ENV280_I2C_ADDR);
 
+  PROFILE_START();
   esp_err_t soil_ret = read_soil(&reading);
+  PROFILE_MARK("read_soil");
   esp_err_t ds18b20_ret = read_ds18b20(&reading);
+  PROFILE_MARK("read_ds18b20");
   esp_err_t env280_ret = read_env280(&reading);
+  PROFILE_MARK("read_env280");
   const int64_t run_us = esp_timer_get_time() - start_us;
   reading.run_ms = clamp_u16((int)((run_us + 999) / 1000));
 
   if (soil_ret == ESP_OK && (reading.flags & READING_SOIL_MV_OK)) {
-    ESP_LOGI(TAG, "soil raw=%" PRIu16 " mv=%" PRIu16, reading.soil_raw,
-             reading.soil_mv);
+    DEBUG_LOGI(TAG, "soil raw=%" PRIu16 " mv=%" PRIu16, reading.soil_raw,
+               reading.soil_mv);
   } else if (soil_ret == ESP_OK) {
-    ESP_LOGI(TAG, "soil raw=%" PRIu16, reading.soil_raw);
+    DEBUG_LOGI(TAG, "soil raw=%" PRIu16, reading.soil_raw);
   } else {
     ESP_LOGW(TAG, "soil read failed: %s", esp_err_to_name(soil_ret));
   }
@@ -776,13 +811,13 @@ void app_main(void) {
   }
 
   if (env280_ret == ESP_OK) {
-    ESP_LOGI(TAG, "env280 chip_id=0x%02" PRIx8, reading.env280_chip_id);
+    DEBUG_LOGI(TAG, "env280 chip_id=0x%02" PRIx8, reading.env280_chip_id);
     if (reading.flags & READING_ENV280_TEMP_OK) {
       log_temperature_centi_c("env280 temp=", reading.env280_centi_c);
     }
     if (reading.flags & READING_ENV280_PRESSURE_OK) {
-      ESP_LOGI(TAG, "env280 pressure=%" PRIu32 "Pa",
-               reading.env280_pressure_pa);
+      DEBUG_LOGI(TAG, "env280 pressure=%" PRIu32 "Pa",
+                 reading.env280_pressure_pa);
     }
     if (reading.flags & READING_ENV280_HUMIDITY_OK) {
       log_humidity_centi_pct("env280 humidity=",
@@ -791,9 +826,11 @@ void app_main(void) {
   } else {
     ESP_LOGW(TAG, "BME/BMP280 read failed: %s", esp_err_to_name(env280_ret));
   }
-  ESP_LOGI(TAG, "run=%" PRIu16 "ms", reading.run_ms);
+  DEBUG_LOGI(TAG, "run=%" PRIu16 "ms", reading.run_ms);
 
+  PROFILE_START();
   esp_err_t append_ret = append_reading(&reading);
+  PROFILE_MARK("append_reading");
   if (append_ret != ESP_OK) {
     ESP_LOGW(TAG, "reading not persisted: %s", esp_err_to_name(append_ret));
   }

@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "record_type": 1,
+  "endianness": "little",
+  "record_name": "reading_t",
+  "fields": [
+    {
+      "name": "node_uuid",
+      "type": "bytes[16]",
+      "description": "Node UUID bytes in RFC 4122 byte order."
+    },
+    {
+      "name": "bootno",
+      "type": "u32",
+      "description": "Monotonic across deep-sleep wakes, reset on cold boot."
+    },
+    {
+      "name": "wake_causes",
+      "type": "u32",
+      "description": "Bitmask returned by esp_sleep_get_wakeup_causes()."
+    },
+    {
+      "name": "run_ms",
+      "type": "u16",
+      "description": "How long this wake cycle took before sleep."
+    },
+    {
+      "name": "soil_mv",
+      "type": "u16",
+      "description": "ADC reading converted to millivolts.",
+      "valid_flag": "READING_SOIL_MV_OK",
+      "valid_flag_bit": 0
+    },
+    {
+      "name": "ds18b20_centi_c",
+      "type": "i16",
+      "description": "DS18B20 temperature in 0.01 degree Celsius.",
+      "valid_flag": "READING_DS18B20_TEMP_OK",
+      "valid_flag_bit": 1
+    },
+    {
+      "name": "env280_centi_c",
+      "type": "i16",
+      "description": "BME280 temperature in 0.01 degree Celsius.",
+      "valid_flag": "READING_ENV280_TEMP_OK",
+      "valid_flag_bit": 2
+    },
+    {
+      "name": "env280_pressure_pa",
+      "type": "u32",
+      "description": "BME280 pressure in pascals.",
+      "valid_flag": "READING_ENV280_PRESSURE_OK",
+      "valid_flag_bit": 3
+    },
+    {
+      "name": "env280_humidity_centi_pct",
+      "type": "u16",
+      "description": "BME280 relative humidity in 0.01 percent.",
+      "valid_flag": "READING_ENV280_HUMIDITY_OK",
+      "valid_flag_bit": 4
+    },
+    {
+      "name": "flags",
+      "type": "u8",
+      "description": "Bitmask of valid fields."
+    },
+    {
+      "name": "reserved",
+      "type": "bytes[2]",
+      "description": "Reserved for future schema-compatible fields."
+    }
+  ]
+}

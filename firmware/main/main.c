@@ -5,7 +5,6 @@
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_err.h"
-#include "esp_littlefs.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
 #include "esp_system.h"
@@ -14,122 +13,28 @@
 #include "freertos/task.h"
 #include "i2cdev.h"
 #include "onewire_bus.h"
-#include <errno.h>
-#include <fcntl.h>
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
-#include "device_config.inc"
+#include "device_config.h"
+#include "node_identity.h"
+#include "profile.h"
+#include "reading.h"
+#include "tcp.h"
+#include "wifi.h"
 
 static const char *TAG = "cura-agrorum";
-
-#define FILE_SCHEMA_VERSION 2
-#define STR_HELPER(x) #x
-#define STR(x) STR_HELPER(x)
 
 #define SLEEP_DURATION_US (15ULL * 1000ULL * 1000ULL)
 #define SOIL_ADC_SAMPLE_COUNT 16
 #define WAKE_CAUSE_BIT(cause) (1UL << (cause))
 
-#define HEADER_MAGIC 0x4641524D // 'FARM' in hex.
-
-/* This is the header of a file that represents an array of readings all with
- * the same structure. */
-typedef struct __attribute__((packed)) {
-  uint32_t magic;
-  uint16_t schema_version;
-  uint16_t header_size;
-  uint16_t record_size;         // Size, in bytes, of each reading.
-  uint64_t sleep_duration_us;   // Requested sleep duration.
-  uint16_t soil_gpio;           // GPIO that reads soil sensor voltage.
-  uint16_t soil_dry_mv;         // Soil sensor mV when reading air.
-  uint16_t soil_wet_mv;         // Soil sensor mV when reading water.
-  uint16_t ds18b20_gpio;        // GPIO used for the 1-Wire bus.
-  uint8_t ds18b20_resolution;   // ds18b20_resolution_t value.
-  uint8_t env280_i2c_addr;      // BME/BMP280 I2C address.
-  uint16_t env280_sda_gpio;     // GPIO used for I2C SDA.
-  uint16_t env280_scl_gpio;     // GPIO used for I2C SCL.
-  uint16_t env280_i2c_freq_khz; // I2C frequency in kHz.
-  uint8_t env280_i2c_port;      // i2c_port_t value.
-  uint8_t reserved[1];
-} file_header_t;
-
-// bitmask of which reading the chip read and store correctly for this reading_t
-#define READING_SOIL_RAW_OK (1u << 0)
-#define READING_SOIL_MV_OK (1u << 1)
-#define READING_DS18B20_TEMP_OK (1u << 2)
-#define READING_ENV280_TEMP_OK (1u << 3)
-#define READING_ENV280_PRESSURE_OK (1u << 4)
-#define READING_ENV280_HUMIDITY_OK (1u << 5)
-#define READING_ENV280_CHIP_ID_OK (1u << 6)
-
-typedef struct __attribute__((packed)) {
-  uint32_t bootno; // Monotonic across deep-sleep wakes, reset on cold boot.
-
-  /* wake_cause and run_ms should be kept just for dev versions since they're
-   * usefull for debugging. */
-  uint32_t wake_causes; // Bitmask returned by esp_sleep_get_wakeup_causes().
-  uint16_t run_ms;      // How long this wake cycle took before sleep.
-
-  uint16_t soil_raw;           // Raw ADC reading of soil sensor.
-  uint16_t soil_mv;            // ADC reading converted in mV.
-  int16_t ds18b20_centi_c;     // DS18B20 temperature in 0.01 degree C.
-  int16_t env280_centi_c;      // BME/BMP280 temperature in 0.01 degree C.
-  uint32_t env280_pressure_pa; // BME/BMP280 pressure in Pa.
-  uint16_t env280_humidity_centi_pct; // BME280 relative humidity in 0.01%.
-  uint8_t env280_chip_id;             // BMP280_CHIP_ID or BME280_CHIP_ID.
-  uint8_t flags;                      // Bitmask of valid fields.
-  uint8_t reserved[2];
-} reading_t;
-
-_Static_assert(sizeof(file_header_t) == 36, "unexpected file header size");
-_Static_assert(sizeof(reading_t) == 28, "unexpected reading size");
-
-#define BASE_PATH "/readings"
-#define OUTPUT_FILE_PATH BASE_PATH "/readings-v" STR(FILE_SCHEMA_VERSION) ".bin"
-
 /* Tracks how many times app_main run, i.e., how many times the esp boot.
  * This plus knowing the time when the app start is our only way to get back
  * the time of each reading. */
 RTC_DATA_ATTR int32_t bootno = -1;
-
-#ifndef PROFILE_ENABLED
-#define PROFILE_ENABLED 0
-#endif
-
-#if PROFILE_ENABLED
-static int64_t profile_t0_us;
-
-#define DEBUG_LOGI(tag, ...)                                                   \
-  do {                                                                         \
-  } while (0)
-
-#define PROFILE_START()                                                        \
-  do {                                                                         \
-    profile_t0_us = esp_timer_get_time();                                      \
-  } while (0)
-
-#define PROFILE_MARK(label)                                                    \
-  do {                                                                         \
-    const int64_t profile_now_us = esp_timer_get_time();                       \
-    const int64_t profile_elapsed_us = profile_now_us - profile_t0_us;         \
-    profile_t0_us = profile_now_us;                                            \
-    ESP_LOGE(TAG, "profile %s=%" PRId64 "us", (label), profile_elapsed_us);    \
-  } while (0)
-#else
-#define DEBUG_LOGI(tag, ...) ESP_LOGI(tag, __VA_ARGS__)
-#define PROFILE_START()                                                        \
-  do {                                                                         \
-  } while (0)
-#define PROFILE_MARK(label)                                                    \
-  do {                                                                         \
-  } while (0)
-#endif
 
 static uint16_t clamp_u16(int value) {
   if (value < 0) {
@@ -323,9 +228,6 @@ static esp_err_t read_soil(reading_t *reading) {
 
   if (sample_count > 0) {
     int raw_avg = (raw_sum + (sample_count / 2)) / sample_count;
-    reading->soil_raw = clamp_u16(raw_avg);
-    reading->flags |= READING_SOIL_RAW_OK;
-
     if (cali_handle != NULL) {
       int voltage_mv = 0;
       ret = adc_cali_raw_to_voltage(cali_handle, raw_avg, &voltage_mv);
@@ -337,14 +239,16 @@ static esp_err_t read_soil(reading_t *reading) {
                  esp_err_to_name(ret));
       }
     } else {
-      ESP_LOGW(TAG, "ADC calibration unavailable; storing raw reading only");
+      ESP_LOGW(TAG, "ADC calibration unavailable; soil mV reading unavailable");
+      ret = ESP_ERR_NOT_SUPPORTED;
     }
   }
 
   delete_adc_calibration(cali_scheme, cali_handle);
   adc_oneshot_del_unit(adc_handle);
 
-  return sample_count > 0 ? ESP_OK : ret;
+  return (sample_count > 0 && (reading->flags & READING_SOIL_MV_OK)) ? ESP_OK
+                                                                     : ret;
 }
 
 /* Modifies 'reading' by writing the sampled Celsius data from the ds18b20 and
@@ -358,22 +262,19 @@ static esp_err_t read_ds18b20(reading_t *reading) {
     return ret;
   }
 
-  // We don't use the internal ESP32 pull-up, we use an external 4.7k resistor.
-#if !DS18B20_ENABLE_INTERNAL_PULLUP
-  ret = gpio_pullup_dis((gpio_num_t)DS18B20_GPIO);
+  ret = gpio_pullup_en((gpio_num_t)DS18B20_GPIO);
   if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "DS18B20 GPIO %d pullup disable failed: %s", DS18B20_GPIO,
+    ESP_LOGE(TAG, "DS18B20 GPIO %d pullup enable failed: %s", DS18B20_GPIO,
              esp_err_to_name(ret));
     return ret;
   }
-#endif
 
   onewire_bus_handle_t bus = NULL;
   onewire_bus_config_t bus_config = {
       .bus_gpio_num = DS18B20_GPIO,
       .flags =
           {
-              .en_pull_up = DS18B20_ENABLE_INTERNAL_PULLUP,
+              .en_pull_up = true,
           },
   };
   onewire_bus_rmt_config_t rmt_config = {
@@ -462,8 +363,8 @@ static esp_err_t read_env280(reading_t *reading) {
   }
   desc_ready = true;
   sensor.i2c_dev.cfg.master.clk_speed = ENV280_I2C_FREQ_HZ;
-  sensor.i2c_dev.cfg.sda_pullup_en = ENV280_ENABLE_INTERNAL_PULLUPS;
-  sensor.i2c_dev.cfg.scl_pullup_en = ENV280_ENABLE_INTERNAL_PULLUPS;
+  sensor.i2c_dev.cfg.sda_pullup_en = true;
+  sensor.i2c_dev.cfg.scl_pullup_en = true;
 
   bmp280_params_t params;
   ret = bmp280_init_default_params(&params);
@@ -489,20 +390,17 @@ static esp_err_t read_env280(reading_t *reading) {
   if (sensor.id != BME280_CHIP_ID) {
     ESP_LOGE(TAG, "Expected chip id BME280 (%d), got : %d", BME280_CHIP_ID,
              sensor.id);
+    ret = ESP_ERR_NOT_SUPPORTED;
     goto cleanup;
   }
 
-  reading->env280_chip_id = sensor.id;
-  reading->flags |= READING_ENV280_CHIP_ID_OK;
-
   // We use forced mode;
-  // It is a power-saving operational state for the BMP280 sensor where it
+  // It is a power-saving operational state for the BME280 sensor where it
   // performs a single measurement upon request and then automatically returns
   // to Sleep mode
   ret = bmp280_force_measurement(&sensor);
   if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "BME/BMP280 forced measurement failed: %s",
-             esp_err_to_name(ret));
+    ESP_LOGE(TAG, "BME280 forced measurement failed: %s", esp_err_to_name(ret));
     goto cleanup;
   }
 
@@ -511,13 +409,13 @@ static esp_err_t read_env280(reading_t *reading) {
     vTaskDelay(pdMS_TO_TICKS(10));
     ret = bmp280_is_measuring(&sensor, &busy);
     if (ret != ESP_OK) {
-      ESP_LOGE(TAG, "BME/BMP280 measurement status failed: %s",
+      ESP_LOGE(TAG, "BME280 measurement status failed: %s",
                esp_err_to_name(ret));
       goto cleanup;
     }
   }
   if (busy) {
-    ESP_LOGE(TAG, "BME/BMP280 measurement timed out");
+    ESP_LOGE(TAG, "BME280 measurement timed out");
     ret = ESP_ERR_TIMEOUT;
     goto cleanup;
   }
@@ -527,7 +425,7 @@ static esp_err_t read_env280(reading_t *reading) {
   float humidity_pct = 0.0f;
   ret = bmp280_read_float(&sensor, &temperature_c, &pressure_pa, &humidity_pct);
   if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "BME/BMP280 read failed: %s", esp_err_to_name(ret));
+    ESP_LOGE(TAG, "BME280 read failed: %s", esp_err_to_name(ret));
     goto cleanup;
   }
 
@@ -542,7 +440,7 @@ cleanup:
   if (desc_ready) {
     esp_err_t desc_ret = bmp280_free_desc(&sensor);
     if (desc_ret != ESP_OK) {
-      ESP_LOGW(TAG, "BME/BMP280 descriptor cleanup failed: %s",
+      ESP_LOGW(TAG, "BME280 descriptor cleanup failed: %s",
                esp_err_to_name(desc_ret));
     }
   }
@@ -553,204 +451,18 @@ cleanup:
   return ret;
 }
 
-static file_header_t expected_file_header(void) {
-  return (file_header_t){
-      .magic = HEADER_MAGIC,
-      .schema_version = FILE_SCHEMA_VERSION,
-      .header_size = sizeof(file_header_t),
-      .record_size = sizeof(reading_t),
-      .sleep_duration_us = SLEEP_DURATION_US,
-      .soil_gpio = SOIL_ADC_GPIO,
-      .soil_dry_mv = SOIL_DRY_MV,
-      .soil_wet_mv = SOIL_WET_MV,
-      .ds18b20_gpio = DS18B20_GPIO,
-      .ds18b20_resolution = DS18B20_RESOLUTION,
-      .env280_i2c_addr = ENV280_I2C_ADDR,
-      .env280_sda_gpio = ENV280_I2C_SDA_GPIO,
-      .env280_scl_gpio = ENV280_I2C_SCL_GPIO,
-      .env280_i2c_freq_khz = ENV280_I2C_FREQ_HZ / 1000,
-      .env280_i2c_port = ENV280_I2C_PORT,
-      .reserved = {0},
-  };
-}
-
-static esp_err_t ensure_file_header(int fd) {
-  struct stat st;
-  if (fstat(fd, &st) < 0) {
-    ESP_LOGE(TAG, "fstat: %s", strerror(errno));
-    return ESP_FAIL;
-  }
-
-  const file_header_t expected = expected_file_header();
-  if (st.st_size == 0) {
-    if (write(fd, &expected, sizeof(expected)) != sizeof(expected)) {
-      ESP_LOGE(TAG, "write header: %s", strerror(errno));
-      return ESP_FAIL;
-    }
-    return ESP_OK;
-  }
-
-  if (st.st_size < (off_t)sizeof(file_header_t)) {
-    ESP_LOGE(TAG, "Reading file is smaller than its header");
-    return ESP_ERR_INVALID_SIZE;
-  }
-
-  if (lseek(fd, 0, SEEK_SET) < 0) {
-    ESP_LOGE(TAG, "seek header: %s", strerror(errno));
-    return ESP_FAIL;
-  }
-
-  file_header_t actual;
-  if (read(fd, &actual, sizeof(actual)) != sizeof(actual)) {
-    ESP_LOGE(TAG, "read header: %s", strerror(errno));
-    return ESP_FAIL;
-  }
-
-  if (actual.magic != expected.magic ||
-      actual.schema_version != expected.schema_version ||
-      actual.header_size != expected.header_size ||
-      actual.record_size != expected.record_size) {
-    ESP_LOGE(TAG, "Reading file header does not match this firmware schema");
-    return ESP_ERR_INVALID_VERSION;
-  }
-
-  if (actual.sleep_duration_us != expected.sleep_duration_us) {
-    ESP_LOGE(TAG,
-             "Reading file sleep interval differs from current config: "
-             "file=%" PRIu64 "us firmware=%" PRIu64 "us",
-             actual.sleep_duration_us, expected.sleep_duration_us);
-    return ESP_ERR_INVALID_STATE;
-  }
-
-  if (actual.soil_gpio != expected.soil_gpio ||
-      actual.soil_dry_mv != expected.soil_dry_mv ||
-      actual.soil_wet_mv != expected.soil_wet_mv) {
-    ESP_LOGE(TAG,
-             "Reading file calibration differs from current config: "
-             "file_gpio=%" PRIu16 " firmware_gpio=%" PRIu16 " file_dry=%" PRIu16
-             "mV firmware_dry=%" PRIu16 "mV file_wet=%" PRIu16
-             "mV firmware_wet=%" PRIu16 "mV",
-             actual.soil_gpio, expected.soil_gpio, actual.soil_dry_mv,
-             expected.soil_dry_mv, actual.soil_wet_mv, expected.soil_wet_mv);
-    return ESP_ERR_INVALID_STATE;
-  }
-
-  if (actual.ds18b20_gpio != expected.ds18b20_gpio ||
-      actual.ds18b20_resolution != expected.ds18b20_resolution) {
-    ESP_LOGE(TAG,
-             "Reading file DS18B20 config differs from current config: "
-             "file_gpio=%" PRIu16 " firmware_gpio=%" PRIu16
-             " file_resolution=%u firmware_resolution=%u",
-             actual.ds18b20_gpio, expected.ds18b20_gpio,
-             (unsigned)actual.ds18b20_resolution,
-             (unsigned)expected.ds18b20_resolution);
-    return ESP_ERR_INVALID_STATE;
-  }
-
-  if (actual.env280_i2c_addr != expected.env280_i2c_addr ||
-      actual.env280_sda_gpio != expected.env280_sda_gpio ||
-      actual.env280_scl_gpio != expected.env280_scl_gpio ||
-      actual.env280_i2c_freq_khz != expected.env280_i2c_freq_khz ||
-      actual.env280_i2c_port != expected.env280_i2c_port) {
-    ESP_LOGE(TAG,
-             "Reading file BME/BMP280 config differs from current config: "
-             "file_addr=0x%02x firmware_addr=0x%02x "
-             "file_sda=%" PRIu16 " firmware_sda=%" PRIu16 " file_scl=%" PRIu16
-             " firmware_scl=%" PRIu16 " file_freq=%" PRIu16
-             "kHz firmware_freq=%" PRIu16 "kHz file_port=%u firmware_port=%u",
-             (unsigned)actual.env280_i2c_addr,
-             (unsigned)expected.env280_i2c_addr, actual.env280_sda_gpio,
-             expected.env280_sda_gpio, actual.env280_scl_gpio,
-             expected.env280_scl_gpio, actual.env280_i2c_freq_khz,
-             expected.env280_i2c_freq_khz, (unsigned)actual.env280_i2c_port,
-             (unsigned)expected.env280_i2c_port);
-    return ESP_ERR_INVALID_STATE;
-  }
-
-  const off_t data_size = st.st_size - (off_t)sizeof(file_header_t);
-  // TODO: add a recovery mechanism to ignore the partial record and keep
-  // appending as if there was no partial record
-  if ((data_size % sizeof(reading_t)) != 0) {
-    ESP_LOGE(TAG, "Reading file has a partial trailing record");
-    return ESP_ERR_INVALID_SIZE;
-  }
-
-  return ESP_OK;
-}
-
-static esp_err_t append_reading(const reading_t *reading) {
-  esp_err_t ret;
-
-  esp_vfs_littlefs_conf_t conf = {
-      .base_path = BASE_PATH,
-      .partition_label = "storage",
-      .format_if_mount_failed = true,
-      .dont_mount = false,
-  };
-
-  ret = esp_vfs_littlefs_register(&conf);
-  if (ret != ESP_OK) {
-    if (ret == ESP_FAIL) {
-      ESP_LOGE(TAG, "Failed to mount filesystem");
-    } else if (ret == ESP_ERR_NOT_FOUND) {
-      ESP_LOGE(TAG, "Failed to find LittleFS partition");
-    } else {
-      ESP_LOGE(TAG, "Failed to initialize LittleFS (%s)", esp_err_to_name(ret));
-    }
-    return ret;
-  }
-
-  int fd = open(OUTPUT_FILE_PATH, O_RDWR | O_CREAT, 0644);
-  if (fd < 0) {
-    ESP_LOGE(TAG, "Open for append failed: %s", strerror(errno));
-    ret = ESP_FAIL;
-    goto unmount;
-  }
-
-  // Maybe validating the header each time is overkill, but it takes just ~2ms.
-  ret = ensure_file_header(fd);
-  if (ret != ESP_OK) {
-    goto unmount;
-  }
-
-  if (lseek(fd, 0, SEEK_END) < 0) {
-    ESP_LOGE(TAG, "seek end: %s", strerror(errno));
-    ret = ESP_FAIL;
-    goto unmount;
-  }
-
-  if (write(fd, reading, sizeof(*reading)) != sizeof(*reading)) {
-    ESP_LOGE(TAG, "write reading: %s", strerror(errno));
-    ret = ESP_FAIL;
-    goto unmount;
-  }
-  if (fsync(fd) < 0) {
-    ESP_LOGE(TAG, "fsync: %s", strerror(errno));
-    ret = ESP_FAIL;
-    goto unmount;
-  }
-
-  ret = ESP_OK;
-
-unmount:
-  if (fd >= 0 && close(fd) < 0) {
-    ESP_LOGE(TAG, "close: %s", strerror(errno));
-    if (ret == ESP_OK) {
-      ret = ESP_FAIL;
-    }
-  }
-  esp_vfs_littlefs_unregister(conf.partition_label);
-  DEBUG_LOGI(TAG, "LittleFS unmounted");
-  return ret;
-}
-
 static void enter_deep_sleep(void) {
   ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(SLEEP_DURATION_US));
   DEBUG_LOGI(TAG, "Sleeping for %" PRIu64 " us", SLEEP_DURATION_US);
   esp_deep_sleep_start();
 }
 
-void app_main(void) {
+/* Modifies 'reading' in place with all the sensor readings. Safe to call with
+ * uninitialized 'reading'. */
+static void read_all_sensors(reading_t *reading) {
+  if (!reading)
+    return;
+
   const int64_t start_us = esp_timer_get_time();
   const uint32_t wake_causes = esp_sleep_get_wakeup_causes();
 
@@ -760,81 +472,92 @@ void app_main(void) {
     bootno = 0;
   }
 
-  reading_t reading = {
+  const reading_t defaults = {
+      .node_uuid = CURA_NODE_UUID_BYTES,
       .bootno = (uint32_t)bootno,
       .wake_causes = wake_causes,
       .run_ms = 0,
-      .soil_raw = 0,
       .soil_mv = 0,
       .ds18b20_centi_c = 0,
       .env280_centi_c = 0,
       .env280_pressure_pa = 0,
       .env280_humidity_centi_pct = 0,
-      .env280_chip_id = 0,
       .flags = 0,
       .reserved = {0},
   };
+  *reading = defaults;
 
-  DEBUG_LOGI(TAG,
-             "boot=%" PRIu32 " wake_causes=0x%08" PRIx32
-             " soil_sensor=%s soil_adc_gpio=%d dry=%dmV wet=%dmV "
-             "temp_sensor=%s ds18b20_gpio=%d ds18b20_pullup=%d "
-             "env_sensor=%s i2c_sda=%d i2c_scl=%d i2c_addr=0x%02x",
-             reading.bootno, wake_causes, SOIL_SENSOR_ID, SOIL_ADC_GPIO,
-             SOIL_DRY_MV, SOIL_WET_MV, DS18B20_SENSOR_ID, DS18B20_GPIO,
-             DS18B20_ENABLE_INTERNAL_PULLUP, ENV280_SENSOR_ID,
-             ENV280_I2C_SDA_GPIO, ENV280_I2C_SCL_GPIO, ENV280_I2C_ADDR);
+  DEBUG_LOGI(TAG, "boot=%" PRIu32 " wake_causes=0x%08" PRIx32, reading->bootno,
+             reading->wake_causes);
 
   PROFILE_START();
-  esp_err_t soil_ret = read_soil(&reading);
+  esp_err_t soil_ret = read_soil(reading);
   PROFILE_MARK("read_soil");
-  esp_err_t ds18b20_ret = read_ds18b20(&reading);
+  esp_err_t ds18b20_ret = read_ds18b20(reading);
   PROFILE_MARK("read_ds18b20");
-  esp_err_t env280_ret = read_env280(&reading);
+  esp_err_t env280_ret = read_env280(reading);
   PROFILE_MARK("read_env280");
   const int64_t run_us = esp_timer_get_time() - start_us;
-  reading.run_ms = clamp_u16((int)((run_us + 999) / 1000));
+  reading->run_ms = clamp_u16((int)((run_us + 999) / 1000));
 
-  if (soil_ret == ESP_OK && (reading.flags & READING_SOIL_MV_OK)) {
-    DEBUG_LOGI(TAG, "soil raw=%" PRIu16 " mv=%" PRIu16, reading.soil_raw,
-               reading.soil_mv);
-  } else if (soil_ret == ESP_OK) {
-    DEBUG_LOGI(TAG, "soil raw=%" PRIu16, reading.soil_raw);
+  if (soil_ret == ESP_OK && (reading->flags & READING_SOIL_MV_OK)) {
+    DEBUG_LOGI(TAG, "soil mv=%" PRIu16, reading->soil_mv);
   } else {
     ESP_LOGW(TAG, "soil read failed: %s", esp_err_to_name(soil_ret));
   }
 
-  if (ds18b20_ret == ESP_OK && (reading.flags & READING_DS18B20_TEMP_OK)) {
-    log_temperature_centi_c("ds18b20 temp=", reading.ds18b20_centi_c);
+  if (ds18b20_ret == ESP_OK && (reading->flags & READING_DS18B20_TEMP_OK)) {
+    log_temperature_centi_c("ds18b20 temp=", reading->ds18b20_centi_c);
   } else {
     ESP_LOGW(TAG, "DS18B20 read failed: %s", esp_err_to_name(ds18b20_ret));
   }
 
   if (env280_ret == ESP_OK) {
-    DEBUG_LOGI(TAG, "env280 chip_id=0x%02" PRIx8, reading.env280_chip_id);
-    if (reading.flags & READING_ENV280_TEMP_OK) {
-      log_temperature_centi_c("env280 temp=", reading.env280_centi_c);
+    if (reading->flags & READING_ENV280_TEMP_OK) {
+      log_temperature_centi_c("env280 temp=", reading->env280_centi_c);
     }
-    if (reading.flags & READING_ENV280_PRESSURE_OK) {
+    if (reading->flags & READING_ENV280_PRESSURE_OK) {
       DEBUG_LOGI(TAG, "env280 pressure=%" PRIu32 "Pa",
-                 reading.env280_pressure_pa);
+                 reading->env280_pressure_pa);
     }
-    if (reading.flags & READING_ENV280_HUMIDITY_OK) {
+    if (reading->flags & READING_ENV280_HUMIDITY_OK) {
       log_humidity_centi_pct("env280 humidity=",
-                             reading.env280_humidity_centi_pct);
+                             reading->env280_humidity_centi_pct);
     }
   } else {
-    ESP_LOGW(TAG, "BME/BMP280 read failed: %s", esp_err_to_name(env280_ret));
+    ESP_LOGW(TAG, "BME280 read failed: %s", esp_err_to_name(env280_ret));
   }
-  DEBUG_LOGI(TAG, "run=%" PRIu16 "ms", reading.run_ms);
+  DEBUG_LOGI(TAG, "run=%" PRIu16 "ms", reading->run_ms);
+}
 
-  PROFILE_START();
-  esp_err_t append_ret = append_reading(&reading);
-  PROFILE_MARK("append_reading");
-  if (append_ret != ESP_OK) {
-    ESP_LOGW(TAG, "reading not persisted: %s", esp_err_to_name(append_ret));
+void app_main(void) {
+  reading_t reading;
+  read_all_sensors(&reading);
+
+  esp_ip4_addr_t gateway_ip = {0};
+  uint16_t gateway_port = 0;
+  esp_err_t wifi_ret =
+      wifi_connect_and_resolve_gateway(&gateway_ip, &gateway_port);
+  if (wifi_ret == ESP_OK) {
+    PROFILE_START();
+    int fd = tcp_connect(&gateway_ip, gateway_port);
+    esp_err_t tcp_ret = ESP_FAIL;
+    if (fd >= 0) {
+      /* Business rule for this intermediate step: main still sends only the
+       * reading frame. The handshake helper is available but not wired into
+       * app_main until the server ACK path is implemented. */
+      tcp_ret = tcp_send_message(fd, &reading, sizeof(reading),
+                                 FILE_SCHEMA_VERSION, CURA_RECORD_TYPE);
+      tcp_disconnect(fd);
+    }
+    PROFILE_MARK("tcp_send");
+    if (tcp_ret != ESP_OK) {
+      ESP_LOGW(TAG, "reading not sent: %s", esp_err_to_name(tcp_ret));
+    }
+  } else {
+    ESP_LOGW(TAG, "gateway not resolved; reading not sent: %s",
+             esp_err_to_name(wifi_ret));
   }
 
-  // TODO: Add a debug dump path for the LittleFS binary log.
   enter_deep_sleep();
 }

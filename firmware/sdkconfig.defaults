@@ -10,6 +10,8 @@ CONFIG_SPI_FLASH_SUPPORT_BOYA_CHIP=y
 # Crystal freq
 CONFIG_XTAL_FREQ_40=y
 CONFIG_XTAL_FREQ=40
+CONFIG_ESP32_XTAL_FREQ_40=y
+CONFIG_ESP32_XTAL_FREQ=40
 
 # Use the internal 8 MHz oscillator for v0 since we need better logs at the
 # cost of more power used

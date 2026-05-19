@@ -1,0 +1,20 @@
+[project]
+name = "cura-agrorum-server"
+version = "0.1.0"
+description = "TCP gateway server for Cura Agrorum ESP32 sensor nodes"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+cura-agrorum-server = "cura_server.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

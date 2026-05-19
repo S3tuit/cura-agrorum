@@ -1,0 +1,54 @@
+# Cura Agrorum Server
+
+Small TCP gateway for ESP32 sensor nodes.
+
+## Run locally
+
+```bash
+cd server
+python -m cura_server --host 0.0.0.0 --port 18032
+```
+
+The server listens for frames with this format:
+
+```text
+2 bytes payload length, big-endian
+1 byte record type
+1 byte schema version
+payload bytes
+```
+
+## Advertise with Avahi
+
+For development:
+
+```bash
+avahi-publish -s "Cura Agrorum Gateway" _cura-agrorum._tcp 18032 proto=tcp-frame-v1 record_types=1,2
+```
+
+## Regenerate protocol files
+
+The firmware C headers and Python decoder constants are generated from
+`../protocol/schemas/reading_v1.json` and
+`../protocol/schemas/node_config_v1.json`, and
+`../protocol/schemas/handshake_ack_v1.json`.
+
+```bash
+cd ..
+python3 protocol/tools/generate.py
+```
+
+For a Pi deployment, install:
+
+```text
+deploy/avahi/cura-agrorum.service -> /etc/avahi/services/cura-agrorum.service
+deploy/systemd/cura-agrorum-server.service -> /etc/systemd/system/cura-agrorum-server.service
+```
+
+Then reload system services:
+
+```bash
+sudo systemctl restart avahi-daemon
+sudo systemctl daemon-reload
+sudo systemctl enable --now cura-agrorum-server
+```

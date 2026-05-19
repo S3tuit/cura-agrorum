@@ -76,8 +76,8 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 0.3.1
-  espressif/onewire_bus:
-    component_hash: d709015ba466095259228521cf1bad9c0cdaaa42a92ea5d9c88ec6c28ae89e9b
+  espressif/mdns:
+    component_hash: 8bcf12e37c58c1d584aef32a02b92548124c7a3a9fcf548d3235c844a035e0f0
     dependencies:
     - name: idf
       require: private
@@ -85,26 +85,26 @@ dependencies:
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 1.1.0
+    version: 1.11.1
+  espressif/onewire_bus:
+    component_hash: a85dc1ceb71fb87af77c57d5fd4e6f48a504de1fc2b83fc302ec0cea331d05ce
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.1.1
   idf:
     source:
       type: idf
     version: 6.1.0
-  joltwallet/littlefs:
-    component_hash: 29eff7921c4e8bce021aeb7fff2723bfcafed661756de700646ea0f6223c2a32
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=5.0'
-    source:
-      registry_url: https://components.espressif.com/
-      type: service
-    version: 1.21.1
 direct_dependencies:
 - esp-idf-lib/bmp280
 - espressif/ds18b20
+- espressif/mdns
 - espressif/onewire_bus
-- joltwallet/littlefs
-manifest_hash: 80f76524398a1dde52de774116727279c557c062d8ef355094a8d5a03bffd67d
+manifest_hash: e0f17beef854cd0a27292f369aeb82da6a2f1dc191ad830eb8fc91a9dd837586
 target: esp32
 version: 3.0.0

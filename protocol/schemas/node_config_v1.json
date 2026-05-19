@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "record_type": 2,
+  "endianness": "little",
+  "record_name": "node_config_t",
+  "fields": [
+    {
+      "name": "node_uuid",
+      "type": "bytes[16]",
+      "description": "Node UUID bytes in RFC 4122 byte order."
+    },
+    {
+      "name": "soil_sensor_id",
+      "type": "u16",
+      "description": "Numeric identifier for the soil sensor on this node."
+    },
+    {
+      "name": "ds18b20_sensor_id",
+      "type": "u16",
+      "description": "Numeric identifier for the DS18B20 sensor on this node."
+    },
+    {
+      "name": "env280_sensor_id",
+      "type": "u16",
+      "description": "Numeric identifier for the BME280 sensor on this node."
+    },
+    {
+      "name": "soil_dry_mv",
+      "type": "u16",
+      "description": "Soil sensor mV when reading air."
+    },
+    {
+      "name": "soil_wet_mv",
+      "type": "u16",
+      "description": "Soil sensor mV when reading water."
+    }
+  ]
+}

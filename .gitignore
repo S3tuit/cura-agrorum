@@ -56,7 +56,13 @@ firmware/build/
 firmware/managed_components/
 firmware/sdkconfig
 firmware/sdkconfig.old
+firmware/main/node_identity.h
+firmware/main/node_uuid.txt
 .cache
+
+# Python
+__pycache__/
+*.py[cod]
 
 # debug information files
 *.dwo

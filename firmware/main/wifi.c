@@ -123,7 +123,7 @@ static esp_err_t create_wifi_sta_netif(esp_netif_t **out_netif) {
   return ESP_OK;
 }
 
-static esp_err_t connect_wifi(void) {
+esp_err_t cura_wifi_connect(void) {
   s_wifi_event_group = xEventGroupCreate();
   if (s_wifi_event_group == NULL) {
     ESP_LOGE(TAG, "failed to create WiFi event group");
@@ -284,8 +284,11 @@ static esp_err_t resolve_service_host_ipv4(const mdns_result_t *result,
   return ESP_OK;
 }
 
-static esp_err_t resolve_cura_agrorum_service(esp_ip4_addr_t *host_ip,
-                                              uint16_t *port) {
+esp_err_t wifi_resolve_gateway(esp_ip4_addr_t *host_ip, uint16_t *port) {
+  if (host_ip == NULL || port == NULL) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
   esp_err_t ret = mdns_init();
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "mDNS init failed: %s", esp_err_to_name(ret));
@@ -328,28 +331,5 @@ static esp_err_t resolve_cura_agrorum_service(esp_ip4_addr_t *host_ip,
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "mDNS service found, but no IPv4 address was resolved");
   }
-  return ret;
-}
-
-esp_err_t wifi_connect_and_resolve_gateway(esp_ip4_addr_t *host_ip,
-                                           uint16_t *port) {
-  if (host_ip == NULL || port == NULL) {
-    return ESP_ERR_INVALID_ARG;
-  }
-
-  DEBUG_LOGI(TAG, "starting WiFi gateway discovery");
-
-  PROFILE_START();
-  // The gateway is discovered dynamically so deployed nodes can follow the
-  // laptop/Pi address assigned by the local WiFi network.
-  esp_err_t ret = connect_wifi();
-  PROFILE_MARK("connect_wifi");
-  if (ret != ESP_OK) {
-    return ret;
-  }
-
-  PROFILE_START();
-  ret = resolve_cura_agrorum_service(host_ip, port);
-  PROFILE_MARK("resolve_cura_agrorum_service");
   return ret;
 }

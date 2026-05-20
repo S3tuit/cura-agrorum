@@ -19,6 +19,7 @@
 #include <string.h>
 
 #include "device_config.h"
+#include "handshake.h"
 #include "node_identity.h"
 #include "profile.h"
 #include "reading.h"
@@ -35,6 +36,9 @@ static const char *TAG = "cura-agrorum";
  * This plus knowing the time when the app start is our only way to get back
  * the time of each reading. */
 RTC_DATA_ATTR int32_t bootno = -1;
+static RTC_DATA_ATTR int has_handshaked = 0;
+static RTC_DATA_ATTR esp_ip4_addr_t gateway_ip = {0};
+static RTC_DATA_ATTR uint16_t gateway_port = 0;
 
 static uint16_t clamp_u16(int value) {
   if (value < 0) {
@@ -457,6 +461,80 @@ static void enter_deep_sleep(void) {
   esp_deep_sleep_start();
 }
 
+static inline bool gateway_endpoint_valid(void) { return gateway_port != 0; }
+
+static void clear_gateway_session(void) {
+  has_handshaked = 0;
+  gateway_ip.addr = 0;
+  gateway_port = 0;
+}
+
+static void cache_gateway_session(const esp_ip4_addr_t *host_ip,
+                                  uint16_t port) {
+  gateway_ip = *host_ip;
+  gateway_port = port;
+  has_handshaked = 1;
+}
+
+static esp_err_t send_reading_frame(int fd, const reading_t *reading) {
+  return tcp_send_message(fd, reading, sizeof(*reading), FILE_SCHEMA_VERSION,
+                          CURA_RECORD_TYPE);
+}
+
+/* Resolves the current gateway, performs the config handshake, and sends the
+ * reading on the same TCP connection. The cached session is marked valid only
+ * after both the handshake and the reading send succeed. */
+static esp_err_t handshake_and_send_reading(const reading_t *reading) {
+  esp_ip4_addr_t resolved_gateway_ip = {0};
+  uint16_t resolved_gateway_port = 0;
+
+  PROFILE_START();
+  esp_err_t ret =
+      wifi_resolve_gateway(&resolved_gateway_ip, &resolved_gateway_port);
+  PROFILE_MARK("resolve_gateway");
+  if (ret != ESP_OK) {
+    return ret;
+  }
+
+  int fd = tcp_connect(&resolved_gateway_ip, resolved_gateway_port);
+  if (fd < 0) {
+    clear_gateway_session();
+    return ESP_FAIL;
+  }
+
+  ret = do_handshake(fd);
+  if (ret == ESP_OK) {
+    ret = send_reading_frame(fd, reading);
+  }
+  tcp_disconnect(fd);
+
+  if (ret == ESP_OK) {
+    cache_gateway_session(&resolved_gateway_ip, resolved_gateway_port);
+  } else {
+    clear_gateway_session();
+  }
+  return ret;
+}
+
+/* Uses the RTC-cached gateway endpoint after a previous successful handshake.
+ * This returns ESP_OK if 'reading' is sent, ESP_FAIL if TCP connect failed,
+ * else propagates the tcp send failure. On failure, this clears the gateway
+ * session. */
+static esp_err_t send_reading_with_cached_session(const reading_t *reading) {
+  int fd = tcp_connect(&gateway_ip, gateway_port);
+  if (fd < 0) {
+    clear_gateway_session();
+    return ESP_FAIL;
+  }
+
+  esp_err_t ret = send_reading_frame(fd, reading);
+  tcp_disconnect(fd);
+  if (ret != ESP_OK) {
+    clear_gateway_session();
+  }
+  return ret;
+}
+
 /* Modifies 'reading' in place with all the sensor readings. Safe to call with
  * uninitialized 'reading'. */
 static void read_all_sensors(reading_t *reading) {
@@ -469,7 +547,10 @@ static void read_all_sensors(reading_t *reading) {
   if ((wake_causes & WAKE_CAUSE_BIT(ESP_SLEEP_WAKEUP_TIMER)) && bootno >= 0) {
     bootno++;
   } else {
+    /* A non-timer wake is a fresh runtime from the protocol point of view. The
+     * firmware config may have changed, so force the server handshake again. */
     bootno = 0;
+    clear_gateway_session();
   }
 
   const reading_t defaults = {
@@ -534,30 +615,39 @@ void app_main(void) {
   reading_t reading;
   read_all_sensors(&reading);
 
-  esp_ip4_addr_t gateway_ip = {0};
-  uint16_t gateway_port = 0;
-  esp_err_t wifi_ret =
-      wifi_connect_and_resolve_gateway(&gateway_ip, &gateway_port);
-  if (wifi_ret == ESP_OK) {
-    PROFILE_START();
-    int fd = tcp_connect(&gateway_ip, gateway_port);
-    esp_err_t tcp_ret = ESP_FAIL;
-    if (fd >= 0) {
-      /* Business rule for this intermediate step: main still sends only the
-       * reading frame. The handshake helper is available but not wired into
-       * app_main until the server ACK path is implemented. */
-      tcp_ret = tcp_send_message(fd, &reading, sizeof(reading),
-                                 FILE_SCHEMA_VERSION, CURA_RECORD_TYPE);
-      tcp_disconnect(fd);
-    }
-    PROFILE_MARK("tcp_send");
-    if (tcp_ret != ESP_OK) {
-      ESP_LOGW(TAG, "reading not sent: %s", esp_err_to_name(tcp_ret));
-    }
-  } else {
-    ESP_LOGW(TAG, "gateway not resolved; reading not sent: %s",
-             esp_err_to_name(wifi_ret));
+  PROFILE_START();
+  esp_err_t ret = cura_wifi_connect();
+  PROFILE_MARK("wifi_connect");
+  if (ret != ESP_OK) {
+    ESP_LOGW(TAG, "WiFi unavailable; reading not sent: %s",
+             esp_err_to_name(ret));
+    enter_deep_sleep();
   }
 
+  /* Defensive cleanup for inconsistent RTC state: a valid handshake cache must
+   * always include a nonzero gateway port. */
+  if (has_handshaked && !gateway_endpoint_valid()) {
+    clear_gateway_session();
+  }
+
+  if (has_handshaked) {
+    PROFILE_START();
+    ret = send_reading_with_cached_session(&reading);
+    PROFILE_MARK("tcp_send_cached");
+    if (ret == ESP_OK) {
+      enter_deep_sleep();
+    }
+
+    // We don't retry the handshake in this wake cycle, we leave it for the next
+    // one.
+    ESP_LOGW(TAG, "cached gateway send failed: %s", esp_err_to_name(ret));
+    enter_deep_sleep();
+  }
+
+  ret = handshake_and_send_reading(&reading);
+  if (ret != ESP_OK) {
+    ESP_LOGW(TAG, "handshake/send failed; reading not sent: %s",
+             esp_err_to_name(ret));
+  }
   enter_deep_sleep();
 }

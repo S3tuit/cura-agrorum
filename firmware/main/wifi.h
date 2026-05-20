@@ -5,15 +5,21 @@
 #include "esp_err.h"
 #include "esp_netif_ip_addr.h"
 
-/* Connects the ESP32 to the configured WiFi network and resolves the gateway
- * advertised as CONFIG_CURA_MDNS_SERVICE_TYPE.CONFIG_CURA_MDNS_PROTO.local.
+/* Connects the ESP32 to the configured WiFi network.
  *
  * Side effects: initializes NVS, initializes esp-netif, creates the default
- * event loop, starts WiFi STA mode, and runs an mDNS query.
+ * event loop, and starts WiFi STA mode.
  *
- * Returns ESP_OK on success and writes the gateway IPv4 address to 'host_ip'
- * and TCP port to 'port'. Returns an ESP-IDF error code on failure; output
- * values are unspecified when the function fails.
+ * Returns ESP_OK once the station has an IP address. Returns an ESP-IDF error
+ * code if setup fails or the configured retry budget is exhausted.
  */
-esp_err_t wifi_connect_and_resolve_gateway(esp_ip4_addr_t *host_ip,
-                                           uint16_t *port);
+esp_err_t cura_wifi_connect(void);
+
+/* Resolves the configured Cura Agrorum gateway mDNS service.
+ *
+ * The ESP32 must already be connected to WiFi. Returns ESP_OK on success and
+ * writes the gateway IPv4 address to 'host_ip' and TCP port to 'port'. Returns
+ * an ESP-IDF error code on failure; output values are unspecified when the
+ * function fails.
+ */
+esp_err_t wifi_resolve_gateway(esp_ip4_addr_t *host_ip, uint16_t *port);

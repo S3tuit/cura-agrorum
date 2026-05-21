@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:18-trixie
+    container_name: cura-agrorum-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cura_agrorum}
+      POSTGRES_USER: ${POSTGRES_USER:-cura}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cura_dev_password}
+    ports:
+      - "${POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - cura_agrorum_postgres_data:/var/lib/postgresql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  cura_agrorum_postgres_data:

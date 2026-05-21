@@ -6,7 +6,7 @@ import struct
 
 FILE_SCHEMA_VERSION = 1
 CURA_RECORD_TYPE = 1
-READING_FORMAT = "<16sIIHHhhIHB2s"
+READING_FORMAT = "<16sIIIHHhhIHB1s"
 READING_SIZE = struct.calcsize(READING_FORMAT)
 
 READING_SOIL_MV_OK = 1 << 0
@@ -19,6 +19,7 @@ READING_ENV280_HUMIDITY_OK = 1 << 4
 @dataclass(frozen=True)
 class Reading:
   node_uuid: bytes
+  sample_id: int
   bootno: int
   wake_causes: int
   run_ms: int
@@ -28,20 +29,21 @@ class Reading:
   env280_pressure_pa: int
   env280_humidity_centi_pct: int
   flags: int
-  reserved: bytes
+  padding: bytes
 
 
 def reading_from_tuple(values: tuple[object, ...]) -> Reading:
   return Reading(
       node_uuid=values[0],
-      bootno=values[1],
-      wake_causes=values[2],
-      run_ms=values[3],
-      soil_mv=values[4],
-      ds18b20_centi_c=values[5],
-      env280_centi_c=values[6],
-      env280_pressure_pa=values[7],
-      env280_humidity_centi_pct=values[8],
-      flags=values[9],
-      reserved=values[10],
+      sample_id=values[1],
+      bootno=values[2],
+      wake_causes=values[3],
+      run_ms=values[4],
+      soil_mv=values[5],
+      ds18b20_centi_c=values[6],
+      env280_centi_c=values[7],
+      env280_pressure_pa=values[8],
+      env280_humidity_centi_pct=values[9],
+      flags=values[10],
+      padding=values[11],
   )

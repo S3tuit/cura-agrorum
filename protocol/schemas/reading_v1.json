@@ -10,6 +10,11 @@
       "description": "Node UUID bytes in RFC 4122 byte order."
     },
     {
+      "name": "sample_id",
+      "type": "u32",
+      "description": "Monotonically increasing reading id scoped to node_uuid."
+    },
+    {
       "name": "bootno",
       "type": "u32",
       "description": "Monotonic across deep-sleep wakes, reset on cold boot."
@@ -65,9 +70,9 @@
       "description": "Bitmask of valid fields."
     },
     {
-      "name": "reserved",
-      "type": "bytes[2]",
-      "description": "Reserved for future schema-compatible fields."
+      "name": "padding",
+      "type": "bytes[1]",
+      "description": "Used for padding."
     }
   ]
 }

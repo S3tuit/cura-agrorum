@@ -12,9 +12,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "mdns.h"
-#include "nvs_flash.h"
 
 #include "profile.h"
+#include "storage.h"
 
 #define WIFI_SSID CONFIG_ESP_WIFI_SSID
 #define WIFI_PASS CONFIG_ESP_WIFI_PASSWORD
@@ -78,16 +78,6 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
   }
 }
 
-static esp_err_t init_nvs(void) {
-  esp_err_t ret = nvs_flash_init();
-  if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
-      ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-    ESP_ERROR_CHECK(nvs_flash_erase());
-    ret = nvs_flash_init();
-  }
-  return ret;
-}
-
 /* Creates a new netif for WiFi in Station mode.
  * Prefer this over 'esp_netif_create_default_wifi_sta()' since this doesn't
  * abort the program if it fails. */
@@ -130,7 +120,7 @@ esp_err_t cura_wifi_connect(void) {
     return ESP_ERR_NO_MEM;
   }
 
-  esp_err_t ret = init_nvs();
+  esp_err_t ret = cura_storage_init();
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "NVS init failed: %s", esp_err_to_name(ret));
     return ret;

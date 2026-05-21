@@ -36,6 +36,11 @@ int cura_tcp_connect(const esp_ip4_addr_t *host_ip, uint16_t port);
  *   payload_len raw payload bytes
  *
  * The function does not close fd.
+ *
+ * WARN: returning OK does not mean the remote application received the bytes.
+ * It only means the local TCP stack accepted the bytes into its send buffer.
+ * After that, the kernel/lwIP is responsible for transmitting, retransmitting,
+ * and eventually either delivering or giving up.
  */
 esp_err_t tcp_send_message(int fd, const void *payload, size_t payload_len,
                            uint8_t schema_version, uint8_t record_type);
@@ -50,9 +55,17 @@ esp_err_t tcp_send_message(int fd, const void *payload, size_t payload_len,
  */
 esp_err_t tcp_read_message(int fd, tcp_message_t *message);
 
-/* Closes an open socket descriptor returned by tcp_connect().
+/* Gracefully finishes and closes an open descriptor returned by tcp_connect().
  *
- * This is intentionally void because callers usually cannot recover from a
- * close failure on the ESP32; tcp.c logs the failure for diagnostics.
+ * The ESP32 usually enters deep sleep immediately after sending a reading. A
+ * plain close() can report success while bytes are still queued in lwIP, then
+ * deep sleep tears WiFi down before the server receives the full frame. This
+ * function half-closes the write side, waits briefly for the server to close
+ * its side, and only then closes the descriptor.
+ *
+ * Returns ESP_OK when the graceful close completed, ESP_ERR_TIMEOUT when the
+ * peer did not close before the receive timeout, ESP_ERR_INVALID_ARG for an
+ * invalid fd, and ESP_FAIL for hard socket errors. A non-OK return should make
+ * callers distrust any cached TCP/session state.
  */
-void tcp_disconnect(int fd);
+esp_err_t tcp_disconnect(int fd);

@@ -4,10 +4,20 @@ Small TCP gateway for ESP32 sensor nodes.
 
 ## Run locally
 
+From the repository root, start Postgres, apply the manual schema migration,
+install the server package, then run the TCP server:
+
 ```bash
 cd server
+docker compose up -d postgres
+psql "postgresql://cura:cura_dev_password@localhost:55432/cura_agrorum" \
+  -f db/migrations/001_init_schema.sql
+python -m pip install -e .
 python -m cura_server --host 0.0.0.0 --port 18032
 ```
+
+Use `--database-url` or `DATABASE_URL` to override the local development
+connection string.
 
 The server listens for frames with this format:
 

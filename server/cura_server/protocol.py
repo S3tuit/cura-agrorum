@@ -12,18 +12,22 @@ from .generated.node_config_v1 import (
     NodeConfig,
     node_config_from_tuple,
 )
+from .generated.handshake_ack_v1 import (
+    HANDSHAKE_ACK_FORMAT,
+    HANDSHAKE_ACK_RECORD_TYPE,
+    HANDSHAKE_ACK_SCHEMA_VERSION,
+    HANDSHAKE_ACK_SIZE,
+)
 from .generated.reading_v1 import (
     CURA_RECORD_TYPE,
     FILE_SCHEMA_VERSION,
     READING_DS18B20_TEMP_OK,
-    READING_ENV280_CHIP_ID_OK,
     READING_ENV280_HUMIDITY_OK,
     READING_ENV280_PRESSURE_OK,
     READING_ENV280_TEMP_OK,
     READING_FORMAT,
     READING_SIZE,
     READING_SOIL_MV_OK,
-    READING_SOIL_RAW_OK,
     Reading,
     reading_from_tuple,
 )
@@ -34,6 +38,9 @@ DEFAULT_PORT = 18032
 # The header is in big endian (network byte order).
 HEADER_FORMAT = "!HBB"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
+
+HANDSHAKE_ACK_OK = 0
+HANDSHAKE_ACK_ERROR = 1
 
 
 class ProtocolError(ValueError):
@@ -73,21 +80,16 @@ def is_supported_node_config_frame(header: FrameHeader) -> bool:
   )
 
 
-def decode_readings(payload: bytes) -> list[Reading]:
-  if len(payload) == 0:
-    raise ProtocolError("reading payload is empty")
-  if len(payload) % READING_SIZE != 0:
+def decode_reading(payload: bytes) -> Reading:
+  # The firmware sends one TCP frame per logical message. Keeping the server
+  # decoder exact here avoids silently accepting old batch-style payloads.
+  if len(payload) != READING_SIZE:
     raise ProtocolError(
-        f"reading payload must be a multiple of {READING_SIZE} bytes, "
-        f"got {len(payload)}"
+        f"reading payload must be {READING_SIZE} bytes, got {len(payload)}"
     )
 
-  readings: list[Reading] = []
-  for offset in range(0, len(payload), READING_SIZE):
-    fields = struct.unpack_from(READING_FORMAT, payload, offset)
-    readings.append(reading_from_tuple(fields))
-
-  return readings
+  fields = struct.unpack(READING_FORMAT, payload)
+  return reading_from_tuple(fields)
 
 
 def decode_node_config(payload: bytes) -> NodeConfig:
@@ -98,6 +100,26 @@ def decode_node_config(payload: bytes) -> NodeConfig:
 
   fields = struct.unpack(NODE_CONFIG_FORMAT, payload)
   return node_config_from_tuple(fields)
+
+
+def encode_handshake_ack(status: int) -> bytes:
+  """Encode the only server response frame currently used by firmware.
+
+  Reading frames intentionally have no ACK for now. The current transport-level
+  confirmation is the graceful TCP close; later this should become a persisted
+  reading ACK keyed by (node_uuid, sample_id).
+  """
+  if status < 0 or status > 0xFFFFFFFF:
+    raise ProtocolError(f"handshake ack status out of range: {status}")
+
+  payload = struct.pack(HANDSHAKE_ACK_FORMAT, status)
+  header = struct.pack(
+      HEADER_FORMAT,
+      HANDSHAKE_ACK_SIZE,
+      HANDSHAKE_ACK_RECORD_TYPE,
+      HANDSHAKE_ACK_SCHEMA_VERSION,
+  )
+  return header + payload
 
 
 def hex_preview(payload: bytes, max_bytes: int = 16) -> str:
@@ -113,26 +135,23 @@ def format_reading(
     reading: Reading,
     index: int = 1,
     total: int = 1,
-    node_uuid: str | None = None,
 ) -> str:
   prefix = (
       f"client={peer} record_type={header.record_type}"
       f" schema={header.schema_version}"
       f" reading={index}/{total}"
+      f" node={format_node_uuid_bytes(reading.node_uuid)}"
   )
-  if node_uuid is not None:
-    prefix += f" node={node_uuid}"
   return (
-      f"{prefix} boot={reading.bootno}"
+      f"{prefix} sample_id={reading.sample_id}"
+      f" boot={reading.bootno}"
       f" wake=0x{reading.wake_causes:08x}"
       f" run={reading.run_ms}ms"
-      f" soil_raw={_field(reading.flags, READING_SOIL_RAW_OK, reading.soil_raw)}"
       f" soil_mv={_field(reading.flags, READING_SOIL_MV_OK, reading.soil_mv, 'mV')}"
       f" ds18b20={_field(reading.flags, READING_DS18B20_TEMP_OK, _centi(reading.ds18b20_centi_c, 'C'))}"
       f" env280_temp={_field(reading.flags, READING_ENV280_TEMP_OK, _centi(reading.env280_centi_c, 'C'))}"
       f" pressure={_field(reading.flags, READING_ENV280_PRESSURE_OK, reading.env280_pressure_pa, 'Pa')}"
       f" humidity={_field(reading.flags, READING_ENV280_HUMIDITY_OK, _centi(reading.env280_humidity_centi_pct, '%'))}"
-      f" env280_chip={_field(reading.flags, READING_ENV280_CHIP_ID_OK, f'0x{reading.env280_chip_id:02x}')}"
       f" flags=0x{reading.flags:02x}"
   )
 
@@ -142,28 +161,27 @@ def format_node_config(peer: str, header: FrameHeader, config: NodeConfig) -> st
       f"client={peer} record_type={header.record_type}"
       f" schema={header.schema_version}"
       f" node={format_node_uuid(config)}"
-      f" reading_schema={config.reading_schema_version}"
       f" soil_sensor={config.soil_sensor_id}"
-      f" soil_adc_gpio={config.soil_adc_gpio}"
-      f" soil_adc_atten={config.soil_adc_atten_db_x10 / 10:g}dB"
+      f" ds18b20_sensor={config.ds18b20_sensor_id}"
+      f" env280_sensor={config.env280_sensor_id}"
       f" dry={config.soil_dry_mv}mV"
       f" wet={config.soil_wet_mv}mV"
-      f" ds18b20_sensor={config.ds18b20_sensor_id}"
-      f" ds18b20_gpio={config.ds18b20_gpio}"
-      f" ds18b20_pullup={config.ds18b20_enable_internal_pullup}"
-      f" ds18b20_resolution={config.ds18b20_resolution_bits}bit"
-      f" env280_sensor={config.env280_sensor_id}"
-      f" env280_i2c_port={config.env280_i2c_port}"
-      f" env280_i2c_sda={config.env280_i2c_sda_gpio}"
-      f" env280_i2c_scl={config.env280_i2c_scl_gpio}"
-      f" env280_i2c_freq={config.env280_i2c_freq_hz}Hz"
-      f" env280_i2c_addr=0x{config.env280_i2c_addr:02x}"
-      f" env280_pullups={config.env280_enable_internal_pullups}"
   )
 
 
 def format_node_uuid(config: NodeConfig) -> str:
-  return str(UUID(bytes=config.node_uuid))
+  return format_node_uuid_bytes(config.node_uuid)
+
+
+def node_uuid_from_bytes(node_uuid: bytes) -> UUID:
+  try:
+    return UUID(bytes=node_uuid)
+  except ValueError as exc:
+    raise ProtocolError(f"invalid node UUID bytes: {exc}") from exc
+
+
+def format_node_uuid_bytes(node_uuid: bytes) -> str:
+  return str(node_uuid_from_bytes(node_uuid))
 
 
 def format_unsupported_frame(peer: str, header: FrameHeader, payload: bytes) -> str:

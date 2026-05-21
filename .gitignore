@@ -63,6 +63,8 @@ firmware/main/node_uuid.txt
 # Python
 __pycache__/
 *.py[cod]
+.env
+.venv
 
 # debug information files
 *.dwo

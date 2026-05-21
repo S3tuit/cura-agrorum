@@ -23,6 +23,7 @@
 #include "node_identity.h"
 #include "profile.h"
 #include "reading.h"
+#include "storage.h"
 #include "tcp.h"
 #include "wifi.h"
 
@@ -481,9 +482,9 @@ static esp_err_t send_reading_frame(int fd, const reading_t *reading) {
                           CURA_RECORD_TYPE);
 }
 
-/* Resolves the current gateway, performs the config handshake, and sends the
- * reading on the same TCP connection. The cached session is marked valid only
- * after both the handshake and the reading send succeed. */
+/* Resolves the current gateway, performs the config handshake, sends the
+ * reading, and waits for a graceful TCP close. The cached session is marked
+ * valid only after the full transaction completed cleanly. */
 static esp_err_t handshake_and_send_reading(const reading_t *reading) {
   esp_ip4_addr_t resolved_gateway_ip = {0};
   uint16_t resolved_gateway_port = 0;
@@ -506,7 +507,13 @@ static esp_err_t handshake_and_send_reading(const reading_t *reading) {
   if (ret == ESP_OK) {
     ret = send_reading_frame(fd, reading);
   }
-  tcp_disconnect(fd);
+
+  esp_err_t disconnect_ret = tcp_disconnect(fd);
+  if (ret == ESP_OK) {
+    /* A failed graceful close means the frame may only have reached lwIP's
+     * local buffer before sleep. Force a fresh handshake on the next wake. */
+    ret = disconnect_ret;
+  }
 
   if (ret == ESP_OK) {
     cache_gateway_session(&resolved_gateway_ip, resolved_gateway_port);
@@ -517,9 +524,9 @@ static esp_err_t handshake_and_send_reading(const reading_t *reading) {
 }
 
 /* Uses the RTC-cached gateway endpoint after a previous successful handshake.
- * This returns ESP_OK if 'reading' is sent, ESP_FAIL if TCP connect failed,
- * else propagates the tcp send failure. On failure, this clears the gateway
- * session. */
+ * This returns ESP_OK only if 'reading' is sent and the server closes the TCP
+ * connection cleanly. If send or graceful close fails, the cached session is
+ * invalidated because we cannot trust that the server consumed the frame. */
 static esp_err_t send_reading_with_cached_session(const reading_t *reading) {
   int fd = tcp_connect(&gateway_ip, gateway_port);
   if (fd < 0) {
@@ -528,16 +535,19 @@ static esp_err_t send_reading_with_cached_session(const reading_t *reading) {
   }
 
   esp_err_t ret = send_reading_frame(fd, reading);
-  tcp_disconnect(fd);
+  esp_err_t disconnect_ret = tcp_disconnect(fd);
+  if (ret == ESP_OK) {
+    ret = disconnect_ret;
+  }
   if (ret != ESP_OK) {
     clear_gateway_session();
   }
   return ret;
 }
 
-/* Modifies 'reading' in place with all the sensor readings. Safe to call with
- * uninitialized 'reading'. */
-static void read_all_sensors(reading_t *reading) {
+/* Modifies 'reading' in place with a persisted sample id and all sensor
+ * readings. Safe to call with uninitialized 'reading'. */
+static void read_all_sensors(reading_t *reading, uint32_t sample_id) {
   if (!reading)
     return;
 
@@ -555,6 +565,7 @@ static void read_all_sensors(reading_t *reading) {
 
   const reading_t defaults = {
       .node_uuid = CURA_NODE_UUID_BYTES,
+      .sample_id = sample_id,
       .bootno = (uint32_t)bootno,
       .wake_causes = wake_causes,
       .run_ms = 0,
@@ -564,12 +575,13 @@ static void read_all_sensors(reading_t *reading) {
       .env280_pressure_pa = 0,
       .env280_humidity_centi_pct = 0,
       .flags = 0,
-      .reserved = {0},
+      .padding = {0},
   };
   *reading = defaults;
 
-  DEBUG_LOGI(TAG, "boot=%" PRIu32 " wake_causes=0x%08" PRIx32, reading->bootno,
-             reading->wake_causes);
+  DEBUG_LOGI(TAG,
+             "sample_id=%" PRIu32 " boot=%" PRIu32 " wake_causes=0x%08" PRIx32,
+             reading->sample_id, reading->bootno, reading->wake_causes);
 
   PROFILE_START();
   esp_err_t soil_ret = read_soil(reading);
@@ -612,11 +624,19 @@ static void read_all_sensors(reading_t *reading) {
 }
 
 void app_main(void) {
+  uint32_t sample_id = 0;
+  esp_err_t ret = cura_storage_next_sample_id(&sample_id);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "sample_id allocation failed; reading not created: %s",
+             esp_err_to_name(ret));
+    enter_deep_sleep();
+  }
+
   reading_t reading;
-  read_all_sensors(&reading);
+  read_all_sensors(&reading, sample_id);
 
   PROFILE_START();
-  esp_err_t ret = cura_wifi_connect();
+  ret = cura_wifi_connect();
   PROFILE_MARK("wifi_connect");
   if (ret != ESP_OK) {
     ESP_LOGW(TAG, "WiFi unavailable; reading not sent: %s",

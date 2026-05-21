@@ -175,6 +175,35 @@ static esp_err_t read_all(int fd, void *buffer, size_t len) {
   return ESP_OK;
 }
 
+/* After the final frame, give the peer a chance to observe EOF and close its
+ * side before the ESP32 enters deep sleep. This turns "send copied bytes into
+ * the local TCP buffer" into a stronger signal that the server process actually
+ * consumed the frame. */
+static esp_err_t wait_for_peer_close(int fd) {
+  uint8_t discard[32];
+
+  while (true) {
+    ssize_t received = recv(fd, discard, sizeof(discard), 0);
+    if (received > 0) {
+      continue;
+    }
+    if (received == 0) {
+      DEBUG_LOGI(TAG, "peer closed TCP connection");
+      return ESP_OK;
+    }
+    if (errno == EINTR) {
+      continue;
+    }
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      ESP_LOGW(TAG, "timed out waiting for peer TCP close");
+      return ESP_ERR_TIMEOUT;
+    }
+
+    ESP_LOGW(TAG, "waiting for peer TCP close failed: %s", strerror(errno));
+    return ESP_FAIL;
+  }
+}
+
 int cura_tcp_connect(const esp_ip4_addr_t *host_ip, uint16_t port) {
   if (host_ip == NULL || port == 0) {
     return -1;
@@ -268,11 +297,21 @@ esp_err_t tcp_read_message(int fd, tcp_message_t *message) {
   return ret;
 }
 
-void tcp_disconnect(int fd) {
+esp_err_t tcp_disconnect(int fd) {
   if (fd < 0) {
-    return;
+    return ESP_ERR_INVALID_ARG;
+  }
+  esp_err_t ret = ESP_OK;
+
+  if (shutdown(fd, SHUT_WR) < 0) {
+    ESP_LOGW(TAG, "socket write shutdown failed: %s", strerror(errno));
+    ret = ESP_FAIL;
+  } else {
+    ret = wait_for_peer_close(fd);
   }
   if (close(fd) < 0) {
     ESP_LOGE(TAG, "socket close failed: %s", strerror(errno));
+    ret = ESP_FAIL;
   }
+  return ret;
 }

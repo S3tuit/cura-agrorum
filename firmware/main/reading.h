@@ -15,6 +15,7 @@
 
 typedef struct __attribute__((packed)) {
   uint8_t node_uuid[16]; // Node UUID bytes in RFC 4122 byte order.
+  uint32_t sample_id; // Monotonically increasing reading id scoped to node_uuid.
   uint32_t bootno; // Monotonic across deep-sleep wakes, reset on cold boot.
   uint32_t wake_causes; // Bitmask returned by esp_sleep_get_wakeup_causes().
   uint16_t run_ms; // How long this wake cycle took before sleep.
@@ -24,10 +25,10 @@ typedef struct __attribute__((packed)) {
   uint32_t env280_pressure_pa; // BME280 pressure in pascals.
   uint16_t env280_humidity_centi_pct; // BME280 relative humidity in 0.01 percent.
   uint8_t flags; // Bitmask of valid fields.
-  uint8_t reserved[2]; // Reserved for future schema-compatible fields.
+  uint8_t padding[1]; // Used for padding.
 } reading_t;
 
-_Static_assert(sizeof(reading_t) == 41, "unexpected reading_t size");
+_Static_assert(sizeof(reading_t) == 44, "unexpected reading_t size");
 _Static_assert(FILE_SCHEMA_VERSION <= UINT8_MAX, "TCP frame schema version is one byte");
 _Static_assert(CURA_RECORD_TYPE <= UINT8_MAX, "TCP frame record type is one byte");
 #if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__)

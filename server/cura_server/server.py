@@ -11,7 +11,7 @@ from .db import DEFAULT_DATABASE_URL, Database
 from .protocol import (
     CURA_RECORD_TYPE,
     DEFAULT_PORT,
-    HEADER_SIZE,
+    FRAME_HEADER_SIZE,
     HANDSHAKE_ACK_ERROR,
     HANDSHAKE_ACK_OK,
     NODE_CONFIG_RECORD_TYPE,
@@ -22,11 +22,12 @@ from .protocol import (
     format_reading,
     format_node_config,
     format_node_uuid_bytes,
-    format_unsupported_frame,
-    is_supported_reading_frame,
-    is_supported_node_config_frame,
+    format_unsupported_event,
+    is_supported_reading_event,
+    is_supported_node_config_event,
     node_uuid_from_bytes,
-    parse_header,
+    parse_frame_body,
+    parse_frame_header,
 )
 
 LOGGER = logging.getLogger("cura_server")
@@ -56,132 +57,148 @@ async def handle_client(
   try:
     while True:
       try:
-        header_data = await _read_exactly_with_timeout(reader, HEADER_SIZE)
+        frame_header_data = await _read_exactly_with_timeout(reader, FRAME_HEADER_SIZE)
       except TimeoutError:
-        logger.warning("client=%s timed out waiting for header", peer)
+        logger.warning("client=%s timed out waiting for frame header", peer)
         break
       except asyncio.IncompleteReadError as exc:
         if exc.partial:
           logger.warning(
-              "client=%s closed with partial header len=%d",
+              "client=%s closed with partial frame header len=%d",
               peer,
               len(exc.partial),
           )
         break
 
       try:
-        header = parse_header(header_data)
+        body_len = parse_frame_header(frame_header_data)
       except ProtocolError as exc:
-        logger.warning("client=%s malformed header: %s", peer, exc)
+        logger.warning("client=%s malformed frame header: %s", peer, exc)
         break
 
       try:
-        payload = await _read_exactly_with_timeout(reader, header.payload_len)
+        body = await _read_exactly_with_timeout(reader, body_len)
       except TimeoutError:
         logger.warning(
-            "client=%s timed out waiting for payload expected=%d",
+            "client=%s timed out waiting for frame body expected=%d",
             peer,
-            header.payload_len,
+            body_len,
         )
         break
       except asyncio.IncompleteReadError as exc:
         logger.warning(
-            "client=%s closed with partial payload expected=%d got=%d",
+            "client=%s closed with partial frame body expected=%d got=%d",
             peer,
             exc.expected,
             len(exc.partial),
         )
         break
 
-      if header.record_type == NODE_CONFIG_RECORD_TYPE:
-        if not is_supported_node_config_frame(header):
-          logger.warning(format_unsupported_frame(peer, header, payload))
-          await _send_handshake_ack(writer, HANDSHAKE_ACK_ERROR)
-          break
+      try:
+        events = parse_frame_body(body)
+      except ProtocolError as exc:
+        logger.warning("client=%s malformed frame body: %s", peer, exc)
+        break
 
-        try:
-          node_config = decode_node_config(payload)
-          node_uuid = node_uuid_from_bytes(node_config.node_uuid)
-        except ProtocolError as exc:
-          logger.warning(
-              "client=%s malformed node_config payload record_type=%d schema=%d len=%d: %s",
-              peer,
-              header.record_type,
-              header.schema_version,
-              header.payload_len,
-              exc,
-          )
-          await _send_handshake_ack(writer, HANDSHAKE_ACK_ERROR)
-          break
+      close_connection = False
+      total_events = len(events)
+      for event_index, event in enumerate(events, start=1):
+        if event.record_type == NODE_CONFIG_RECORD_TYPE:
+          if not is_supported_node_config_event(event):
+            logger.warning(format_unsupported_event(peer, event))
+            await _send_handshake_ack(writer, HANDSHAKE_ACK_ERROR)
+            close_connection = True
+            break
 
-        try:
-          await database.ingest_node_config_v1(node_uuid, node_config)
-        except Exception:
-          logger.exception(
-              "client=%s node_config persistence failed node=%s",
-              peer,
-              format_node_uuid_bytes(node_config.node_uuid),
-          )
-          await _send_handshake_ack(writer, HANDSHAKE_ACK_ERROR)
-          break
+          try:
+            node_config = decode_node_config(event.payload)
+            node_uuid = node_uuid_from_bytes(node_config.node_uuid)
+          except ProtocolError as exc:
+            logger.warning(
+                "client=%s malformed node_config payload record_type=%d schema=%d len=%d: %s",
+                peer,
+                event.record_type,
+                event.schema_version,
+                event.payload_len,
+                exc,
+            )
+            await _send_handshake_ack(writer, HANDSHAKE_ACK_ERROR)
+            close_connection = True
+            break
 
-        # Handshake means the server durably accepted the node identity/config.
-        # The process-local set is still useful while firmware caches a session,
-        # but Postgres is now the source of truth for config history.
-        handshaked_nodes.add(node_uuid)
-        logger.info(format_node_config(peer, header, node_config))
-        await _send_handshake_ack(writer, HANDSHAKE_ACK_OK)
-        continue
+          try:
+            await database.ingest_node_config_v1(node_uuid, node_config)
+          except Exception:
+            logger.exception(
+                "client=%s node_config persistence failed node=%s",
+                peer,
+                format_node_uuid_bytes(node_config.node_uuid),
+            )
+            await _send_handshake_ack(writer, HANDSHAKE_ACK_ERROR)
+            close_connection = True
+            break
 
-      if header.record_type == CURA_RECORD_TYPE:
-        if not is_supported_reading_frame(header):
-          logger.warning(format_unsupported_frame(peer, header, payload))
+          # Handshake means the server durably accepted the node identity/config.
+          # The process-local set is still useful while firmware caches a
+          # session, but Postgres is now the source of truth for config history.
+          handshaked_nodes.add(node_uuid)
+          logger.info(format_node_config(peer, event, node_config))
+          await _send_handshake_ack(writer, HANDSHAKE_ACK_OK)
           continue
 
-        try:
-          reading = decode_reading(payload)
-          node_uuid = node_uuid_from_bytes(reading.node_uuid)
-        except ProtocolError as exc:
-          logger.warning(
-              "client=%s malformed reading payload record_type=%d schema=%d len=%d: %s",
-              peer,
-              header.record_type,
-              header.schema_version,
-              header.payload_len,
-              exc,
-          )
+        if event.record_type == CURA_RECORD_TYPE:
+          if not is_supported_reading_event(event):
+            logger.warning(format_unsupported_event(peer, event))
+            continue
+
+          try:
+            reading = decode_reading(event.payload)
+            node_uuid = node_uuid_from_bytes(reading.node_uuid)
+          except ProtocolError as exc:
+            logger.warning(
+                "client=%s malformed reading payload record_type=%d schema=%d len=%d: %s",
+                peer,
+                event.record_type,
+                event.schema_version,
+                event.payload_len,
+                exc,
+            )
+            continue
+
+          # Nodes cache a successful handshake across deep sleep, while this
+          # in-memory registry is lost on server restart. Accept the reading
+          # because Postgres has the durable config history, but keep the
+          # missing process-local handshake visible in the logs.
+          if node_uuid not in handshaked_nodes:
+            logger.warning(
+                "client=%s reading from node=%s without handshake in current process",
+                peer,
+                format_node_uuid_bytes(reading.node_uuid),
+            )
+
+          try:
+            await database.insert_reading_v1(node_uuid, reading)
+          except Exception:
+            logger.exception(
+                "client=%s reading persistence failed node=%s sample_id=%d",
+                peer,
+                format_node_uuid_bytes(reading.node_uuid),
+                reading.sample_id,
+            )
+            close_connection = True
+            break
+
+          # Echo after persistence so the log line means the reading made it to
+          # Postgres. Reading duplicates are accepted through the same code path:
+          # (node_uuid, sample_id) is the durable idempotency key.
+          logger.info(format_reading(peer, event, reading, event_index, total_events))
           continue
 
-        # Nodes cache a successful handshake across deep sleep, while this
-        # in-memory registry is lost on server restart. Accept the reading
-        # because Postgres has the durable config history, but keep the missing
-        # process-local handshake visible in the logs.
-        if node_uuid not in handshaked_nodes:
-          logger.warning(
-              "client=%s reading from node=%s without handshake in current process",
-              peer,
-              format_node_uuid_bytes(reading.node_uuid),
-          )
-
-        try:
-          await database.insert_reading_v1(node_uuid, reading)
-        except Exception:
-          logger.exception(
-              "client=%s reading persistence failed node=%s sample_id=%d",
-              peer,
-              format_node_uuid_bytes(reading.node_uuid),
-              reading.sample_id,
-          )
-          break
-
-        # Echo after persistence so the log line means the reading made it to
-        # Postgres. Reading duplicates are accepted through the same code path:
-        # (node_uuid, sample_id) is the durable idempotency key.
-        logger.info(format_reading(peer, header, reading))
+        logger.warning(format_unsupported_event(peer, event))
         continue
 
-      logger.warning(format_unsupported_frame(peer, header, payload))
-      continue
+      if close_connection:
+        break
   except ConnectionResetError:
     logger.warning("client=%s reset connection", peer)
   finally:

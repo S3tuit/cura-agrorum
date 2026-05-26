@@ -22,11 +22,20 @@ connection string.
 The server listens for frames with this format:
 
 ```text
-2 bytes payload length, big-endian
-1 byte record type
-1 byte schema version
-payload bytes
+u32 body_len
+u16 envelope_version
+u16 event_count
+
+repeated event_count times:
+  u8  record_type
+  u8  schema_version
+  u16 payload_len
+  u8  payload[payload_len]
 ```
+
+Frame, envelope, and event header fields use network byte order. Payload byte
+order is defined by the payload schema in `../protocol/schemas/`. The full wire
+format is documented in `../protocol/wire/v1.md`.
 
 ## Advertise with Avahi
 

@@ -35,9 +35,16 @@ from .generated.reading_v1 import (
 # This must be the same as the port advertised by Avahi (mDNS responder).
 DEFAULT_PORT = 18032
 
-# The header is in big endian (network byte order).
-HEADER_FORMAT = "!HBB"
-HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
+FRAME_HEADER_FORMAT = "!I"
+FRAME_HEADER_SIZE = struct.calcsize(FRAME_HEADER_FORMAT)
+ENVELOPE_HEADER_FORMAT = "!HH"
+ENVELOPE_HEADER_SIZE = struct.calcsize(ENVELOPE_HEADER_FORMAT)
+EVENT_HEADER_FORMAT = "!BBH"
+EVENT_HEADER_SIZE = struct.calcsize(EVENT_HEADER_FORMAT)
+ENVELOPE_VERSION = 1
+
+# Keep a hard server-side allocation limit even though body_len is u32.
+MAX_FRAME_BODY_SIZE = 64 * 1024
 
 HANDSHAKE_ACK_OK = 0
 HANDSHAKE_ACK_ERROR = 1
@@ -48,41 +55,99 @@ class ProtocolError(ValueError):
 
 
 @dataclass(frozen=True)
-class FrameHeader:
-  payload_len: int
+class Event:
   record_type: int
   schema_version: int
+  payload_len: int
+  payload: bytes
 
 
-def parse_header(data: bytes) -> FrameHeader:
-  if len(data) != HEADER_SIZE:
-    raise ProtocolError(f"header must be {HEADER_SIZE} bytes, got {len(data)}")
+def parse_frame_header(data: bytes) -> int:
+  if len(data) != FRAME_HEADER_SIZE:
+    raise ProtocolError(
+        f"frame header must be {FRAME_HEADER_SIZE} bytes, got {len(data)}"
+    )
 
-  payload_len, record_type, schema_version = struct.unpack(HEADER_FORMAT, data)
-  return FrameHeader(
-      payload_len=payload_len,
-      record_type=record_type,
-      schema_version=schema_version,
+  (body_len,) = struct.unpack(FRAME_HEADER_FORMAT, data)
+  if body_len < ENVELOPE_HEADER_SIZE:
+    raise ProtocolError(
+        f"frame body must be at least {ENVELOPE_HEADER_SIZE} bytes, got {body_len}"
+    )
+  if body_len > MAX_FRAME_BODY_SIZE:
+    raise ProtocolError(
+        f"frame body length {body_len} exceeds max {MAX_FRAME_BODY_SIZE}"
+    )
+
+  return body_len
+
+
+def parse_frame_body(body: bytes) -> list[Event]:
+  if len(body) < ENVELOPE_HEADER_SIZE:
+    raise ProtocolError(
+        f"frame body must be at least {ENVELOPE_HEADER_SIZE} bytes, got {len(body)}"
+    )
+
+  envelope_version, event_count = struct.unpack_from(ENVELOPE_HEADER_FORMAT, body)
+  if envelope_version != ENVELOPE_VERSION:
+    raise ProtocolError(f"unsupported envelope version: {envelope_version}")
+  if event_count == 0:
+    raise ProtocolError("envelope must contain at least one event")
+
+  events: list[Event] = []
+  offset = ENVELOPE_HEADER_SIZE
+  for index in range(event_count):
+    if offset + EVENT_HEADER_SIZE > len(body):
+      raise ProtocolError(f"event {index + 1}/{event_count} header is truncated")
+
+    record_type, schema_version, payload_len = struct.unpack_from(
+        EVENT_HEADER_FORMAT,
+        body,
+        offset,
+    )
+    offset += EVENT_HEADER_SIZE
+
+    payload_end = offset + payload_len
+    if payload_end > len(body):
+      raise ProtocolError(
+          f"event {index + 1}/{event_count} payload is truncated: "
+          f"expected {payload_len} bytes"
+      )
+
+    events.append(
+        Event(
+            record_type=record_type,
+            schema_version=schema_version,
+            payload_len=payload_len,
+            payload=body[offset:payload_end],
+        )
+    )
+    offset = payload_end
+
+  if offset != len(body):
+    raise ProtocolError(
+        f"frame body has {len(body) - offset} trailing bytes after {event_count} events"
+    )
+
+  return events
+
+
+def is_supported_reading_event(event: Event) -> bool:
+  return (
+      event.record_type == CURA_RECORD_TYPE
+      and event.schema_version == FILE_SCHEMA_VERSION
   )
 
 
-def is_supported_reading_frame(header: FrameHeader) -> bool:
+def is_supported_node_config_event(event: Event) -> bool:
   return (
-      header.record_type == CURA_RECORD_TYPE
-      and header.schema_version == FILE_SCHEMA_VERSION
-  )
-
-
-def is_supported_node_config_frame(header: FrameHeader) -> bool:
-  return (
-      header.record_type == NODE_CONFIG_RECORD_TYPE
-      and header.schema_version == NODE_CONFIG_SCHEMA_VERSION
+      event.record_type == NODE_CONFIG_RECORD_TYPE
+      and event.schema_version == NODE_CONFIG_SCHEMA_VERSION
   )
 
 
 def decode_reading(payload: bytes) -> Reading:
-  # The firmware sends one TCP frame per logical message. Keeping the server
-  # decoder exact here avoids silently accepting old batch-style payloads.
+  # Each event carries exactly one generated payload. Keeping the decoder exact
+  # avoids silently accepting stale schema versions or concatenated records.
   if len(payload) != READING_SIZE:
     raise ProtocolError(
         f"reading payload must be {READING_SIZE} bytes, got {len(payload)}"
@@ -113,13 +178,39 @@ def encode_handshake_ack(status: int) -> bytes:
     raise ProtocolError(f"handshake ack status out of range: {status}")
 
   payload = struct.pack(HANDSHAKE_ACK_FORMAT, status)
-  header = struct.pack(
-      HEADER_FORMAT,
-      HANDSHAKE_ACK_SIZE,
+  return encode_single_event_frame(
       HANDSHAKE_ACK_RECORD_TYPE,
       HANDSHAKE_ACK_SCHEMA_VERSION,
+      payload,
   )
-  return header + payload
+
+
+def encode_single_event_frame(
+    record_type: int,
+    schema_version: int,
+    payload: bytes,
+) -> bytes:
+  if record_type < 0 or record_type > 0xFF:
+    raise ProtocolError(f"record type out of range: {record_type}")
+  if schema_version < 0 or schema_version > 0xFF:
+    raise ProtocolError(f"schema version out of range: {schema_version}")
+  if len(payload) > 0xFFFF:
+    raise ProtocolError(f"event payload too large: {len(payload)}")
+
+  body_len = ENVELOPE_HEADER_SIZE + EVENT_HEADER_SIZE + len(payload)
+  if body_len > MAX_FRAME_BODY_SIZE:
+    raise ProtocolError(
+        f"frame body length {body_len} exceeds max {MAX_FRAME_BODY_SIZE}"
+    )
+
+  return b"".join(
+      (
+          struct.pack(FRAME_HEADER_FORMAT, body_len),
+          struct.pack(ENVELOPE_HEADER_FORMAT, ENVELOPE_VERSION, 1),
+          struct.pack(EVENT_HEADER_FORMAT, record_type, schema_version, len(payload)),
+          payload,
+      )
+  )
 
 
 def hex_preview(payload: bytes, max_bytes: int = 16) -> str:
@@ -131,15 +222,15 @@ def hex_preview(payload: bytes, max_bytes: int = 16) -> str:
 
 def format_reading(
     peer: str,
-    header: FrameHeader,
+    event: Event,
     reading: Reading,
     index: int = 1,
     total: int = 1,
 ) -> str:
   prefix = (
-      f"client={peer} record_type={header.record_type}"
-      f" schema={header.schema_version}"
-      f" reading={index}/{total}"
+      f"client={peer} record_type={event.record_type}"
+      f" schema={event.schema_version}"
+      f" event={index}/{total}"
       f" node={format_node_uuid_bytes(reading.node_uuid)}"
   )
   return (
@@ -156,10 +247,10 @@ def format_reading(
   )
 
 
-def format_node_config(peer: str, header: FrameHeader, config: NodeConfig) -> str:
+def format_node_config(peer: str, event: Event, config: NodeConfig) -> str:
   return (
-      f"client={peer} record_type={header.record_type}"
-      f" schema={header.schema_version}"
+      f"client={peer} record_type={event.record_type}"
+      f" schema={event.schema_version}"
       f" node={format_node_uuid(config)}"
       f" soil_sensor={config.soil_sensor_id}"
       f" ds18b20_sensor={config.ds18b20_sensor_id}"
@@ -184,11 +275,11 @@ def format_node_uuid_bytes(node_uuid: bytes) -> str:
   return str(node_uuid_from_bytes(node_uuid))
 
 
-def format_unsupported_frame(peer: str, header: FrameHeader, payload: bytes) -> str:
+def format_unsupported_event(peer: str, event: Event) -> str:
   return (
-      f"client={peer} unsupported frame record_type={header.record_type}"
-      f" schema={header.schema_version} payload_len={header.payload_len}"
-      f" preview={hex_preview(payload)}"
+      f"client={peer} unsupported event record_type={event.record_type}"
+      f" schema={event.schema_version} payload_len={event.payload_len}"
+      f" preview={hex_preview(event.payload)}"
   )
 
 

@@ -7,8 +7,9 @@ the ESP32 firmware plus Python dataclass/struct decoders for the server.
 
 Current generated protocol payloads:
   * reading_t: the sensor reading frame sent after sampling.
-  * node_config_t: the node configuration/handshake frame sent before readings.
-  * handshake_ack_t: the server response to the node configuration frame.
+  * node_config_t: the node configuration event sent before readings when the
+    cached config session is not valid.
+  * config_ack_t: the server response to a frame that carries node_config_t.
 
 It also manages the local node identity used by firmware:
   * firmware/main/node_uuid.txt is an ignored, per-physical-node UUID file.
@@ -67,13 +68,13 @@ PROTOCOL_OUTPUTS = (
         / "node_config_v1.py",
     ),
     ProtocolOutput(
-        schema=REPO_ROOT / "protocol" / "schemas" / "handshake_ack_v1.json",
-        c_header=REPO_ROOT / "firmware" / "main" / "handshake_ack.h",
+        schema=REPO_ROOT / "protocol" / "schemas" / "config_ack_v1.json",
+        c_header=REPO_ROOT / "firmware" / "main" / "config_ack.h",
         py_schema=REPO_ROOT
         / "server"
         / "cura_server"
         / "generated"
-        / "handshake_ack_v1.py",
+        / "config_ack_v1.py",
     ),
 )
 

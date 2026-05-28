@@ -2,12 +2,12 @@
   "schema_version": 1,
   "record_type": 3,
   "endianness": "little",
-  "record_name": "handshake_ack_t",
+  "record_name": "config_ack_t",
   "fields": [
     {
       "name": "status",
       "type": "u32",
-      "description": "Handshake result: 0 means accepted, nonzero means rejected."
+      "description": "Config batch result: 0 means accepted, nonzero means rejected."
     }
   ]
 }

@@ -50,7 +50,7 @@ avahi-publish -s "Cura Agrorum Gateway" _cura-agrorum._tcp 18032 proto=tcp-frame
 The firmware C headers and Python decoder constants are generated from
 `../protocol/schemas/reading_v1.json` and
 `../protocol/schemas/node_config_v1.json`, and
-`../protocol/schemas/handshake_ack_v1.json`.
+`../protocol/schemas/config_ack_v1.json`.
 
 ```bash
 cd ..

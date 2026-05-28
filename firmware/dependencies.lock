@@ -100,11 +100,22 @@ dependencies:
     source:
       type: idf
     version: 6.1.0
+  joltwallet/littlefs:
+    component_hash: 01faa388c6305fe77fd6962cda6171e753033458f24f8fae9e9d932e3d817a4c
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.22.1
 direct_dependencies:
 - esp-idf-lib/bmp280
 - espressif/ds18b20
 - espressif/mdns
 - espressif/onewire_bus
-manifest_hash: e0f17beef854cd0a27292f369aeb82da6a2f1dc191ad830eb8fc91a9dd837586
+- joltwallet/littlefs
+manifest_hash: 867a063d470fca919d92d2ba10b34c37024f9c30d4d0351ade1e7c17fb0d2770
 target: esp32
 version: 3.0.0

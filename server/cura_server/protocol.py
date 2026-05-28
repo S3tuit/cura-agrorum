@@ -12,11 +12,10 @@ from .generated.node_config_v1 import (
     NodeConfig,
     node_config_from_tuple,
 )
-from .generated.handshake_ack_v1 import (
-    HANDSHAKE_ACK_FORMAT,
-    HANDSHAKE_ACK_RECORD_TYPE,
-    HANDSHAKE_ACK_SCHEMA_VERSION,
-    HANDSHAKE_ACK_SIZE,
+from .generated.config_ack_v1 import (
+    CONFIG_ACK_FORMAT,
+    CONFIG_ACK_RECORD_TYPE,
+    CONFIG_ACK_SCHEMA_VERSION,
 )
 from .generated.reading_v1 import (
     CURA_RECORD_TYPE,
@@ -46,8 +45,8 @@ ENVELOPE_VERSION = 1
 # Keep a hard server-side allocation limit even though body_len is u32.
 MAX_FRAME_BODY_SIZE = 64 * 1024
 
-HANDSHAKE_ACK_OK = 0
-HANDSHAKE_ACK_ERROR = 1
+CONFIG_ACK_OK = 0
+CONFIG_ACK_ERROR = 1
 
 
 class ProtocolError(ValueError):
@@ -167,20 +166,19 @@ def decode_node_config(payload: bytes) -> NodeConfig:
   return node_config_from_tuple(fields)
 
 
-def encode_handshake_ack(status: int) -> bytes:
+def encode_config_ack(status: int) -> bytes:
   """Encode the only server response frame currently used by firmware.
 
-  Reading frames intentionally have no ACK for now. The current transport-level
-  confirmation is the graceful TCP close; later this should become a persisted
-  reading ACK keyed by (node_uuid, sample_id).
+  Reading-only frames intentionally have no ACK for now. Frames that include
+  node_config_t receive this ACK after the server persists the node config.
   """
   if status < 0 or status > 0xFFFFFFFF:
-    raise ProtocolError(f"handshake ack status out of range: {status}")
+    raise ProtocolError(f"config ack status out of range: {status}")
 
-  payload = struct.pack(HANDSHAKE_ACK_FORMAT, status)
+  payload = struct.pack(CONFIG_ACK_FORMAT, status)
   return encode_single_event_frame(
-      HANDSHAKE_ACK_RECORD_TYPE,
-      HANDSHAKE_ACK_SCHEMA_VERSION,
+      CONFIG_ACK_RECORD_TYPE,
+      CONFIG_ACK_SCHEMA_VERSION,
       payload,
   )
 

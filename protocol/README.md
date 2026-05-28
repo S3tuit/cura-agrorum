@@ -3,8 +3,8 @@
 `schemas/reading_v1.json` is the source of truth for the current ESP32 reading
 wire payload. `schemas/node_config_v1.json` is the source of truth for the node
 configuration payload sent before readings on a TCP connection.
-`schemas/handshake_ack_v1.json` is the source of truth for the server ACK sent
-after node configuration.
+`schemas/config_ack_v1.json` is the source of truth for the server ACK sent
+after accepting a node configuration batch.
 
 Regenerate the firmware and server schema files with:
 

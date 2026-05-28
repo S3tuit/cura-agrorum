@@ -37,7 +37,7 @@ DECLARE
   v_now timestamptz;
   v_active node_configuration%ROWTYPE;
 BEGIN
-  -- A node may reconnect while a previous handshake is still being handled.
+  -- A node may reconnect while a previous config batch is still being handled.
   -- Serialize config ingestion per node so the active-row history never races
   -- the partial unique index on (node_uuid) WHERE valid_until IS NULL.
   PERFORM pg_advisory_xact_lock(hashtextextended(p_node_uuid::text, 0));
@@ -51,7 +51,7 @@ BEGIN
 
   v_now := clock_timestamp();
 
-  -- First handshake for this node: create the initial active config.
+  -- First config batch for this node: create the initial active config.
   IF NOT FOUND THEN
     INSERT INTO node_configuration (
       node_uuid,
@@ -74,7 +74,7 @@ BEGIN
     RETURN true;
   END IF;
 
-  -- Repeated handshakes are expected after deep sleep. If the active config
+  -- Repeated config batches are expected after deep sleep. If the active config
   -- has not changed, keep the existing validity window instead of adding
   -- duplicate history rows.
   IF v_active.soil_sensor_id = p_soil_sensor_id

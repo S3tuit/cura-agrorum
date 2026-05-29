@@ -8,8 +8,8 @@ ADAPTER2 : ESP32      # Micro-USB carries 5V + GND
 3V3    : BME.VIN , SOIL.VCC     # From the ESP32's onboard regulator
 GND    : ESP32.GND , ADAPTER1.- , MOSFET.S , Rpd.b , SOIL.GND , BME.GND
 GPIO34 : SOIL.AOUT        # ADC1, input-only, WiFi-safe
-GPIO22 : BME.SCL
-GPIO21 : BME.SDA
+GPIO19 : BME.SDA
+GPIO18 : BME.SCL
 
 # 12V domain
 12V    : ADAPTER1.+ , PUMP.+ , D1.cathode

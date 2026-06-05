@@ -22,7 +22,7 @@ connection string.
 At startup, the server loads accepted node UUIDs from active rows in
 `node_configuration` where `valid_until IS NULL`. Restart the server after adding
 or changing an accepted node. Readings from UUIDs outside this startup-loaded set
-are logged and dropped.
+are rejected with a nonzero ACK.
 
 The server listens for frames with this format:
 
@@ -42,6 +42,11 @@ Frame, envelope, and event header fields use network byte order. Payload byte
 order is defined by the payload schema in `../protocol/schemas/`. The full wire
 format is documented in `../protocol/wire/v1.md`.
 
+After durably persisting every event in a frame, the server returns an `ack_t`
+event with status `0`. A nonzero status rejects the complete frame. Nodes keep
+one frame outstanding at a time and may reuse the TCP connection for subsequent
+frames after a successful ACK.
+
 ## Field Hotspot
 
 For field collection from the Fedora laptop, start the NetworkManager hotspot:
@@ -55,8 +60,8 @@ The current firmware connects to SSID `cura-field` and sends TCP frames to
 
 ## Regenerate protocol files
 
-The firmware C headers and Python decoder constants are generated from
-`../protocol/schemas/reading_v1.json`.
+The firmware C headers and Python decoder constants are generated from the JSON
+schemas in `../protocol/schemas/`.
 
 ```bash
 cd ..

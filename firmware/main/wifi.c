@@ -93,13 +93,12 @@ esp_err_t cura_wifi_connect(void) {
     return ESP_ERR_NO_MEM;
   }
 
-  esp_err_t ret = cura_storage_init();
-  if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "NVS init failed: %s", esp_err_to_name(ret));
-    return ret;
+  const esp_err_t storage_ret = cura_storage_init();
+  if (storage_ret != ESP_OK) {
+    ESP_LOGW(TAG, "NVS unavailable; continuing with WiFi persistence disabled");
   }
 
-  ret = esp_netif_init();
+  esp_err_t ret = esp_netif_init();
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "network interface init failed: %s", esp_err_to_name(ret));
     return ret;
@@ -118,6 +117,8 @@ esp_err_t cura_wifi_connect(void) {
   }
 
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+  cfg.nvs_enable = storage_ret == ESP_OK;
+
   ret = esp_wifi_init(&cfg);
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "WiFi init failed: %s", esp_err_to_name(ret));
@@ -170,10 +171,9 @@ esp_err_t cura_wifi_connect(void) {
   }
 
   DEBUG_LOGI(TAG, "connecting to WiFi SSID:%s", WIFI_SSID);
-  EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
-                                         WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-                                         pdFALSE, pdFALSE,
-                                         pdMS_TO_TICKS(WIFI_CONNECT_TIMEOUT_MS));
+  EventBits_t bits = xEventGroupWaitBits(
+      s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE, pdFALSE,
+      pdMS_TO_TICKS(WIFI_CONNECT_TIMEOUT_MS));
 
   if (bits & WIFI_CONNECTED_BIT) {
     DEBUG_LOGI(TAG, "connected to WiFi SSID:%s", WIFI_SSID);

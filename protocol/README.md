@@ -1,9 +1,14 @@
 # Cura Agrorum Protocol Schemas
 
-`schemas/reading_v1.json` and `schemas/ack_v1.json` are the sources of truth for
-the current wire payloads. The firmware node UUID is generated separately into
+The JSON files in `schemas/` are the sources of truth for the current wire
+payloads. The firmware node UUID is generated separately into
 `firmware/main/node_identity.h` and accepted nodes are registered in the server
 database.
+
+Schema fields with type `enum` are signed 32-bit integers on the wire. Their
+values are generated as fixed-width C constants and a Python `IntEnum`. Decoded
+Python payloads retain raw integers so future unknown enum values remain
+readable.
 
 Regenerate the firmware and server schema files with:
 

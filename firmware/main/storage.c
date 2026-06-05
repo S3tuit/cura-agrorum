@@ -3,6 +3,7 @@
 #include <stdbool.h>
 
 #include "esp_log.h"
+#include "fault_cntl.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 
@@ -18,26 +19,13 @@ esp_err_t cura_storage_init(void) {
     return ESP_OK;
   }
 
-init:
   esp_err_t ret = nvs_flash_init();
-  if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
-      ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-    /* Match ESP-IDF's recommended recovery path. If the NVS partition is no
-     * longer usable with the current firmware, erase it and start a fresh
-     * sample_id sequence for this node. */
-    ret = nvs_flash_erase();
-
-    // TODO: what happens if the NVS partition corrupts and we erase the
-    // sameple_id? Currently, the server will just ignore all the readings that
-    // have a sample_id we already send. Fix this even if it's a rare scenario.
-    if (ret != ESP_OK) {
-      ESP_LOGE(TAG, "NVS erase failed: %s", esp_err_to_name(ret));
-      return ret;
-    }
-    goto init;
-  }
   if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "NVS init failed: %s", esp_err_to_name(ret));
+    /* This field deployment preserves a failed NVS partition for later
+     * forensic inspection instead of applying ESP-IDF's erase recovery. */
+    fault_record(CURA_FAULT_NVS_INIT, ret, 0);
+    ESP_LOGE(TAG, "NVS init failed without erase recovery: %s",
+             esp_err_to_name(ret));
     return ret;
   }
 

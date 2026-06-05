@@ -7,8 +7,9 @@
 
 /* Connects the ESP32 to the configured WiFi network.
  *
- * Side effects: initializes NVS, initializes esp-netif, creates the default
- * event loop, and starts WiFi STA mode.
+ * Side effects: attempts to initialize NVS, initializes esp-netif, creates the
+ * default event loop, and starts WiFi STA mode. If NVS initialization fails,
+ * WiFi continues with its own NVS persistence disabled.
  *
  * Returns ESP_OK once the station has an IP address. Returns an ESP-IDF error
  * code if setup fails or the configured retry budget is exhausted.

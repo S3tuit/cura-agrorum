@@ -4,6 +4,11 @@ from dataclasses import dataclass
 import struct
 from uuid import UUID
 
+from .generated.ack_v1 import (
+    ACK_FORMAT,
+    ACK_RECORD_TYPE,
+    ACK_SCHEMA_VERSION,
+)
 from .generated.reading_v1 import (
     CURA_RECORD_TYPE,
     FILE_SCHEMA_VERSION,
@@ -28,6 +33,8 @@ ENVELOPE_HEADER_SIZE = struct.calcsize(ENVELOPE_HEADER_FORMAT)
 EVENT_HEADER_FORMAT = "!BBH"
 EVENT_HEADER_SIZE = struct.calcsize(EVENT_HEADER_FORMAT)
 ENVELOPE_VERSION = 1
+ACK_STATUS_OK = 0
+ACK_STATUS_ERROR = 1
 
 # Keep a hard server-side allocation limit even though body_len is u32.
 MAX_FRAME_BODY_SIZE = 64 * 1024
@@ -111,6 +118,18 @@ def parse_frame_body(body: bytes) -> list[Event]:
     )
 
   return events
+
+
+def encode_ack(status: int) -> bytes:
+  payload = struct.pack(ACK_FORMAT, status)
+  event = struct.pack(
+      EVENT_HEADER_FORMAT,
+      ACK_RECORD_TYPE,
+      ACK_SCHEMA_VERSION,
+      len(payload),
+  ) + payload
+  body = struct.pack(ENVELOPE_HEADER_FORMAT, ENVELOPE_VERSION, 1) + event
+  return struct.pack(FRAME_HEADER_FORMAT, len(body)) + body
 
 
 def is_supported_reading_event(event: Event) -> bool:

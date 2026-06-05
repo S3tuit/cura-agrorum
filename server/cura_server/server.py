@@ -9,12 +9,15 @@ from uuid import UUID
 
 from .db import DEFAULT_DATABASE_URL, Database
 from .protocol import (
+    ACK_STATUS_ERROR,
+    ACK_STATUS_OK,
     CURA_RECORD_TYPE,
     DEFAULT_PORT,
     Event,
     FRAME_HEADER_SIZE,
     ProtocolError,
     decode_reading,
+    encode_ack,
     format_reading,
     format_node_uuid_bytes,
     format_unsupported_event,
@@ -94,7 +97,7 @@ async def handle_client(
         logger.warning("client=%s malformed frame body: %s", peer, exc)
         break
 
-      close_connection = await _handle_reading_batch(
+      persisted = await _handle_reading_batch(
           peer,
           events,
           database,
@@ -102,15 +105,18 @@ async def handle_client(
           configured_nodes,
       )
 
-      if close_connection:
+      status = ACK_STATUS_OK if persisted else ACK_STATUS_ERROR
+      writer.write(encode_ack(status))
+      await writer.drain()
+      if not persisted:
         break
-  except ConnectionResetError:
+  except (BrokenPipeError, ConnectionResetError):
     logger.warning("client=%s reset connection", peer)
   finally:
     writer.close()
     try:
       await writer.wait_closed()
-    except ConnectionResetError:
+    except (BrokenPipeError, ConnectionResetError):
       pass
     logger.info("client=%s disconnected", peer)
 
@@ -124,7 +130,7 @@ async def _handle_reading_batch(
 ) -> bool:
   total_events = len(events)
   for event_index, event in enumerate(events, start=1):
-    close_connection = await _process_reading_event(
+    persisted = await _process_reading_event(
         peer,
         event,
         event_index,
@@ -133,10 +139,10 @@ async def _handle_reading_batch(
         logger,
         configured_nodes,
     )
-    if close_connection:
-      return True
+    if not persisted:
+      return False
 
-  return False
+  return True
 
 
 async def _process_reading_event(
@@ -148,13 +154,7 @@ async def _process_reading_event(
     logger: logging.Logger,
     configured_nodes: set[UUID],
 ) -> bool:
-  """Persist one reading event, returning True only when the client should close.
-
-  Reading events are best-effort ingest. Malformed, unsupported, or unaccepted
-  readings are logged and dropped; database failures close the connection
-  because the server cannot make progress on the remaining events with
-  confidence.
-  """
+  """Persist one reading event, returning whether it is durably accepted."""
   if event.record_type != CURA_RECORD_TYPE:
     logger.warning(format_unsupported_event(peer, event))
     return False
@@ -195,13 +195,13 @@ async def _process_reading_event(
         format_node_uuid_bytes(reading.node_uuid),
         reading.sample_id,
     )
-    return True
+    return False
 
   # Echo after persistence so the log line means the reading made it to
   # Postgres. Reading duplicates are accepted through the same code path:
   # (node_uuid, sample_id) is the durable idempotency key.
   logger.info(format_reading(peer, event, reading, event_index, total_events))
-  return False
+  return True
 
 
 def _peer_label(writer: asyncio.StreamWriter) -> str:

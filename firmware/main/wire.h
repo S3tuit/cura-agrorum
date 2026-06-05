@@ -43,6 +43,13 @@ typedef struct {
   uint16_t event_count;
 } wire_builder_t;
 
+typedef struct {
+  uint8_t record_type;
+  uint8_t schema_version;
+  void *payload;
+  size_t payload_size;
+} wire_expected_event_t;
+
 /* Opens a TCP connection to host_ip:port.
  *
  * Returns a socket file descriptor >= 0 when the connection is open. Returns
@@ -140,6 +147,19 @@ esp_err_t wire_builder_commit_events(wire_builder_t *builder);
  * and eventually either delivering or giving up.
  */
 esp_err_t wire_builder_send(int fd, wire_builder_t *builder);
+
+/* Reads one exact event frame into caller-provided payload storage.
+ *
+ * The frame must contain exactly one event matching expected->record_type,
+ * expected->schema_version, and expected->payload_size. Header mismatches,
+ * trailing bytes, and multiple events are rejected before payload storage is
+ * written. The payload is undefined if this function returns an error.
+ *
+ * Descriptors returned by wire_connect() use CONFIG_CURA_TCP_READ_TIMEOUT_MS
+ * for each blocking receive operation. Close the descriptor after any parsing
+ * error because unread response bytes may remain on the connection.
+ */
+esp_err_t wire_read_single_event(int fd, const wire_expected_event_t *expected);
 
 /* Gracefully finishes and closes an open descriptor returned by wire_connect().
  *

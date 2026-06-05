@@ -34,7 +34,7 @@ typedef struct {
 esp_err_t event_queue_prepare_send(wire_builder_t *builder,
                                    event_queue_bookmark_t *bookmark);
 
-/* Commits a queued segment after the frame was sent and gracefully closed.
+/* Commits a queued segment after the server acknowledged durable persistence.
  *
  * A bookmark without a queued segment is a no-op. A bookmark with a queued
  * segment deletes the segment loaded by event_queue_prepare_send() and advances

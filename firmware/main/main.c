@@ -18,8 +18,10 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "ack.h"
 #include "device_config.h"
 #include "event_queue.h"
+#include "fault_cntl.h"
 #include "node_identity.h"
 #include "profile.h"
 #include "reading.h"
@@ -466,99 +468,156 @@ static void enter_deep_sleep(void) {
   esp_deep_sleep_start();
 }
 
-/* Sends the currently encoded frame to the configured gateway. */
-static esp_err_t send_batch(wire_builder_t *builder) {
+/* Opens one gateway connection. */
+static int connect_gateway(void) {
   esp_ip4_addr_t gateway_ip = {0};
   uint16_t gateway_port = 0;
-  if (builder == NULL) {
+
+  esp_err_t ret = wifi_get_gateway_endpoint(&gateway_ip, &gateway_port);
+  if (ret != ESP_OK) {
+    return -1;
+  }
+
+  return wire_connect(&gateway_ip, gateway_port);
+}
+
+/* Sends one frame and waits for the server to acknowledge durable persistence.
+ */
+static esp_err_t send_batch(int fd, wire_builder_t *builder) {
+  if (fd < 0 || builder == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
 
-  PROFILE_START();
-  esp_err_t ret = wifi_get_gateway_endpoint(&gateway_ip, &gateway_port);
-  PROFILE_MARK("gateway_endpoint");
+  esp_err_t ret = wire_builder_send(fd, builder);
   if (ret != ESP_OK) {
     return ret;
   }
 
-  int fd = wire_connect(&gateway_ip, gateway_port);
-  if (fd < 0) {
+  ack_t ack = {0};
+  const wire_expected_event_t expected_ack = {
+      .record_type = ACK_RECORD_TYPE,
+      .schema_version = ACK_SCHEMA_VERSION,
+      .payload = &ack,
+      .payload_size = sizeof(ack),
+  };
+  ret = wire_read_single_event(fd, &expected_ack);
+  if (ret != ESP_OK) {
+    return ret;
+  }
+  if (ack.status != 0) {
+    ESP_LOGW(TAG, "server rejected event batch: status=%" PRIu32, ack.status);
     return ESP_FAIL;
   }
 
-  ret = wire_builder_send(fd, builder);
+  DEBUG_LOGI(TAG, "server persisted event batch");
+  return ESP_OK;
+}
 
-  esp_err_t disconnect_ret = wire_disconnect(fd);
-  if (ret == ESP_OK) {
-    /* A failed graceful close means the frame may only have reached lwIP's
-     * local buffer before sleep. Treat it as unsent and retry later. */
-    ret = disconnect_ret;
+static void disconnect_gateway(int fd) {
+  if (fd < 0) {
+    return;
   }
 
-  return ret;
+  esp_err_t ret = wire_disconnect(fd);
+  if (ret != ESP_OK) {
+    ESP_LOGW(TAG, "gateway disconnect failed: %s", esp_err_to_name(ret));
+  }
 }
 
 static bool should_try_wifi_sync(void) {
   return bootno >= 0 && (bootno % CONFIG_CURA_SYNC_EVERY_N_BOOTS) == 0;
 }
 
-static void buffer_current_reading(const uint8_t *payload) {
-  PROFILE_START();
-  esp_err_t ret = event_queue_buffer_unsent_event(&wire_builder, payload);
-  PROFILE_MARK("event_queue_buffer_unsent_event");
+static void buffer_current_reading(const reading_t *reading) {
+  esp_err_t ret =
+      event_queue_buffer_unsent_event(&wire_builder, (const uint8_t *)reading);
   if (ret != ESP_OK) {
     ESP_LOGW(TAG, "reading queue buffer failed: %s", esp_err_to_name(ret));
   }
 }
 
-static void sync_readings(uint8_t *current_payload) {
-  bool current_reading_pending = true;
+/* Tries to send the current reading, a pending fault, and buffered events.
+ *
+ * current_reading may be NULL when storage failed before a reading could be
+ * created. The pending fault is appended to the initial frame and cleared only
+ * after that frame receives a successful persistence ACK.
+ */
+static void sync_events(const reading_t *current_reading) {
+  bool current_reading_pending = current_reading != NULL;
 
-  while (true) {
+  if (current_reading == NULL) {
+    wire_builder_init(&wire_builder);
+  }
+
+  bool fault_pending_in_builder = false;
+  esp_err_t ret =
+      fault_append_to_builder(&wire_builder, &fault_pending_in_builder);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "fault event reservation failed: %s", esp_err_to_name(ret));
+    if (current_reading_pending) {
+      buffer_current_reading(current_reading);
+    }
+    return;
+  }
+
+  const int fd = connect_gateway();
+  if (fd < 0) {
+    ESP_LOGW(TAG, "gateway connection failed");
+    if (current_reading_pending) {
+      buffer_current_reading(current_reading);
+    }
+    return;
+  }
+
+  while (1) {
     event_queue_bookmark_t queue_bookmark = {0};
 
-    PROFILE_START();
-    esp_err_t ret = event_queue_prepare_send(&wire_builder, &queue_bookmark);
-    PROFILE_MARK("event_queue_prepare_send");
-    if (ret != ESP_OK) {
-      ESP_LOGW(TAG, "queue replay prepare failed: %s", esp_err_to_name(ret));
-      if (current_reading_pending) {
-        buffer_current_reading(current_payload);
-      }
-      return;
+    const esp_err_t prepare_ret =
+        event_queue_prepare_send(&wire_builder, &queue_bookmark);
+    if (prepare_ret != ESP_OK) {
+      ESP_LOGW(TAG, "queue replay prepare failed: %s",
+               esp_err_to_name(prepare_ret));
     }
 
     if (wire_builder.event_count == 0) {
       DEBUG_LOGI(TAG, "queue replay complete");
-      return;
+      break;
     }
 
-    PROFILE_START();
-    ret = send_batch(&wire_builder);
-    PROFILE_MARK("wire_send_static");
+    ret = send_batch(fd, &wire_builder);
     if (ret != ESP_OK) {
       ESP_LOGW(TAG, "reading batch not sent: %s", esp_err_to_name(ret));
       if (current_reading_pending) {
-        buffer_current_reading(current_payload);
+        buffer_current_reading(current_reading);
       }
-      return;
+      break;
     }
     current_reading_pending = false;
 
-    PROFILE_START();
+    if (fault_pending_in_builder) {
+      fault_clear();
+      fault_pending_in_builder = false;
+      DEBUG_LOGI(TAG, "pending fault persisted");
+    }
+
+    if (prepare_ret != ESP_OK) {
+      break;
+    }
+
     ret = event_queue_commit_sent(&queue_bookmark);
-    PROFILE_MARK("event_queue_commit_sent");
     if (ret != ESP_OK) {
       ESP_LOGW(TAG, "queue commit failed after send: %s", esp_err_to_name(ret));
-      return;
+      break;
     }
 
     if (!queue_bookmark.valid) {
-      return;
+      break;
     }
 
     wire_builder_init(&wire_builder);
   }
+
+  disconnect_gateway(fd);
 }
 
 static uint32_t update_boot_state(void) {
@@ -603,13 +662,9 @@ static void read_all_sensors(reading_t *reading, uint32_t sample_id,
              "sample_id=%" PRIu32 " boot=%" PRIu32 " wake_causes=0x%08" PRIx32,
              reading->sample_id, reading->bootno, reading->wake_causes);
 
-  PROFILE_START();
   esp_err_t soil_ret = read_soil(reading);
-  PROFILE_MARK("read_soil");
   esp_err_t ds18b20_ret = read_ds18b20(reading);
-  PROFILE_MARK("read_ds18b20");
   esp_err_t env280_ret = read_env280(reading);
-  PROFILE_MARK("read_env280");
   const int64_t run_us = esp_timer_get_time() - start_us;
   reading->run_ms = clamp_u16((int)((run_us + 999) / 1000));
 
@@ -646,49 +701,57 @@ static void read_all_sensors(reading_t *reading, uint32_t sample_id,
 void app_main(void) {
   PROFILE_START();
   const uint32_t wake_causes = update_boot_state();
-  PROFILE_MARK("update_boot_state");
-
-  wire_builder_init(&wire_builder);
-
-  uint8_t *payload = NULL;
-  esp_err_t ret = wire_builder_reserve_event(&wire_builder, sizeof(reading_t),
-                                             FILE_SCHEMA_VERSION,
-                                             CURA_RECORD_TYPE, &payload);
-  if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "reading event reservation failed: %s", esp_err_to_name(ret));
-    enter_deep_sleep();
-  }
+  fault_init((uint32_t)bootno);
 
   uint32_t sample_id = 0;
-  PROFILE_START();
-  ret = cura_storage_next_sample_id(&sample_id);
-  PROFILE_MARK("cura_storage_next_sample_id");
+  esp_err_t ret = cura_storage_next_sample_id(&sample_id);
+
+  // We will write the reading directly inside the builder.
+  uint8_t *payload = NULL;
+  if (ret == ESP_OK) {
+    ret = wire_builder_reserve_event(&wire_builder, sizeof(reading_t),
+                                     FILE_SCHEMA_VERSION, CURA_RECORD_TYPE,
+                                     &payload);
+  }
+
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "sample_id allocation failed; reading not created: %s",
              esp_err_to_name(ret));
+
+    if (should_try_wifi_sync()) {
+      ret = cura_wifi_connect();
+      if (ret == ESP_OK) {
+        sync_events(NULL);
+      } else {
+        ESP_LOGW(TAG, "WiFi unavailable; pending fault retained: %s",
+                 esp_err_to_name(ret));
+      }
+    }
     enter_deep_sleep();
   }
+  fault_set_sample_id(sample_id);
 
-  reading_t *reading = (reading_t *)payload;
-  read_all_sensors(reading, sample_id, wake_causes);
+  reading_t reading;
+  read_all_sensors(&reading, sample_id, wake_causes);
 
   if (!should_try_wifi_sync()) {
     DEBUG_LOGI(TAG, "boot=%" PRId32 " skipped WiFi sync; sync every %d boots",
                bootno, CONFIG_CURA_SYNC_EVERY_N_BOOTS);
-    buffer_current_reading(payload);
+    PROFILE_MARK("Full run with NO WiFi");
+    buffer_current_reading(&reading);
     enter_deep_sleep();
   }
 
-  PROFILE_START();
   ret = cura_wifi_connect();
-  PROFILE_MARK("wifi_connect");
   if (ret != ESP_OK) {
     ESP_LOGW(TAG, "WiFi unavailable; reading not sent: %s",
              esp_err_to_name(ret));
-    buffer_current_reading(payload);
+    buffer_current_reading(&reading);
+    PROFILE_MARK("Full run with WiFi connection but NO send");
     enter_deep_sleep();
   }
 
-  sync_readings(payload);
+  sync_events(&reading);
+  PROFILE_MARK("Full run with WiFi send");
   enter_deep_sleep();
 }

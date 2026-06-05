@@ -30,6 +30,11 @@ static uint16_t read_u16(const uint8_t *src) {
   return ((uint16_t)src[0] << 8) | (uint16_t)src[1];
 }
 
+static uint32_t read_u32(const uint8_t *src) {
+  return ((uint32_t)src[0] << 24) | ((uint32_t)src[1] << 16) |
+         ((uint32_t)src[2] << 8) | (uint32_t)src[3];
+}
+
 static struct timeval timeout_ms_to_timeval(int timeout_ms) {
   struct timeval timeout = {
       .tv_sec = timeout_ms / 1000,
@@ -152,6 +157,41 @@ static esp_err_t send_all(int fd, const void *buffer, size_t len) {
     }
 
     ESP_LOGE(TAG, "send failed: %s", strerror(errno));
+    return ESP_FAIL;
+  }
+
+  return ESP_OK;
+}
+
+/* Reads a complete byte range using the socket receive timeout configured by
+ * wire_connect(). */
+static esp_err_t read_all(int fd, void *buffer, size_t len) {
+  if (fd < 0 || (len > 0 && buffer == NULL)) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  uint8_t *cursor = (uint8_t *)buffer;
+  size_t remaining = len;
+  while (remaining > 0) {
+    ssize_t received = recv(fd, cursor, remaining, 0);
+    if (received > 0) {
+      cursor += received;
+      remaining -= (size_t)received;
+      continue;
+    }
+    if (received == 0) {
+      ESP_LOGE(TAG, "socket closed while reading");
+      return ESP_FAIL;
+    }
+    if (errno == EINTR) {
+      continue;
+    }
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      ESP_LOGE(TAG, "read timed out");
+      return ESP_ERR_TIMEOUT;
+    }
+
+    ESP_LOGE(TAG, "read failed: %s", strerror(errno));
     return ESP_FAIL;
   }
 
@@ -445,6 +485,93 @@ esp_err_t wire_builder_send(int fd, wire_builder_t *builder) {
   if (ret == ESP_OK) {
     DEBUG_LOGI(TAG, "sent frame body_len=%u events=%u", (unsigned)body_len,
                (unsigned)builder->event_count);
+  }
+  return ret;
+}
+
+esp_err_t wire_read_single_event(int fd,
+                                 const wire_expected_event_t *expected) {
+  if (fd < 0 || expected == NULL ||
+      (expected->payload_size > 0 && expected->payload == NULL)) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (expected->payload_size > UINT16_MAX) {
+    ESP_LOGE(TAG, "expected payload size %u exceeds event header capacity",
+             (unsigned)expected->payload_size);
+    return ESP_ERR_INVALID_SIZE;
+  }
+
+  const size_t expected_body_len = CURA_WIRE_ENVELOPE_HEADER_SIZE +
+                                   CURA_WIRE_EVENT_HEADER_SIZE +
+                                   expected->payload_size;
+  if (expected_body_len > CURA_WIRE_MAX_BODY_SIZE) {
+    ESP_LOGE(TAG, "expected single-event body size %u exceeds wire limit",
+             (unsigned)expected_body_len);
+    return ESP_ERR_INVALID_SIZE;
+  }
+
+  uint8_t frame_header[CURA_WIRE_FRAME_HEADER_SIZE] = {0};
+  esp_err_t ret = read_all(fd, frame_header, sizeof(frame_header));
+  if (ret != ESP_OK) {
+    return ret;
+  }
+
+  const uint32_t body_len = read_u32(frame_header);
+  if (body_len != expected_body_len) {
+    ESP_LOGE(TAG, "response body length %u does not match expected %u",
+             (unsigned)body_len, (unsigned)expected_body_len);
+    return ESP_ERR_INVALID_RESPONSE;
+  }
+
+  uint8_t envelope_header[CURA_WIRE_ENVELOPE_HEADER_SIZE] = {0};
+  ret = read_all(fd, envelope_header, sizeof(envelope_header));
+  if (ret != ESP_OK) {
+    return ret;
+  }
+
+  const uint16_t envelope_version = read_u16(&envelope_header[0]);
+  const uint16_t event_count = read_u16(&envelope_header[2]);
+  if (envelope_version != CURA_WIRE_ENVELOPE_VERSION) {
+    ESP_LOGE(TAG, "response envelope version %u does not match expected %u",
+             (unsigned)envelope_version, (unsigned)CURA_WIRE_ENVELOPE_VERSION);
+    return ESP_ERR_INVALID_RESPONSE;
+  }
+  if (event_count != 1) {
+    ESP_LOGE(TAG, "response event count %u does not match expected 1",
+             (unsigned)event_count);
+    return ESP_ERR_INVALID_RESPONSE;
+  }
+
+  uint8_t event_header[CURA_WIRE_EVENT_HEADER_SIZE] = {0};
+  ret = read_all(fd, event_header, sizeof(event_header));
+  if (ret != ESP_OK) {
+    return ret;
+  }
+
+  const uint8_t record_type = event_header[0];
+  const uint8_t schema_version = event_header[1];
+  const uint16_t payload_len = read_u16(&event_header[2]);
+  if (record_type != expected->record_type) {
+    ESP_LOGE(TAG, "response record type %u does not match expected %u",
+             (unsigned)record_type, (unsigned)expected->record_type);
+    return ESP_ERR_INVALID_RESPONSE;
+  }
+  if (schema_version != expected->schema_version) {
+    ESP_LOGE(TAG, "response schema version %u does not match expected %u",
+             (unsigned)schema_version, (unsigned)expected->schema_version);
+    return ESP_ERR_INVALID_RESPONSE;
+  }
+  if (payload_len != expected->payload_size) {
+    ESP_LOGE(TAG, "response payload length %u does not match expected %u",
+             (unsigned)payload_len, (unsigned)expected->payload_size);
+    return ESP_ERR_INVALID_RESPONSE;
+  }
+
+  ret = read_all(fd, expected->payload, expected->payload_size);
+  if (ret == ESP_OK) {
+    DEBUG_LOGI(TAG, "read event record_type=%u schema=%u payload_len=%u",
+               (unsigned)record_type, (unsigned)schema_version,
+               (unsigned)payload_len);
   }
   return ret;
 }

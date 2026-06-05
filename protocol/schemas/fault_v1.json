@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "record_type": 3,
+  "endianness": "little",
+  "record_name": "fault_t",
+  "fields": [
+    {
+      "name": "node_uuid",
+      "type": "bytes[16]",
+      "description": "Node UUID bytes in RFC 4122 byte order."
+    },
+    {
+      "name": "fault_id",
+      "type": "bytes[8]",
+      "description": "Random identifier used to deduplicate retransmitted faults."
+    },
+    {
+      "name": "sample_id",
+      "type": "u32",
+      "description": "Reading sample id associated with the fault, or UINT32_MAX when unavailable."
+    },
+    {
+      "name": "bootno",
+      "type": "u32",
+      "description": "Boot number on which the fault was first observed."
+    },
+    {
+      "name": "operation",
+      "type": "enum",
+      "description": "Stable Cura operation that observed the failure.",
+      "values": {
+        "CURA_FAULT_NVS_INIT": 1,
+        "CURA_FAULT_LITTLEFS_MOUNT": 2,
+        "CURA_FAULT_QUEUE_METADATA_OPEN": 3,
+        "CURA_FAULT_QUEUE_SEGMENT_READ": 4,
+        "CURA_FAULT_QUEUE_SEGMENT_WRITE": 5,
+        "CURA_FAULT_QUEUE_SEGMENT_DELETE": 6
+      }
+    },
+    {
+      "name": "esp_err",
+      "type": "i32",
+      "description": "ESP-IDF error code, or ESP_OK when not applicable."
+    },
+    {
+      "name": "posix_errno",
+      "type": "i32",
+      "description": "POSIX errno captured immediately after failure, or 0 when not applicable."
+    }
+  ]
+}

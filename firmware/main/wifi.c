@@ -11,7 +11,6 @@
 #include "esp_wifi_default.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
-#include "mdns.h"
 
 #include "profile.h"
 #include "storage.h"
@@ -19,35 +18,9 @@
 #define WIFI_SSID CONFIG_ESP_WIFI_SSID
 #define WIFI_PASS CONFIG_ESP_WIFI_PASSWORD
 #define WIFI_MAXIMUM_RETRY CONFIG_ESP_MAXIMUM_RETRY
-
-#if CONFIG_ESP_STATION_EXAMPLE_WPA3_SAE_PWE_HUNT_AND_PECK
-#define WIFI_SAE_MODE WPA3_SAE_PWE_HUNT_AND_PECK
-#define WIFI_H2E_IDENTIFIER ""
-#elif CONFIG_ESP_STATION_EXAMPLE_WPA3_SAE_PWE_HASH_TO_ELEMENT
-#define WIFI_SAE_MODE WPA3_SAE_PWE_HASH_TO_ELEMENT
-#define WIFI_H2E_IDENTIFIER CONFIG_ESP_WIFI_PW_ID
-#elif CONFIG_ESP_STATION_EXAMPLE_WPA3_SAE_PWE_BOTH
-#define WIFI_SAE_MODE WPA3_SAE_PWE_BOTH
-#define WIFI_H2E_IDENTIFIER CONFIG_ESP_WIFI_PW_ID
-#endif
-
-#if CONFIG_ESP_WIFI_AUTH_OPEN
-#define WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_OPEN
-#elif CONFIG_ESP_WIFI_AUTH_WEP
-#define WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WEP
-#elif CONFIG_ESP_WIFI_AUTH_WPA_PSK
-#define WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WPA_PSK
-#elif CONFIG_ESP_WIFI_AUTH_WPA2_PSK
-#define WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WPA2_PSK
-#elif CONFIG_ESP_WIFI_AUTH_WPA_WPA2_PSK
-#define WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WPA_WPA2_PSK
-#elif CONFIG_ESP_WIFI_AUTH_WPA3_PSK
-#define WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WPA3_PSK
-#elif CONFIG_ESP_WIFI_AUTH_WPA2_WPA3_PSK
-#define WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WPA2_WPA3_PSK
-#elif CONFIG_ESP_WIFI_AUTH_WAPI_PSK
-#define WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WAPI_PSK
-#endif
+#define WIFI_CONNECT_TIMEOUT_MS CONFIG_CURA_WIFI_CONNECT_TIMEOUT_MS
+#define GATEWAY_IPV4_ADDR CONFIG_CURA_GATEWAY_IPV4_ADDR
+#define GATEWAY_PORT CONFIG_CURA_GATEWAY_PORT
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
@@ -174,12 +147,7 @@ esp_err_t cura_wifi_connect(void) {
           {
               .ssid = WIFI_SSID,
               .password = WIFI_PASS,
-              .threshold.authmode = WIFI_SCAN_AUTH_MODE_THRESHOLD,
-              .sae_pwe_h2e = WIFI_SAE_MODE,
-              .sae_h2e_identifier = WIFI_H2E_IDENTIFIER,
-#ifdef CONFIG_ESP_WIFI_WPA3_COMPATIBLE_SUPPORT
-              .disable_wpa3_compatible_mode = 0,
-#endif
+              .threshold.authmode = WIFI_AUTH_WPA2_PSK,
           },
   };
 
@@ -204,7 +172,8 @@ esp_err_t cura_wifi_connect(void) {
   DEBUG_LOGI(TAG, "connecting to WiFi SSID:%s", WIFI_SSID);
   EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
                                          WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-                                         pdFALSE, pdFALSE, portMAX_DELAY);
+                                         pdFALSE, pdFALSE,
+                                         pdMS_TO_TICKS(WIFI_CONNECT_TIMEOUT_MS));
 
   if (bits & WIFI_CONNECTED_BIT) {
     DEBUG_LOGI(TAG, "connected to WiFi SSID:%s", WIFI_SSID);
@@ -214,112 +183,30 @@ esp_err_t cura_wifi_connect(void) {
     ESP_LOGE(TAG, "failed to connect to WiFi SSID:%s", WIFI_SSID);
     return ESP_FAIL;
   }
+  if (bits == 0) {
+    ESP_LOGE(TAG, "WiFi connection timed out after %dms",
+             WIFI_CONNECT_TIMEOUT_MS);
+    return ESP_ERR_TIMEOUT;
+  }
 
   ESP_LOGE(TAG, "unexpected WiFi event bits: 0x%" PRIx32, (uint32_t)bits);
   return ESP_FAIL;
 }
 
-static esp_err_t copy_result_ipv4(const mdns_result_t *result,
-                                  esp_ip4_addr_t *host_ip, uint16_t *port) {
-  if (result->port == 0) {
-    return ESP_ERR_INVALID_ARG;
-  }
-
-  for (const mdns_ip_addr_t *addr = result->addr; addr != NULL;
-       addr = addr->next) {
-    if (addr->addr.type == ESP_IPADDR_TYPE_V4) {
-      *host_ip = addr->addr.u_addr.ip4;
-      *port = result->port;
-      DEBUG_LOGI(TAG,
-                 "resolved %s.%s.local instance=\"%s\" host=%s port=%u "
-                 "ip=" IPSTR,
-                 CONFIG_CURA_MDNS_SERVICE_TYPE, CONFIG_CURA_MDNS_PROTO,
-                 result->instance_name != NULL ? result->instance_name : "",
-                 result->hostname != NULL ? result->hostname : "",
-                 (unsigned)result->port, IP2STR(&addr->addr.u_addr.ip4));
-      return ESP_OK;
-    }
-  }
-
-  return ESP_ERR_NOT_FOUND;
-}
-
-static esp_err_t resolve_service_host_ipv4(const mdns_result_t *result,
-                                           esp_ip4_addr_t *host_ip,
-                                           uint16_t *port) {
-  if (result->hostname == NULL) {
-    return ESP_ERR_NOT_FOUND;
-  }
-  if (result->port == 0) {
-    return ESP_ERR_INVALID_ARG;
-  }
-
-  esp_ip4_addr_t addr = {0};
-  esp_err_t ret =
-      mdns_query_a(result->hostname, CONFIG_CURA_MDNS_QUERY_TIMEOUT_MS, &addr);
-  if (ret != ESP_OK) {
-    ESP_LOGW(TAG, "could not resolve %s: %s", result->hostname,
-             esp_err_to_name(ret));
-    return ret;
-  }
-
-  *host_ip = addr;
-  *port = result->port;
-
-  DEBUG_LOGI(TAG,
-             "resolved %s.%s.local instance=\"%s\" host=%s port=%u ip=" IPSTR,
-             CONFIG_CURA_MDNS_SERVICE_TYPE, CONFIG_CURA_MDNS_PROTO,
-             result->instance_name != NULL ? result->instance_name : "",
-             result->hostname, (unsigned)result->port, IP2STR(&addr));
-  return ESP_OK;
-}
-
-esp_err_t wifi_resolve_gateway(esp_ip4_addr_t *host_ip, uint16_t *port) {
+esp_err_t wifi_get_gateway_endpoint(esp_ip4_addr_t *host_ip, uint16_t *port) {
   if (host_ip == NULL || port == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
 
-  esp_err_t ret = mdns_init();
+  esp_err_t ret = esp_netif_str_to_ip4(GATEWAY_IPV4_ADDR, host_ip);
   if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "mDNS init failed: %s", esp_err_to_name(ret));
+    ESP_LOGE(TAG, "gateway IPv4 address %s is invalid: %s", GATEWAY_IPV4_ADDR,
+             esp_err_to_name(ret));
     return ret;
   }
 
-  DEBUG_LOGI(TAG, "querying mDNS service %s.%s.local",
-             CONFIG_CURA_MDNS_SERVICE_TYPE, CONFIG_CURA_MDNS_PROTO);
-
-  mdns_result_t *results = NULL;
-  ret = mdns_query_ptr(CONFIG_CURA_MDNS_SERVICE_TYPE, CONFIG_CURA_MDNS_PROTO,
-                       CONFIG_CURA_MDNS_QUERY_TIMEOUT_MS,
-                       CONFIG_CURA_MDNS_MAX_RESULTS, &results);
-  if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "mDNS PTR query failed: %s", esp_err_to_name(ret));
-    return ret;
-  }
-  if (results == NULL) {
-    ESP_LOGE(TAG, "mDNS service %s.%s.local not found",
-             CONFIG_CURA_MDNS_SERVICE_TYPE, CONFIG_CURA_MDNS_PROTO);
-    return ESP_ERR_NOT_FOUND;
-  }
-
-  ret = ESP_ERR_NOT_FOUND;
-  for (const mdns_result_t *result = results; result != NULL;
-       result = result->next) {
-    ret = copy_result_ipv4(result, host_ip, port);
-    if (ret == ESP_OK) {
-      break;
-    }
-
-    ret = resolve_service_host_ipv4(result, host_ip, port);
-    if (ret == ESP_OK) {
-      break;
-    }
-  }
-
-  mdns_query_results_free(results);
-
-  if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "mDNS service found, but no IPv4 address was resolved");
-  }
-  return ret;
+  *port = (uint16_t)GATEWAY_PORT;
+  DEBUG_LOGI(TAG, "using gateway " IPSTR ":%u", IP2STR(host_ip),
+             (unsigned)*port);
+  return ESP_OK;
 }

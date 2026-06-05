@@ -1,26 +1,5 @@
 menu "Device Configuration"
 
-    config CURA_SOIL_SENSOR_ID
-        int "Soil sensor ID"
-        range 0 65535
-        default 1
-        help
-            Numeric identifier for the soil sensor on this device.
-
-    config CURA_DS18B20_SENSOR_ID
-        int "DS18B20 sensor ID"
-        range 0 65535
-        default 1
-        help
-            Numeric identifier for the DS18B20 sensor on this device.
-
-    config CURA_ENV280_SENSOR_ID
-        int "ENV280 sensor ID"
-        range 0 65535
-        default 1
-        help
-            Numeric identifier for the BME280 sensor on this device.
-
     config CURA_SOIL_ADC_GPIO
         int "Soil ADC GPIO"
         range 0 39
@@ -107,57 +86,21 @@ menu "Device Configuration"
         help
             BME280 I2C address. 0x76 matches BMP280_I2C_ADDRESS_0.
 
-    config CURA_SOIL_DRY_MV
-        int "Soil dry calibration in mV"
-        range 0 3300
-        default 2180
-        help
-            Soil sensor voltage in air for the current calibration.
-
-    config CURA_SOIL_WET_MV
-        int "Soil wet calibration in mV"
-        range 0 3300
-        default 660
-        help
-            Soil sensor voltage in water for the current calibration.
-
 endmenu
 
 menu "WiFi Configuration"
 
     config ESP_WIFI_SSID
         string "WiFi SSID"
-        default "myssid"
+        default "cura-field"
         help
             SSID (network name) for the ESP32 to connect to.
 
     config ESP_WIFI_PASSWORD
         string "WiFi Password"
-        default "mypassword"
+        default "cura-field-password"
         help
             WiFi password (WPA or WPA2) for the ESP32 to use.
-
-    choice ESP_WIFI_SAE_MODE
-        prompt "WPA3 SAE mode selection"
-        default ESP_STATION_EXAMPLE_WPA3_SAE_PWE_BOTH
-        help
-            Select mode for SAE as Hunt and Peck, H2E or both.
-        config ESP_STATION_EXAMPLE_WPA3_SAE_PWE_HUNT_AND_PECK
-            bool "HUNT AND PECK"
-        config ESP_STATION_EXAMPLE_WPA3_SAE_PWE_HASH_TO_ELEMENT
-            bool "H2E"
-            depends on ESP_WIFI_ENABLE_SAE_H2E
-        config ESP_STATION_EXAMPLE_WPA3_SAE_PWE_BOTH
-            bool "BOTH"
-            depends on ESP_WIFI_ENABLE_SAE_H2E
-    endchoice
-
-    config ESP_WIFI_PW_ID
-        string "PASSWORD IDENTIFIER"
-        depends on ESP_STATION_EXAMPLE_WPA3_SAE_PWE_HASH_TO_ELEMENT || ESP_STATION_EXAMPLE_WPA3_SAE_PWE_BOTH
-        default ""
-        help
-            Password identifier for SAE H2E.
 
     config ESP_MAXIMUM_RETRY
         int "Maximum retry"
@@ -165,53 +108,33 @@ menu "WiFi Configuration"
         help
             Maximum WiFi connection retries before failing.
 
-    choice ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD
-        prompt "WiFi Scan auth mode threshold"
-        default ESP_WIFI_AUTH_WPA2_PSK
+    config CURA_GATEWAY_IPV4_ADDR
+        string "Gateway IPv4 address"
+        default "10.42.0.1"
         help
-            The weakest auth mode accepted while connecting to the AP.
+            Static IPv4 address of the laptop gateway on the field hotspot.
 
-        config ESP_WIFI_AUTH_OPEN
-            bool "OPEN"
-        config ESP_WIFI_AUTH_WEP
-            bool "WEP"
-        config ESP_WIFI_AUTH_WPA_PSK
-            bool "WPA PSK"
-        config ESP_WIFI_AUTH_WPA2_PSK
-            bool "WPA2 PSK"
-        config ESP_WIFI_AUTH_WPA_WPA2_PSK
-            bool "WPA/WPA2 PSK"
-        config ESP_WIFI_AUTH_WPA3_PSK
-            bool "WPA3 PSK"
-        config ESP_WIFI_AUTH_WPA2_WPA3_PSK
-            bool "WPA2/WPA3 PSK"
-        config ESP_WIFI_AUTH_WAPI_PSK
-            bool "WAPI PSK"
-    endchoice
-
-    config CURA_MDNS_SERVICE_TYPE
-        string "Gateway mDNS service type"
-        default "_cura-agrorum"
+    config CURA_GATEWAY_PORT
+        int "Gateway TCP port"
+        range 1 65535
+        default 18032
         help
-            mDNS service type advertised by the laptop or Pi gateway.
+            TCP port where the Cura Agrorum server listens.
 
-    config CURA_MDNS_PROTO
-        string "Gateway mDNS protocol"
-        default "_tcp"
+    config CURA_SYNC_EVERY_N_BOOTS
+        int "Try WiFi sync every N boots"
+        range 1 2147483647
+        default 10
         help
-            mDNS protocol advertised by the laptop or Pi gateway.
+            Number of boots between WiFi sync attempts. Boot 0 is a sync boot,
+            so resetting the node forces an immediate sync attempt.
 
-    config CURA_MDNS_QUERY_TIMEOUT_MS
-        int "mDNS query timeout in milliseconds"
-        default 3000
+    config CURA_WIFI_CONNECT_TIMEOUT_MS
+        int "Total WiFi connection timeout in milliseconds"
+        range 1000 60000
+        default 8000
         help
-            Time to wait for mDNS service or host responses.
-
-    config CURA_MDNS_MAX_RESULTS
-        int "Maximum mDNS results"
-        default 4
-        help
-            Maximum number of mDNS service results to collect.
+            Maximum time to wait for the field hotspot association and DHCP.
 
     config CURA_TCP_CONNECT_TIMEOUT_MS
         int "TCP connect timeout in milliseconds"

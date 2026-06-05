@@ -4,7 +4,6 @@ from uuid import UUID
 
 from psycopg_pool import AsyncConnectionPool
 
-from .generated.node_config_v1 import NodeConfig
 from .generated.reading_v1 import (
     READING_DS18B20_TEMP_OK,
     READING_ENV280_HUMIDITY_OK,
@@ -34,35 +33,28 @@ class Database:
   async def close(self) -> None:
     await self._pool.close()
 
-  async def ingest_node_config_v1(
-      self,
-      node_uuid: UUID,
-      config: NodeConfig,
-  ) -> bool:
+  async def load_configured_nodes(self) -> set[UUID]:
     async with self._pool.connection() as conn:
-      return await _ingest_node_config_v1(conn, node_uuid, config)
+      return await _load_configured_nodes(conn)
 
   async def insert_reading_v1(self, node_uuid: UUID, reading: Reading) -> bool:
     async with self._pool.connection() as conn:
       return await _insert_reading_v1(conn, node_uuid, reading)
 
 
-async def _ingest_node_config_v1(conn, node_uuid: UUID, config: NodeConfig) -> bool:
+async def _load_configured_nodes(conn) -> set[UUID]:
   cursor = await conn.execute(
       """
-      SELECT ingest_node_config_v1(%s, %s, %s, %s, %s, %s)
-      """,
-      (
-          node_uuid,
-          config.soil_sensor_id,
-          config.ds18b20_sensor_id,
-          config.env280_sensor_id,
-          config.soil_dry_mv,
-          config.soil_wet_mv,
-      ),
+      SELECT DISTINCT node_uuid
+      FROM node_configuration
+      WHERE valid_until IS NULL
+      """
   )
-  row = await cursor.fetchone()
-  return bool(row[0]) if row is not None else False
+  rows = await cursor.fetchall()
+  return {
+      node_uuid if isinstance(node_uuid, UUID) else UUID(str(node_uuid))
+      for (node_uuid,) in rows
+  }
 
 
 async def _insert_reading_v1(conn, node_uuid: UUID, reading: Reading) -> bool:

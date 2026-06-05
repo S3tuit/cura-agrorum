@@ -450,19 +450,6 @@ static esp_err_t append_encoded_events(const uint8_t *events,
   return ESP_OK;
 }
 
-/* Extracts a builder's complete encoded event stream. */
-static esp_err_t get_builder_events(const wire_builder_t *builder,
-                                    const uint8_t **events,
-                                    size_t *event_bytes) {
-  if (events == NULL || event_bytes == NULL) {
-    return ESP_ERR_INVALID_ARG;
-  }
-
-  uint16_t ignored_event_count = 0;
-  return wire_builder_get_encoded_events(builder, events, event_bytes,
-                                         &ignored_event_count);
-}
-
 /* Appends one queue segment to the builder and records its bookmark. */
 static esp_err_t load_segment_into_builder(uint32_t segment_seq,
                                            wire_builder_t *builder,
@@ -563,14 +550,8 @@ esp_err_t event_queue_prepare_send(wire_builder_t *builder,
   memset(bookmark, 0, sizeof(*bookmark));
   bookmark->valid = false;
 
-  esp_err_t ret = get_builder_events(builder, &bookmark->unsaved_events,
-                                     &bookmark->unsaved_event_bytes);
-  if (ret != ESP_OK) {
-    return ret;
-  }
-
   event_queue_metadata_t metadata = {0};
-  ret = read_metadata(&metadata);
+  esp_err_t ret = read_metadata(&metadata);
   if (ret != ESP_OK) {
     return ret;
   }
@@ -618,38 +599,6 @@ esp_err_t event_queue_commit_sent(const event_queue_bookmark_t *bookmark) {
     ret = write_metadata(&metadata);
   }
   return ret;
-}
-
-esp_err_t event_queue_buffer_unsent(const wire_builder_t *builder,
-                                    const event_queue_bookmark_t *bookmark) {
-  if (builder == NULL || bookmark == NULL) {
-    return ESP_ERR_INVALID_ARG;
-  }
-
-  const uint8_t *events = NULL;
-  size_t event_bytes = 0;
-  esp_err_t ret = ESP_OK;
-  if (!bookmark->valid) {
-    // If the bookmark is not valid, it means there was no queue when we
-    // created the builder... so we buffer all the events of the builder.
-    ret = get_builder_events(builder, &events, &event_bytes);
-    if (ret != ESP_OK) {
-      return ret;
-    }
-  } else {
-    events = bookmark->unsaved_events;
-    event_bytes = bookmark->unsaved_event_bytes;
-  }
-
-  if (event_bytes == 0) {
-    return ESP_OK;
-  }
-
-  ret = mount_littlefs();
-  if (ret != ESP_OK) {
-    return ret;
-  }
-  return append_encoded_events(events, event_bytes);
 }
 
 esp_err_t event_queue_buffer_unsent_event(const wire_builder_t *builder,

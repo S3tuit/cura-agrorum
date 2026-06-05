@@ -18,7 +18,6 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "config_session.h"
 #include "device_config.h"
 #include "event_queue.h"
 #include "node_identity.h"
@@ -38,12 +37,8 @@ static const char *TAG = "cura-agrorum";
  * This plus knowing the time when the app start is our only way to get back
  * the time of each reading. */
 RTC_DATA_ATTR int32_t bootno = -1;
-static RTC_DATA_ATTR int has_config_session =
-    0; // has this node already sent its configuration to the server?
-static RTC_DATA_ATTR esp_ip4_addr_t gateway_ip = {0};
-static RTC_DATA_ATTR uint16_t gateway_port = 0;
 
-/* One explicit wire frame builder is reused for config and reading batches. The
+/* One explicit wire frame builder is reused for reading send attempts. The
  * reading is sampled before WiFi, so sending it later copies one small
  * reading_t into the builder instead of keeping a second frame buffer. */
 static wire_builder_t wire_builder;
@@ -471,79 +466,99 @@ static void enter_deep_sleep(void) {
   esp_deep_sleep_start();
 }
 
-static inline bool gateway_endpoint_valid(void) { return gateway_port != 0; }
-
-static void clear_gateway_session(void) {
-  has_config_session = 0;
-  gateway_ip.addr = 0;
-  gateway_port = 0;
-}
-
-static void cache_gateway_session(const esp_ip4_addr_t *host_ip,
-                                  uint16_t port) {
-  gateway_ip = *host_ip;
-  gateway_port = port;
-  has_config_session = 1;
-}
-
-/* Sends the current wake-cycle batch as one ordered wire frame.
- *
- * If include_config is true, the first event is node_config_t and the second
- * event is the reading. The server consumes the frame in order and only sends a
- * config_ack_t after it has accepted the config batch. Reading-only frames keep
- * the current no-ACK behavior and rely on graceful TCP close as the transport
- * completion signal.
- */
-static esp_err_t send_batch(wire_builder_t *builder, int include_config) {
-  esp_ip4_addr_t resolved_gateway_ip = {0};
-  uint16_t resolved_gateway_port = 0;
+/* Sends the currently encoded frame to the configured gateway. */
+static esp_err_t send_batch(wire_builder_t *builder) {
+  esp_ip4_addr_t gateway_ip = {0};
+  uint16_t gateway_port = 0;
   if (builder == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
 
-  const esp_ip4_addr_t *target_ip = &gateway_ip;
-  uint16_t target_port = gateway_port;
-  if (include_config) {
-    PROFILE_START();
-    esp_err_t ret =
-        wifi_resolve_gateway(&resolved_gateway_ip, &resolved_gateway_port);
-    PROFILE_MARK("resolve_gateway");
-    if (ret != ESP_OK) {
-      return ret;
-    }
-    target_ip = &resolved_gateway_ip;
-    target_port = resolved_gateway_port;
-  } else if (!gateway_endpoint_valid()) {
-    clear_gateway_session();
-    return ESP_ERR_INVALID_STATE;
+  PROFILE_START();
+  esp_err_t ret = wifi_get_gateway_endpoint(&gateway_ip, &gateway_port);
+  PROFILE_MARK("gateway_endpoint");
+  if (ret != ESP_OK) {
+    return ret;
   }
 
-  int fd = wire_connect(target_ip, target_port);
+  int fd = wire_connect(&gateway_ip, gateway_port);
   if (fd < 0) {
-    clear_gateway_session();
     return ESP_FAIL;
   }
 
-  esp_err_t ret = wire_builder_send(fd, builder);
-  if (ret == ESP_OK && include_config) {
-    ret = read_config_ack(fd);
-  }
+  ret = wire_builder_send(fd, builder);
 
   esp_err_t disconnect_ret = wire_disconnect(fd);
   if (ret == ESP_OK) {
     /* A failed graceful close means the frame may only have reached lwIP's
-     * local buffer before sleep. Force a fresh config send on the next wake. */
+     * local buffer before sleep. Treat it as unsent and retry later. */
     ret = disconnect_ret;
   }
 
-  if (ret == ESP_OK) {
-    if (include_config) {
-      cache_gateway_session(&resolved_gateway_ip, resolved_gateway_port);
-    }
-  } else {
-    clear_gateway_session();
-  }
   return ret;
+}
+
+static bool should_try_wifi_sync(void) {
+  return bootno >= 0 && (bootno % CONFIG_CURA_SYNC_EVERY_N_BOOTS) == 0;
+}
+
+static void buffer_current_reading(const uint8_t *payload) {
+  PROFILE_START();
+  esp_err_t ret = event_queue_buffer_unsent_event(&wire_builder, payload);
+  PROFILE_MARK("event_queue_buffer_unsent_event");
+  if (ret != ESP_OK) {
+    ESP_LOGW(TAG, "reading queue buffer failed: %s", esp_err_to_name(ret));
+  }
+}
+
+static void sync_readings(uint8_t *current_payload) {
+  bool current_reading_pending = true;
+
+  while (true) {
+    event_queue_bookmark_t queue_bookmark = {0};
+
+    PROFILE_START();
+    esp_err_t ret = event_queue_prepare_send(&wire_builder, &queue_bookmark);
+    PROFILE_MARK("event_queue_prepare_send");
+    if (ret != ESP_OK) {
+      ESP_LOGW(TAG, "queue replay prepare failed: %s", esp_err_to_name(ret));
+      if (current_reading_pending) {
+        buffer_current_reading(current_payload);
+      }
+      return;
+    }
+
+    if (wire_builder.event_count == 0) {
+      DEBUG_LOGI(TAG, "queue replay complete");
+      return;
+    }
+
+    PROFILE_START();
+    ret = send_batch(&wire_builder);
+    PROFILE_MARK("wire_send_static");
+    if (ret != ESP_OK) {
+      ESP_LOGW(TAG, "reading batch not sent: %s", esp_err_to_name(ret));
+      if (current_reading_pending) {
+        buffer_current_reading(current_payload);
+      }
+      return;
+    }
+    current_reading_pending = false;
+
+    PROFILE_START();
+    ret = event_queue_commit_sent(&queue_bookmark);
+    PROFILE_MARK("event_queue_commit_sent");
+    if (ret != ESP_OK) {
+      ESP_LOGW(TAG, "queue commit failed after send: %s", esp_err_to_name(ret));
+      return;
+    }
+
+    if (!queue_bookmark.valid) {
+      return;
+    }
+
+    wire_builder_init(&wire_builder);
+  }
 }
 
 static uint32_t update_boot_state(void) {
@@ -552,10 +567,8 @@ static uint32_t update_boot_state(void) {
   if ((wake_causes & WAKE_CAUSE_BIT(ESP_SLEEP_WAKEUP_TIMER)) && bootno >= 0) {
     bootno++;
   } else {
-    /* A non-timer wake is a fresh runtime from the protocol point of view. The
-     * firmware config may have changed, so send node_config_t again. */
+    /* A non-timer wake is a fresh runtime from the protocol point of view. */
     bootno = 0;
-    clear_gateway_session();
   }
 
   return wake_causes;
@@ -635,27 +648,7 @@ void app_main(void) {
   const uint32_t wake_causes = update_boot_state();
   PROFILE_MARK("update_boot_state");
 
-  /* Defensive cleanup for inconsistent RTC state: a valid config session must
-   * always include a nonzero gateway port. */
-  if (has_config_session && !gateway_endpoint_valid()) {
-    clear_gateway_session();
-  }
-
   wire_builder_init(&wire_builder);
-
-  /* If the current builder has a node_config_t event inside. */
-  int config_included = 0;
-
-  if (!has_config_session) {
-    esp_err_t ret = add_node_config_event(&wire_builder);
-    if (ret != ESP_OK) {
-      ESP_LOGE(TAG, "node config event reservation failed: %s",
-               esp_err_to_name(ret));
-      enter_deep_sleep();
-    } else {
-      config_included = 1;
-    }
-  }
 
   uint8_t *payload = NULL;
   esp_err_t ret = wire_builder_reserve_event(&wire_builder, sizeof(reading_t),
@@ -679,55 +672,23 @@ void app_main(void) {
   reading_t *reading = (reading_t *)payload;
   read_all_sensors(reading, sample_id, wake_causes);
 
+  if (!should_try_wifi_sync()) {
+    DEBUG_LOGI(TAG, "boot=%" PRId32 " skipped WiFi sync; sync every %d boots",
+               bootno, CONFIG_CURA_SYNC_EVERY_N_BOOTS);
+    buffer_current_reading(payload);
+    enter_deep_sleep();
+  }
+
   PROFILE_START();
   ret = cura_wifi_connect();
   PROFILE_MARK("wifi_connect");
   if (ret != ESP_OK) {
     ESP_LOGW(TAG, "WiFi unavailable; reading not sent: %s",
              esp_err_to_name(ret));
-    PROFILE_START();
-    ret = event_queue_buffer_unsent_event(&wire_builder, payload);
-    PROFILE_MARK("event_queue_buffer_unsent_event");
-    if (ret != ESP_OK) {
-      ESP_LOGW(TAG, "reading queue buffer failed: %s", esp_err_to_name(ret));
-    }
+    buffer_current_reading(payload);
     enter_deep_sleep();
   }
 
-  event_queue_bookmark_t queue_bookmark = {0};
-
-  /* We send the events inside the queue only if we already sent the
-   * node_config and have resolved the gateway. This avoids hitting disk
-   * everytime when the server is down for more than our boot cycle. */
-  const bool queue_included = has_config_session && gateway_endpoint_valid();
-  if (queue_included) {
-    PROFILE_START();
-    ret = event_queue_prepare_send(&wire_builder, &queue_bookmark);
-    PROFILE_MARK("event_queue_prepare_send");
-    if (ret != ESP_OK) {
-      ESP_LOGW(TAG, "queue replay prepare failed: %s", esp_err_to_name(ret));
-    }
-  }
-
-  PROFILE_START();
-  ret = send_batch(&wire_builder, config_included);
-  PROFILE_MARK(config_included ? "wire_send_config_batch" : "wire_send_cached");
-
-  if (ret != ESP_OK) {
-    ESP_LOGW(TAG, "reading batch not sent: %s", esp_err_to_name(ret));
-    PROFILE_START();
-    ret = event_queue_buffer_unsent_event(&wire_builder, payload);
-    PROFILE_MARK("event_queue_buffer_unsent_event");
-    if (ret != ESP_OK) {
-      ESP_LOGW(TAG, "reading queue buffer failed: %s", esp_err_to_name(ret));
-    }
-  } else if (queue_included) {
-    PROFILE_START();
-    ret = event_queue_commit_sent(&queue_bookmark);
-    PROFILE_MARK("event_queue_commit_sent");
-    if (ret != ESP_OK) {
-      ESP_LOGW(TAG, "queue commit failed after send: %s", esp_err_to_name(ret));
-    }
-  }
+  sync_readings(payload);
   enter_deep_sleep();
 }

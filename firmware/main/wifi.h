@@ -15,11 +15,10 @@
  */
 esp_err_t cura_wifi_connect(void);
 
-/* Resolves the configured Cura Agrorum gateway mDNS service.
+/* Returns the configured Cura Agrorum gateway endpoint.
  *
  * The ESP32 must already be connected to WiFi. Returns ESP_OK on success and
  * writes the gateway IPv4 address to 'host_ip' and TCP port to 'port'. Returns
- * an ESP-IDF error code on failure; output values are unspecified when the
- * function fails.
+ * an ESP-IDF error code when the configured IPv4 address is invalid.
  */
-esp_err_t wifi_resolve_gateway(esp_ip4_addr_t *host_ip, uint16_t *port);
+esp_err_t wifi_get_gateway_endpoint(esp_ip4_addr_t *host_ip, uint16_t *port);

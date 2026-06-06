@@ -38,4 +38,22 @@ CREATE TABLE sensor_reading (
   PRIMARY KEY (node_uuid, sample_id)
 );
 
+CREATE TABLE node_fault (
+  node_uuid uuid NOT NULL,
+  fault_id bytea NOT NULL,
+  received_at timestamptz NOT NULL DEFAULT now(),
+
+  sample_id bigint NOT NULL,
+  bootno bigint NOT NULL,
+  operation integer NOT NULL,
+  esp_err integer NOT NULL,
+  posix_errno integer NOT NULL,
+
+  PRIMARY KEY (node_uuid, fault_id),
+
+  CHECK (octet_length(fault_id) = 8),
+  CHECK (operation > 0),
+  CHECK (posix_errno >= 0)
+);
+
 COMMIT;

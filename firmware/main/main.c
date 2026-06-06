@@ -41,8 +41,8 @@ static const char *TAG = "cura-agrorum";
 RTC_DATA_ATTR int32_t bootno = -1;
 
 /* One explicit wire frame builder is reused for reading send attempts. The
- * reading is sampled before WiFi, so sending it later copies one small
- * reading_t into the builder instead of keeping a second frame buffer. */
+ * current reading is allocated directly inside it to avoid a second frame
+ * buffer. */
 static wire_builder_t wire_builder;
 
 static uint16_t clamp_u16(int value) {
@@ -549,6 +549,9 @@ static void sync_events(const reading_t *current_reading) {
     wire_builder_init(&wire_builder);
   }
 
+  /* fault_cntl stores only the first pending fault. If queue replay below
+   * discovers another fault while one is already appended here, the older fault
+   * wins and the newer one is intentionally not retained for this deployment. */
   bool fault_pending_in_builder = false;
   esp_err_t ret =
       fault_append_to_builder(&wire_builder, &fault_pending_in_builder);
@@ -698,6 +701,21 @@ static void read_all_sensors(reading_t *reading, uint32_t sample_id,
   DEBUG_LOGI(TAG, "run=%" PRIu16 "ms", reading->run_ms);
 }
 
+/* Attempts synching events if we should sync in this boot and then deep sleeps.
+ */
+static void sync_and_deep_sleep() {
+  if (should_try_wifi_sync()) {
+    esp_err_t ret = cura_wifi_connect();
+    if (ret == ESP_OK) {
+      sync_events(NULL);
+    } else {
+      ESP_LOGW(TAG, "WiFi unavailable; pending fault retained: %s",
+               esp_err_to_name(ret));
+    }
+  }
+  enter_deep_sleep();
+}
+
 void app_main(void) {
   PROFILE_START();
   const uint32_t wake_causes = update_boot_state();
@@ -706,39 +724,32 @@ void app_main(void) {
   uint32_t sample_id = 0;
   esp_err_t ret = cura_storage_next_sample_id(&sample_id);
 
-  // We will write the reading directly inside the builder.
-  uint8_t *payload = NULL;
-  if (ret == ESP_OK) {
-    ret = wire_builder_reserve_event(&wire_builder, sizeof(reading_t),
-                                     FILE_SCHEMA_VERSION, CURA_RECORD_TYPE,
-                                     &payload);
-  }
-
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "sample_id allocation failed; reading not created: %s",
              esp_err_to_name(ret));
-
-    if (should_try_wifi_sync()) {
-      ret = cura_wifi_connect();
-      if (ret == ESP_OK) {
-        sync_events(NULL);
-      } else {
-        ESP_LOGW(TAG, "WiFi unavailable; pending fault retained: %s",
-                 esp_err_to_name(ret));
-      }
-    }
-    enter_deep_sleep();
+    sync_and_deep_sleep();
   }
   fault_set_sample_id(sample_id);
 
-  reading_t reading;
-  read_all_sensors(&reading, sample_id, wake_causes);
+  // Write the reading directly inside the builder.
+  wire_builder_init(&wire_builder);
+  uint8_t *payload = NULL;
+  ret = wire_builder_reserve_event(&wire_builder, sizeof(reading_t),
+                                   FILE_SCHEMA_VERSION, CURA_RECORD_TYPE,
+                                   &payload);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "reading allocation failed: %s", esp_err_to_name(ret));
+    sync_and_deep_sleep();
+  }
+
+  reading_t *reading = (reading_t *)payload;
+  read_all_sensors(reading, sample_id, wake_causes);
 
   if (!should_try_wifi_sync()) {
     DEBUG_LOGI(TAG, "boot=%" PRId32 " skipped WiFi sync; sync every %d boots",
                bootno, CONFIG_CURA_SYNC_EVERY_N_BOOTS);
     PROFILE_MARK("Full run with NO WiFi");
-    buffer_current_reading(&reading);
+    buffer_current_reading(reading);
     enter_deep_sleep();
   }
 
@@ -746,12 +757,12 @@ void app_main(void) {
   if (ret != ESP_OK) {
     ESP_LOGW(TAG, "WiFi unavailable; reading not sent: %s",
              esp_err_to_name(ret));
-    buffer_current_reading(&reading);
+    buffer_current_reading(reading);
     PROFILE_MARK("Full run with WiFi connection but NO send");
     enter_deep_sleep();
   }
 
-  sync_events(&reading);
+  sync_events(reading);
   PROFILE_MARK("Full run with WiFi send");
   enter_deep_sleep();
 }

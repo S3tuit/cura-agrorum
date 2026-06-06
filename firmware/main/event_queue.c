@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "esp_err.h"
 #include "esp_littlefs.h"
 #include "esp_log.h"
 #include "fault_cntl.h"
@@ -72,7 +73,7 @@ static esp_err_t build_segment_path(uint32_t segment_seq, char *path,
   return ESP_OK;
 }
 
-/* Mounts the LittleFS storage partition only when queue I/O is needed. */
+/* Mounts the LittleFS storage partition. */
 static esp_err_t mount_littlefs(void) {
   if (s_littlefs_mounted) {
     return ESP_OK;

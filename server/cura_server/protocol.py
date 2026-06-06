@@ -9,6 +9,15 @@ from .generated.ack_v1 import (
     ACK_RECORD_TYPE,
     ACK_SCHEMA_VERSION,
 )
+from .generated.fault_v1 import (
+    FAULT_FORMAT,
+    FAULT_RECORD_TYPE,
+    FAULT_SCHEMA_VERSION,
+    FAULT_SIZE,
+    Fault,
+    FaultOperation,
+    fault_from_tuple,
+)
 from .generated.reading_v1 import (
     CURA_RECORD_TYPE,
     FILE_SCHEMA_VERSION,
@@ -139,6 +148,13 @@ def is_supported_reading_event(event: Event) -> bool:
   )
 
 
+def is_supported_fault_event(event: Event) -> bool:
+  return (
+      event.record_type == FAULT_RECORD_TYPE
+      and event.schema_version == FAULT_SCHEMA_VERSION
+  )
+
+
 def decode_reading(payload: bytes) -> Reading:
   # Each event carries exactly one generated payload. Keeping the decoder exact
   # avoids silently accepting stale schema versions or concatenated records.
@@ -149,6 +165,16 @@ def decode_reading(payload: bytes) -> Reading:
 
   fields = struct.unpack(READING_FORMAT, payload)
   return reading_from_tuple(fields)
+
+
+def decode_fault(payload: bytes) -> Fault:
+  if len(payload) != FAULT_SIZE:
+    raise ProtocolError(
+        f"fault payload must be {FAULT_SIZE} bytes, got {len(payload)}"
+    )
+
+  fields = struct.unpack(FAULT_FORMAT, payload)
+  return fault_from_tuple(fields)
 
 
 def hex_preview(payload: bytes, max_bytes: int = 16) -> str:
@@ -185,6 +211,29 @@ def format_reading(
   )
 
 
+def format_fault(
+    peer: str,
+    event: Event,
+    fault: Fault,
+    index: int = 1,
+    total: int = 1,
+) -> str:
+  prefix = (
+      f"client={peer} record_type={event.record_type}"
+      f" schema={event.schema_version}"
+      f" event={index}/{total}"
+      f" node={format_node_uuid_bytes(fault.node_uuid)}"
+  )
+  return (
+      f"{prefix} fault_id={fault.fault_id.hex()}"
+      f" sample_id={fault.sample_id}"
+      f" boot={fault.bootno}"
+      f" operation={_fault_operation(fault.operation)}"
+      f" esp_err={fault.esp_err}"
+      f" posix_errno={fault.posix_errno}"
+  )
+
+
 def node_uuid_from_bytes(node_uuid: bytes) -> UUID:
   try:
     return UUID(bytes=node_uuid)
@@ -214,3 +263,10 @@ def _centi(value: int, unit: str) -> str:
   sign = "-" if value < 0 else ""
   absolute = abs(value)
   return f"{sign}{absolute // 100}.{absolute % 100:02d}{unit}"
+
+
+def _fault_operation(operation: int) -> str:
+  try:
+    return FaultOperation(operation).name
+  except ValueError:
+    return str(operation)

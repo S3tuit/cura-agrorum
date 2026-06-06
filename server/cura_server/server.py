@@ -16,11 +16,14 @@ from .protocol import (
     Event,
     FRAME_HEADER_SIZE,
     ProtocolError,
+    decode_fault,
     decode_reading,
+    format_fault,
     encode_ack,
     format_reading,
     format_node_uuid_bytes,
     format_unsupported_event,
+    is_supported_fault_event,
     is_supported_reading_event,
     node_uuid_from_bytes,
     parse_frame_body,
@@ -97,7 +100,7 @@ async def handle_client(
         logger.warning("client=%s malformed frame body: %s", peer, exc)
         break
 
-      persisted = await _handle_reading_batch(
+      persisted = await _handle_event_batch(
           peer,
           events,
           database,
@@ -121,7 +124,7 @@ async def handle_client(
     logger.info("client=%s disconnected", peer)
 
 
-async def _handle_reading_batch(
+async def _handle_event_batch(
     peer: str,
     events: Sequence[Event],
     database: Database,
@@ -130,7 +133,7 @@ async def _handle_reading_batch(
 ) -> bool:
   total_events = len(events)
   for event_index, event in enumerate(events, start=1):
-    persisted = await _process_reading_event(
+    persisted = await _process_event(
         peer,
         event,
         event_index,
@@ -143,6 +146,41 @@ async def _handle_reading_batch(
       return False
 
   return True
+
+
+async def _process_event(
+    peer: str,
+    event: Event,
+    event_index: int,
+    total_events: int,
+    database: Database,
+    logger: logging.Logger,
+    configured_nodes: set[UUID],
+) -> bool:
+  if is_supported_reading_event(event):
+    return await _process_reading_event(
+        peer,
+        event,
+        event_index,
+        total_events,
+        database,
+        logger,
+        configured_nodes,
+    )
+
+  if is_supported_fault_event(event):
+    return await _process_fault_event(
+        peer,
+        event,
+        event_index,
+        total_events,
+        database,
+        logger,
+        configured_nodes,
+    )
+
+  logger.warning(format_unsupported_event(peer, event))
+  return False
 
 
 async def _process_reading_event(
@@ -201,6 +239,56 @@ async def _process_reading_event(
   # Postgres. Reading duplicates are accepted through the same code path:
   # (node_uuid, sample_id) is the durable idempotency key.
   logger.info(format_reading(peer, event, reading, event_index, total_events))
+  return True
+
+
+async def _process_fault_event(
+    peer: str,
+    event: Event,
+    event_index: int,
+    total_events: int,
+    database: Database,
+    logger: logging.Logger,
+    configured_nodes: set[UUID],
+) -> bool:
+  """Persist one fault event, returning whether it is durably accepted."""
+  try:
+    fault = decode_fault(event.payload)
+    node_uuid = node_uuid_from_bytes(fault.node_uuid)
+  except ProtocolError as exc:
+    logger.warning(
+        "client=%s malformed fault payload record_type=%d schema=%d len=%d: %s",
+        peer,
+        event.record_type,
+        event.schema_version,
+        event.payload_len,
+        exc,
+    )
+    return False
+
+  if node_uuid not in configured_nodes:
+    logger.warning(
+        "client=%s rejected fault from unconfigured node=%s fault_id=%s",
+        peer,
+        format_node_uuid_bytes(fault.node_uuid),
+        fault.fault_id.hex(),
+    )
+    return False
+
+  try:
+    await database.insert_fault_v1(node_uuid, fault)
+  except Exception:
+    logger.exception(
+        "client=%s fault persistence failed node=%s fault_id=%s",
+        peer,
+        format_node_uuid_bytes(fault.node_uuid),
+        fault.fault_id.hex(),
+    )
+    return False
+
+  # Fault duplicates are accepted through the same idempotent insert path:
+  # (node_uuid, fault_id) is the durable idempotency key.
+  logger.info(format_fault(peer, event, fault, event_index, total_events))
   return True
 
 

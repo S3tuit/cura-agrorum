@@ -4,6 +4,7 @@ from uuid import UUID
 
 from psycopg_pool import AsyncConnectionPool
 
+from .generated.fault_v1 import Fault
 from .generated.reading_v1 import (
     READING_DS18B20_TEMP_OK,
     READING_ENV280_HUMIDITY_OK,
@@ -40,6 +41,10 @@ class Database:
   async def insert_reading_v1(self, node_uuid: UUID, reading: Reading) -> bool:
     async with self._pool.connection() as conn:
       return await _insert_reading_v1(conn, node_uuid, reading)
+
+  async def insert_fault_v1(self, node_uuid: UUID, fault: Fault) -> bool:
+    async with self._pool.connection() as conn:
+      return await _insert_fault_v1(conn, node_uuid, fault)
 
 
 async def _load_configured_nodes(conn) -> set[UUID]:
@@ -106,6 +111,37 @@ async def _insert_reading_v1(conn, node_uuid: UUID, reading: Reading) -> bool:
               READING_ENV280_HUMIDITY_OK,
               reading.env280_humidity_centi_pct,
           ),
+      ),
+  )
+  row = await cursor.fetchone()
+  return row is not None
+
+
+async def _insert_fault_v1(conn, node_uuid: UUID, fault: Fault) -> bool:
+  cursor = await conn.execute(
+      """
+      INSERT INTO node_fault (
+        node_uuid,
+        fault_id,
+        sample_id,
+        bootno,
+        operation,
+        esp_err,
+        posix_errno
+      ) VALUES (
+        %s, %s, %s, %s, %s, %s, %s
+      )
+      ON CONFLICT (node_uuid, fault_id) DO NOTHING
+      RETURNING 1
+      """,
+      (
+          node_uuid,
+          fault.fault_id,
+          fault.sample_id,
+          fault.bootno,
+          fault.operation,
+          fault.esp_err,
+          fault.posix_errno,
       ),
   )
   row = await cursor.fetchone()

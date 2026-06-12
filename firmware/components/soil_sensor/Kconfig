@@ -1,0 +1,26 @@
+menu "Soil Sensor Configuration"
+
+    config CURA_SOIL_ADC_GPIO
+        int "Soil ADC GPIO"
+        range 0 39
+        default 34
+        help
+            GPIO that reads soil sensor voltage.
+
+    choice CURA_SOIL_ADC_ATTEN
+        prompt "Soil ADC attenuation"
+        default CURA_SOIL_ADC_ATTEN_DB_12
+        help
+            ADC attenuation used for soil sensor voltage readings.
+
+        config CURA_SOIL_ADC_ATTEN_DB_0
+            bool "0 dB"
+        config CURA_SOIL_ADC_ATTEN_DB_2_5
+            bool "2.5 dB"
+        config CURA_SOIL_ADC_ATTEN_DB_6
+            bool "6 dB"
+        config CURA_SOIL_ADC_ATTEN_DB_12
+            bool "12 dB"
+    endchoice
+
+endmenu

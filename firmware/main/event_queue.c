@@ -499,9 +499,14 @@ static esp_err_t load_segment_into_builder(uint32_t segment_seq,
 
   const int fd = open(path, O_RDONLY);
   if (fd < 0) {
-    ESP_LOGE(TAG, "open queue segment %s failed: %s", path, strerror(errno));
+    const int saved_errno = errno;
     builder->len = original_len;
     builder->event_count = original_event_count;
+    if (saved_errno == ENOENT) {
+      return ESP_ERR_NOT_FOUND;
+    }
+    ESP_LOGE(TAG, "open queue segment %s failed: %s", path,
+             strerror(saved_errno));
     return ESP_FAIL;
   }
   ret = read_all(fd, encoded_events, segment_size);
@@ -540,11 +545,30 @@ static esp_err_t load_oldest_segment(wire_builder_t *builder,
     return ret;
   }
 
-  if (queue_empty(&metadata)) {
-    return ESP_OK;
+  while (!queue_empty(&metadata)) {
+    const uint32_t segment_seq = metadata.head_seq;
+    ret = load_segment_into_builder(segment_seq, builder, bookmark);
+    if (ret == ESP_OK) {
+      return ESP_OK;
+    }
+    if (ret != ESP_ERR_NOT_FOUND) {
+      return ret;
+    }
+
+    ESP_LOGW(TAG, "queue head segment seq=%" PRIu32
+                  " missing; advancing queue head",
+             segment_seq);
+    metadata.head_seq++;
+    if (metadata.head_seq > metadata.tail_seq) {
+      metadata.tail_seq = metadata.head_seq;
+    }
+    ret = write_metadata(&metadata);
+    if (ret != ESP_OK) {
+      return ret;
+    }
   }
 
-  return load_segment_into_builder(metadata.head_seq, builder, bookmark);
+  return ESP_OK;
 }
 
 esp_err_t event_queue_prepare_send(wire_builder_t *builder,

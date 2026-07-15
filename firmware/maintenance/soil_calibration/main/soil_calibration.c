@@ -49,8 +49,7 @@ static void log_stats(size_t count, uint16_t current_mv, uint64_t sum_mv) {
   const uint64_t median = median_centimv(sorted_samples, count);
 
   ESP_LOGI(TAG,
-           "sample=%u/%u current_mv=%" PRIu16
-           " mean_mv=%" PRIu64 ".%02" PRIu64
+           "sample=%u/%u current_mv=%" PRIu16 " mean_mv=%" PRIu64 ".%02" PRIu64
            " median_mv=%" PRIu64 ".%02" PRIu64,
            (unsigned)count, (unsigned)SAMPLE_CAPACITY, current_mv,
            mean_centimv / 100, mean_centimv % 100, median / 100, median % 100);

@@ -76,3 +76,7 @@ __pycache__/
 # agents
 .codex
 .claude
+
+# firmware build
+firmware/build*/
+firmware/main/build*/

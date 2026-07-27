@@ -1,10 +1,14 @@
 # Cura Agrorum Protocol Schemas
 
-`schemas/reading_v1.json` is the source of truth for the current ESP32 reading
-wire payload. `schemas/node_config_v1.json` is the source of truth for the node
-configuration payload sent before readings on a TCP connection.
-`schemas/config_ack_v1.json` is the source of truth for the server ACK sent
-after accepting a node configuration batch.
+The JSON files in `schemas/` are the sources of truth for the current wire
+payloads. The firmware node UUID is generated separately into
+`firmware/main/node_identity.h` and accepted nodes are registered in the server
+database.
+
+Schema fields with type `enum` are signed 32-bit integers on the wire. Their
+values are generated as fixed-width C constants and a Python `IntEnum`. Decoded
+Python payloads retain raw integers so future unknown enum values remain
+readable.
 
 Regenerate the firmware and server schema files with:
 

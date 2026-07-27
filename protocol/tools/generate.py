@@ -7,9 +7,8 @@ the ESP32 firmware plus Python dataclass/struct decoders for the server.
 
 Current generated protocol payloads:
   * reading_t: the sensor reading frame sent after sampling.
-  * node_config_t: the node configuration event sent before readings when the
-    cached config session is not valid.
-  * config_ack_t: the server response to a frame that carries node_config_t.
+  * ack_t: the frame persistence result returned by the server.
+  * fault_t: the first persistent-storage fault retained by the node.
 
 It also manages the local node identity used by firmware:
   * firmware/main/node_uuid.txt is an ignored, per-physical-node UUID file.
@@ -59,22 +58,14 @@ PROTOCOL_OUTPUTS = (
         py_schema=REPO_ROOT / "server" / "cura_server" / "generated" / "reading_v1.py",
     ),
     ProtocolOutput(
-        schema=REPO_ROOT / "protocol" / "schemas" / "node_config_v1.json",
-        c_header=REPO_ROOT / "firmware" / "main" / "node_config.h",
-        py_schema=REPO_ROOT
-        / "server"
-        / "cura_server"
-        / "generated"
-        / "node_config_v1.py",
+        schema=REPO_ROOT / "protocol" / "schemas" / "ack_v1.json",
+        c_header=REPO_ROOT / "firmware" / "main" / "ack.h",
+        py_schema=REPO_ROOT / "server" / "cura_server" / "generated" / "ack_v1.py",
     ),
     ProtocolOutput(
-        schema=REPO_ROOT / "protocol" / "schemas" / "config_ack_v1.json",
-        c_header=REPO_ROOT / "firmware" / "main" / "config_ack.h",
-        py_schema=REPO_ROOT
-        / "server"
-        / "cura_server"
-        / "generated"
-        / "config_ack_v1.py",
+        schema=REPO_ROOT / "protocol" / "schemas" / "fault_v1.json",
+        c_header=REPO_ROOT / "firmware" / "main" / "fault.h",
+        py_schema=REPO_ROOT / "server" / "cura_server" / "generated" / "fault_v1.py",
     ),
 )
 
@@ -83,6 +74,8 @@ TYPE_MAP = {
     "u16": {"c": "uint16_t", "struct": "H", "size": 2, "py": "int"},
     "u32": {"c": "uint32_t", "struct": "I", "size": 4, "py": "int"},
     "i16": {"c": "int16_t", "struct": "h", "size": 2, "py": "int"},
+    "i32": {"c": "int32_t", "struct": "i", "size": 4, "py": "int"},
+    "enum": {"c": "int32_t", "struct": "i", "size": 4, "py": "int"},
 }
 
 IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -155,6 +148,7 @@ def validate_schema(schema: dict[str, Any]) -> None:
   seen_fields: set[str] = set()
   seen_flag_bits: set[int] = set()
   seen_flag_names: set[str] = set()
+  seen_enum_names: set[str] = set()
   for field in schema["fields"]:
     for key in ("name", "type", "description"):
       if key not in field:
@@ -165,6 +159,11 @@ def validate_schema(schema: dict[str, Any]) -> None:
       raise ValueError(f"duplicate field name: {field['name']}")
     seen_fields.add(field["name"])
     type_info(field["type"])
+
+    if field["type"] == "enum":
+      validate_enum_values(field, seen_enum_names)
+    elif "values" in field:
+      raise ValueError(f"only enum fields may define values: {field}")
 
     if ("valid_flag" in field) != ("valid_flag_bit" in field):
       raise ValueError(f"field must set both valid_flag and valid_flag_bit: {field}")
@@ -180,6 +179,30 @@ def validate_schema(schema: dict[str, Any]) -> None:
       if bit in seen_flag_bits:
         raise ValueError(f"duplicate flag bit: {bit}")
       seen_flag_bits.add(bit)
+
+
+def validate_enum_values(field: dict[str, Any], seen_enum_names: set[str]) -> None:
+  values = field.get("values")
+  if not isinstance(values, dict) or not values:
+    raise ValueError(f"enum field must define a non-empty values object: {field}")
+
+  seen_values: set[int] = set()
+  for name, value in values.items():
+    if not IDENT_RE.match(name):
+      raise ValueError(f"invalid enum value name: {name}")
+    if name in seen_enum_names:
+      raise ValueError(f"duplicate enum value name: {name}")
+    seen_enum_names.add(name)
+
+    if not isinstance(value, int) or isinstance(value, bool):
+      raise ValueError(f"enum value must be an integer: {name}={value}")
+    if value == 0:
+      raise ValueError(f"enum value 0 is reserved for unknown/unset: {name}")
+    if value < -(1 << 31) or value > (1 << 31) - 1:
+      raise ValueError(f"enum value is outside signed 32-bit range: {name}={value}")
+    if value in seen_values:
+      raise ValueError(f"duplicate enum numeric value: {value}")
+    seen_values.add(value)
 
 
 def type_info(type_name: str) -> dict[str, Any]:
@@ -212,12 +235,22 @@ def generate_c_header(schema: dict[str, Any], schema_path: Path) -> str:
     for field in flag_fields:
       lines.append(f"#define {field['valid_flag']} (1u << {field['valid_flag_bit']})")
 
+  for field in enum_fields(schema):
+    enum_type = c_enum_type_name(schema, field)
+    lines.extend(["", f"typedef int32_t {enum_type};"])
+    for name, value in field["values"].items():
+      lines.append(f"#define {name} (({enum_type}){value})")
+
   lines.extend(["", f"typedef struct __attribute__((packed)) {{"])
   for field in schema["fields"]:
     info = type_info(field["type"])
     description = field["description"]
     if field["type"].startswith("bytes["):
       lines.append(f"  {info['c']} {field['name']}[{info['size']}]; // {description}")
+    elif field["type"] == "enum":
+      lines.append(
+          f"  {c_enum_type_name(schema, field)} {field['name']}; // {description}"
+      )
     else:
       lines.append(f"  {info['c']} {field['name']}; // {description}")
   record_name = schema["record_name"]
@@ -241,6 +274,7 @@ def generate_python_schema(schema: dict[str, Any], schema_path: Path) -> str:
   schema_const, record_const, format_const, size_const = python_protocol_names(schema)
   class_name = python_class_name(schema["record_name"])
   from_tuple_name = python_from_tuple_name(schema["record_name"])
+  schema_enum_fields = enum_fields(schema)
   struct_format = "<" + "".join(
       type_info(field["type"])["struct"] for field in schema["fields"]
   )
@@ -249,18 +283,29 @@ def generate_python_schema(schema: dict[str, Any], schema_path: Path) -> str:
       "from __future__ import annotations",
       "",
       "from dataclasses import dataclass",
-      "import struct",
-      "",
-      f"{schema_const} = {schema['schema_version']}",
-      f"{record_const} = {schema['record_type']}",
-      f'{format_const} = "{struct_format}"',
-      f"{size_const} = struct.calcsize({format_const})",
-      "",
   ]
+  if schema_enum_fields:
+    lines.append("from enum import IntEnum")
+  lines.extend(
+      [
+          "import struct",
+          "",
+          f"{schema_const} = {schema['schema_version']}",
+          f"{record_const} = {schema['record_type']}",
+          f'{format_const} = "{struct_format}"',
+          f"{size_const} = struct.calcsize({format_const})",
+          "",
+      ]
+  )
 
   for field in schema["fields"]:
     if "valid_flag" in field:
       lines.append(f"{field['valid_flag']} = 1 << {field['valid_flag_bit']}")
+
+  for field in schema_enum_fields:
+    lines.extend(["", f"class {python_enum_class_name(schema, field)}(IntEnum):"])
+    for name, value in field["values"].items():
+      lines.append(f"  {name} = {value}")
 
   lines.extend(["", "", "@dataclass(frozen=True)", f"class {class_name}:"])
   for field in schema["fields"]:
@@ -303,6 +348,20 @@ def python_protocol_names(schema: dict[str, Any]) -> tuple[str, str, str, str]:
 def macro_prefix(record_name: str) -> str:
   base = strip_record_suffix(record_name)
   return base.upper()
+
+
+def enum_fields(schema: dict[str, Any]) -> list[dict[str, Any]]:
+  return [field for field in schema["fields"] if field["type"] == "enum"]
+
+
+def c_enum_type_name(schema: dict[str, Any], field: dict[str, Any]) -> str:
+  return f"{strip_record_suffix(schema['record_name'])}_{field['name']}_t"
+
+
+def python_enum_class_name(schema: dict[str, Any], field: dict[str, Any]) -> str:
+  return python_class_name(
+      f"{strip_record_suffix(schema['record_name'])}_{field['name']}"
+  )
 
 
 def python_class_name(record_name: str) -> str:

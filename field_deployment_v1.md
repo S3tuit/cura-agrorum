@@ -132,14 +132,6 @@ Use two M12 IP68 glands:
 | GLAND-1 | Soil-moisture sensor 3-core cable | 4.6 mm | Must clamp and seal correctly |
 | GLAND-2 | DS18B20 cable | 4.2 mm | Must clamp and seal correctly |
 
-When the enclosure arrives, verify:
-
-- whether the supplied enclosure holes are threaded holes, drilled holes or removable knockouts;
-- whether the selected M12 glands can be installed directly;
-- whether reducers are needed for M20 openings;
-- whether each gland includes a gasket and locknut;
-- whether each cable fits the gland clamping range;
-- whether unused openings require separate blanking plugs.
 
 ### 6.4 Breather vent
 
@@ -150,8 +142,6 @@ The vendor claim is treated as a hypothesis to be tested. The vent is expected t
 Installation requirements:
 
 - lateral mounting is preferred if the enclosure geometry permits it;
-- downward mounting is acceptable;
-- upward-facing mounting is not allowed;
 - water must not pool directly against the vent membrane;
 - the gasket must seal against a flat enclosure surface;
 - the vent must remain installed during all enclosure tests.
@@ -193,14 +183,12 @@ Record after selecting the tube:
 
 | Property | Value |
 |---|---|
-| Material | Pending |
-| External diameter | Pending |
-| Wall thickness | Pending |
-| Total length | Pending |
-| Buried depth | Pending |
-| Enclosure height above soil | Pending |
-| Attachment method | Pending |
-| Cable routing method | Pending |
+| Material | likely PVC but can't be sure since the tube was found in the rubbish |
+| External diameter | 59.50mm |
+| Wall thickness | 2.65mm |
+| Total length | 240mm |
+| Buried depth | 50mm (enough so the cable glands don't touch soil) |
+| Attachment method | Dig a hole, then insert the tube and the sensor, put soil in, compact each layer |
 
 ### 7.2 Requirements
 
@@ -227,7 +215,7 @@ Record after selecting the tube:
 | Cable conductor count | 3 |
 | Individual conductor cross-section | 0.3 mm² |
 
-The exact maximum thickness must be measured again after removing the white connector.
+The exact maximum thickness will be measured with the next batch of ordered soil sensors since the current ones have a known fault.
 
 ### 8.2 Insertion depth
 
@@ -317,7 +305,6 @@ The 12 mm tube provides the tighter cable-side seal and additional strain relief
 - Do not use an open flame.
 - Do not leave the cable under tension.
 - Do not rely on SEALANT alone for the cable transition.
-- Recalibrate the completed probe after soldering, coating and shrinking.
 
 ---
 
@@ -351,36 +338,7 @@ The 12 mm tube provides the tighter cable-side seal and additional strain relief
 
 The 20,000 mAh USB power bank powers the ESP32 DevKit through micro-USB.
 
-The complete assembly must be tested because consumer power banks may switch off when the load becomes too small during deep sleep.
-
-### 10.2 Current measurement correction
-
-Current must be recorded in amperes or milliamperes, not millivolts.
-
-The preliminary ESP32-only deep-sleep measurement was approximately 12 mA using a 4.7 V battery. This value must be re-measured with the complete assembly and real power bank.
-
-### 10.3 Measurement method
-
-Preferred method:
-
-- use an inline USB power meter capable of showing voltage, current and accumulated mAh or Wh.
-
-Alternative method:
-
-```text
-power-bank USB output
-        │
-        ▼
-USB breakout or sacrificial cable
-        │
-        ▼
-multimeter connected in series in current mode
-        │
-        ▼
-ESP32 USB input
-```
-
-Never connect a multimeter in current mode directly across the USB power rails.
+Details at hardware/iniu_power_bank_20Ah.md.
 
 ---
 
@@ -399,7 +357,7 @@ The ESP32 writes readings to internal LittleFS storage.
 
 The available LittleFS partition is sufficient for the planned deployment.
 
-Firmware is already substantially tested. Before deployment, run a long-duration test to confirm that:
+Firmware is already substantially tested. Before deployment, a 2 days test confirmed that:
 
 - readings are written successfully;
 - timestamps remain usable;
@@ -430,6 +388,9 @@ Acceptance criteria:
 - no obvious swelling or softening;
 - no exposed metal caused by coating failure.
 
+Test failed. The coating hasn't formed cloudy areas, bubbles or wrinkles but I can still easily peel it of using my nail.
+Decided to still proceed with this bad quality coating since coat is a second protection only.
+
 ### 12.2 Soil-sensor full-length cable ADC test
 
 Purpose: verify that the 10 m analog cable does not introduce excessive noise.
@@ -446,6 +407,8 @@ Acceptance criteria:
 - no large unexplained spikes;
 - no unstable ADC behavior;
 - any constant offset is documented and handled through calibration.
+
+Test passes. With its main cable the soil sensor reads 928mV. With the full length (10m) cable, 933mV.
 
 ### 12.3 Finished soil-probe soak and flex test
 
@@ -478,6 +441,8 @@ Provisional acceptance criteria:
 - no detached heat-shrink tubing;
 - post-test reference readings remain within approximately 5% of the original air-to-water voltage span.
 
+Passes.
+
 ### 12.4 DS18B20 soak and flex test
 
 Purpose: screen the third-party waterproof probe assembly.
@@ -498,6 +463,8 @@ Acceptance criteria:
 - no intermittent connection;
 - no visible separation at the metal-to-cable transition;
 - no unexplained post-test shift greater than approximately 0.5 °C in the same stable water bath.
+
+Passes.
 
 ### 12.5 Enclosure leak and vent test
 
@@ -529,6 +496,8 @@ Acceptance criteria:
 - tissue paper remains dry;
 - no water pathway through glands, plugs, lid gasket or vent.
 
+Passes.
+
 ### 12.6 Mechanical support test
 
 Purpose: verify stability after selecting the tube.
@@ -542,6 +511,8 @@ Procedure:
 5. Verify that cables are not pinched or cut.
 
 The exact load must be recorded after selecting the support tube.
+
+#OPEN
 
 ### 12.7 Power-bank auto-off and runtime test
 
@@ -561,6 +532,8 @@ Acceptance criteria:
 - no unexpected reset loop;
 - projected runtime sufficient for one month with a safety margin.
 
+Test passes. Details at hardware/iniu_power_bank_20Ah.md.
+
 ---
 
 ## 13. Soil calibration plan
@@ -569,55 +542,19 @@ Calibration and field-capacity estimation are separate experiments.
 
 ### 13.1 Individual sensor calibration
 
-The exact deployed sensor is calibrated after soldering, coating and heat-shrink installation.
+The exact deployed sensor is calibrated before soldering, coating and heat-shrink installation.
 
-Record:
+Tests must be run, in a controlled environment, that:
 
-| Condition | Sensor voltage, mV | Temperature, °C | Notes |
-|---|---:|---:|---|
-| Air |  |  |  |
-| Water |  |  |  |
-| Oven-dry soil |  |  |  |
-| Field-capacity soil |  |  |  |
+- using the 3-core cable don't meaningfully change the readings. Tested.
+- coating don't meaningfully change the readings. #OPEN
+- Adding heat-shrink tube don't meaningfully change the readings. #OPEN
 
 ### 13.2 Gravimetric calibration experiment
 
 Purpose: map raw sensor millivolts to gravimetric soil-water content for the selected field soil.
 
-For each moisture step:
-
-1. Start from a known dry-soil mass.
-2. Add a known water mass.
-3. Mix thoroughly.
-4. Allow time for water distribution to equilibrate.
-5. Pack the soil consistently.
-6. Insert the sensor with the same orientation and depth.
-7. Keep the sensor away from the container walls.
-8. Wait for the reading to stabilize.
-9. Record raw sensor mV and temperature.
-10. Repeat the measurement.
-
-Recommended table:
-
-| Step | Dry soil mass, g | Added water, g | Gravimetric water content, % | Sensor mV | Soil temperature, °C | Notes |
-|---|---:|---:|---:|---:|---:|---|
-| 0 |  |  | 0 |  |  |  |
-| 1 |  |  | 5 |  |  |  |
-| 2 |  |  | 10 |  |  |  |
-| 3 |  |  | 15 |  |  |  |
-| 4 |  |  | 20 |  |  |  |
-| 5 |  |  | 25 |  |  |  |
-| 6 |  |  | 30 |  |  |  |
-| 7 |  |  | 35 |  |  |  |
-| 8 |  |  | 40 |  |  |  |
-| 9 |  |  | 45 |  |  |  |
-| 10 |  |  | 50 |  |  |  |
-
-Formula:
-
-```text
-gravimetric water content = water mass / dry soil mass
-```
+Results at logbook/soil_sensor_curve_fitting_experiment.md.
 
 ### 13.3 Field-capacity experiment
 
@@ -639,17 +576,21 @@ Field validation:
 - heavier soils may require a longer drainage period;
 - document the actual soil type and drainage behavior.
 
+#OPEN
+
 ### 13.4 Permanent wilting point
 
 PWP is estimated from soil type and published reference values for this prototype.
 
 This must be labeled as an estimate, not as a measured property of the field.
+#OPEN
 
 ### 13.5 Available water-holding capacity
 
 Calculate a preliminary available water-holding capacity using the estimated field capacity and estimated PWP.
 
 The result is a first approximation and must be checked for plausibility against the soil type.
+#OPEN
 
 ---
 
@@ -748,6 +689,8 @@ Complete this section at installation time.
 | Cable routing notes |  |
 | Photo filenames |  |
 
+#OPEN
+
 ---
 
 ## 17. Field observations
@@ -842,6 +785,8 @@ After retrieval:
 | SUPPORT | How is the enclosure attached? | Pending |
 | INTERNAL | How are perfboard and power bank secured? | Pending |
 
+#OPEN
+
 ### Resolve during sensor assembly
 
 | Item | Question | Status |
@@ -852,6 +797,7 @@ After retrieval:
 | CABLE | Does the full 10 m cable produce stable ADC readings? | Pending test |
 | SEALANT | Does the coating survive soak and flex screening? | Pending test |
 | TEMP | Does the DS18B20 survive soak and flex screening? | Pending test |
+#OPEN
 
 ### Resolve at field installation
 
@@ -864,3 +810,4 @@ After retrieval:
 | SITE | Water-pooling risk | Pending |
 
 
+#OPEN

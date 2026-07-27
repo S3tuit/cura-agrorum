@@ -9,8 +9,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "esp_err.h"
 #include "esp_littlefs.h"
 #include "esp_log.h"
+#include "fault_cntl.h"
 #include "nvs.h"
 #include "storage.h"
 
@@ -71,7 +73,7 @@ static esp_err_t build_segment_path(uint32_t segment_seq, char *path,
   return ESP_OK;
 }
 
-/* Mounts the LittleFS storage partition only when queue I/O is needed. */
+/* Mounts the LittleFS storage partition. */
 static esp_err_t mount_littlefs(void) {
   if (s_littlefs_mounted) {
     return ESP_OK;
@@ -80,11 +82,13 @@ static esp_err_t mount_littlefs(void) {
   const esp_vfs_littlefs_conf_t conf = {
       .base_path = EVENT_QUEUE_MOUNT_PATH,
       .partition_label = EVENT_QUEUE_PARTITION_LABEL,
-      .format_if_mount_failed = true,
+      /* Preserve a failed filesystem for analysis after this deployment. */
+      .format_if_mount_failed = false,
       .dont_mount = false,
   };
   esp_err_t ret = esp_vfs_littlefs_register(&conf);
   if (ret != ESP_OK) {
+    fault_record(CURA_FAULT_LITTLEFS_MOUNT, ret, 0);
     ESP_LOGE(TAG, "LittleFS mount failed: %s", esp_err_to_name(ret));
     return ret;
   }
@@ -106,6 +110,7 @@ static esp_err_t open_metadata(nvs_handle_t *handle) {
 
   ret = nvs_open(EVENT_QUEUE_NVS_NAMESPACE, NVS_READWRITE, handle);
   if (ret != ESP_OK) {
+    fault_record(CURA_FAULT_QUEUE_METADATA_OPEN, ret, 0);
     ESP_LOGE(TAG, "NVS queue metadata open failed: %s", esp_err_to_name(ret));
   }
   return ret;
@@ -186,16 +191,22 @@ static esp_err_t delete_segment_file(uint32_t segment_seq) {
     return ret;
   }
 
-  if (unlink(path) == 0 || errno == ENOENT) {
+  if (unlink(path) == 0) {
     return ESP_OK;
   }
 
-  ESP_LOGE(TAG, "delete queue segment %s failed: %s", path, strerror(errno));
+  const int saved_errno = errno;
+  if (saved_errno == ENOENT) {
+    return ESP_OK;
+  }
+
+  fault_record(CURA_FAULT_QUEUE_SEGMENT_DELETE, ESP_FAIL, saved_errno);
+  ESP_LOGE(TAG, "delete queue segment %s failed: %s", path,
+           strerror(saved_errno));
   return ESP_FAIL;
 }
 
-/* Drops the oldest whole segment when capacity or corruption forces eviction.
- */
+/* Drops the oldest whole segment when the bounded queue reaches capacity. */
 static esp_err_t drop_oldest_segment(event_queue_metadata_t *metadata) {
   if (metadata == NULL) {
     return ESP_ERR_INVALID_ARG;
@@ -250,6 +261,7 @@ static esp_err_t write_all(int fd, const uint8_t *data, size_t len) {
       continue;
     }
     if (written == 0) {
+      fault_record(CURA_FAULT_QUEUE_SEGMENT_WRITE, ESP_FAIL, 0);
       ESP_LOGE(TAG, "queue file write returned 0");
       return ESP_FAIL;
     }
@@ -257,7 +269,9 @@ static esp_err_t write_all(int fd, const uint8_t *data, size_t len) {
       continue;
     }
 
-    ESP_LOGE(TAG, "queue file write failed: %s", strerror(errno));
+    const int saved_errno = errno;
+    fault_record(CURA_FAULT_QUEUE_SEGMENT_WRITE, ESP_FAIL, saved_errno);
+    ESP_LOGE(TAG, "queue file write failed: %s", strerror(saved_errno));
     return ESP_FAIL;
   }
 
@@ -278,6 +292,7 @@ static esp_err_t read_all(int fd, uint8_t *data, size_t len) {
       continue;
     }
     if (received == 0) {
+      fault_record(CURA_FAULT_QUEUE_SEGMENT_READ, ESP_FAIL, 0);
       ESP_LOGE(TAG, "queue file ended early");
       return ESP_FAIL;
     }
@@ -285,7 +300,9 @@ static esp_err_t read_all(int fd, uint8_t *data, size_t len) {
       continue;
     }
 
-    ESP_LOGE(TAG, "queue file read failed: %s", strerror(errno));
+    const int saved_errno = errno;
+    fault_record(CURA_FAULT_QUEUE_SEGMENT_READ, ESP_FAIL, saved_errno);
+    ESP_LOGE(TAG, "queue file read failed: %s", strerror(saved_errno));
     return ESP_FAIL;
   }
 
@@ -450,19 +467,6 @@ static esp_err_t append_encoded_events(const uint8_t *events,
   return ESP_OK;
 }
 
-/* Extracts a builder's complete encoded event stream. */
-static esp_err_t get_builder_events(const wire_builder_t *builder,
-                                    const uint8_t **events,
-                                    size_t *event_bytes) {
-  if (events == NULL || event_bytes == NULL) {
-    return ESP_ERR_INVALID_ARG;
-  }
-
-  uint16_t ignored_event_count = 0;
-  return wire_builder_get_encoded_events(builder, events, event_bytes,
-                                         &ignored_event_count);
-}
-
 /* Appends one queue segment to the builder and records its bookmark. */
 static esp_err_t load_segment_into_builder(uint32_t segment_seq,
                                            wire_builder_t *builder,
@@ -495,9 +499,14 @@ static esp_err_t load_segment_into_builder(uint32_t segment_seq,
 
   const int fd = open(path, O_RDONLY);
   if (fd < 0) {
-    ESP_LOGE(TAG, "open queue segment %s failed: %s", path, strerror(errno));
+    const int saved_errno = errno;
     builder->len = original_len;
     builder->event_count = original_event_count;
+    if (saved_errno == ENOENT) {
+      return ESP_ERR_NOT_FOUND;
+    }
+    ESP_LOGE(TAG, "open queue segment %s failed: %s", path,
+             strerror(saved_errno));
     return ESP_FAIL;
   }
   ret = read_all(fd, encoded_events, segment_size);
@@ -527,7 +536,7 @@ static esp_err_t load_segment_into_builder(uint32_t segment_seq,
   return ESP_OK;
 }
 
-/* Loads the oldest readable segment, discarding corrupt segments as needed. */
+/* Loads the oldest segment without modifying unreadable or corrupt evidence. */
 static esp_err_t load_oldest_segment(wire_builder_t *builder,
                                      event_queue_bookmark_t *bookmark) {
   event_queue_metadata_t metadata = {0};
@@ -542,12 +551,20 @@ static esp_err_t load_oldest_segment(wire_builder_t *builder,
     if (ret == ESP_OK) {
       return ESP_OK;
     }
+    if (ret != ESP_ERR_NOT_FOUND) {
+      return ret;
+    }
 
-    ESP_LOGW(TAG, "discarding unreadable queue segment seq=%" PRIu32,
+    ESP_LOGW(TAG, "queue head segment seq=%" PRIu32
+                  " missing; advancing queue head",
              segment_seq);
-    esp_err_t drop_ret = drop_oldest_segment(&metadata);
-    if (drop_ret != ESP_OK) {
-      return drop_ret;
+    metadata.head_seq++;
+    if (metadata.head_seq > metadata.tail_seq) {
+      metadata.tail_seq = metadata.head_seq;
+    }
+    ret = write_metadata(&metadata);
+    if (ret != ESP_OK) {
+      return ret;
     }
   }
 
@@ -563,14 +580,8 @@ esp_err_t event_queue_prepare_send(wire_builder_t *builder,
   memset(bookmark, 0, sizeof(*bookmark));
   bookmark->valid = false;
 
-  esp_err_t ret = get_builder_events(builder, &bookmark->unsaved_events,
-                                     &bookmark->unsaved_event_bytes);
-  if (ret != ESP_OK) {
-    return ret;
-  }
-
   event_queue_metadata_t metadata = {0};
-  ret = read_metadata(&metadata);
+  esp_err_t ret = read_metadata(&metadata);
   if (ret != ESP_OK) {
     return ret;
   }
@@ -618,38 +629,6 @@ esp_err_t event_queue_commit_sent(const event_queue_bookmark_t *bookmark) {
     ret = write_metadata(&metadata);
   }
   return ret;
-}
-
-esp_err_t event_queue_buffer_unsent(const wire_builder_t *builder,
-                                    const event_queue_bookmark_t *bookmark) {
-  if (builder == NULL || bookmark == NULL) {
-    return ESP_ERR_INVALID_ARG;
-  }
-
-  const uint8_t *events = NULL;
-  size_t event_bytes = 0;
-  esp_err_t ret = ESP_OK;
-  if (!bookmark->valid) {
-    // If the bookmark is not valid, it means there was no queue when we
-    // created the builder... so we buffer all the events of the builder.
-    ret = get_builder_events(builder, &events, &event_bytes);
-    if (ret != ESP_OK) {
-      return ret;
-    }
-  } else {
-    events = bookmark->unsaved_events;
-    event_bytes = bookmark->unsaved_event_bytes;
-  }
-
-  if (event_bytes == 0) {
-    return ESP_OK;
-  }
-
-  ret = mount_littlefs();
-  if (ret != ESP_OK) {
-    return ret;
-  }
-  return append_encoded_events(events, event_bytes);
 }
 
 esp_err_t event_queue_buffer_unsent_event(const wire_builder_t *builder,

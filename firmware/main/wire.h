@@ -38,18 +38,17 @@
 #endif
 
 typedef struct {
-  uint8_t record_type;
-  uint8_t schema_version;
-  uint16_t payload_len;
-  uint8_t *payload;
-  size_t payload_capacity;
-} wire_event_t;
-
-typedef struct {
   uint8_t buffer[CURA_WIRE_MAX_FRAME_SIZE];
   size_t len;
   uint16_t event_count;
 } wire_builder_t;
+
+typedef struct {
+  uint8_t record_type;
+  uint8_t schema_version;
+  void *payload;
+  size_t payload_size;
+} wire_expected_event_t;
 
 /* Opens a TCP connection to host_ip:port.
  *
@@ -93,17 +92,6 @@ esp_err_t wire_builder_reserve_event(wire_builder_t *builder,
  */
 esp_err_t wire_encoded_event_size(const uint8_t *events, size_t event_bytes,
                                   size_t offset, size_t *one_event_bytes);
-
-/* Exposes the encoded event stream currently held by a builder.
- *
- * The returned pointer starts at the first event header and excludes the frame
- * length and envelope header. The pointer is owned by the builder and remains
- * valid until the builder is reset or destroyed.
- */
-esp_err_t wire_builder_get_encoded_events(const wire_builder_t *builder,
-                                          const uint8_t **events,
-                                          size_t *event_bytes,
-                                          uint16_t *event_count);
 
 /* Finds the complete encoded event that owns a reserved payload pointer.
  *
@@ -160,18 +148,18 @@ esp_err_t wire_builder_commit_events(wire_builder_t *builder);
  */
 esp_err_t wire_builder_send(int fd, wire_builder_t *builder);
 
-/* Reads exactly one single-event frame from an open socket.
+/* Reads one exact event frame into caller-provided payload storage.
  *
- * The caller supplies payload storage through event->payload and
- * event->payload_capacity. The function fills record_type, schema_version,
- * payload_len, and payload bytes. It rejects frames with zero or multiple
- * events because current firmware responses are expected to be one event, such
- * as the config ACK.
+ * The frame must contain exactly one event matching expected->record_type,
+ * expected->schema_version, and expected->payload_size. Header mismatches,
+ * trailing bytes, and multiple events are rejected before payload storage is
+ * written. The payload is undefined if this function returns an error.
  *
- * It returns ESP_ERR_INVALID_SIZE if the peer's payload_len is larger than the
- * caller-provided capacity; it never allocates memory based on peer data.
+ * Descriptors returned by wire_connect() use CONFIG_CURA_TCP_READ_TIMEOUT_MS
+ * for each blocking receive operation. Close the descriptor after any parsing
+ * error because unread response bytes may remain on the connection.
  */
-esp_err_t wire_read_single_event(int fd, wire_event_t *event);
+esp_err_t wire_read_single_event(int fd, const wire_expected_event_t *expected);
 
 /* Gracefully finishes and closes an open descriptor returned by wire_connect().
  *

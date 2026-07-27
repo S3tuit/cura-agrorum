@@ -58,6 +58,10 @@ firmware/sdkconfig
 firmware/sdkconfig.old
 firmware/main/node_identity.h
 firmware/main/node_uuid.txt
+firmware/maintenance/*/build/
+firmware/maintenance/*/managed_components/
+firmware/maintenance/*/sdkconfig
+firmware/maintenance/*/sdkconfig.old
 .cache
 
 # Python
@@ -72,3 +76,7 @@ __pycache__/
 # agents
 .codex
 .claude
+
+# firmware build
+firmware/build*/
+firmware/main/build*/

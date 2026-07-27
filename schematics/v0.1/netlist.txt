@@ -1,30 +1,17 @@
-# AC side
-wall plug : ADAPTER1.ac , ADAPTER2.ac
-
 # 5V domain
 ADAPTER2 : ESP32      # Micro-USB carries 5V + GND
 
 # 3.3V domain
-3V3    : BME.VIN , SOIL.VCC     # From the ESP32's onboard regulator
-GND    : ESP32.GND , ADAPTER1.- , MOSFET.S , Rpd.b , SOIL.GND , BME.GND
+3V3    : BME.VIN , SOIL.VCC, DS18.VCC, R_DS18.1     # From the ESP32's onboard regulator
+GND    : ESP32.GND , SOIL.GND , BME.GND, DS18.GND
 GPIO34 : SOIL.AOUT        # ADC1, input-only, WiFi-safe
-GPIO19 : BME.SDA
-GPIO18 : BME.SCL
-
-# 12V domain
-12V    : ADAPTER1.+ , PUMP.+ , D1.cathode
-DRAIN  : PUMP.- , MOSFET.D , D1.anode
-GPIO25 : Rgate.a          # firmware drives HIGH to run the pump
-GATE   : Rgate.b , MOSFET.G , Rpd.a
+GPIO33 : BME.SDA
+GPIO25 : BME.SCL
+GPIO26 : DS18.DATA, R_DS18.2
 
 # Components
-Rgate     = 220R
-Rpd       = 10k
-D1        = 1N4007
-MOSFET    = IRLZ44N 
-PUMP      = See hardware/diaphragm_water_pump_runcci_yun.md
 SOIL      = Capacitive soil moisture sensor v1.2
 BME       = BME280
-ADAPTER1  = A/C -> V12 DC
-ADAPTER2  = A/C -> V5 DC
 ESP32     = ESP32-WROOM-32D DevKit
+DS18      = DS18B20 temperature sensor
+R_DS18    = 4.7 kΩ pull-up resistor

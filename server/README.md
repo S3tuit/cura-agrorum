@@ -19,6 +19,11 @@ python -m cura_server --host 0.0.0.0 --port 18032
 Use `--database-url` or `DATABASE_URL` to override the local development
 connection string.
 
+At startup, the server loads accepted node UUIDs from active rows in
+`node_configuration` where `valid_until IS NULL`. Restart the server after adding
+or changing an accepted node. Readings from UUIDs outside this startup-loaded set
+are rejected with a nonzero ACK.
+
 The server listens for frames with this format:
 
 ```text
@@ -37,37 +42,28 @@ Frame, envelope, and event header fields use network byte order. Payload byte
 order is defined by the payload schema in `../protocol/schemas/`. The full wire
 format is documented in `../protocol/wire/v1.md`.
 
-## Advertise with Avahi
+After durably persisting every event in a frame, the server returns an `ack_t`
+event with status `0`. A nonzero status rejects the complete frame. Nodes keep
+one frame outstanding at a time and may reuse the TCP connection for subsequent
+frames after a successful ACK.
 
-For development:
+## Field Hotspot
+
+For field collection from the Fedora laptop, start the NetworkManager hotspot:
 
 ```bash
-avahi-publish -s "Cura Agrorum Gateway" _cura-agrorum._tcp 18032 proto=tcp-frame-v1 record_types=1,2
+sudo deploy/field-hotspot.sh up
 ```
+
+The current firmware connects to SSID `cura-field` and sends TCP frames to
+`10.42.0.1:18032`. No service discovery is used in this prototype.
 
 ## Regenerate protocol files
 
-The firmware C headers and Python decoder constants are generated from
-`../protocol/schemas/reading_v1.json` and
-`../protocol/schemas/node_config_v1.json`, and
-`../protocol/schemas/config_ack_v1.json`.
+The firmware C headers and Python decoder constants are generated from the JSON
+schemas in `../protocol/schemas/`.
 
 ```bash
 cd ..
 python3 protocol/tools/generate.py
-```
-
-For a Pi deployment, install:
-
-```text
-deploy/avahi/cura-agrorum.service -> /etc/avahi/services/cura-agrorum.service
-deploy/systemd/cura-agrorum-server.service -> /etc/systemd/system/cura-agrorum-server.service
-```
-
-Then reload system services:
-
-```bash
-sudo systemctl restart avahi-daemon
-sudo systemctl daemon-reload
-sudo systemctl enable --now cura-agrorum-server
 ```

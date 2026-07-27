@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "record_type": 2,
+  "endianness": "little",
+  "record_name": "ack_t",
+  "fields": [
+    {
+      "name": "status",
+      "type": "u32",
+      "description": "Frame persistence result: 0 means all events persisted, nonzero means error."
+    }
+  ]
+}

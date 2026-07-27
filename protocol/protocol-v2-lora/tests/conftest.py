@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import importlib
 import importlib.util
 import json
 import os
@@ -28,6 +29,13 @@ GENERATED_C_SOURCE = (
     / "protocol_v2_lora"
     / "protocol_v2_lora_schema_generated.c"
 )
+CRYPTO_C_SOURCE = (
+    REPO_ROOT
+    / "firmware"
+    / "components"
+    / "protocol_v2_lora"
+    / "protocol_v2_lora_crypto.c"
+)
 GENERATED_PYTHON = (
     REPO_ROOT
     / "receiver"
@@ -35,10 +43,19 @@ GENERATED_PYTHON = (
     / "generated"
     / "protocol_v2_lora_generated.py"
 )
+RECEIVER_ROOT = REPO_ROOT / "receiver"
 
 
 class CodecRejected(ValueError):
     """A generated codec rejected a value or byte sequence."""
+
+
+class CryptoRejected(ValueError):
+    """A frame crypto implementation rejected an input."""
+
+
+class AuthenticationRejected(CryptoRejected):
+    """A frame failed authenticated decryption."""
 
 
 class Codec(Protocol):
@@ -65,6 +82,23 @@ class Codec(Protocol):
     def decode_ack(self, data: bytes) -> dict[str, Any]: ...
 
     def ack_status_matches_domain(self, domain: int, status: int) -> bool: ...
+
+
+class FrameCrypto(Protocol):
+    name: str
+
+    def seal_frame(
+        self,
+        node_key: bytes,
+        header: Mapping[str, Any],
+        plaintext_body: bytes,
+    ) -> bytes: ...
+
+    def open_frame(
+        self,
+        node_key: bytes,
+        frame: bytes,
+    ) -> tuple[dict[str, Any], bytes]: ...
 
 
 def _without_encoded_hex(fields: Mapping[str, Any]) -> dict[str, Any]:
@@ -150,6 +184,60 @@ class PythonCodec:
 
     def ack_status_matches_domain(self, domain: int, status: int) -> bool:
         return self.module.ack_status_matches_domain(domain, status)
+
+
+@dataclass(frozen=True)
+class PythonFrameCrypto:
+    module: ModuleType
+    name: str = "python"
+
+    def _header(self, fields: Mapping[str, Any]) -> Any:
+        return self.module.schema.ClearHeader(
+            control=fields["control"],
+            domain=fields["domain"],
+            node_id=bytes.fromhex(fields["node_id_hex"]),
+            sample_id=fields["sample_id"],
+        )
+
+    def seal_frame(
+        self,
+        node_key: bytes,
+        header: Mapping[str, Any],
+        plaintext_body: bytes,
+    ) -> bytes:
+        try:
+            return self.module.seal_frame(
+                node_key,
+                self._header(header),
+                plaintext_body,
+            )
+        except self.module.AuthenticationError as exc:
+            raise AuthenticationRejected(str(exc)) from exc
+        except self.module.CryptoError as exc:
+            raise CryptoRejected(str(exc)) from exc
+
+    def open_frame(
+        self,
+        node_key: bytes,
+        frame: bytes,
+    ) -> tuple[dict[str, Any], bytes]:
+        try:
+            authenticated = self.module.open_frame(node_key, frame)
+        except self.module.AuthenticationError as exc:
+            raise AuthenticationRejected(str(exc)) from exc
+        except self.module.CryptoError as exc:
+            raise CryptoRejected(str(exc)) from exc
+
+        header = authenticated.header
+        return (
+            {
+                "control": header.control,
+                "domain": header.domain,
+                "node_id_hex": header.node_id.hex(),
+                "sample_id": header.sample_id,
+            },
+            authenticated.plaintext_body,
+        )
 
 
 class CHeader(ctypes.Structure):
@@ -311,6 +399,87 @@ class CCodec:
         )
 
 
+@dataclass(frozen=True)
+class CFrameCrypto:
+    library: ctypes.CDLL
+    name: str = "c"
+
+    @staticmethod
+    def _header(fields: Mapping[str, Any]) -> CHeader:
+        return CCodec._header(fields)
+
+    @staticmethod
+    def _raise_for_result(result: int) -> None:
+        if result == 0:
+            return
+        if result == 4:
+            raise AuthenticationRejected("frame authentication failed")
+        raise CryptoRejected(f"C frame crypto result: {result}")
+
+    @staticmethod
+    def _bytes(data: bytes) -> ctypes.Array[Any]:
+        return (ctypes.c_uint8 * len(data)).from_buffer_copy(data)
+
+    def seal_frame(
+        self,
+        node_key: bytes,
+        header: Mapping[str, Any],
+        plaintext_body: bytes,
+    ) -> bytes:
+        if len(node_key) != 16:
+            raise CryptoRejected("node_key must be 16 bytes")
+        output = (ctypes.c_uint8 * 50)()
+        output_length = ctypes.c_size_t()
+        key = self._bytes(node_key)
+        body = self._bytes(plaintext_body)
+        encoded_header = self._header(header)
+
+        result = self.library.cura_lora_v2_seal_frame(
+            output,
+            len(output),
+            ctypes.byref(output_length),
+            key,
+            ctypes.byref(encoded_header),
+            body,
+            len(body),
+        )
+        self._raise_for_result(result)
+        return bytes(output[: output_length.value])
+
+    def open_frame(
+        self,
+        node_key: bytes,
+        frame: bytes,
+    ) -> tuple[dict[str, Any], bytes]:
+        if len(node_key) != 16:
+            raise CryptoRejected("node_key must be 16 bytes")
+        decoded_header = CHeader()
+        plaintext = (ctypes.c_uint8 * 28)()
+        plaintext_length = ctypes.c_size_t()
+        key = self._bytes(node_key)
+        encoded_frame = self._bytes(frame)
+
+        result = self.library.cura_lora_v2_open_frame(
+            ctypes.byref(decoded_header),
+            plaintext,
+            len(plaintext),
+            ctypes.byref(plaintext_length),
+            key,
+            encoded_frame,
+            len(frame),
+        )
+        self._raise_for_result(result)
+        return (
+            {
+                "control": decoded_header.control,
+                "domain": decoded_header.domain,
+                "node_id_hex": bytes(decoded_header.node_id).hex(),
+                "sample_id": decoded_header.sample_id,
+            },
+            bytes(plaintext[: plaintext_length.value]),
+        )
+
+
 def _configure_c_library(library: ctypes.CDLL) -> None:
     byte_pointer = ctypes.POINTER(ctypes.c_uint8)
 
@@ -367,6 +536,26 @@ def _configure_c_library(library: ctypes.CDLL) -> None:
         ctypes.c_uint8,
     ]
     library.cura_lora_v2_ack_status_matches_domain.restype = ctypes.c_bool
+    library.cura_lora_v2_seal_frame.argtypes = [
+        byte_pointer,
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_size_t),
+        byte_pointer,
+        ctypes.POINTER(CHeader),
+        byte_pointer,
+        ctypes.c_size_t,
+    ]
+    library.cura_lora_v2_seal_frame.restype = ctypes.c_int
+    library.cura_lora_v2_open_frame.argtypes = [
+        ctypes.POINTER(CHeader),
+        byte_pointer,
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_size_t),
+        byte_pointer,
+        byte_pointer,
+        ctypes.c_size_t,
+    ]
+    library.cura_lora_v2_open_frame.restype = ctypes.c_int
 
 
 def _load_golden_vectors() -> dict[str, Any]:
@@ -387,6 +576,11 @@ def repo_root() -> Path:
 
 
 @pytest.fixture(scope="session")
+def golden_vectors() -> dict[str, Any]:
+    return GOLDEN_VECTORS
+
+
+@pytest.fixture(scope="session")
 def python_codec() -> PythonCodec:
     module_name = "cura_receiver_protocol_v2_lora_generated_for_tests"
     spec = importlib.util.spec_from_file_location(module_name, GENERATED_PYTHON)
@@ -396,6 +590,17 @@ def python_codec() -> PythonCodec:
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return PythonCodec(module)
+
+
+@pytest.fixture(scope="session")
+def python_frame_crypto() -> PythonFrameCrypto:
+    receiver_root = str(RECEIVER_ROOT)
+    if receiver_root not in sys.path:
+        sys.path.insert(0, receiver_root)
+    module = importlib.import_module(
+        "cura_receiver.protocol_v2_lora_crypto"
+    )
+    return PythonFrameCrypto(module)
 
 
 @pytest.fixture(scope="session")
@@ -411,12 +616,15 @@ def c_codec(
         "-Wextra",
         "-Werror",
         "-pedantic",
+        "-DCURA_LORA_V2_CRYPTO_USE_OPENSSL",
         "-fPIC",
         "-shared",
         f"-I{GENERATED_C_HEADER_DIR}",
         str(GENERATED_C_SOURCE),
+        str(CRYPTO_C_SOURCE),
         "-o",
         str(output),
+        "-lcrypto",
     ]
     environment = os.environ.copy()
     environment["CCACHE_DISABLE"] = "1"
@@ -440,6 +648,19 @@ def c_codec(
 
 
 @pytest.fixture(scope="session")
+def c_frame_crypto(c_codec: CCodec) -> CFrameCrypto:
+    return CFrameCrypto(c_codec.library)
+
+
+@pytest.fixture(scope="session")
+def frame_crypto_pair(
+    python_frame_crypto: PythonFrameCrypto,
+    c_frame_crypto: CFrameCrypto,
+) -> tuple[FrameCrypto, FrameCrypto]:
+    return python_frame_crypto, c_frame_crypto
+
+
+@pytest.fixture(scope="session")
 def codec_pair(
     python_codec: PythonCodec,
     c_codec: CCodec,
@@ -449,6 +670,14 @@ def codec_pair(
 
 @pytest.fixture(params=("python_codec", "c_codec"), ids=("python", "c"))
 def codec(request: pytest.FixtureRequest) -> Codec:
+    return request.getfixturevalue(request.param)
+
+
+@pytest.fixture(
+    params=("python_frame_crypto", "c_frame_crypto"),
+    ids=("python", "c"),
+)
+def frame_crypto(request: pytest.FixtureRequest) -> FrameCrypto:
     return request.getfixturevalue(request.param)
 
 

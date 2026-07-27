@@ -195,3 +195,39 @@ def test_arbitrary_reading_body_acceptance_agrees(
         assert reading is not None
         assert python_codec.encode_reading(reading) == body
         assert c_codec.encode_reading(reading) == body
+
+
+@settings(max_examples=300, deadline=None)
+@given(
+    node_key=st.binary(min_size=16, max_size=16),
+    header=headers(),
+    plaintext_body=st.binary(min_size=1, max_size=28),
+)
+def test_frame_crypto_implementations_agree_and_round_trip(
+    frame_crypto_pair: tuple[Any, Any],
+    node_key: bytes,
+    header: dict[str, Any],
+    plaintext_body: bytes,
+) -> None:
+    python_crypto, c_crypto = frame_crypto_pair
+
+    python_frame = python_crypto.seal_frame(
+        node_key,
+        header,
+        plaintext_body,
+    )
+    c_frame = c_crypto.seal_frame(
+        node_key,
+        header,
+        plaintext_body,
+    )
+
+    assert python_frame == c_frame
+    assert python_crypto.open_frame(node_key, c_frame) == (
+        header,
+        plaintext_body,
+    )
+    assert c_crypto.open_frame(node_key, python_frame) == (
+        header,
+        plaintext_body,
+    )

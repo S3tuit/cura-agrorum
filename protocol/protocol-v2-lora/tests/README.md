@@ -29,10 +29,16 @@ file freshness, C memory safety, and broader input spaces.
   against both codecs.
 - `test_validation.py`: applies shared negative and classification tests to
   both codecs.
+- `test_crypto.py`: checks exact encrypted frames, authenticated round trips,
+  tampering, key and length failures, and C/Python interoperability.
 - `test_properties.py`: uses Hypothesis for C/Python agreement, round trips,
-  integer boundaries, valid readings, and arbitrary reading bodies.
+  integer boundaries, valid readings, arbitrary reading bodies, and
+  authenticated frames.
 - `test_c_sanitized.py` and `c/test_codec_sanitized.c`: compile and execute the
   standalone C boundary harness with ASan and UBSan.
+- `test_crypto_sanitized.py` and `c/test_crypto_sanitized.c`: check the firmware
+  frame layer's buffers, null arguments, golden frame and authentication
+  failure behavior with ASan and UBSan.
 - `test_libfuzzer.py` and `c/fuzz_codec.c`: compile the C fuzz target with
   libFuzzer, ASan, and UBSan, then perform randomized runs over codec
   operations and invariants.
@@ -54,9 +60,9 @@ python -m pytest protocol/protocol-v2-lora/tests
 ```
 
 Pytest orchestrates all Python and native tests; no separate build command is
-needed. A C compiler with ASan/UBSan support and Clang with libFuzzer support
-must also be installed. `CC` overrides the normal C compiler and `FUZZ_CC`
-overrides the fuzz compiler.
+needed. A C compiler with ASan/UBSan support, OpenSSL development headers and
+library, and Clang with libFuzzer support must also be installed. `CC`
+overrides the normal C compiler and `FUZZ_CC` overrides the fuzz compiler.
 
 Any individual test file can be passed to the same `python -m pytest` command
 while developing.

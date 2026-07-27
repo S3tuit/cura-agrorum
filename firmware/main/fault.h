@@ -1,4 +1,4 @@
-/* Generated C header from protocol/schemas/fault_v1.json by protocol/tools/generate.py. Do not edit by hand. */
+/* Generated C header from protocol/wifi-protocol-v1/schemas/fault_v1.json by protocol/wifi-protocol-v1/tools/generate.py. Do not edit by hand. */
 #pragma once
 
 #include <stdint.h>

@@ -1,4 +1,4 @@
-/* Generated C header from protocol/schemas/reading_v1.json by protocol/tools/generate.py. Do not edit by hand. */
+/* Generated C header from protocol/wifi-protocol-v1/schemas/reading_v1.json by protocol/wifi-protocol-v1/tools/generate.py. Do not edit by hand. */
 #pragma once
 
 #include <stdint.h>

@@ -67,8 +67,12 @@ firmware/maintenance/*/sdkconfig.old
 # Python
 __pycache__/
 *.py[cod]
+.hypothesis/
 .env
 .venv
+
+# Fuzzing
+protocol/protocol-v2-lora/.fuzz-corpus/
 
 # debug information files
 *.dwo
@@ -80,3 +84,7 @@ __pycache__/
 # firmware build
 firmware/build*/
 firmware/main/build*/
+
+# personal notes
+*.notes
+analysis_*/

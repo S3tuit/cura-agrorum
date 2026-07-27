@@ -2,8 +2,9 @@
 """Generate protocol code shared by firmware and server.
 
 This script is the source-of-truth generator for Cura Agrorum wire structs.
-It reads JSON schemas from protocol/schemas/ and writes matching C headers for
-the ESP32 firmware plus Python dataclass/struct decoders for the server.
+It reads JSON schemas from protocol/wifi-protocol-v1/schemas/ and writes
+matching C headers for the ESP32 firmware plus Python dataclass/struct decoders
+for the server.
 
 Current generated protocol payloads:
   * reading_t: the sensor reading frame sent after sampling.
@@ -15,14 +16,14 @@ It also manages the local node identity used by firmware:
   * firmware/main/node_identity.h is generated from that UUID and included by C.
 
 Normal use:
-  python3 protocol/tools/generate.py
+  python3 protocol/wifi-protocol-v1/tools/generate.py
 
 This regenerates tracked protocol outputs and, if node_uuid.txt does not exist,
 creates one with a new UUID. Keep node_uuid.txt with the physical node and do
 not commit it.
 
 CI/check use:
-  python3 protocol/tools/generate.py --check
+  python3 protocol/wifi-protocol-v1/tools/generate.py --check
 
 This verifies generated tracked outputs are current. It does not create a new
 node UUID when the UUID file is missing, so fresh checkouts can run it safely.
@@ -38,7 +39,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+PROTOCOL_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[3]
+GENERATOR_PATH = Path(__file__).resolve().relative_to(REPO_ROOT)
 DEFAULT_PY_INIT = REPO_ROOT / "server" / "cura_server" / "generated" / "__init__.py"
 DEFAULT_NODE_UUID = REPO_ROOT / "firmware" / "main" / "node_uuid.txt"
 DEFAULT_NODE_IDENTITY = REPO_ROOT / "firmware" / "main" / "node_identity.h"
@@ -53,17 +56,17 @@ class ProtocolOutput:
 
 PROTOCOL_OUTPUTS = (
     ProtocolOutput(
-        schema=REPO_ROOT / "protocol" / "schemas" / "reading_v1.json",
+        schema=PROTOCOL_ROOT / "schemas" / "reading_v1.json",
         c_header=REPO_ROOT / "firmware" / "main" / "reading.h",
         py_schema=REPO_ROOT / "server" / "cura_server" / "generated" / "reading_v1.py",
     ),
     ProtocolOutput(
-        schema=REPO_ROOT / "protocol" / "schemas" / "ack_v1.json",
+        schema=PROTOCOL_ROOT / "schemas" / "ack_v1.json",
         c_header=REPO_ROOT / "firmware" / "main" / "ack.h",
         py_schema=REPO_ROOT / "server" / "cura_server" / "generated" / "ack_v1.py",
     ),
     ProtocolOutput(
-        schema=REPO_ROOT / "protocol" / "schemas" / "fault_v1.json",
+        schema=PROTOCOL_ROOT / "schemas" / "fault_v1.json",
         c_header=REPO_ROOT / "firmware" / "main" / "fault.h",
         py_schema=REPO_ROOT / "server" / "cura_server" / "generated" / "fault_v1.py",
     ),
@@ -382,7 +385,7 @@ def generated_c_banner(schema_path: Path) -> str:
   rel_schema = schema_path.resolve().relative_to(REPO_ROOT)
   return (
       f"/* Generated C header from {rel_schema} by "
-      "protocol/tools/generate.py. Do not edit by hand. */"
+      f"{GENERATOR_PATH}. Do not edit by hand. */"
   )
 
 
@@ -390,7 +393,7 @@ def generated_python_banner(schema_path: Path) -> str:
   rel_schema = schema_path.resolve().relative_to(REPO_ROOT)
   return (
       f"# Generated Python module from {rel_schema} by "
-      "protocol/tools/generate.py. Do not edit by hand."
+      f"{GENERATOR_PATH}. Do not edit by hand."
   )
 
 
@@ -416,7 +419,7 @@ def generate_node_identity_header(node_uuid: uuid.UUID, uuid_path: Path) -> str:
   return "\n".join(
       [
           f"/* Generated firmware node identity from {rel_uuid_path} by "
-          "protocol/tools/generate.py. Do not edit by hand. */",
+          f"{GENERATOR_PATH}. Do not edit by hand. */",
           "#pragma once",
           "",
           f'#define CURA_NODE_UUID_STR "{node_uuid}"',

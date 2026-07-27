@@ -1,4 +1,4 @@
-# Soil Moisture Field Deployment — Version 2
+# Soil Moisture Field Deployment — Version 1
 
 ## 1. Goal of the project
 
@@ -27,8 +27,6 @@ This is an experimental base for a future low-cost agricultural sensor that shou
 - The probe does not represent the entire root zone or the spatial variability of the field.
 - The system cannot determine whether water is moving too deeply below the root zone.
 - The capacitive soil sensor is a low-cost relative sensor. Its readings require local calibration.
-- The inexpensive vent, coating, cable and probe assemblies are treated as experimental components unless verified by testing.
-- This version is a field-instrumentation prototype, not yet a complete irrigation-scheduling controller.
 
 ---
 
@@ -51,7 +49,8 @@ This is an experimental base for a future low-cost agricultural sensor that shou
 | SOIL | Soil-moisture sensor | Capacitive Soil Moisture Sensor v1.2 |  | Low-cost analog capacitive sensor. Must be calibrated individually. |
 | BME | Internal humidity and temperature sensor | BME280 |  | Used primarily to monitor enclosure humidity and temperature. Leave sensing opening uncoated. |
 | ESP32 | Microcontroller | ESP32-WROOM-32D DevKit |  | Logs readings to internal LittleFS storage. |
-| CASE | Outdoor enclosure | IP65 junction box, 150 × 110 × 70 mm, supplied with M20 cable-gland positions |  | Final gland compatibility and internal layout must be checked after delivery. |
+| CASE | Outdoor enclosure | IP65 junction box, 150 × 110 × 70 mm, supplied with M20 cable-gland positions |  | This contains the sensors and the ESP32. |
+| CASE2 | Outdoor enclosure | IP65 junction box, 200x200x80mm | https://www.amazon.it/dp/B08W5DB1ZL | This contains the BANK. |
 | VENT | Breather vent | Clockjuan IP68 screw breather vent valve, M12 × 1.5 | https://www.amazon.it/-/en/gp/product/B0FY75CG4L | No datasheet available. Must remain installed during enclosure tests. |
 | TEMP | Soil-temperature probe | AZDelivery stainless-steel DS18B20 probe | https://www.amazon.it/AZDelivery-Temperature-Stainless-Waterproof-Compatible/dp/B075FYYLLV | Stainless-steel probe assembly sold as waterproof. Approximately 6 mm probe diameter and 4.2 mm cable diameter. |
 | BANK | Power supply | 20,000 mAh USB power bank, 22.5 W | https://www.amazon.it/-/en/gp/product/B0G2XWPXCV | | Auto-off behavior during deep sleep must be tested. |
@@ -74,14 +73,13 @@ The node has three physical sections:
 
 ```text
                 above-ground enclosure
-       ┌─────────────────────────────────┐
-       │ ESP32 DevKit                    │
-       │ power bank                      │
-       │ perfboard                       │
-       │ BME280                          │
-       │ internal wiring                 │
-       │ breather vent                   │
-       └─────────────────────────────────┘
+       ┌──────────────────────────────────┐
+       │ ESP32 DevKit                     │
+       │ perfboard                        │
+       │ BME280                           │
+       │ internal wiring                  │── USB connection to CASE2
+       │ breather vent mounted on the side│
+       └──────────────────────────────────┘
                   │               │
                   │               └── DS18B20 cable
                   │
@@ -106,18 +104,16 @@ The node has three physical sections:
 
 The junction box is mounted vertically above the soil. The shorter side faces downward because the enclosure has cable-entry traces on that side.
 
-The enclosure must not touch the soil and must not sit in standing water.
+The enclosure doesn't touch the soil and must not sit in standing water.
 
 The enclosure color is white. No additional sun shield is required for the first deployment unless the logged internal temperature shows that it is necessary.
 
 ### 6.2 Functional requirements
 
-- The enclosure remains above ground.
-- Cable exits face downward where possible.
-- The vent faces laterally or downward so that water cannot pool against it.
-- Unused openings are sealed with blanking plugs.
-- The power bank cannot move freely inside the case.
-- The perfboard cannot move freely inside the case.
+- Sensor cable exits face downward.
+- The vent faces laterally so that water cannot pool against it.
+- The power bank cannot move freely inside CASE2.
+- The perfboard cannot move freely inside CASE.
 - Loose wires cannot pull on solder joints.
 - Boards are mounted above the enclosure floor so that minor condensation does not collect around contacts.
 - The BME280 sensing opening remains unobstructed and uncoated.
@@ -125,7 +121,6 @@ The enclosure color is white. No additional sun shield is required for the first
 
 ### 6.3 Cable glands
 
-Use two M12 IP68 glands:
 
 | Gland | Cable | Approximate cable outer diameter | Requirement |
 |---|---|---:|---|
@@ -138,13 +133,6 @@ Use two M12 IP68 glands:
 The vent is a low-cost Clockjuan M12 × 1.5 breather valve sold as IP68.
 
 The vendor claim is treated as a hypothesis to be tested. The vent is expected to help equalize internal and external pressure. It may reduce condensation risk, but it does not guarantee low internal humidity.
-
-Installation requirements:
-
-- lateral mounting is preferred if the enclosure geometry permits it;
-- water must not pool directly against the vent membrane;
-- the gasket must seal against a flat enclosure surface;
-- the vent must remain installed during all enclosure tests.
 
 ### 6.5 Internal coating
 
@@ -512,7 +500,7 @@ Procedure:
 
 The exact load must be recorded after selecting the support tube.
 
-#OPEN
+
 
 ### 12.7 Power-bank auto-off and runtime test
 
@@ -547,8 +535,8 @@ The exact deployed sensor is calibrated before soldering, coating and heat-shrin
 Tests must be run, in a controlled environment, that:
 
 - using the 3-core cable don't meaningfully change the readings. Tested.
-- coating don't meaningfully change the readings. #OPEN
-- Adding heat-shrink tube don't meaningfully change the readings. #OPEN
+- coating don't meaningfully change the readings. 
+- Adding heat-shrink tube don't meaningfully change the readings. 
 
 ### 13.2 Gravimetric calibration experiment
 
@@ -576,21 +564,21 @@ Field validation:
 - heavier soils may require a longer drainage period;
 - document the actual soil type and drainage behavior.
 
-#OPEN
+
 
 ### 13.4 Permanent wilting point
 
 PWP is estimated from soil type and published reference values for this prototype.
 
 This must be labeled as an estimate, not as a measured property of the field.
-#OPEN
+
 
 ### 13.5 Available water-holding capacity
 
 Calculate a preliminary available water-holding capacity using the estimated field capacity and estimated PWP.
 
 The result is a first approximation and must be checked for plausibility against the soil type.
-#OPEN
+
 
 ---
 
@@ -689,7 +677,7 @@ Complete this section at installation time.
 | Cable routing notes |  |
 | Photo filenames |  |
 
-#OPEN
+
 
 ---
 
@@ -785,7 +773,7 @@ After retrieval:
 | SUPPORT | How is the enclosure attached? | Pending |
 | INTERNAL | How are perfboard and power bank secured? | Pending |
 
-#OPEN
+
 
 ### Resolve during sensor assembly
 
@@ -797,7 +785,7 @@ After retrieval:
 | CABLE | Does the full 10 m cable produce stable ADC readings? | Pending test |
 | SEALANT | Does the coating survive soak and flex screening? | Pending test |
 | TEMP | Does the DS18B20 survive soak and flex screening? | Pending test |
-#OPEN
+
 
 ### Resolve at field installation
 
@@ -810,4 +798,4 @@ After retrieval:
 | SITE | Water-pooling risk | Pending |
 
 
-#OPEN
+

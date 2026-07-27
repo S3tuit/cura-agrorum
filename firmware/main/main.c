@@ -522,7 +522,7 @@ static void read_all_sensors(reading_t *reading, uint32_t sample_id,
              reading->sample_id, reading->bootno, reading->wake_causes);
 
   uint16_t soil_mv = 0;
-  esp_err_t soil_ret = soil_sensor_read_mv(&soil_mv);
+  esp_err_t soil_ret = soil_sensor_read_mv(SOIL_ADC_GPIO, &soil_mv);
   if (soil_ret == ESP_OK) {
     reading->soil_mv = soil_mv;
     reading->flags |= READING_SOIL_MV_OK;
@@ -562,14 +562,6 @@ static void read_all_sensors(reading_t *reading, uint32_t sample_id,
   DEBUG_LOGI(TAG, "run=%" PRIu16 "ms", reading->run_ms);
 }
 
-/* Powerbank stabilization test mode.
- *
- * The normal firmware draws a large WiFi/sensor current burst and then drops to
- * ESP32 deep-sleep current. With the INIU powerbank this can cut 5V and cause a
- * true reboot, observed as bootno=0 on the next message. For this test build we
- * avoid WiFi and deep sleep: readings are buffered locally, then the CPU spins
- * for the nominal 15 minute interval to keep the load roughly constant.
- */
 void app_main(void) {
   i2cdev_init();
 
@@ -606,7 +598,7 @@ app_main_start:
    * WiFi path below is left in place for easy restoration after this hardware
    * test. */
   buffer_current_reading(reading);
-  goto wait;
+  // goto wait;
 
   ret = cura_wifi_connect();
   if (ret != ESP_OK) {

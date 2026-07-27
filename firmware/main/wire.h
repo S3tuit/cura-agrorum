@@ -74,7 +74,8 @@ void wire_builder_init(wire_builder_t *builder);
  * builder object goes out of scope.
  *
  * The pointer is byte storage inside the encoded frame. Cast it only to packed
- * wire payload structs generated from protocol/schemas/, or use memcpy.
+ * wire payload structs generated from protocol/wifi-protocol-v1/schemas/, or
+ * use memcpy.
  *
  * The payload is not initialized. Callers must write the full payload before
  * calling wire_builder_send().

@@ -13,7 +13,7 @@ readable.
 Regenerate the firmware and server schema files with:
 
 ```bash
-python3 protocol/tools/generate.py
+python3 protocol/wifi-protocol-v1/tools/generate.py
 ```
 
 The generator also creates ignored firmware-local identity files:
@@ -29,5 +29,5 @@ node and do not commit it.
 Check whether generated files are stale with:
 
 ```bash
-python3 protocol/tools/generate.py --check
+python3 protocol/wifi-protocol-v1/tools/generate.py --check
 ```

@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "sdkconfig.h"
 #include "soil_sensor.h"
 
 static const char *TAG = "always_on_soil_calibration";
@@ -73,7 +74,7 @@ void app_main(void) {
     }
 
     uint16_t soil_mv = 0;
-    esp_err_t ret = soil_sensor_read_mv(&soil_mv);
+    esp_err_t ret = soil_sensor_read_mv(CONFIG_CURA_SOIL_ADC_GPIO, &soil_mv);
     if (ret == ESP_OK) {
       samples[sample_count] = soil_mv;
       sample_count++;

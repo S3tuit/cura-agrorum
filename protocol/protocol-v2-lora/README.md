@@ -7,16 +7,15 @@ specification.
 
 - Custom raw-LoRa, sessionless node-to-receiver protocol.
 - Each receiver group has a secret master key.
-- Each node has a random 64-bit `node_id` for its current provisioning epoch
-  and a unique 128-bit node key derived from the group master key and `node_id`
-  using HKDF-SHA-256.
+- Each node has a random 64-bit `node_id` and a unique 128-bit node key derived
+  from the group master key and `node_id` using HKDF-SHA-256.
 - `node_id` is public. A node stores only `node_id` and its derived node key,
   never the group master key.
 - The receiver derives node keys as needed. It still persists replay state,
   node metadata, revocation state and readings.
 - No UUID and no identity/session handshake are used on the LoRa link.
 - Each receiver group contains exactly one receiver during the pilot.
-- A node belongs to exactly one receiver group during each provisioning epoch.
+- A node belongs to exactly one receiver group during an identity lifetime.
   Roaming and redundant receivers are not supported.
 - Moving a node to another receiver group requires physical reprovisioning with
   a fresh `node_id` and a node key derived from the destination group's master
@@ -25,10 +24,15 @@ specification.
 ## Keys and provisioning
 
 Each receiver group has one `group_master_key`, generated once as 32 random
-bytes with Python's `secrets.token_bytes(32)`. Each node provisioning epoch gets
-an independent eight-byte `node_id` from `secrets.token_bytes(8)`. Zero, an
-active collision and a previously retired ID are rejected and regenerated.
-`node_id` is public; the master key and derived node keys are secret.
+bytes with Python's `secrets.token_bytes(32)`. Each node identity gets an
+independent eight-byte `node_id` from `secrets.token_bytes(8)`. Zero, an active
+collision and a previously retired ID are rejected and regenerated. `node_id`
+is public; the master key and derived node keys are secret.
+
+An identity lifetime is the period during which a node uses one `node_id`,
+its corresponding `node_key` and one monotonic `sample_id` sequence. There is
+no explicit epoch field or counter. Replacing both `node_id` and `node_key`
+starts a new identity lifetime.
 
 The node key is derived exactly as follows:
 
@@ -50,6 +54,29 @@ receives the group master key. The receiver stores the group master key and a
 persistent allowlist of accepted node IDs and derives node keys as needed.
 Production keys must not appear in source control, test fixtures or logs.
 
+The pilot provisioning tools use fixed filenames within overridable
+directories:
+
+```sh
+python protocol/protocol-v2-lora/tools/init_receiver_group.py \
+  [--recv-dir PATH]
+python protocol/protocol-v2-lora/tools/provision_node.py \
+  [--recv-dir PATH] [--node-dir PATH]
+```
+
+The first command exclusively creates the ignored `receiver-group.json`. A
+master-key rotation requires both `--rotate-master-key` and
+`--acknowledge-all-nodes-require-reprovisioning`; it gives the group a new ID
+and key, retires every active node ID and leaves the active set empty.
+
+The second command creates the ignored `protocol_v2_lora_identity.h` and adds
+its random ID to the receiver's active set. It refuses an existing header.
+`--replace-staged-identity` creates another active identity without retiring
+the header's previous ID, while `--rotate-node-identity` retires the previous
+ID. Both secret files are written with mode `0600`; existing secret files
+accessible by group or others are rejected. The tools print public IDs and
+paths but never keys.
+
 The following public, non-production test vector is used by both Python and
 firmware tests to detect HKDF parameter or byte-encoding differences:
 
@@ -60,7 +87,7 @@ node_id          = 0102030405060708
 node_key         = c0f9a1a0f386692e01028082be92330e
 ```
 
-### Revocation and rotation
+### Revocation and identity replacement
 
 To revoke a node, the receiver disables its `node_id` in the persistent
 allowlist and removes its derived key, authentication state and replay state
@@ -68,7 +95,8 @@ from RAM. The ID remains in a persistent retired-ID set and is never reused.
 Unknown or revoked IDs receive no response. Historical readings are not erased
 by protocol-level revocation.
 
-Routine rotation uses a new random `node_id` and its newly derived node key:
+When an identity must be replaced, use a new random `node_id` and its newly
+derived node key:
 
 1. Add the new ID to the receiver allowlist.
 2. Provision the node with the new ID and key and verify communication.
@@ -76,9 +104,9 @@ Routine rotation uses a new random `node_id` and its newly derived node key:
 
 If compromise or theft is suspected, revoke the old ID before provisioning the
 replacement, accepting the resulting downtime. Compromise of one node key
-requires rotating only that node. Compromise of the group master key requires a
-new group master key and reprovisioning every node in the group; changing only
-their public node IDs is insufficient.
+requires replacing only that node's identity. Compromise of the group master
+key requires a new group master key and reprovisioning every node in the group;
+changing only their public node IDs is insufficient.
 
 ## Routine packet
 
@@ -128,7 +156,7 @@ The encrypted application body for a reading is 28 bytes:
 
 | Offset | Field | Type | Meaning |
 |---:|---|---|---|
-| 0 | `run_ms` | `u16` | Milliseconds from application start until immediately before the first SX1262 `SetTx`. |
+| 0 | `run_ms` | `u16` | Milliseconds from application start until the current reading body is finalized, immediately before persistence and frame construction. |
 | 2 | `soil_0_mv` | `u16` | Soil-sensor channel 0 output in millivolts. |
 | 4 | `soil_1_mv` | `u16` | Soil-sensor channel 1 output in millivolts. |
 | 6 | `soil_temp_0_centi_c` | `i16` | Soil-temperature channel 0 in 0.01 degrees Celsius. |
@@ -621,7 +649,7 @@ protocol decisions.
 
 The logical timestamp of a reading is the node application-start time of the
 cycle in which its sensors were read. All sensor fields share it. Their actual
-acquisition occurs between application start and the first transmission, as
+acquisition occurs between application start and reading finalization, as
 bounded by `run_ms`; this within-cycle difference is intentionally ignored
 because the pilot requires only minute-level precision.
 
@@ -689,7 +717,7 @@ Backward extrapolation may cross from sample `i` to sample `i - 1` only when:
 - their `sample_id` values are consecutive;
 - sample `i` has `DEEP_SLEEP_BOOT = 1`;
 - sample `i` has `PREVIOUS_CYCLE_METRICS_VALID = 1`; and
-- both samples belong to the same node provisioning epoch.
+- both samples belong to the same identity lifetime.
 
 Otherwise the chain stops. A reading with `DEEP_SLEEP_BOOT = 0` may itself be
 timestamped from a newer anchor, but the receiver must not cross from it to its

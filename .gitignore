@@ -58,6 +58,8 @@ firmware/sdkconfig
 firmware/sdkconfig.old
 firmware/main/node_identity.h
 firmware/main/node_uuid.txt
+receiver-group.json
+protocol_v2_lora_identity.h
 firmware/maintenance/*/build/
 firmware/maintenance/*/managed_components/
 firmware/maintenance/*/sdkconfig

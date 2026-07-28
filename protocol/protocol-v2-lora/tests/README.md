@@ -25,6 +25,10 @@ file freshness, C memory safety, and broader input spaces.
   a common pytest interface.
 - `test_generation.py`: runs the generator in `--check` mode and fails when
   committed generated files are stale.
+- `test_provisioning_tools.py`: checks the public HKDF vector, secret-file
+  creation and permissions, malformed state, random-ID collisions, overwrite
+  guards, staged identity replacement, node rotation, and destructive receiver
+  master-key rotation.
 - `test_golden.py`: checks the reviewed header, nonce, reading, and ACK vectors
   against both codecs.
 - `test_validation.py`: applies shared negative and classification tests to

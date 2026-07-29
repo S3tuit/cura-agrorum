@@ -262,6 +262,17 @@ Current radio decisions:
   one-byte notation receives `0x12`; an API accepting the raw SX1262 register
   value receives `0x1424` (`0x14` at address `0x0740`, then `0x24` at
   `0x0741`). Confirm the driver API width rather than truncating `0x1424`.
+- Use direction-specific IQ polarity while retaining that sync word in both
+  directions:
+
+  | Direction | Domains | IQ polarity |
+  |---|---|---|
+  | Node to receiver | `CURRENT_READING_UPLINK`, `BACKLOG_READING_UPLINK` | Normal |
+  | Receiver to node | All ACK downlink domains | Inverted |
+
+  After uplink `TX_DONE`, a node configures inverted-IQ RX before waiting for
+  its ACK. The receiver normally listens with normal IQ; it configures
+  inverted-IQ TX for an ACK and returns to normal-IQ RX afterward.
 - Use explicit-header mode.
 - Configure an 8-symbol preamble. The complete PHY preamble therefore occupies
   `8 + 4.25 = 12.25` symbols.
@@ -278,6 +289,14 @@ The sync word must match at both ends. It rejects unrelated LoRa networks
 earlier in reception but provides neither authentication nor encryption and
 does not prevent RF collisions. It does not change packet airtime; AES-CCM
 provides protocol security.
+
+IQ polarity must likewise match the direction at both ends. Direction-specific
+polarity prevents a node waiting for a downlink from normally demodulating
+another node's uplink. It does not identify the destination: a node can still
+receive a downlink for another node and must reject it using the authenticated
+`node_id`, `sample_id` and ACK semantics. Opposite-IQ transmissions still
+occupy the same RF channel and can interfere when they overlap. IQ polarity
+adds no packet bytes and does not change airtime.
 
 ### Pilot airtime constants
 

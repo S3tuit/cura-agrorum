@@ -3,108 +3,20 @@
 Status: pilot design for the LoRa v2 node firmware. The wire contract remains
 defined by `protocol/protocol-v2-lora/README.md`.
 
-## Structure
-
-The firmware is split into:
-
-- a platform-independent wake-cycle controller that owns application policy;
-- small pure helpers for reading construction, delivery decisions, budgets and
-  metrics;
-- injected interfaces for sensors, radio, storage, time, randomness,
-  diagnostics and sleep; and
-- ESP-IDF adapters that implement those interfaces.
-
-`app_main` constructs the ESP32 implementations and invokes one wake cycle. It
-does not contain the wake policy. Interfaces are groups of typed function
-pointers with implementation context pointers, not unrelated callbacks passed
-to every function. Protocol encoding and cryptography are deterministic
-components and are called directly rather than injected.
-
-The controller must not depend directly on GPIO, NVS, LittleFS, the SX1262 or
-ESP-IDF sleep APIs. It uses fixed-capacity data where practical and does not
-require heap allocation.
-
-An expected initial layout is:
-
-```text
-firmware/
-  components/
-    protocol_v2_lora/   wire codec and authenticated frame layer
-    soil_sensor/        soil ADC implementation
-    node_core/          wake controller and platform-independent policy
-    node_storage/       NVS, LittleFS, RTC state and diagnostic adapters
-    node_sensors/       sensor sequencing and power control
-    sx1262_radio/       SX1262 adapter
-  main/
-    app_main.c          composition root
-    board_config.h      board-specific pins and options
-```
-
-The exact components and C types are defined after the algorithms and
-persistence boundaries are stable.
-
-## Persistence boundaries
-
-- The generated node-identity header contains `node_id` and `node_key`.
-- NVS contains the next monotonic `sample_id`.
-- RTC memory carries metrics from one completed wake to the immediately
-  following deep-sleep wake.
-- LittleFS contains pending readings, quarantined readings and append-only
-  diagnostic logs.
-- RAM contains the active delivery state and exact encrypted frame used by all
-  attempts for one `(node_id, sample_id, domain)`.
-
-The current reading is persisted before its first transmission. If the node
-resets afterward, the reading remains available as backlog. A LittleFS failure
-puts the wake into a degraded RAM-only mode: the current reading may still be
-transmitted, but it may be lost after sleep if it is not accepted.
-
-No storage is automatically erased or reformatted after a failure during the
-pilot.
-
-## RTC-state lifecycle
-
-Incoming and outgoing metrics are separate:
-
-- incoming metrics describe the preceding completed wake and are copied into
-  the current reading; and
-- outgoing metrics are accumulated during the current wake and become incoming
-  metrics only on the next valid deep-sleep wake.
-
-At application start, the controller copies the RTC record into RAM and
-immediately invalidates the RTC-resident copy. After claiming the current
-`sample_id`, the copied record is accepted only when:
-
-- its magic, format version and CRC are valid;
-- `reset_reason` is `ESP_RST_DEEPSLEEP`; and
-- its completed `sample_id` immediately precedes the current `sample_id`.
-
-Otherwise all previous-cycle wire fields are zero and both previous-cycle
-flags are clear.
-
-The early invalidation prevents a partially executed wake from deep-sleeping
-and causing an older record to be reported as the immediately preceding wake.
-At normal finalization, logs are flushed first, total awake time is measured,
-and a new RTC record is written. Its validity marker is written last.
-
-Metric accumulators use wider internal types. They are serialized to the
-protocol's `u8` and `u16` fields only if all values are representable. Overflow
-is logged and produces an invalid outgoing RTC metrics record instead of
-wrapping or clamping.
-
 ## Wake cycle
 
 ### Start and persistence
 
 1. Capture `reset_reason` and the monotonic application-start time.
 2. Copy and invalidate the RTC record.
-3. Initialize diagnostics, NVS and LittleFS independently.
-4. Claim and commit a new `sample_id` in NVS.
-5. If claiming the ID fails, write a best-effort diagnostic, do not activate
+3. Claim and commit a new `sample_id` in NVS. This first storage operation
+   lazily initializes NVS.
+4. If claiming the ID fails, write a best-effort diagnostic, do not activate
    sensors or radio, leave outgoing RTC state invalid, and enter deep sleep.
-6. Validate the copied RTC record now that the current ID is known.
+   Writing the diagnostic independently attempts lazy LittleFS initialization.
+5. Validate the copied RTC record now that the current ID is known.
 
-NVS is initialized before sensor activation because a reading must never be
+NVS is first used before sensor activation because a reading must never be
 created or transmitted with an uncommitted ID. Gaps caused by a reset after
 claiming an ID are allowed; reuse is not.
 
@@ -120,7 +32,8 @@ claiming an ID are allowed; reuse is not.
    persistence and frame construction.
 5. The exact body is appended to pending-reading storage. If this fails, a
    best-effort diagnostic is written and delivery continues from the RAM copy.
-6. The SX1262 is initialized only after the reading exists.
+6. The first radio operation lazily initializes the SX1262, so it is not
+   initialized before a reading exists.
 
 ### Delivery operation
 
@@ -194,7 +107,7 @@ drainage. It must not immediately select the same entry again.
 
 1. Put the radio into standby.
 2. Finalize delivery episodes and append diagnostic records.
-3. Flush best-effort persistent state.
+3. Call the persistence component's single `sync_all` operation.
 4. Measure total awake time.
 5. Validate and commit outgoing RTC metrics.
 6. Enter deep sleep.
@@ -260,6 +173,237 @@ those devices were initialized.
 - Final persistence may exceed the radio deadline but completes before sleep.
 - No protocol key is written to diagnostics.
 
-Host tests inject fake ports into the controller; ESP32 tests exercise the real
-PSA, NVS, LittleFS, RTC, sensor and radio adapters. Tests are added with each
-implemented vertical slice rather than after the complete rewrite.
+Host tests inject fake persistence, sensor, radio, clock, randomness and system
+ports into the controller and pass an ordinary RTC record. ESP32 tests exercise
+the real PSA, NVS, LittleFS, RTC memory, sensor and radio implementations. Tests
+are added with each implemented vertical slice rather than after the complete
+rewrite.
+
+## Persistence boundaries
+
+- The generated node-identity header contains `node_id` and `node_key`.
+- NVS contains the next monotonic `sample_id`.
+- RTC memory carries metrics from one completed wake to the immediately
+  following deep-sleep wake.
+- LittleFS contains pending readings, quarantined readings and append-only
+  diagnostic logs.
+- RAM contains the active delivery state and exact encrypted frame used by all
+  attempts for one `(node_id, sample_id, domain)`.
+
+The current reading is persisted before its first transmission. If the node
+resets afterward, the reading remains available as backlog. A LittleFS failure
+puts the wake into a degraded RAM-only mode: the current reading may still be
+transmitted, but it may be lost after sleep if it is not accepted.
+
+No storage is automatically erased or reformatted after a failure during the
+pilot.
+
+## RTC-state lifecycle
+
+Incoming and outgoing metrics are separate:
+
+- incoming metrics describe the preceding completed wake and are copied into
+  the current reading; and
+- outgoing metrics are accumulated during the current wake and become incoming
+  metrics only on the next valid deep-sleep wake.
+
+At application start, the controller copies the RTC record into RAM and
+immediately invalidates the RTC-resident copy. After claiming the current
+`sample_id`, the copied record is accepted only when:
+
+- its combined commit, magic and format marker is
+  `NODE_RTC_COMMITTED_V1`;
+- `reset_reason` is `ESP_RST_DEEPSLEEP`; and
+- its completed `sample_id` immediately precedes the current `sample_id`; and
+- its metrics satisfy their semantic and representability invariants.
+
+Otherwise all previous-cycle wire fields are zero and both previous-cycle
+flags are clear.
+
+The early invalidation prevents a partially executed wake from deep-sleeping
+and causing an older record to be reported as the immediately preceding wake.
+At normal finalization, logs are flushed first, total awake time is measured,
+and a new RTC record is written. Its marker is set to
+`NODE_RTC_COMMITTED_V1` last, after enforcing the required compiler and memory
+store ordering. No RTC CRC is used during the pilot.
+
+Metric accumulators use wider internal types. They are serialized to the
+protocol's `u8` and `u16` fields only if all values are representable. Overflow
+is logged and produces an invalid outgoing RTC metrics record instead of
+wrapping or clamping.
+
+## Components and responsibilities
+
+### `node_core`
+
+`node_core` is platform-independent and contains:
+
+- the wake-cycle controller, which owns operation ordering and failure policy;
+- the shared current/backlog delivery operation and retry state;
+- reading construction and structural validation;
+- airtime and wall-clock budget accounting;
+- current-wake metric accumulation;
+- pure RTC-record consume, validation, invalidation and commit helpers; and
+- small pure helpers rather than one monolithic controller function.
+
+The controller calls the generated protocol codec and AES-CCM frame component
+directly. Those deterministic components are not injected. The controller does
+not call GPIO, NVS, LittleFS, SX1262 or ESP-IDF sleep functions directly.
+
+### `node_persistence`
+
+`node_persistence` is the single owner of NVS, LittleFS, pending readings,
+quarantined readings and diagnostic logs. It exposes semantic operations:
+
+```text
+claim_sample_id
+append_pending_reading
+peek_most_recent_pending
+mark_reading_accepted
+quarantine_reading
+append_diagnostic_event
+append_delivery_episode
+sync_all
+```
+
+`append_diagnostic_event` receives a structured warning or error record.
+`append_delivery_episode` receives the protocol delivery diagnostic. There is
+no separate diagnostic component and no raw append operation exposed to the
+wake controller.
+
+NVS and LittleFS have independent lazy-initialization states:
+
+```text
+UNINITIALIZED -> READY
+UNINITIALIZED -> FAILED
+```
+
+The first operation needing a backend initializes it. A failure is cached for
+the remainder of the wake and returned by later operations; ordinary RAM is
+reinitialized at the next boot, so initialization is attempted again then.
+Failure results distinguish initialization from the requested operation.
+
+Operations affecting delivery correctness are durable when they return:
+claiming an ID includes the NVS commit, and pending, accepted and quarantine
+transitions commit their LittleFS state. `sync_all` performs the one final
+synchronization for remaining buffered state, including diagnostics. It skips
+backends that were never initialized and does not initialize them merely to
+finalize a wake.
+
+The LittleFS record representation, recovery framing and compaction policy are
+internal and remain to be designed. Private helper functions may share
+mounting, appending and synchronization code without becoming injected
+architectural layers.
+
+### `node_sensors`
+
+`node_sensors` owns sensor sequencing and exposes:
+
+```text
+sample_all
+force_power_off
+```
+
+`sample_all` lazily initializes required buses, enables the shared gated sensor
+rail, samples both soil channels, both DS18B20 channels and the BME280, and
+disables the rail through a common cleanup path. It returns individual values,
+validity indicators and failure details so one failed sensor does not suppress
+the others. `force_power_off` is idempotent and does not initialize anything.
+
+One power gate supplies both soil sensors and both DS18B20 sensors. The BME280
+remains on the always-powered rail and uses its low-power operating mode. The
+board must default the switched sensor rail to off whenever the MCU does not
+actively enable it. The circuit used to enforce that default is intentionally
+not yet specified.
+
+### `sx1262_radio`
+
+The radio component owns SX1262 commands, IRQ handling and all pilot PHY
+configuration. It exposes protocol-oriented operations:
+
+```text
+transmit_uplink
+receive_downlink_until
+sleep
+```
+
+The first transmit lazily initializes the radio. Uplink transmission uses
+normal IQ and downlink reception uses inverted IQ as defined by the protocol.
+The transmit result reports whether `SetTx` started and the actual transmit
+start and `TX_DONE` monotonic times, so initialization latency is not counted
+as delivery time. Reception returns packet bytes, length and radio metadata, or
+a timeout or local error. `sleep` is a no-op when the radio was never
+initialized and must not initialize it.
+
+The controller owns retries, deadlines, ACK validation and delivery policy; the
+radio component only executes radio operations and reports their outcomes.
+
+### Existing protocol and sensor components
+
+`protocol_v2_lora` remains the generated wire codec and authenticated frame
+layer. `soil_sensor` remains the low-level calibrated ADC reader used by
+`node_sensors`. External DS18B20 and BME280 drivers remain hardware adapters;
+they do not own wake policy.
+
+### Platform services
+
+Small injected ports provide:
+
+```text
+clock:
+    monotonic_us
+
+randomness:
+    uniform_u32_inclusive
+
+system:
+    get_reset_reason
+    enter_deep_sleep_for
+```
+
+Only monotonic time is needed; the node does not maintain UTC. The clock drives
+`run_ms`, radio deadlines, retry scheduling, delivery and awake durations and
+diagnostic offsets. A fake clock allows host tests to advance without real
+waiting. Retry randomness does not need cryptographic guarantees.
+
+The system implementation performs the final board-safe transition and enters
+deep sleep. `enter_deep_sleep_for` does not return during normal operation.
+
+### `app_main` and RTC memory
+
+`app_main` is the composition root. It owns the concrete component state,
+constructs the injected port table and invokes one wake cycle. It contains no
+wake policy.
+
+RTC memory is direct retained data rather than an injected interface:
+
+```c
+RTC_DATA_ATTR static node_rtc_record_t rtc_record;
+
+void app_main(void) {
+  node_cycle_run(&platform, &rtc_record);
+}
+```
+
+The pilot record contains:
+
+```text
+commit_marker
+completed_sample_id
+cycle_metrics
+```
+
+`commit_marker` is zero while invalid and
+`NODE_RTC_COMMITTED_V1` when committed. That one constant combines validity,
+magic and record-format version. At wake start, `node_core` copies the record
+into ordinary RAM and immediately invalidates the retained marker. At normal
+finalization it writes the completed ID and metrics, then commits the marker
+last.
+
+Host tests pass an ordinary `node_rtc_record_t` variable to the same controller
+and RTC helper functions; only the production declaration uses
+`RTC_DATA_ATTR`.
+
+Interfaces are typed function tables with implementation context pointers.
+Fixed-capacity data is used where practical, and `node_core` does not require
+heap allocation.

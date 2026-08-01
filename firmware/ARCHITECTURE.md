@@ -41,6 +41,8 @@ One delivery operation owns the retry loop for either a current or backlog
 reading. It:
 
 - constructs one authenticated frame and reuses its exact 50 bytes;
+- appends one durable `DELIVERY_STARTED` event before its first call to
+  `transmit_uplink`;
 - records the time immediately before the first `SetTx`;
 - charges estimated airtime and increments attempt metrics when `SetTx` is
   successfully started;
@@ -50,6 +52,20 @@ reading. It:
 - retransmits at `retry_at` while another complete attempt fits both the
   eight-second charged-TX budget and 30-second radio-cycle deadline; and
 - returns a terminal ACK, exhausted-limit or local-error result.
+
+When the operation reaches that result, it appends one durable
+`DELIVERY_FINISHED` event. The events bracket the whole delivery operation,
+including all retries; they do not bracket each transmission attempt. They are
+written by `node_core`, not by the radio component. `DELIVERY_STARTED` means
+that the controller entered delivery, not that the SX1262 certainly executed
+`SetTx`.
+
+Each pair is identified by the wake's current `cycle_sample_id`, the delivered
+packet's `sample_id` and its domain. This distinguishes separate wakes that
+retry the same backlog packet without adding another persistent counter. An
+unmatched start means only that no durable finish was recorded: reset may have
+occurred before TX, during TX or RX, during retry waiting, or while persisting
+the finish. Failure to append either event never blocks radio work.
 
 When a started transmission does not produce `TX_DONE`, its estimated airtime
 remains charged and the delivery ends as a local radio error. Attempts that
@@ -105,8 +121,8 @@ drainage. It must not immediately select the same entry again.
 
 ### Finalization
 
-1. Put the radio into standby.
-2. Finalize delivery episodes and append diagnostic records.
+1. Put an initialized radio into cold-start sleep.
+2. Append remaining structured diagnostic records.
 3. Call the persistence component's single `sync_all` operation.
 4. Measure total awake time.
 5. Validate and commit outgoing RTC metrics.
@@ -156,8 +172,10 @@ operation, error code, application-time offset and `sample_id` when available,
 but never contain node or group keys. A logging failure is discarded and is
 never recursively logged.
 
-Every early-exit path powers off sensors and leaves the radio in standby when
-those devices were initialized.
+Every early-exit path powers off sensors and calls `radio.sleep` exactly once.
+That call is a no-op when the radio was never initialized; otherwise it leaves
+the SX1262 in cold-start sleep. A radio-sleep failure is logged when possible
+but never prevents the ESP32 from entering deep sleep.
 
 ## Core invariants
 
@@ -172,12 +190,14 @@ those devices were initialized.
 - The charged-TX budget and radio-cycle deadline are independent limits.
 - Final persistence may exceed the radio deadline but completes before sleep.
 - No protocol key is written to diagnostics.
+- A delivery event failure never changes the delivery result or radio policy.
 
 Host tests inject fake persistence, sensor, radio, clock, randomness and system
 ports into the controller and pass an ordinary RTC record. ESP32 tests exercise
 the real PSA, NVS, LittleFS, RTC memory, sensor and radio implementations. Tests
 are added with each implemented vertical slice rather than after the complete
-rewrite.
+rewrite. The agreed host-test catalogue and build strategy are in
+`firmware/TESTING.md`.
 
 ## Persistence boundaries
 
@@ -262,14 +282,23 @@ peek_most_recent_pending
 mark_reading_accepted
 quarantine_reading
 append_diagnostic_event
-append_delivery_episode
+append_delivery_event
 sync_all
 ```
 
 `append_diagnostic_event` receives a structured warning or error record.
-`append_delivery_episode` receives the protocol delivery diagnostic. There is
-no separate diagnostic component and no raw append operation exposed to the
-wake controller.
+It is the controller's general best-effort interface for persistent warnings
+and errors. `append_delivery_event` receives either `DELIVERY_STARTED` or
+`DELIVERY_FINISHED` and implements the delivery-log semantics defined in the
+protocol document. There is no separate diagnostic component and no raw append
+operation exposed to the wake controller.
+
+A start is appended once before the first `transmit_uplink` call. Its matching
+finish is appended once after a terminal ACK, exhausted limit or local error
+and contains the episode's attempt information and result. Both event types
+are durable when their operation returns successfully. Ordinary diagnostics
+may remain buffered until `sync_all`. Logging failures are never recursively
+logged and never prevent transmission or deep sleep.
 
 NVS and LittleFS have independent lazy-initialization states:
 
@@ -285,10 +314,11 @@ Failure results distinguish initialization from the requested operation.
 
 Operations affecting delivery correctness are durable when they return:
 claiming an ID includes the NVS commit, and pending, accepted and quarantine
-transitions commit their LittleFS state. `sync_all` performs the one final
-synchronization for remaining buffered state, including diagnostics. It skips
-backends that were never initialized and does not initialize them merely to
-finalize a wake.
+transitions commit their LittleFS state. Delivery events are also durable on
+successful return because an unmatched start must survive a reset.
+`sync_all` performs the one final synchronization for remaining buffered state,
+including ordinary diagnostics. It skips backends that were never initialized
+and does not initialize them merely to finalize a wake.
 
 The LittleFS record representation, recovery framing and compaction policy are
 internal and remain to be designed. Private helper functions may share
@@ -332,8 +362,19 @@ normal IQ and downlink reception uses inverted IQ as defined by the protocol.
 The transmit result reports whether `SetTx` started and the actual transmit
 start and `TX_DONE` monotonic times, so initialization latency is not counted
 as delivery time. Reception returns packet bytes, length and radio metadata, or
-a timeout or local error. `sleep` is a no-op when the radio was never
-initialized and must not initialize it.
+a timeout or local error.
+
+Within an active wake the radio uses `STDBY_RC` as the intermediate state for
+configuration and transitions between TX and RX. It is not put to sleep while
+delivery or retries remain possible. Final `sleep` behaves as follows:
+
+1. If the radio was never initialized, return successfully without issuing a
+   radio command or initializing it.
+2. Stop continuous RX or any other active mode with `SetStandby(STDBY_RC)`.
+3. Issue `SetSleep(COLD_START)`; the next wake performs complete lazy
+   initialization rather than trusting retained radio configuration.
+4. Return any failure for best-effort diagnostics, but do not prevent ESP32
+   deep sleep.
 
 The controller owns retries, deadlines, ACK validation and delivery policy; the
 radio component only executes radio operations and reports their outcomes.

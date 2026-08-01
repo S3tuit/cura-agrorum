@@ -466,7 +466,9 @@ The interval is therefore uniformly distributed from 600 to 1,000 ms. A valid
 authenticated ACK cancels `retry_at`. Otherwise, when `retry_at` is reached, the
 node transmits the identical packet again if both global limits permit it. An
 invalid ACK is logged and ignored while RX remains open. This pilot does not
-adapt the interval from measured latency.
+adapt the interval from measured latency. An authenticated ACK with an
+`RX_DONE` timestamp at or before `retry_at` wins the boundary; an ACK completed
+after it does not prevent the retry.
 
 Each wake's radio phase has two limits:
 
@@ -516,23 +518,31 @@ records contain no node key or group master key.
 
 ### Node delivery log
 
-The node records each `(sample_id, domain)` delivery episode for a wake when at
-least one attempt was unanswered, the final result was not `ACCEPTED`, or a
-previously failed backlog reading was finally accepted. A current reading
-accepted on its first attempt need not produce a diagnostic record.
+The node represents every entered delivery episode with two append-only events.
+They are keyed by the wake's current `cycle_sample_id`, the delivered packet's
+`sample_id` and its domain. The cycle ID distinguishes separate wakes that
+retry the same backlog packet without requiring another persistent counter.
 
-Each record contains:
+Before the first call to the radio's `transmit_uplink`, `node_core` appends:
 
 ```text
-log_sequence
+event_type                       DELIVERY_STARTED
+cycle_sample_id
 sample_id
 domain
-plaintext_body                 28 bytes
-transmitted_frame              50 bytes
+start_offset_ms                relative to application start
+```
+
+When the episode reaches a terminal ACK result, exhausted limit or local error,
+`node_core` appends:
+
+```text
+event_type                       DELIVERY_FINISHED
+cycle_sample_id
+sample_id
+domain
 attempt_count                  relative to this wake cycle
-attempt_tx_offsets_ms[]        relative to application start
 final_result
-invalid_ack_frames[]           received length, bytes and offset
 ```
 
 `final_result` is one of:
@@ -547,17 +557,17 @@ NO_ACK_AIRTIME_LIMIT
 LOCAL_RADIO_ERROR
 ```
 
-All attempts within one `(node_id, sample_id, domain)` use identical frame
-bytes, so the 50-byte transmitted frame is stored once. A PHY-valid ACK that
-fails protocol parsing or authentication is retained in
-`invalid_ack_frames`; an ACK discarded by the modem before delivery to the MCU
-cannot be retained.
+The start and finish bracket the complete delivery episode, including all
+retries; they do not bracket individual attempts. `DELIVERY_STARTED` means that
+the controller entered delivery, not that the SX1262 necessarily executed
+`SetTx`. Both events are durable when their append operation succeeds. Logging
+failure never blocks transmission or deep sleep.
 
-Before the first attempt, the node persists a small delivery-started marker.
-It finalizes the diagnostic record when the delivery reaches a terminal ACK
-result or when the radio phase ends. An unresolved marker after reboot records
-that the previous wake ended before final logging. Log flushing occurs before
-deep sleep and is outside the 30-second radio-cycle deadline.
+An unmatched start after reboot means that no durable finish was recorded. It
+may result from reset before TX, during TX or RX, during retry waiting, or while
+persisting the finish; it is not proof that reset occurred during RF emission.
+Ordinary diagnostic records may remain buffered until final `sync_all`, which
+occurs before deep sleep and outside the 30-second radio-cycle deadline.
 
 ### Receiver packet log
 

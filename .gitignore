@@ -64,6 +64,7 @@ firmware/maintenance/*/build/
 firmware/maintenance/*/managed_components/
 firmware/maintenance/*/sdkconfig
 firmware/maintenance/*/sdkconfig.old
+firmware/maintenance/littlefs_storage_benchmark/results.log
 .cache
 
 # Python

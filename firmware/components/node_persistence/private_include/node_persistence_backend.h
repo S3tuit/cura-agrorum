@@ -9,8 +9,17 @@ typedef uintptr_t node_persistence_nvs_handle_t;
 
 #define NODE_PERSISTENCE_INVALID_FILE_HANDLE                                   \
   ((node_persistence_file_handle_t) - 1)
+#ifndef NODE_PERSISTENCE_MOUNT_PATH
 #define NODE_PERSISTENCE_MOUNT_PATH "/cura"
+#endif
+
+#ifndef NODE_PERSISTENCE_PARTITION_LABEL
 #define NODE_PERSISTENCE_PARTITION_LABEL "storage"
+#endif
+
+#ifndef NODE_PERSISTENCE_NVS_PARTITION_LABEL
+#define NODE_PERSISTENCE_NVS_PARTITION_LABEL "nvs"
+#endif
 
 /*
  * Private backend used by the production ESP-IDF adapter and host tests.

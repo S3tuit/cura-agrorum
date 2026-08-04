@@ -10,6 +10,12 @@ add_executable(
   test_node_persistence
   fake_node_persistence_backend.c
   test_node_persistence.c
+  test_node_persistence_support.c
+  test_node_persistence_nvs.c
+  test_node_persistence_records.c
+  test_node_persistence_recovery.c
+  test_node_persistence_faults.c
+  test_node_persistence_retention.c
   ${FIRMWARE_ROOT}/components/node_common/node_common.c
   ${FIRMWARE_ROOT}/components/node_persistence/node_persistence.c
   ${FIRMWARE_ROOT}/components/node_persistence/node_persistence_record.c
@@ -33,9 +39,9 @@ target_compile_definitions(
     NODE_PERSISTENCE_TESTING=1
     NODE_PERSISTENCE_PENDING_LOG_LIMIT=256
     NODE_PERSISTENCE_PENDING_COMPACT_RETAIN_LIMIT=128
-    NODE_PERSISTENCE_QUARANTINE_LOG_LIMIT=100
-    NODE_PERSISTENCE_DIAGNOSTIC_LOG_LIMIT=100
-    NODE_PERSISTENCE_DELIVERY_LOG_LIMIT=100
+    NODE_PERSISTENCE_QUARANTINE_LOG_LIMIT=512
+    NODE_PERSISTENCE_DIAGNOSTIC_LOG_LIMIT=512
+    NODE_PERSISTENCE_DELIVERY_LOG_LIMIT=512
 )
 target_compile_options(
   test_node_persistence

@@ -1,7 +1,8 @@
 # Firmware testing
 
-Status: agreed host-test plan and initial on-device hardware-test plan for the
-LoRa v2 node firmware.
+Status: the `node_persistence` host and on-device matrices are implemented. The
+remaining component, `node_core`, RTC and platform-port suites below are agreed
+but not yet implemented.
 
 ## Philosophy and build
 
@@ -14,11 +15,12 @@ break unrelated tests.
 
 Native firmware tests are separate CMake targets compiled with strict warnings,
 ASan and UBSan. CTest runs the executables. The top-level `make test-host`
-target configures, builds and invokes CTest; its first executable exercises
-`node_persistence` through the production component and a private POSIX/NVS
-fake backend. The existing pytest suite remains responsible for protocol
-generation, shared Python/C vectors and Hypothesis. `pytest-embedded` provides
-hardware orchestration as described below.
+target configures, builds and invokes CTest. The `node_persistence` executable
+uses the production component with a private POSIX/NVS fake backend and splits
+its scenarios by NVS, record behavior, recovery, fault handling and retention.
+The existing pytest suite remains responsible for protocol generation, shared
+Python/C vectors and Hypothesis. `pytest-embedded` provides hardware
+orchestration as described below.
 
 ## `node_core`
 
@@ -155,7 +157,6 @@ Tests that do not depend on the pending/log record encoding cover:
   retry a backend whose initialization was cached as failed. It synchronizes
   and closes owned handles without unregistering LittleFS.
 - Empty backlog is distinguishable from a storage error.
-- Diagnostic failure is discarded without recursive logging.
 - Successful delivery start and finish events are durable before returning.
 - Every injected public-operation failure returns the documented
   `err_curag_t`, operation and exact seven-byte persistence context.
@@ -163,8 +164,6 @@ Tests that do not depend on the pending/log record encoding cover:
   diagnostic output does not change behavior or the returned error.
 - Backend status values are canonically encoded as signed little-endian `i32`;
   semantic failures use `NO_ERROR` and a zero status.
-- `node_core` copies component diagnostic context without interpreting it and
-  adds only the error, timing, cycle-ID and validity fields.
 
 After choosing the record encoding, tests also cover:
 
@@ -182,9 +181,6 @@ After choosing the record encoding, tests also cover:
 - `remove_newest_reading` removes only a supported pending tail with the
   expected sample ID; empty, different and recovered tails are not mistaken for
   that reading.
-- Permanent rejection calls `quarantine_reading` before
-  `remove_newest_reading`, attempts removal even after quarantine failure, and
-  handles all four append/removal success combinations.
 - Reset between quarantine append and pending removal permits duplicates but
   never loses the pending copy before the quarantine attempt.
 - Matched and unmatched delivery events, including the same packet retried in
@@ -195,6 +191,12 @@ After choosing the record encoding, tests also cover:
 A torn application append is tested even though general filesystem corruption
 is delegated to LittleFS; a torn record does not necessarily imply filesystem
 corruption.
+
+Controller behavior is tested only under `node_core`: it owns suppression of
+recursive diagnostic logging, copying component diagnostic context, ordering a
+quarantine append before pending removal, attempting removal after quarantine
+failure, and the four combined quarantine/removal outcomes. Those expectations
+are intentionally not duplicated in the `node_persistence` component suite.
 
 ## `sx1262_radio`
 
@@ -240,15 +242,20 @@ reset and serial interaction, coordinates multi-stage cases and parses Unity
 results. ESP-IDF CMake and `idf.py` remain the build layer rather than a separate
 hardware-test runner.
 
-The repository will contain a dedicated test application under
-`firmware/test_apps/on_device`. It links the production components but uses:
+The repository contains a dedicated ESP32-C6 test application under
+`firmware/test_apps/on_device`. Its implemented persistence suite links the
+production `node_persistence` component and uses:
 
-- dedicated NVS and LittleFS test partitions;
-- a fixed test node identity and deterministic reading values;
-- short configurable deep-sleep, retry and radio-budget durations;
-- real `node_persistence`, RTC memory and ESP32 deep sleep; and
-- scripted sensor, radio, clock and randomness adapters for the initial
-  `node_core` integration tests.
+- a 24 KiB `nvs_test` partition and a 2,944 KiB `storage_test` LittleFS
+  partition, separate from production labels;
+- deterministic reading and event values;
+- reduced logical log quotas so retention behavior can be exercised quickly;
+- the real ESP-IDF NVS, LittleFS and software-reset paths; and
+- a test-only physical-log inspector and raw-record injector.
+
+The planned `node_core` integration suite will add the fixed node identity,
+short deep-sleep/radio durations and scripted sensor, radio, clock and
+randomness adapters described below.
 
 Test state is erased before and after a scenario, but is preserved between the
 reset/deep-sleep stages of that scenario. A test-only storage inspector may read
@@ -257,16 +264,24 @@ interface. A narrowly placed, compile-time-only `node_core` test hook may force
 software restart at the RTC-consumption boundary. Neither facility is present
 in production builds.
 
-The intended entry points are:
+Install the runner in the repository virtual environment and activate ESP-IDF
+before invoking the entry points:
 
 ```text
+.venv/bin/pip install -r firmware/tests/requirements-hardware.txt
+source ~/esp/esp-idf/export.sh
 make test-host
 make test-hardware PORT=/dev/serial/by-id/...
+make test-hardware-slow PORT=/dev/serial/by-id/...
+make test-hardware-all PORT=/dev/serial/by-id/...
 ```
 
-Fast hardware tests run during ordinary hardware validation. Repetition,
-compaction, quota and churn cases are marked slow and run manually or on a
-dedicated hardware runner.
+`PORT` defaults to `/dev/ttyUSB0`. `test-hardware` runs only cases without the
+Unity `[slow]` tag. `test-hardware-slow` runs only `[slow]` cases, while
+`test-hardware-all` runs both sets. Every hardware target builds and flashes the
+test image before executing it, replacing the application previously on the
+board. Fast hardware tests run during ordinary validation; compaction, quota
+and churn cases remain in the explicitly selected slow set.
 
 Physical power-loss testing is deliberately deferred. Software restart is used
 only after an operation has returned success. Torn or corrupted records are
@@ -665,11 +680,11 @@ measurement setup and remain deferred.
 
 - Physical power-loss injection and its external power-switching rig are
   deferred.
-- The exact dedicated test partition sizes, reduced logical quotas and short
-  timing values remain to be chosen when the test application is implemented.
-- The private shape of the storage inspector and the exact placement of the
-  RTC-consumption restart hook remain implementation decisions; their permitted
-  scope and production exclusion are fixed above.
+- Short `node_core` and radio timing values remain to be chosen when those
+  hardware tests are implemented.
+- The exact placement of the RTC-consumption restart hook remains an
+  implementation decision; its permitted scope and production exclusion are
+  fixed above.
 - Hardware-runner provisioning, including permanent serial-port assignment and
   whether slow tests run automatically, remains to be defined when a dedicated
   runner exists.

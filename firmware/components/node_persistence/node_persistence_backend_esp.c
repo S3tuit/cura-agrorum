@@ -18,15 +18,19 @@
 #define NODE_PERSISTENCE_NVS_NAMESPACE "cura_lora_v2"
 #define NODE_PERSISTENCE_NVS_SAMPLE_ID_KEY "next_sample_id"
 
-static int32_t backend_nvs_init(void) { return (int32_t)nvs_flash_init(); }
+static int32_t backend_nvs_init(void) {
+  return (int32_t)nvs_flash_init_partition(
+      NODE_PERSISTENCE_NVS_PARTITION_LABEL);
+}
 
 static int32_t backend_nvs_open(node_persistence_nvs_handle_t *out_handle) {
   if (out_handle == NULL) {
     return (int32_t)ESP_ERR_INVALID_ARG;
   }
   nvs_handle_t handle = 0;
-  const esp_err_t result =
-      nvs_open(NODE_PERSISTENCE_NVS_NAMESPACE, NVS_READWRITE, &handle);
+  const esp_err_t result = nvs_open_from_partition(
+      NODE_PERSISTENCE_NVS_PARTITION_LABEL, NODE_PERSISTENCE_NVS_NAMESPACE,
+      NVS_READWRITE, &handle);
   if (result == ESP_OK) {
     *out_handle = (node_persistence_nvs_handle_t)handle;
   }

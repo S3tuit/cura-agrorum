@@ -1,0 +1,17 @@
+idf_component_register(
+    SRCS
+        "node_persistence.c"
+        "node_persistence_backend_esp.c"
+        "node_persistence_record.c"
+    INCLUDE_DIRS
+        "include"
+    PRIV_INCLUDE_DIRS
+        "private_include"
+    REQUIRES
+        node_common
+        protocol_v2_lora
+    PRIV_REQUIRES
+        esp_hw_support
+        joltwallet__littlefs
+        nvs_flash
+)

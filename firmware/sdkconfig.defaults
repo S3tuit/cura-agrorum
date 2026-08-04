@@ -10,21 +10,10 @@ CONFIG_SPI_FLASH_SUPPORT_BOYA_CHIP=y
 # Crystal freq
 CONFIG_XTAL_FREQ_40=y
 CONFIG_XTAL_FREQ=40
-CONFIG_ESP32_XTAL_FREQ_40=y
-CONFIG_ESP32_XTAL_FREQ=40
 
-# Field hotspot defaults
-CONFIG_ESP_WIFI_SSID="cura-field"
-CONFIG_ESP_WIFI_PASSWORD="cura-field-password"
-CONFIG_CURA_GATEWAY_IPV4_ADDR="10.42.0.1"
-CONFIG_CURA_GATEWAY_PORT=18032
-CONFIG_CURA_SYNC_EVERY_N_BOOTS=10
-CONFIG_CURA_WIFI_CONNECT_TIMEOUT_MS=8000
+# ESP32-C6 default RTC slow clock. The legacy ESP32 8 MHz / 256 source is not
+# available on this target.
+CONFIG_RTC_CLK_SRC_INT_RC=y
 
-# Powerbank stabilization test mode keeps app_main spinning on CPU0 between
-# samples, so the CPU0 idle task cannot feed the task watchdog.
-# CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0 is not set
-
-# Use the internal 8 MHz oscillator for v0 since we need better logs at the
-# cost of more power used
-CONFIG_RTC_CLK_SRC_INT_8MD256=y
+# Storage records do not use filesystem modification timestamps.
+# CONFIG_LITTLEFS_USE_MTIME is not set

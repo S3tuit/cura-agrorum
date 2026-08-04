@@ -32,6 +32,8 @@ claiming an ID are allowed; reuse is not.
    persistence and frame construction.
 5. The exact body is appended to pending-reading storage. If this fails, a
    best-effort diagnostic is written and delivery continues from the RAM copy.
+   Backlog storage is not accessed again during that wake because append
+   durability may be uncertain.
 6. The first radio operation lazily initializes the SX1262, so it is not
    initialized before a reading exists.
 
@@ -71,17 +73,21 @@ When a started transmission does not produce `TX_DONE`, its estimated airtime
 remains charged and the delivery ends as a local radio error. Attempts that
 fail before `SetTx` starts are not counted or charged.
 
-The delivery result is one of:
+The delivery result and its `DELIVERY_FINISHED.final_result` encoding are:
 
-```text
-ACCEPTED
-RETRY_LATER
-REJECTED_UNSUPPORTED
-REJECTED_MALFORMED
-NO_ACK_RADIO_DEADLINE
-NO_ACK_AIRTIME_LIMIT
-LOCAL_RADIO_ERROR
-```
+| Value | Result | Meaning |
+|---:|---|---|
+| `0` | `INVALID` | Reserved uninitialized value; never written as a completed result |
+| `1` | `ACCEPTED` | Authenticated `ACCEPTED` ACK |
+| `2` | `RETRY_LATER` | Authenticated `RETRY_LATER` ACK |
+| `3` | `UNSUPPORTED` | Authenticated `REJECTED_UNSUPPORTED` ACK |
+| `4` | `MALFORMED` | Authenticated `REJECTED_MALFORMED` ACK |
+| `5` | `AIRTIME_BUDGET_END` | No terminal ACK before another attempt ceased to fit the charged-TX budget |
+| `6` | `RADIO_CYCLE_DEADLINE` | No terminal ACK before another attempt ceased to fit the 30-second radio-cycle deadline |
+| `7` | `LOCAL_RADIO_ERROR` | Local initialization, TX, IRQ or RX operation failed |
+
+`RADIO_CYCLE_DEADLINE` does not mean the complete wake ended: final logging,
+synchronization, RTC commit and the sleep call occur afterward.
 
 ### Current reading
 
@@ -95,8 +101,9 @@ The current reading is always delivered first with
   needed, or it succeeds, begin backlog drainage when storage is available.
 - `RETRY_LATER`: retain the reading and stop all radio work for the wake.
 - `REJECTED_UNSUPPORTED` or `REJECTED_MALFORMED`: quarantine the reading and
-  stop all radio work. A rejection of the current firmware's frame may be
-  systematic, so backlog is not attempted.
+  then, when its pending append succeeded, attempt to remove its pending copy
+  even if quarantine failed. Stop all radio work afterward. A rejection of the
+  current firmware's frame may be systematic, so backlog is not attempted.
 - Silence: retransmit the exact frame while both limits permit. When no further
   attempt fits, retain the reading and stop radio work.
 - Local codec, cryptographic or radio error: log it, retain the reading when it
@@ -110,14 +117,17 @@ unchanged body with `BACKLOG_READING_UPLINK`.
 - `ACCEPTED`: increment the distinct accepted-reading count, remove the entry
   and continue with the next most recent entry.
 - `RETRY_LATER`: retain the entry and stop all radio work.
-- `REJECTED_UNSUPPORTED` or `REJECTED_MALFORMED`: quarantine that entry and
-  continue with the next one while both budgets permit.
+- `REJECTED_UNSUPPORTED` or `REJECTED_MALFORMED`: quarantine that entry, then
+  attempt to remove its pending copy even if quarantine failed. Continue with
+  the next one only when removal succeeds and both budgets permit.
 - Silence: retransmit the exact frame while both limits permit. When no further
   attempt fits, retain the entry and stop drainage for the wake.
 - Local error: log it, retain the entry and stop drainage.
 
-If removal or quarantine fails, the controller logs the failure and stops
-drainage. It must not immediately select the same entry again.
+If removal after acceptance or quarantine fails, the controller logs the
+failure and stops drainage. If the quarantine copy is lost but the separate
+pending removal succeeds, the controller logs that loss and may continue; it
+cannot immediately reselect the same entry.
 
 ### Finalization
 
@@ -165,12 +175,106 @@ a deterministic safe transition and a best-effort diagnostic:
 | Codec or cryptographic failure | Log and end the radio phase |
 | Radio initialization or local TX/RX failure | Log, retain persisted data and end the radio phase |
 | Invalid or unauthenticated ACK | Log it and continue waiting |
-| Pending-reading removal or quarantine failure | Log and stop backlog drainage |
+| Pending-reading removal failure | Log and stop backlog drainage |
+| Lost quarantine copy after successful pending removal | Log and continue; do not obstruct backlog progress |
 
 The diagnostic sink is append-only and best-effort. Records identify the
 operation, error code, application-time offset and `sample_id` when available,
 but never contain node or group keys. A logging failure is discarded and is
 never recursively logged.
+
+### Stable diagnostic model
+
+Diagnostics separate four responsibilities:
+
+- `error_domain` identifies the subsystem responsible for the failure;
+- `operation` describes the stable action being attempted, not a C function or
+  private helper name;
+- `error_code` gives the domain-specific reason for failure;
+- `context_schema` selects a domain-local context encoding; and
+- `context` identifies the affected backend, resource and internal failure
+  stage according to that encoding.
+
+The packed in-memory error type is `err_curag_t`, a `u32` whose upper 16 bits
+contain `error_domain` and lower 16 bits contain `error_code`. Zero means
+success. The diagnostic record stores the two halves separately. Domain and
+error values are append-only protocol constants: once assigned, a value is
+never changed or reused for another meaning.
+
+The assigned component domains are:
+
+| Value | Domain |
+|---:|---|
+| `0` | `NONE`, used only for success |
+| `1` | `CURAG_EDOM_PERSISTENCE` |
+| `2` | `CURAG_EDOM_RADIO` |
+| `3` | `CURAG_EDOM_SENSORS` |
+
+Firmware C identifiers use the `CURAG_` prefix. Unprefixed identifiers that
+begin with `E` followed by an uppercase letter are reserved by the C standard
+for implementation error macros, so names such as bare `EDOM_PERSISTENCE` and
+`ENVS_INIT` are not used in headers.
+
+The shared operation values are deliberately coarse and stable:
+
+| Value | Operation |
+|---:|---|
+| `0` | `NONE` |
+| `1` | `INITIALIZE` |
+| `2` | `VALIDATE` |
+| `3` | `READ` |
+| `4` | `WRITE` |
+| `5` | `APPEND` |
+| `6` | `REMOVE` |
+| `7` | `SYNC` |
+| `8` | `RECOVER` |
+| `9` | `COMPACT` |
+| `10` | `POWER_ON` |
+| `11` | `POWER_OFF` |
+| `12` | `ENCODE` |
+| `13` | `DECODE` |
+| `14` | `ENCRYPT` |
+| `15` | `DECRYPT` |
+| `16` | `TRANSMIT` |
+| `17` | `RECEIVE` |
+| `18` | `SLEEP` |
+
+`NONE` is used when no operation is meaningful, so operation does not need a
+validity flag. New component methods normally reuse one of these actions; an
+operation value is added only for a genuinely new kind of action.
+
+Every fallible component operation returns `err_curag_t` and may receive a
+caller-owned diagnostic output:
+
+```c
+#define CURAG_DIAGNOSTIC_CONTEXT_MAX 252
+
+typedef struct {
+    uint16_t operation;
+    uint8_t context_length;
+    uint8_t context_schema;
+    uint8_t context[CURAG_DIAGNOSTIC_CONTEXT_MAX];
+} diagn_context_t;
+
+_Static_assert(sizeof(diagn_context_t) == 256,
+               "unexpected diagn_context_t layout");
+```
+
+The component clears this output on entry and, at the actual failure site,
+populates the operation and a canonical domain-specific context. A null output
+pointer discards diagnostic detail without changing the component operation.
+The structure is never serialized or copied as a native memory dump.
+
+Context-schema values are scoped by `error_domain`: two domains may assign the
+same numeric value to unrelated schemas. Zero means no context and requires a
+zero length. Values and their encodings are append-only within their domain.
+The pilot begins with one schema per component, but this is not a permanent
+restriction.
+
+Components never persist diagnostics directly. `node_core` treats the
+component-produced operation and context as opaque, extracts domain and code
+from `err_curag_t`, adds application timing and the cycle ID when available,
+and invokes `append_diagnostic_event` best-effort.
 
 Every early-exit path powers off sensors and calls `radio.sleep` exactly once.
 That call is a no-op when the radio was never initialized; otherwise it leaves
@@ -184,7 +288,8 @@ but never prevents the ESP32 from entering deep sleep.
 - All attempts for one `(node_id, sample_id, domain)` use identical frame
   bytes.
 - An invalid ACK never changes delivery or persistence state.
-- A pending reading is removed only after authenticated `ACCEPTED`.
+- A pending reading is removed only after authenticated `ACCEPTED` or after a
+  permanent rejection has triggered a quarantine attempt.
 - `RETRY_LATER` stops all transmissions for the wake.
 - Current delivery always precedes backlog drainage.
 - The charged-TX budget and radio-cycle deadline are independent limits.
@@ -254,6 +359,10 @@ wrapping or clamping.
 
 ## Components and responsibilities
 
+The provisional callable contracts, ownership rules, failure results and
+`node_core` diagnostic responses are defined in
+[`INTERFACE.md`](INTERFACE.md).
+
 ### `node_core`
 
 `node_core` is platform-independent and contains:
@@ -279,7 +388,7 @@ quarantined readings and diagnostic logs. It exposes semantic operations:
 claim_sample_id
 append_pending_reading
 peek_most_recent_pending
-mark_reading_accepted
+remove_newest_reading
 quarantine_reading
 append_diagnostic_event
 append_delivery_event
@@ -313,17 +422,332 @@ reinitialized at the next boot, so initialization is attempted again then.
 Failure results distinguish initialization from the requested operation.
 
 Operations affecting delivery correctness are durable when they return:
-claiming an ID includes the NVS commit, and pending, accepted and quarantine
-transitions commit their LittleFS state. Delivery events are also durable on
-successful return because an unmatched start must survive a reset.
+claiming an ID includes the NVS commit, appends and newest-pending removals
+commit their LittleFS state, and quarantine appends are durable independently
+from pending removal. Delivery events are also durable on successful return
+because an unmatched start must survive a reset.
 `sync_all` performs the one final synchronization for remaining buffered state,
 including ordinary diagnostics. It skips backends that were never initialized
-and does not initialize them merely to finalize a wake.
+and does not initialize them merely to finalize a wake. It synchronizes and
+closes persistence-owned file handles but does not unregister or unmount
+LittleFS; deep sleep resets the in-memory mount state.
 
-The LittleFS record representation, recovery framing and compaction policy are
-internal and remain to be designed. Private helper functions may share
-mounting, appending and synchronization code without becoming injected
-architectural layers.
+#### LittleFS record framing
+
+`append_pending_reading`, `quarantine_reading`, `append_diagnostic_event` and
+`append_delivery_event` use one private record codec and the same single-file
+append/truncate machinery. This sharing is internal to `node_persistence`; the
+controller continues to see only semantic operations. It does not make the
+operations share durability policy: pending, quarantine and delivery records
+are durable when their semantic operation succeeds, while ordinary diagnostics
+may remain buffered until `sync_all`.
+
+Every record has this envelope:
+
+| Field | Encoding | Meaning |
+|---|---:|---|
+| `magic` | `u32` | Storage-record marker |
+| `format_version` | `u8` | Storage framing version, independent of the LoRa protocol version |
+| `record_type` | `u8` | Selects the payload schema and semantic record kind |
+| `payload_length` | `u16` | Number of payload bytes |
+| `payload` | byte array | Type-specific canonical encoding |
+| `total_length` | `u16` | Bytes from `magic` through the end of `crc32` |
+| `crc32` | `u32` | CRC of every preceding field, including `total_length` |
+
+All integer fields are little-endian. No implicit compiler padding or record
+alignment is present. For a payload of `N` bytes, `total_length` is `N + 14`.
+The maximum payload is 498 bytes and the maximum complete record is 512 bytes.
+The decoder rejects larger values before allocating or reading the payload.
+The duplicated lengths permit both forward traversal from the header and
+newest-first traversal from the footer:
+
+```text
+magic | format_version | record_type | payload_length | payload
+      | total_length | crc32
+```
+
+The storage framing constants are:
+
+| Constant | Value |
+|---|---:|
+| `magic` | `0x756fec23` (`23 ec 6f 75` on disk) |
+| `format_version` | `0x01` |
+| `PENDING_READING` | `0x01` |
+| `QUARANTINED_READING` | `0x02` |
+| `DIAGNOSTIC_EVENT` | `0x03` |
+| `DELIVERY_STARTED` | `0x04` |
+| `DELIVERY_FINISHED` | `0x05` |
+
+Pending and quarantined readings may share a payload schema while retaining
+different semantic record types. Unassigned record-type values are reserved.
+
+#### Type-specific payloads
+
+Every payload is encoded field by field in the order below. Multi-byte integers
+are little-endian; no payload is a native C structure dump.
+
+`PENDING_READING` and `QUARANTINED_READING` have the same 32-byte payload:
+
+| Field | Encoding |
+|---|---:|
+| `sample_id` | `u32` |
+| `reading_body` | canonical 28-byte LoRa v2 reading plaintext |
+
+The reading body is the output of the generated protocol codec. Keeping the
+associated ID outside it permits construction of either the current- or
+backlog-domain authenticated frame later.
+
+`DELIVERY_STARTED` has a 13-byte payload:
+
+| Field | Encoding |
+|---|---:|
+| `cycle_sample_id` | `u32` |
+| `sample_id` | `u32` |
+| `domain` | `u8`, exact LoRa v2 domain byte |
+| `start_offset_ms` | `u32`, relative to application start |
+
+`DELIVERY_FINISHED` has an 11-byte payload:
+
+| Field | Encoding |
+|---|---:|
+| `cycle_sample_id` | `u32` |
+| `sample_id` | `u32` |
+| `domain` | `u8`, exact LoRa v2 domain byte |
+| `attempt_count` | `u8`, attempts in this wake |
+| `final_result` | `u8` |
+
+The numeric `final_result` mapping is the delivery-result table in the wake
+cycle section above.
+
+For the pilot, `DIAGNOSTIC_EVENT` has this variable-size payload:
+
+| Field | Encoding |
+|---|---:|
+| `error_domain` | `u16` |
+| `error_code` | `u16` |
+| `flags` | `u16` |
+| `application_offset_ms` | `u32` |
+| `cycle_sample_id` | `u32` |
+| `operation` | `u16` |
+| `context_length` | `u8` |
+| `context_schema` | `u8`, scoped by `error_domain` |
+| `context` | `context_length` bytes |
+
+The fixed diagnostic prefix is 18 bytes and context is limited to 252 bytes,
+so a diagnostic payload is at most 270 bytes and its complete storage record is
+at most 284 bytes.
+The initial flags are:
+
+| Bit | Flag |
+|---:|---|
+| `0` | `APPLICATION_OFFSET_VALID` |
+| `1` | `CYCLE_SAMPLE_ID_VALID` |
+| `2`–`15` | Reserved; must be zero |
+
+When either validity flag is clear, its corresponding numeric field must be
+zero. When set, every representable value is permitted, including zero.
+`context_schema = 0` if and only if `context_length = 0`; a nonzero known
+schema requires its exact defined length. Context is bounded and canonically
+encoded, never truncated dynamically and never copied from arbitrary memory.
+Unknown schema values are preserved for offline inspection but are not decoded
+by the current firmware. Additional error domains, domain-specific error codes
+and context schemas remain to be assigned before this provisional payload is
+frozen.
+
+#### Physical files
+
+Record families are isolated so they can have independent durability,
+retention and failure policies:
+
+| File | Permitted record types |
+|---|---|
+| `pending.log` | `PENDING_READING` |
+| `quarantine.log` | `QUARANTINED_READING` |
+| `diagnostic.log` | `DIAGNOSTIC_EVENT` |
+| `delivery.log` | `DELIVERY_STARTED`, `DELIVERY_FINISHED` |
+
+Each is one append-only logical file. Pending records are additionally removed
+from its tail after acceptance or quarantine because backlog selection is
+newest-first.
+
+The checksum is CRC-32/ISO-HDLC, calculated on the serialized bytes from
+`magic` through `total_length`:
+
+```text
+polynomial  0x04c11db7
+init        0xffffffff
+refin       true
+refout      true
+xorout      0xffffffff
+check       CRC32("123456789") = 0xcbf43926
+```
+
+Firmware uses `esp_crc32_le(0, bytes, length)` and stores the result as a
+little-endian `u32`; host tools use the same specified algorithm. CRC32 detects
+accidental storage corruption but is not an authentication mechanism. It is
+still required despite LoRa AES-CCM: a corrupted plaintext reading would
+otherwise be encrypted afterward with a valid CCM tag and accepted by the
+receiver.
+
+Before trusting either length, the decoder applies a compile-time maximum,
+checks all arithmetic for overflow and requires:
+
+```text
+total_length == payload_length + 14
+```
+
+It then validates magic, matching lengths and CRC before checking whether the
+format and type are supported and decoding the payload. An unsupported record
+away from the tail is preserved and reported. The pilot may discard an
+unsupported or semantically invalid newest record only under the bounded tail
+recovery policy below.
+
+#### Append and tail recovery
+
+Before any append, the component must establish or repair a trustworthy tail;
+otherwise torn bytes could be buried as unrecoverable middle corruption. An
+append then constructs the complete canonical record, appends all bytes and
+applies the semantic operation's synchronization policy. A successful durable
+append therefore includes both the footer and CRC.
+
+`remove_newest_reading` first validates that the complete newest
+`PENDING_READING` has the caller's expected `sample_id`, then truncates exactly
+that record and synchronizes before returning success. It never removes an
+unidentified or different supported reading.
+
+An operation that needs a log tail applies this policy:
+
+1. If the file is empty, recovery succeeds with no record.
+2. Read the final six bytes containing `total_length` and `crc32`. Treat a
+   short footer or a length outside the configured bounds as an invalid tail
+   candidate and continue with the bounded scan in step 6.
+3. Calculate the candidate start, read the complete record, validate all
+   framing and CRC fields, check that its type is permitted in that physical
+   file, and decode its type-specific payload.
+4. If all checks succeed, the tail is usable and the requested operation may
+   proceed.
+5. If framing and CRC establish an exact complete record but its version or
+   type is unsupported, or its known payload is semantically invalid, truncate
+   that one record and synchronize. Return `CURAG_EUNSUPPORTED_RECORD` or
+   `CURAG_ECORRUPT_RECORD` respectively without executing the requested
+   operation.
+6. For a torn or CRC-invalid tail, examine candidate record ends backwards over
+   at most one maximum record length. A candidate is accepted only when its
+   footer, header, lengths and CRC all agree. If the entire file is no larger
+   than one maximum record, offset zero is also a valid preceding boundary.
+7. If a preceding boundary is proven, truncate the unusable suffix,
+   synchronize, and return `CURAG_ECORRUPT_RECORD` without executing the
+   requested operation.
+8. If no boundary can be established without discarding more than one maximum
+   record, preserve the file and return `CURAG_ECORRUPT_RECORD` instead of
+   guessing or formatting LittleFS.
+
+Returning an error after successful destructive recovery ensures `node_core`
+can record the lost tail. The next wake or later explicit call starts from the
+repaired boundary. Recovery that successfully discarded bytes uses operation
+`RECOVER`, stage `TRUNCATE` and backend status `NO_ERROR`; failure to establish
+a boundary uses stage `TAIL_SCAN`; a failed truncation or synchronization uses
+the exact primitive stage and backend status.
+
+Caching a per-file `UNVALIDATED -> READY/FAILED` state so the tail is checked
+only once per wake is a possible future optimization, not an interface
+requirement. An implementation may revalidate whenever an operation needs the
+tail, provided it always validates before appending.
+
+Forward iteration starts at offset zero, reads the fixed header, bounds-checks
+`payload_length`, and validates the complete record before advancing by
+`total_length`. Corruption discovered away from the tail is reported and is not
+automatically truncated because later records may still be valid. Recovery
+never formats LittleFS automatically.
+
+#### Quarantine transition
+
+Quarantining a pending reading is not atomic across its two files. The
+controller uses two independent persistence calls in loss-averse order:
+
+1. Call `quarantine_reading(sample_id, reading)` to append and synchronize the
+   `QUARANTINED_READING` record in `quarantine.log`.
+2. Call `remove_newest_reading(sample_id)` even if the quarantine append
+   failed. It validates and durably truncates the matching tail from
+   `pending.log`.
+
+A reset between those steps can leave the reading in both files. This is
+allowed: loss is less acceptable than duplication, and offline tooling must
+tolerate duplicates identified by `sample_id` and reading body. There is no
+idempotent recovery in the pilot, so retrying the transition may also leave
+duplicate records permanently in `quarantine.log`.
+
+For a current RAM-only reading whose pending append did not succeed, the
+controller calls only `quarantine_reading`; an ambiguously durable pending tail
+is left for later recovery. If the quarantine append cannot be retained because
+its file is at its quota or storage is unavailable, the controller still
+attempts to remove a known persisted rejected reading. Losing that diagnostic
+copy is preferable to repeatedly selecting the same rejected record and
+obstructing sensing and backlog progress. Each call returns and populates its
+own diagnostic independently.
+
+#### Retention and compaction
+
+For the at-most-one-month pilot, the logical file limits are deliberately much
+smaller than the 2,944 KiB LittleFS partition:
+
+| File | Logical limit |
+|---|---:|
+| `pending.log` | 512 KiB |
+| `quarantine.log` | 192 KiB |
+| `diagnostic.log` | 256 KiB |
+| `delivery.log` | 256 KiB |
+
+These limits total 1,216 KiB. A file reaching its logical limit does not imply
+that LittleFS is physically full; the unallocated capacity is intentional
+workspace for copy-on-write, garbage collection and compaction.
+
+When the next pending append would exceed 512 KiB, compact `pending.log` by
+retaining the newest complete records whose combined size is at most 50% of
+the limit. Write them in their original order to `pending.compact`, synchronize
+the complete temporary file, and atomically rename it over `pending.log` in the
+same directory. Until that rename commits, `pending.log` remains authoritative;
+on initialization, an extra `pending.compact` beside it is an interrupted
+pre-rename copy and may be removed after validating the authoritative file.
+The largest compacted copy is therefore 256 KiB. Even with all logical files
+at their quotas, the temporary copy leaves substantial space for LittleFS
+metadata and garbage collection.
+
+Compaction always retains whole structurally valid records. Failure to create,
+synchronize or replace the temporary file leaves the original pending log
+authoritative and makes the requested append fail; the current reading can
+still be transmitted from RAM under the ordinary persistence-failure policy.
+`pending.compact` is never promoted to recover an absent, corrupt or otherwise
+unrecoverable `pending.log` during the pilot. In that situation both files are
+preserved when present and the persistence failure is reported; automatically
+choosing the temporary file would require generation or manifest metadata that
+the pilot deliberately omits.
+
+No recovery or reclamation strategy has yet been chosen for a full
+`quarantine.log`, `diagnostic.log` or `delivery.log`. At present they reject new
+records after reaching their limits. Such logging failures never block sensing,
+radio work or deep sleep, and the special quarantine rule above still removes
+the rejected pending reading. Defining how those files resume recording after
+physical collection or autonomous reclamation is an open production-design
+item.
+
+#### Open pilot recovery decisions
+
+The pilot deliberately leaves these recovery procedures undefined:
+
+- reclaiming space after `quarantine.log`, `diagnostic.log` or `delivery.log`
+  reaches its logical limit; and
+- physically recovering a log whose tail has no trustworthy preceding record
+  boundary.
+
+Their safe runtime behavior is already fixed. A full non-pending log rejects
+new records according to its best-effort failure policy. When bounded tail
+recovery cannot prove a boundary, persistence preserves every byte and returns
+`CURAG_ECORRUPT_RECORD`; it never guesses, reformats LittleFS or promotes
+`pending.compact`. An unrecoverable `pending.log` disables backlog persistence,
+but the node may continue transmitting each current reading from RAM. Restoring
+either condition requires a physical recovery workflow that is intentionally
+outside the pilot design.
 
 ### `node_sensors`
 
@@ -336,9 +760,24 @@ force_power_off
 
 `sample_all` lazily initializes required buses, enables the shared gated sensor
 rail, samples both soil channels, both DS18B20 channels and the BME280, and
-disables the rail through a common cleanup path. It returns individual values,
-validity indicators and failure details so one failed sensor does not suppress
-the others. `force_power_off` is idempotent and does not initialize anything.
+disables the rail through a common cleanup path. Its caller-owned snapshot has
+five validity bits: one for each soil channel, one for each DS18B20 channel and
+one atomic BME280 enclosure group. The enclosure bit validates temperature,
+pressure and humidity together; all three are zero when it is clear. Invalid
+individual channels are zero, while other channels continue to be sampled.
+`node_core` maps the enclosure bit to all three enclosure validity bits in the
+LoRa reading.
+
+Sensor diagnostics use one fixed context with six backend-status pairs: one
+component-wide pair followed by the five sensor groups. This preserves
+simultaneous failures without making `node_core` interpret driver results. The
+component-wide pair describes shared initialization, power-gate and cleanup
+failures. `err_curag_t` remains a summary result, while the context carries the
+exact ESP-IDF, sensor-driver or component-internal statuses.
+
+`force_power_off` is idempotent, initializes no sensor bus, never powers a
+device on and reports failure only when it cannot enforce the gated rail's off
+state.
 
 One power gate supplies both soil sensors and both DS18B20 sensors. The BME280
 remains on the always-powered rail and uses its low-power operating mode. The
@@ -357,20 +796,31 @@ receive_downlink_until
 sleep
 ```
 
-The first transmit lazily initializes the radio. Uplink transmission uses
-normal IQ and downlink reception uses inverted IQ as defined by the protocol.
-The transmit result reports whether `SetTx` started and the actual transmit
-start and `TX_DONE` monotonic times, so initialization latency is not counted
-as delivery time. Reception returns packet bytes, length and radio metadata, or
-a timeout or local error.
+The component owns one file-static singleton; no state pointer or public
+initialization function is exposed. Ordinary BSS initialization places it in
+`UNTOUCHED` at each ESP32 boot. The first transmit lazily initializes the radio.
+Uplink transmission uses normal IQ and downlink reception uses inverted IQ as
+defined by the protocol.
+
+TX and RX operations receive an absolute deadline expressed in the same
+monotonic-microsecond domain used by `node_core`. The component has a private
+`monotonic_us` dependency so it can enforce those deadlines and timestamp IRQ
+events. The transmit result reports whether `SetTx` started and the actual
+pre-`SetTx` and `TX_DONE` monotonic times, so initialization latency is not
+counted as delivery time. Reception returns SX1262 payload bytes, length and
+radio metadata, or a normal deadline outcome or local error. It never exposes
+the LoRa preamble, PHY header or modem-generated CRC, and it never parses the
+Cura frame.
 
 Within an active wake the radio uses `STDBY_RC` as the intermediate state for
 configuration and transitions between TX and RX. It is not put to sleep while
 delivery or retries remain possible. Final `sleep` behaves as follows:
 
-1. If the radio was never initialized, return successfully without issuing a
-   radio command or initializing it.
-2. Stop continuous RX or any other active mode with `SetStandby(STDBY_RC)`.
+1. If the radio is `UNTOUCHED`, or initialization failed before any hardware
+   access, return successfully without issuing a radio command or initializing
+   it.
+2. Otherwise stop continuous RX or any other active mode with
+   `SetStandby(STDBY_RC)`.
 3. Issue `SetSleep(COLD_START)`; the next wake performs complete lazy
    initialization rather than trusting retained radio configuration.
 4. Return any failure for best-effort diagnostics, but do not prevent ESP32
@@ -378,6 +828,8 @@ delivery or retries remain possible. Final `sleep` behaves as follows:
 
 The controller owns retries, deadlines, ACK validation and delivery policy; the
 radio component only executes radio operations and reports their outcomes.
+The detailed callable contract and proposed diagnostic/state model are in
+[`INTERFACE.md`](INTERFACE.md).
 
 ### Existing protocol and sensor components
 
@@ -405,10 +857,20 @@ system:
 Only monotonic time is needed; the node does not maintain UTC. The clock drives
 `run_ms`, radio deadlines, retry scheduling, delivery and awake durations and
 diagnostic offsets. A fake clock allows host tests to advance without real
-waiting. Retry randomness does not need cryptographic guarantees.
+waiting. It is nondecreasing within a wake and shares its concrete source with
+the radio backend. Retry randomness is inclusive, unbiased and does not need
+cryptographic guarantees; it is never used for identity or key material.
 
-The system implementation performs the final board-safe transition and enters
-deep sleep. `enter_deep_sleep_for` does not return during normal operation.
+`get_reset_reason` exposes the `u8` numeric value of `esp_reset_reason_t`; sleep
+wakeup causes are not collected. The system implementation performs the final
+board-safe transition and enters timer deep sleep for a relative duration.
+From the controller's perspective `enter_deep_sleep_for` is terminal and cannot
+fail. Production configures timer wakeup and enters deep sleep; if wakeup
+configuration fails, the system adapter reports to the development console,
+waits 60 seconds without a tight busy-spin and restarts instead of returning.
+A host fake may return only to terminate the test invocation, after which
+`node_core` performs no more operations. The complete callable contracts are in
+[`INTERFACE.md`](INTERFACE.md#platform-ports).
 
 ### `app_main` and RTC memory
 

@@ -1,0 +1,520 @@
+{
+  "schema_format_version": 1,
+  "protocol_name": "cura_agrorum_protocol_v2_lora",
+  "protocol_version": 2,
+  "endianness": "little",
+  "signed_integer_encoding": "twos_complement",
+  "control": {
+    "type": "u8",
+    "protocol_version_bits": {
+      "most_significant_bit": 7,
+      "least_significant_bit": 4
+    },
+    "protocol_flags_bits": {
+      "most_significant_bit": 3,
+      "least_significant_bit": 0
+    },
+    "protocol_version_zero_reserved": true,
+    "pilot_protocol_flags": 0,
+    "pilot_value": 32,
+    "pilot_value_hex": "0x20"
+  },
+  "ccm": {
+    "algorithm": "AES-CCM-128",
+    "key_size_bytes": 16,
+    "nonce_size_bytes": 13,
+    "tag_size_bytes": 8,
+    "aad": {
+      "source": "clear_header",
+      "size_bytes": 14,
+      "fields": [
+        "control",
+        "domain",
+        "node_id",
+        "sample_id"
+      ]
+    },
+    "nonce": {
+      "size_bytes": 13,
+      "fields": [
+        {
+          "name": "node_id",
+          "source": "clear_header",
+          "type": "bytes[8]",
+          "offset": 0
+        },
+        {
+          "name": "sample_id",
+          "source": "clear_header",
+          "type": "u32",
+          "offset": 8
+        },
+        {
+          "name": "domain",
+          "source": "clear_header",
+          "type": "u8",
+          "offset": 12
+        }
+      ]
+    }
+  },
+  "clear_header": {
+    "wire_size_bytes": 14,
+    "fields": [
+      {
+        "name": "control",
+        "type": "u8",
+        "offset": 0,
+        "description": "Protocol version and protocol flags."
+      },
+      {
+        "name": "domain",
+        "type": "u8",
+        "offset": 1,
+        "description": "Opaque packet-domain value."
+      },
+      {
+        "name": "node_id",
+        "type": "bytes[8]",
+        "offset": 2,
+        "description": "Opaque provisioned node identifier."
+      },
+      {
+        "name": "sample_id",
+        "type": "u32",
+        "offset": 10,
+        "description": "Persistent monotonic sample identifier scoped to the node key."
+      }
+    ]
+  },
+  "domains": {
+    "zero_reserved": true,
+    "values": [
+      {
+        "name": "CURRENT_READING_UPLINK",
+        "value": 1,
+        "direction": "uplink",
+        "body": "reading_body"
+      },
+      {
+        "name": "BACKLOG_READING_UPLINK",
+        "value": 2,
+        "direction": "uplink",
+        "body": "reading_body"
+      },
+      {
+        "name": "ACK_ACCEPTED_DOWNLINK",
+        "value": 3,
+        "direction": "downlink",
+        "body": "ack_body"
+      },
+      {
+        "name": "ACK_RETRY_LATER_DOWNLINK",
+        "value": 4,
+        "direction": "downlink",
+        "body": "ack_body"
+      },
+      {
+        "name": "ACK_REJECTED_UNSUPPORTED_DOWNLINK",
+        "value": 5,
+        "direction": "downlink",
+        "body": "ack_body"
+      },
+      {
+        "name": "ACK_REJECTED_MALFORMED_DOWNLINK",
+        "value": 6,
+        "direction": "downlink",
+        "body": "ack_body"
+      }
+    ]
+  },
+  "reading_body": {
+    "wire_size_bytes": 28,
+    "fields": [
+      {
+        "name": "run_ms",
+        "type": "u16",
+        "offset": 0,
+        "description": "Milliseconds from application start until immediately before the first SX1262 SetTx."
+      },
+      {
+        "name": "soil_0_mv",
+        "type": "u16",
+        "offset": 2,
+        "description": "Soil-sensor channel 0 output in millivolts.",
+        "valid_flag": "SOIL_0_VALID"
+      },
+      {
+        "name": "soil_1_mv",
+        "type": "u16",
+        "offset": 4,
+        "description": "Soil-sensor channel 1 output in millivolts.",
+        "valid_flag": "SOIL_1_VALID"
+      },
+      {
+        "name": "soil_temp_0_centi_c",
+        "type": "i16",
+        "offset": 6,
+        "description": "Soil-temperature channel 0 in 0.01 degrees Celsius.",
+        "valid_flag": "SOIL_TEMP_0_VALID"
+      },
+      {
+        "name": "soil_temp_1_centi_c",
+        "type": "i16",
+        "offset": 8,
+        "description": "Soil-temperature channel 1 in 0.01 degrees Celsius.",
+        "valid_flag": "SOIL_TEMP_1_VALID"
+      },
+      {
+        "name": "enclosure_centi_c",
+        "type": "i16",
+        "offset": 10,
+        "description": "Enclosure temperature in 0.01 degrees Celsius.",
+        "valid_flag": "ENCLOSURE_TEMP_VALID"
+      },
+      {
+        "name": "enclosure_pressure_pa",
+        "type": "u32",
+        "offset": 12,
+        "description": "Enclosure pressure in pascals.",
+        "valid_flag": "ENCLOSURE_PRESSURE_VALID"
+      },
+      {
+        "name": "enclosure_humidity_centi_pct",
+        "type": "u16",
+        "offset": 16,
+        "description": "Enclosure relative humidity in 0.01 percent.",
+        "valid_flag": "ENCLOSURE_HUMIDITY_VALID"
+      },
+      {
+        "name": "reset_reason",
+        "type": "u8",
+        "offset": 18,
+        "named_values": "reset_reasons",
+        "allow_unassigned_values": true,
+        "description": "ESP-IDF reset reason frozen into the protocol as a u8."
+      },
+      {
+        "name": "previous_current_tx_attempts",
+        "type": "u8",
+        "offset": 19,
+        "description": "All transmission attempts for the previous cycle's current reading."
+      },
+      {
+        "name": "previous_awake_ms",
+        "type": "u16",
+        "offset": 20,
+        "description": "Previous cycle's total awake time, including final persistent-state and log flushing."
+      },
+      {
+        "name": "previous_current_delivery_ms",
+        "type": "u16",
+        "offset": 22,
+        "description": "Previous current reading's first SetTx through receipt of authenticated ACCEPTED."
+      },
+      {
+        "name": "previous_cycle_tx_attempts",
+        "type": "u8",
+        "offset": 24,
+        "description": "All current and backlog transmission attempts in the previous wake."
+      },
+      {
+        "name": "previous_cycle_accepted_readings",
+        "type": "u8",
+        "offset": 25,
+        "description": "Distinct readings that received authenticated ACCEPTED in the previous wake."
+      },
+      {
+        "name": "flags",
+        "type": "u16",
+        "offset": 26,
+        "description": "Validity and diagnostic bitmap."
+      }
+    ],
+    "flags": {
+      "field": "flags",
+      "type": "u16",
+      "values": [
+        {
+          "name": "DEEP_SLEEP_BOOT",
+          "bit": 0,
+          "description": "The current boot was caused by the expected deep-sleep wake."
+        },
+        {
+          "name": "SOIL_0_VALID",
+          "bit": 1,
+          "description": "soil_0_mv is valid."
+        },
+        {
+          "name": "SOIL_1_VALID",
+          "bit": 2,
+          "description": "soil_1_mv is valid."
+        },
+        {
+          "name": "SOIL_TEMP_0_VALID",
+          "bit": 3,
+          "description": "soil_temp_0_centi_c is valid."
+        },
+        {
+          "name": "SOIL_TEMP_1_VALID",
+          "bit": 4,
+          "description": "soil_temp_1_centi_c is valid."
+        },
+        {
+          "name": "ENCLOSURE_TEMP_VALID",
+          "bit": 5,
+          "description": "enclosure_centi_c is valid."
+        },
+        {
+          "name": "ENCLOSURE_PRESSURE_VALID",
+          "bit": 6,
+          "description": "enclosure_pressure_pa is valid."
+        },
+        {
+          "name": "ENCLOSURE_HUMIDITY_VALID",
+          "bit": 7,
+          "description": "enclosure_humidity_centi_pct is valid."
+        },
+        {
+          "name": "PREVIOUS_CYCLE_METRICS_VALID",
+          "bit": 8,
+          "description": "All previous-cycle metrics refer to the immediately preceding wake."
+        },
+        {
+          "name": "PREVIOUS_CURRENT_ACCEPTED",
+          "bit": 9,
+          "description": "The previous cycle's current reading received authenticated ACCEPTED."
+        }
+      ],
+      "reserved_bits": [
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "reserved_mask": 64512,
+      "reserved_mask_hex": "0xfc00"
+    },
+    "structural_constraints": [
+      {
+        "kind": "zero_unless_flag",
+        "field": "soil_0_mv",
+        "flag": "SOIL_0_VALID"
+      },
+      {
+        "kind": "zero_unless_flag",
+        "field": "soil_1_mv",
+        "flag": "SOIL_1_VALID"
+      },
+      {
+        "kind": "zero_unless_flag",
+        "field": "soil_temp_0_centi_c",
+        "flag": "SOIL_TEMP_0_VALID"
+      },
+      {
+        "kind": "zero_unless_flag",
+        "field": "soil_temp_1_centi_c",
+        "flag": "SOIL_TEMP_1_VALID"
+      },
+      {
+        "kind": "zero_unless_flag",
+        "field": "enclosure_centi_c",
+        "flag": "ENCLOSURE_TEMP_VALID"
+      },
+      {
+        "kind": "zero_unless_flag",
+        "field": "enclosure_pressure_pa",
+        "flag": "ENCLOSURE_PRESSURE_VALID"
+      },
+      {
+        "kind": "zero_unless_flag",
+        "field": "enclosure_humidity_centi_pct",
+        "flag": "ENCLOSURE_HUMIDITY_VALID"
+      },
+      {
+        "kind": "flag_iff_field_equals",
+        "flag": "DEEP_SLEEP_BOOT",
+        "field": "reset_reason",
+        "value": 8
+      },
+      {
+        "kind": "all_zero_unless_flag",
+        "fields": [
+          "previous_current_tx_attempts",
+          "previous_awake_ms",
+          "previous_current_delivery_ms",
+          "previous_cycle_tx_attempts",
+          "previous_cycle_accepted_readings"
+        ],
+        "flag": "PREVIOUS_CYCLE_METRICS_VALID"
+      },
+      {
+        "kind": "flag_requires_flag",
+        "flag": "PREVIOUS_CURRENT_ACCEPTED",
+        "required_flag": "PREVIOUS_CYCLE_METRICS_VALID"
+      },
+      {
+        "kind": "zero_unless_flag",
+        "field": "previous_current_delivery_ms",
+        "flag": "PREVIOUS_CURRENT_ACCEPTED"
+      },
+      {
+        "kind": "reserved_bits_zero",
+        "field": "flags",
+        "mask": 64512,
+        "mask_hex": "0xfc00"
+      }
+    ]
+  },
+  "reset_reasons": {
+    "type": "u8",
+    "allow_unassigned_values": true,
+    "values": [
+      {
+        "name": "ESP_RST_UNKNOWN",
+        "value": 0
+      },
+      {
+        "name": "ESP_RST_POWERON",
+        "value": 1
+      },
+      {
+        "name": "ESP_RST_EXT",
+        "value": 2
+      },
+      {
+        "name": "ESP_RST_SW",
+        "value": 3
+      },
+      {
+        "name": "ESP_RST_PANIC",
+        "value": 4
+      },
+      {
+        "name": "ESP_RST_INT_WDT",
+        "value": 5
+      },
+      {
+        "name": "ESP_RST_TASK_WDT",
+        "value": 6
+      },
+      {
+        "name": "ESP_RST_WDT",
+        "value": 7
+      },
+      {
+        "name": "ESP_RST_DEEPSLEEP",
+        "value": 8
+      },
+      {
+        "name": "ESP_RST_BROWNOUT",
+        "value": 9
+      },
+      {
+        "name": "ESP_RST_SDIO",
+        "value": 10
+      },
+      {
+        "name": "ESP_RST_USB",
+        "value": 11
+      },
+      {
+        "name": "ESP_RST_JTAG",
+        "value": 12
+      },
+      {
+        "name": "ESP_RST_EFUSE",
+        "value": 13
+      },
+      {
+        "name": "ESP_RST_PWR_GLITCH",
+        "value": 14
+      },
+      {
+        "name": "ESP_RST_CPU_LOCKUP",
+        "value": 15
+      }
+    ]
+  },
+  "ack_body": {
+    "wire_size_bytes": 1,
+    "fields": [
+      {
+        "name": "status",
+        "type": "u8",
+        "offset": 0,
+        "named_values": "ack_statuses",
+        "allow_unassigned_values": false,
+        "description": "Result selected by the receiver for the corresponding reading."
+      }
+    ],
+    "domain_status_pairs": [
+      {
+        "domain": "ACK_ACCEPTED_DOWNLINK",
+        "status": "ACCEPTED"
+      },
+      {
+        "domain": "ACK_RETRY_LATER_DOWNLINK",
+        "status": "RETRY_LATER"
+      },
+      {
+        "domain": "ACK_REJECTED_UNSUPPORTED_DOWNLINK",
+        "status": "REJECTED_UNSUPPORTED"
+      },
+      {
+        "domain": "ACK_REJECTED_MALFORMED_DOWNLINK",
+        "status": "REJECTED_MALFORMED"
+      }
+    ]
+  },
+  "ack_statuses": {
+    "type": "u8",
+    "allow_unassigned_values": false,
+    "values": [
+      {
+        "name": "ACCEPTED",
+        "value": 0
+      },
+      {
+        "name": "RETRY_LATER",
+        "value": 1
+      },
+      {
+        "name": "REJECTED_UNSUPPORTED",
+        "value": 2
+      },
+      {
+        "name": "REJECTED_MALFORMED",
+        "value": 3
+      }
+    ]
+  },
+  "frames": {
+    "reading": {
+      "domains": [
+        "CURRENT_READING_UPLINK",
+        "BACKLOG_READING_UPLINK"
+      ],
+      "clear_header_size_bytes": 14,
+      "plaintext_body_size_bytes": 28,
+      "ciphertext_body_size_bytes": 28,
+      "ccm_tag_size_bytes": 8,
+      "sx1262_payload_size_bytes": 50
+    },
+    "ack": {
+      "domains": [
+        "ACK_ACCEPTED_DOWNLINK",
+        "ACK_RETRY_LATER_DOWNLINK",
+        "ACK_REJECTED_UNSUPPORTED_DOWNLINK",
+        "ACK_REJECTED_MALFORMED_DOWNLINK"
+      ],
+      "clear_header_size_bytes": 14,
+      "plaintext_body_size_bytes": 1,
+      "ciphertext_body_size_bytes": 1,
+      "ccm_tag_size_bytes": 8,
+      "sx1262_payload_size_bytes": 23
+    }
+  }
+}

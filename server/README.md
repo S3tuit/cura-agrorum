@@ -39,8 +39,9 @@ repeated event_count times:
 ```
 
 Frame, envelope, and event header fields use network byte order. Payload byte
-order is defined by the payload schema in `../protocol/schemas/`. The full wire
-format is documented in `../protocol/wire/v1.md`.
+order is defined by the payload schema in
+`../protocol/wifi-protocol-v1/schemas/`. The full wire format is documented in
+`../protocol/wifi-protocol-v1/wire/v1.md`.
 
 After durably persisting every event in a frame, the server returns an `ack_t`
 event with status `0`. A nonzero status rejects the complete frame. Nodes keep
@@ -61,9 +62,9 @@ The current firmware connects to SSID `cura-field` and sends TCP frames to
 ## Regenerate protocol files
 
 The firmware C headers and Python decoder constants are generated from the JSON
-schemas in `../protocol/schemas/`.
+schemas in `../protocol/wifi-protocol-v1/schemas/`.
 
 ```bash
 cd ..
-python3 protocol/tools/generate.py
+python3 protocol/wifi-protocol-v1/tools/generate.py
 ```

@@ -1,81 +1,63 @@
 dependencies:
-  esp-idf-lib/bmp280:
-    component_hash: 82b01a37c200ed66a6c451026e2afdbe8046c6f702d41085e5a1d83aec3a90d8
+  espressif/bme280:
+    component_hash: 873d97d0bd30004f45d1653f078a4bafe39c1767e57d4bae0f0a13bc3a4d5e3d
     dependencies:
-    - name: esp-idf-lib/esp_idf_lib_helpers
+    - name: espressif/cmake_utilities
       registry_url: https://components.espressif.com
       require: private
-      version: '*'
-    - name: esp-idf-lib/i2cdev
+      version: 0.*
+    - name: espressif/i2c_bus
       registry_url: https://components.espressif.com
-      require: private
+      require: public
       version: '*'
+    - name: idf
+      require: private
+      version: '>=4.4'
     source:
       registry_url: https://components.espressif.com/
       type: service
-    targets:
-    - esp32
-    - esp32c2
-    - esp32c3
-    - esp32c5
-    - esp32c6
-    - esp32c61
-    - esp32h2
-    - esp32p4
-    - esp32s2
-    - esp32s3
-    version: 1.0.7
-  esp-idf-lib/esp_idf_lib_helpers:
-    component_hash: 689853bb8993434f9556af0f2816e808bf77b5d22100144b21f3519993daf237
-    dependencies: []
-    source:
-      registry_url: https://components.espressif.com
-      type: service
-    targets:
-    - esp32
-    - esp32c2
-    - esp32c3
-    - esp32c5
-    - esp32c6
-    - esp32c61
-    - esp32h2
-    - esp32p4
-    - esp32s2
-    - esp32s3
-    version: 1.4.0
-  esp-idf-lib/i2cdev:
-    component_hash: 9e22a91420695242ceac2c00788820ae45826224d38ef003a1a894367c55ede4
+    version: 0.1.1
+  espressif/cmake_utilities:
+    component_hash: 351350613ceafba240b761b4ea991e0f231ac7a9f59a9ee901f751bddc0bb18f
     dependencies:
-    - name: esp-idf-lib/esp_idf_lib_helpers
-      registry_url: https://components.espressif.com
+    - name: idf
       require: private
-      version: '*'
+      version: '>=4.1'
     source:
       registry_url: https://components.espressif.com
       type: service
-    targets:
-    - esp32
-    - esp32c2
-    - esp32c3
-    - esp32c5
-    - esp32c6
-    - esp32c61
-    - esp32h2
-    - esp32p4
-    - esp32s2
-    - esp32s3
-    version: 2.1.1
+    version: 0.5.3
   espressif/ds18b20:
-    component_hash: 13c5310b993bda17bd507b2c25cacce6962fe092029a5232815814d40339cec0
+    component_hash: 38022d0c39c08b1df3e77f95a3f9544251549a1fd9b6263357bf714026f4bb6b
     dependencies:
     - name: espressif/onewire_bus
       registry_url: https://components.espressif.com
       require: private
       version: ^1.1.0
+    - matches:
+      - if: $CONFIG{DS18B20_SENSOR_HUB} == True
+      name: espressif/sensor_hub
+      registry_url: https://components.espressif.com
+      require: public
+      version: ^0.1.4
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 0.3.1
+    version: 0.4.0
+  espressif/i2c_bus:
+    component_hash: 483112c1619c54c38d0b734fb25f1678733267858a77b7af2f48cc7db6dbbd84
+    dependencies:
+    - name: espressif/cmake_utilities
+      registry_url: https://components.espressif.com
+      require: private
+      version: '*'
+    - name: idf
+      require: private
+      version: '>=4.0'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 1.5.2
   espressif/onewire_bus:
     component_hash: a85dc1ceb71fb87af77c57d5fd4e6f48a504de1fc2b83fc302ec0cea331d05ce
     dependencies:
@@ -101,10 +83,10 @@ dependencies:
       type: service
     version: 1.22.1
 direct_dependencies:
-- esp-idf-lib/bmp280
+- espressif/bme280
 - espressif/ds18b20
 - espressif/onewire_bus
 - joltwallet/littlefs
-manifest_hash: bbfda341669d2e2ac02288ccd893ac068f4261d356eeae6a87e6c00eacd67a5e
-target: esp32
+manifest_hash: 38f75a7244d98ae4c57156758e9209cc69ff1c99ea037561bce8055f10aa17fe
+target: esp32c6
 version: 3.0.0

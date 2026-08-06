@@ -27,11 +27,11 @@ The experiment will first focus on controlled data collection. Detailed statisti
 
 ### 2.1 Main analog capacitive sensors
 
-| Group | Quantity | Source | Purpose |
-|---|---:|---|---|
-| Manufacturer A clones | 5 | [AliExpress listing A](https://it.aliexpress.com/item/1005009040921501.html) | Within-manufacturer consistency and transfer |
-| Manufacturer B clones | 5 | [AliExpress listing B](https://it.aliexpress.com/item/1005010806672089.htm) | Cross-manufacturer comparison |
-| DFRobot capacitive sensors | 5 | Comparable DFRobot capacitive model | Original-versus-clone comparison |
+| Group | Quantity | Source | Purpose | Order |
+|---|---:|---|---|---|
+| Manufacturer A clones | 5 | [AliExpress listing A](https://it.aliexpress.com/item/1005009040921501.html) | Within-manufacturer consistency and transfer | Ordered on Jul 15 10pm for 7.70 eur |
+| Manufacturer B clones | 5 | [AliExpress listing B](https://it.aliexpress.com/item/1005009445826695.html) | Cross-manufacturer comparison | Ordered on Jul 15 10pm for 8.97 eur |
+| DFRobot capacitive sensors | 5 | Comparable DFRobot capacitive model (SKU: SEN0193) | Original-versus-clone comparison | Ordered on Jul 15 10pm for 24.30 eur |
 
 Total analog capacitive sensors:
 

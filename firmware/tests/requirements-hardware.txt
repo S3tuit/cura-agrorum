@@ -1,0 +1,3 @@
+pytest-embedded==2.8.1
+pytest-embedded-idf==2.8.1
+pytest-embedded-serial-esp==2.8.1

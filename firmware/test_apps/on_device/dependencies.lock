@@ -1,0 +1,17 @@
+dependencies:
+  idf:
+    source:
+      type: idf
+    version: 6.1.0
+  joltwallet/littlefs:
+    dependencies: []
+    source:
+      path: ../../managed_components/joltwallet__littlefs
+      type: local
+    version: 1.22.1
+direct_dependencies:
+- idf
+- joltwallet/littlefs
+manifest_hash: 07a0831ebd190234c462d53102d8432c3aab487c6aaacf849777760e03306e56
+target: esp32c6
+version: 3.0.0

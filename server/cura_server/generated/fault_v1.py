@@ -1,4 +1,4 @@
-# Generated Python module from protocol/schemas/fault_v1.json by protocol/tools/generate.py. Do not edit by hand.
+# Generated Python module from protocol/wifi-protocol-v1/schemas/fault_v1.json by protocol/wifi-protocol-v1/tools/generate.py. Do not edit by hand.
 from __future__ import annotations
 
 from dataclasses import dataclass

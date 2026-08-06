@@ -58,17 +58,28 @@ firmware/sdkconfig
 firmware/sdkconfig.old
 firmware/main/node_identity.h
 firmware/main/node_uuid.txt
+receiver-group.json
+protocol_v2_lora_identity.h
 firmware/maintenance/*/build/
 firmware/maintenance/*/managed_components/
 firmware/maintenance/*/sdkconfig
 firmware/maintenance/*/sdkconfig.old
+firmware/maintenance/littlefs_storage_benchmark/results.log
+firmware/test_apps/*/build/
+firmware/test_apps/*/managed_components/
+firmware/test_apps/*/sdkconfig
+firmware/test_apps/*/sdkconfig.old
 .cache
 
 # Python
 __pycache__/
 *.py[cod]
+.hypothesis/
 .env
 .venv
+
+# Fuzzing
+protocol/protocol-v2-lora/.fuzz-corpus/
 
 # debug information files
 *.dwo
@@ -80,3 +91,8 @@ __pycache__/
 # firmware build
 firmware/build*/
 firmware/main/build*/
+
+# personal notes
+*.notes
+analysis_*/
+WORKPLAN*.md

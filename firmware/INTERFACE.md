@@ -871,9 +871,9 @@ already powered and never changes the gate.
 
 ## `sx1262_radio`
 
-Status: controller-facing operation semantics are the pilot contract. The
-numeric radio error/context assignments and private construction details below
-are proposed and may be adjusted when the SX1262 driver and module are chosen.
+Status: implemented pilot contract. The public declarations are in
+`components/sx1262_radio/include/sx1262_radio.h`; the platform-independent
+policy links either the ESP-IDF backend or the deterministic host fake.
 
 ### Public values
 
@@ -923,7 +923,7 @@ clock source.
 
 ### `sx1262_radio_transmit_uplink`
 
-Proposed shape:
+Interface:
 
 ```text
 err_curag_t sx1262_radio_transmit_uplink(
@@ -989,7 +989,7 @@ Do not retry a local failure during the same wake.
 
 ### `sx1262_radio_receive_downlink_until`
 
-Proposed shape:
+Interface:
 
 ```text
 err_curag_t sx1262_radio_receive_downlink_until(
@@ -1042,7 +1042,7 @@ reading and end radio work for the wake.
 
 ### `sx1262_radio_sleep`
 
-Proposed shape:
+Interface:
 
 ```text
 err_curag_t sx1262_radio_sleep(diagn_context_t *out_diag)
@@ -1075,10 +1075,10 @@ returned even when a later cleanup step succeeds.
 Persist the returned diagnostic best-effort when possible, then continue
 unconditionally to ESP32 deep sleep.
 
-### Proposed radio error domain
+### Radio error domain
 
-The proposed second error domain is `CURAG_EDOM_RADIO = 2`. Its error-code
-values are scoped by that domain:
+The second error domain is `CURAG_EDOM_RADIO = 2`. Its error-code values are
+scoped by that domain:
 
 | Value | Error code | Meaning |
 |---:|---|---|
@@ -1098,10 +1098,10 @@ precise context stage. An RX deadline is a successful outcome and never returns
 `CURAG_ERADIO_EDEADLINE`; the deadline error is for TX or an internal operation
 that could not complete normally.
 
-### Proposed radio context V1
+### Radio context V1
 
-The proposed schema is `CURAG_RADIO_CONTEXT_V1 = 1` within the radio domain and
-has a fixed 14-byte little-endian encoding:
+The schema is `CURAG_RADIO_CONTEXT_V1 = 1` within the radio domain and has a
+fixed 14-byte little-endian encoding:
 
 | Field | Encoding | Meaning |
 |---|---:|---|
@@ -1142,7 +1142,7 @@ Backend-status kinds are:
 | `1` | `ESP_ERR` |
 | `2` | `SX1262_DRIVER_STATUS` |
 
-Proposed stable stage values are:
+Stable stage values are:
 
 | Value | Stage |
 |---:|---|
@@ -1172,7 +1172,7 @@ context. Fields whose validity flag is clear must be zero. A semantic failure
 uses `NO_ERROR`; a backend failure carries its exact status. The context stores
 raw SX1262 status/IRQ/device values rather than copying a private driver object.
 
-### Proposed singleton construction
+### Singleton construction and private seam
 
 There is no public `sx1262_radio_t`, setter, getter or `init` function. The
 component owns file-static state whose all-zero BSS representation is
@@ -1198,22 +1198,44 @@ initialization failure where applicable. Successful final cleanup moves to
 `SLEEPING`. Ordinary BSS is recreated on the next ESP32 wake, restoring
 `UNTOUCHED` without a public reset operation.
 
-The exact radio test seam is intentionally deferred until implementation. No
-test-only singleton setter, getter, snapshot or reset function is part of this
-interface yet.
+The platform-independent policy calls a private backend interface for radio
+mechanics. Host tests link a deterministic fake implementation and run each
+scenario in a fresh process, so ordinary BSS restores `UNTOUCHED` without a
+test-only singleton setter, getter, snapshot or reset function. None of those
+operations is part of the public interface.
 
-### Open radio implementation decisions
+### Selected radio implementation
 
-- Exact SX1262 module, low-level driver and backend-status mapping.
-- SPI and GPIO assignments, DIO1 IRQ wiring, DIO2/manual RF-switch control and
-  crystal-versus-TCXO handling.
-- LDO versus DC-DC regulator mode.
-- The concrete monotonic clock adapter and DIO1 timestamp-capture mechanism;
-  the shared absolute-time semantics are already fixed.
-- The private TX command/watchdog margin used below the caller's absolute
-  deadline.
-- Whether a selected third-party driver requires refining
-  `SX1262_DRIVER_STATUS` without changing the controller-facing operations.
+- The pilot module is the Waveshare Pico-LoRa-SX1262-868M. Semtech's
+  Clear-BSD `sx126x_driver` v2.5.0 is vendored at a pinned upstream commit and
+  used unchanged below the Cura backend adapter.
+- The ESP32-C6 uses SPI2 at 8 MHz. Provisional SCLK, MOSI, MISO, CS, RESET,
+  BUSY and DIO1 pins are component Kconfig values and must be revised against
+  the assembled board. DIO1 uses a rising-edge GPIO interrupt.
+- The module's onboard DIO2-controlled RF switch is enabled. Its DIO3-powered
+  TCXO is configured for 1.7 V and a 5 ms startup. The regulator uses DC-DC
+  mode.
+- `esp_timer_get_time()` supplies both ordinary monotonic reads and the DIO1
+  ISR timestamp. A component-owned static binary semaphore wakes the blocking
+  caller; the component does not consume a task-notification slot.
+- BUSY waits are bounded to 10 ms, with 20 ms allowed after hardware reset.
+  The SX1262 TX watchdog is programmed to expire 5 ms before the caller's
+  absolute deadline when enough time remains. The software deadline remains
+  authoritative.
+- The +14 dBm pilot output uses the SX1262 optimal PA row from datasheet table
+  13-21: `paDutyCycle=0x02`, `hpMax=0x02`, `deviceSel=0x00`,
+  `paLut=0x01`, followed by `SetTxParams(+22 dBm, 40 us)`. In this PA mode the
+  requested radiated output is +14 dBm; `+22` is the required register value,
+  not the claimed RF output.
+- ESP-IDF failures retain their exact `esp_err_t` with backend kind `ESP_ERR`.
+  Failures returned directly by the Semtech command layer use
+  `SX1262_DRIVER_STATUS`. Semantic state, argument, unexpected-IRQ and
+  deadline failures use `NO_ERROR`.
+- After every non-sleep Semtech driver operation, the backend issues
+  `GetStatus`. Command timeout, processing-error and execution-failure states
+  return `CURAG_ERADIO_ECOMMAND_STATUS` and preserve the reconstructed raw
+  chip-status byte in diagnostic context. `SetSleep` is excluded because the
+  sleeping device cannot be queried afterward.
 
 ## Platform ports
 

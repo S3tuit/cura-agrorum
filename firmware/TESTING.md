@@ -1,8 +1,9 @@
 # Firmware testing
 
 Status: the `node_persistence` host/on-device matrices and the `node_sensors`
-host matrix are implemented. The remaining `node_core`, RTC, radio, sensor
-on-device and platform-port suites below are agreed but not yet implemented.
+and `sx1262_radio` host matrices are implemented. The remaining `node_core`,
+RTC, radio and sensor on-device, and platform-port suites below are agreed but
+not yet implemented.
 
 ## Philosophy and build
 
@@ -200,6 +201,12 @@ are intentionally not duplicated in the `node_persistence` component suite.
 
 ## `sx1262_radio`
 
+The implemented `test_sx1262_radio` executable links the production portable
+state machine to a deterministic private fake backend. Every CTest scenario is
+a separate process, which restores the hidden singleton through ordinary BSS
+initialization without adding test controls to the public component. It uses
+the same strict warnings, ASan and UBSan as the other native component tests.
+
 - Initialization applies the complete pilot profile: 868.1 MHz, SF7, BW125,
   CR4/5, +14 dBm, preamble 8, explicit header, payload CRC, private sync word,
   40 us ramp, boosted RX and the selected regulator mode.
@@ -214,6 +221,18 @@ are intentionally not duplicated in the `node_persistence` component suite.
 - IRQ-read failure after `SetTx` reports `tx_started = true` and
   `tx_done = false`; failure before successful `SetTx` reports
   `tx_started = false`.
+- A captured `TX_DONE` remains visible when IRQ clearing fails or a simultaneous
+  timeout makes the overall operation fail.
+- Zero, oversized and null TX inputs are rejected without touching hardware;
+  1- and 255-byte payloads are transmitted without truncation.
+- Expired and boundary deadlines, reused absolute RX deadlines, late packets
+  and the maximum TX-watchdog conversion are covered without sleeping in real
+  time.
+- Header/CRC-error IRQs are discarded while continuous RX remains active;
+  unexpected IRQs, device errors, buffer overlength and backend failures remain
+  distinguishable and bounded.
+- Failures populate the stable 14-byte diagnostic context, including state,
+  operation, stage, backend status and valid raw IRQ/device fields.
 - Sleep before initialization is a no-op and does not initialize the radio.
 - Sleep after initialization stops active RX with `SetStandby(STDBY_RC)` and
   then issues `SetSleep(COLD_START)`.
@@ -584,6 +603,10 @@ duplicate controller policy already covered by host fakes.
 
 ### `sx1262_radio`: hardware strategy
 
+All tests in this radio hardware section are deliberately deferred. No radio
+hardware test application, receiver-peer harness or RF exchange is part of the
+current implementation.
+
 SX1262 hardware tests exercise behavior that the fake backend cannot prove:
 real SPI/BUSY/DIO1 operation, RF interoperability, IRQ timestamps,
 direction-specific IQ, physical state transitions and bounded deadlines. They
@@ -717,9 +740,9 @@ measurement setup and remain deferred.
 - Hardware-runner provisioning, including permanent serial-port assignment and
   whether slow tests run automatically, remains to be defined when a dedicated
   runner exists.
-- The SX1262 component's test-only backend controls and any singleton
-  reset/snapshot access are intentionally deferred until radio implementation;
-  the production radio interface exposes none of them.
+- The SX1262 host fake is private, and fresh CTest processes reset the hidden
+  singleton; the production radio interface intentionally exposes no test-only
+  setter, getter, reset or snapshot operation.
 - Receiver-peer command transport and scheduling details remain an
   implementation choice; the peer hardware, separate-code requirement and
   observable behaviors are fixed above.

@@ -1,0 +1,52 @@
+menu "Cura Agrorum SX1262 radio configuration"
+
+    config CURA_SX1262_SCLK_GPIO
+        int "SX1262 SPI clock GPIO"
+        range 0 30
+        default 6
+        help
+            Provisional ESP32-C6 GPIO. Revise against the assembled board.
+
+    config CURA_SX1262_MOSI_GPIO
+        int "SX1262 SPI MOSI GPIO"
+        range 0 30
+        default 7
+        help
+            Provisional ESP32-C6 GPIO. Revise against the assembled board.
+
+    config CURA_SX1262_MISO_GPIO
+        int "SX1262 SPI MISO GPIO"
+        range 0 30
+        default 10
+        help
+            Provisional ESP32-C6 GPIO. Revise against the assembled board.
+
+    config CURA_SX1262_CS_GPIO
+        int "SX1262 SPI chip-select GPIO"
+        range 0 30
+        default 11
+        help
+            Provisional ESP32-C6 GPIO. Revise against the assembled board.
+
+    config CURA_SX1262_RESET_GPIO
+        int "SX1262 active-low reset GPIO"
+        range 0 30
+        default 18
+        help
+            Provisional ESP32-C6 GPIO. Revise against the assembled board.
+
+    config CURA_SX1262_BUSY_GPIO
+        int "SX1262 BUSY GPIO"
+        range 0 30
+        default 19
+        help
+            Provisional ESP32-C6 GPIO. Revise against the assembled board.
+
+    config CURA_SX1262_DIO1_GPIO
+        int "SX1262 DIO1 interrupt GPIO"
+        range 0 30
+        default 20
+        help
+            Provisional ESP32-C6 GPIO. Revise against the assembled board.
+
+endmenu

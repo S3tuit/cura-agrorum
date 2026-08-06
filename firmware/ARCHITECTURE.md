@@ -867,8 +867,24 @@ delivery or retries remain possible. Final `sleep` behaves as follows:
 
 The controller owns retries, deadlines, ACK validation and delivery policy; the
 radio component only executes radio operations and reports their outcomes.
-The detailed callable contract and proposed diagnostic/state model are in
+The detailed callable contract and implemented diagnostic/state model are in
 [`INTERFACE.md`](INTERFACE.md).
+
+The production backend vendors Semtech's Clear-BSD `sx126x_driver` v2.5.0 at a
+pinned upstream commit. It owns SPI2, GPIO setup, reset/BUSY handling and a
+DIO1 rising-edge ISR. `esp_timer_get_time()` is used both by ordinary deadline
+checks and by the ISR, while a static binary semaphore wakes the waiting task.
+The selected Waveshare Pico-LoRa-SX1262-868M uses its onboard DIO2 RF switch,
+DIO3 1.7 V TCXO and the SX1262 DC-DC regulator. SPI runs at 8 MHz; the seven
+ESP32-C6 pins are provisional component Kconfig values until the board is
+assembled.
+
+BUSY waits are bounded to 10 ms, reset startup to 20 ms and the radio TX
+watchdog to five milliseconds before the caller deadline when representable.
+After each non-sleep Semtech command, the backend reads chip status so a driver
+or HAL success cannot hide command timeout, processing or execution failure.
+The +14 dBm profile uses the SX1262 datasheet's lower-current PA configuration
+for that radiated power.
 
 ### Existing protocol and sensor components
 

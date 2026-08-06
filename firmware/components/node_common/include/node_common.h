@@ -83,6 +83,7 @@ typedef uint16_t curag_operation_t;
 #define CURAG_OP_TRANSMIT UINT16_C(16)
 #define CURAG_OP_RECEIVE UINT16_C(17)
 #define CURAG_OP_SLEEP UINT16_C(18)
+#define CURAG_OP_CLEANUP UINT16_C(19)
 
 typedef uint8_t curag_context_schema_t;
 

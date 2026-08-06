@@ -759,31 +759,70 @@ force_power_off
 ```
 
 `sample_all` lazily initializes required buses, enables the shared gated sensor
-rail, samples both soil channels, both DS18B20 channels and the BME280, and
-disables the rail through a common cleanup path. Its caller-owned snapshot has
-five validity bits: one for each soil channel, one for each DS18B20 channel and
-one atomic BME280 enclosure group. The enclosure bit validates temperature,
+rail, samples both soil channels and both DS18B20 channels, releases that rail,
+then samples the independent always-powered BME280. Its caller-owned snapshot
+has five validity bits: one for each soil channel, one for each DS18B20 channel
+and one atomic BME280 enclosure group. The enclosure bit validates temperature,
 pressure and humidity together; all three are zero when it is clear. Invalid
 individual channels are zero, while other channels continue to be sampled.
 `node_core` maps the enclosure bit to all three enclosure validity bits in the
 LoRa reading.
 
+A validity bit means that acquisition and structural conversion succeeded. It
+does not assert that a connected sensor is healthy or that the value is
+physically or agronomically plausible. The pilot retains representable
+outliers for receiver-side analysis. Under correct wiring, the DFRobot soil
+sensor's documented 3 V maximum output is the accepted ADC-voltage assumption.
+
 Sensor diagnostics use one fixed context with six backend-status pairs: one
-component-wide pair followed by the five sensor groups. This preserves
-simultaneous failures without making `node_core` interpret driver results. The
-component-wide pair describes shared initialization, power-gate and cleanup
-failures. `err_curag_t` remains a summary result, while the context carries the
-exact ESP-IDF, sensor-driver or component-internal statuses.
+component-wide pair followed by the five sensor groups. The fixed group pairs
+preserve independent simultaneous failures without making `node_core`
+interpret driver results. The single component-wide pair describes the
+selected shared initialization, power-gate or cleanup failure, so a later
+higher-precedence shared failure may replace an earlier exact shared status.
+Affected group slots still record that they were blocked. `err_curag_t` remains
+a summary result, while the context carries the selected exact ESP-IDF,
+sensor-driver or component-internal statuses.
+
+The DS18B20 backend reports shared acquisition, both channel acquisitions and
+resource cleanup separately. Cleanup failure never invalidates temperatures
+already acquired successfully. It is still returned as a nonzero component
+result because leaked or incompletely released bus resources may affect later
+work in the same wake.
 
 `force_power_off` is idempotent, initializes no sensor bus, never powers a
 device on and reports failure only when it cannot enforce the gated rail's off
 state.
 
 One power gate supplies both soil sensors and both DS18B20 sensors. The BME280
-remains on the always-powered rail and uses its low-power operating mode. The
-board must default the switched sensor rail to off whenever the MCU does not
-actively enable it. The circuit used to enforce that default is intentionally
-not yet specified.
+remains on the always-powered rail and is intended to use its low-power
+operating mode. The board must default the switched sensor rail to off whenever
+the MCU does not actively enable it.
+
+Hardening of the current generated Espressif BME280 dependency is deferred.
+The eventual implementation must either pin a corrected fork while submitting
+the fixes upstream, or replace the dependency after evaluating another driver,
+starting with Bosch's official SensorAPI. Required fixes include bounded
+initialization and forced measurement, allocation failure handling, polling
+error propagation and reliable low-power transitions. Generated
+`managed_components` are never patched directly.
+
+The pilot gate is a high-side P-MOSFET: source at 3.3 V, drain at the switched
+sensor rail and gate pulled to its source by 47 kOhm. A non-strapping ESP32-C6
+GPIO controls the gate as an open-drain output with both internal pulls
+disabled. Driving it low turns the rail on; releasing it lets the resistor turn
+the rail off. Power-on loads the inactive high/released latch before enabling
+open-drain output, then asserts low. Power-off releases the output first and
+then returns the GPIO to a floating input. It does not use GPIO hold. Because
+off changes the direction, every later power-on configures open-drain output
+again. Reset, deep sleep or an unconfigured MCU therefore leaves the rail off
+without relying on firmware execution.
+
+The backend waits 200 ms after enabling the rail. The two DS18B20 probes are
+externally powered and use one bus-wide 12-bit conversion. Their 1-Wire pull-up
+must connect to the switched rail rather than the always-on 3.3 V rail; the
+ESP32 internal pull-up is disabled and the bus is released before the rail is
+switched off. This avoids back-powering the probes through the data line.
 
 ### `sx1262_radio`
 
@@ -834,9 +873,12 @@ The detailed callable contract and proposed diagnostic/state model are in
 ### Existing protocol and sensor components
 
 `protocol_v2_lora` remains the generated wire codec and authenticated frame
-layer. `soil_sensor` remains the low-level calibrated ADC reader used by
-`node_sensors`. External DS18B20 and BME280 drivers remain hardware adapters;
-they do not own wake policy.
+layer. The former standalone `soil_sensor` component has been folded into
+`node_sensors`; its public `soil_sensor.h` compatibility API remains available
+to calibration and maintenance applications and assumes the caller already
+powered the probe. The production backend uses pinned Espressif `ds18b20`,
+`onewire_bus` and `bme280` components. These hardware adapters do not own wake
+policy.
 
 ### Platform services
 

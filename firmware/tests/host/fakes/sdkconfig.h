@@ -1,0 +1,5 @@
+#pragma once
+
+#ifndef CONFIG_CURA_SENSOR_POWER_GATE_GPIO
+#define CONFIG_CURA_SENSOR_POWER_GATE_GPIO 2
+#endif

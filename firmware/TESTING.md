@@ -1,8 +1,8 @@
 # Firmware testing
 
-Status: the `node_persistence` host and on-device matrices are implemented. The
-remaining component, `node_core`, RTC and platform-port suites below are agreed
-but not yet implemented.
+Status: the `node_persistence` host/on-device matrices and the `node_sensors`
+host matrix are implemented. The remaining `node_core`, RTC, radio, sensor
+on-device and platform-port suites below are agreed but not yet implemented.
 
 ## Philosophy and build
 
@@ -222,13 +222,34 @@ are intentionally not duplicated in the `node_persistence` component suite.
 
 ## `node_sensors`
 
-A small private fake hardware seam tests sequencing and guarantees that the
-shared soil/DS18B20 power gate is disabled after every success and failure
-point. It need not model ADC, I2C or 1-Wire electrically; those behaviors need
-on-hardware tests. Parameterized failures verify all five validity groups and
-their fixed diagnostic slots. Multiple simultaneous failures remain visible,
-shared prerequisite failures mark affected groups as blocked, and a cleanup
-failure occupies the component-wide slot without clearing successful samples.
+The implemented `test_node_sensors` executable links production policy code to
+a small private fake hardware seam. It is built with the same strict warnings,
+ASan and UBSan as persistence tests. It verifies the successful sequence and
+200 ms delay, null arguments, isolated and complete sensor failures, atomic
+BME280 invalidation, simultaneous diagnostic slots, shared DS18B20 failures,
+power-on blocking, power-off precedence, mandatory immediate cleanup, optional
+diagnostics and idempotent final power-off.
+
+The hardening matrix additionally verifies duplicate configured ROM rejection
+before bus access; accurate validation, initialization, read and cleanup
+operations; preservation of successful temperatures after cleanup failure;
+cleanup-error precedence; combined channel/cleanup and shared/power failures;
+valid zero-valued groups; and the ordering constraint that the switched rail is
+released before independent BME280 acquisition. Exact full traces are limited
+to a few orchestration tests so harmless refactoring does not break the suite.
+
+`test_node_sensors_identity` links the exact production ROM parser/resolver and
+verifies canonical numeric parsing, independent invalid identities, mixed
+valid/invalid provisioning and the duplicate result that forbids bus access.
+
+A second private seam links the production power-gate implementation to fake
+ESP-IDF GPIO calls. It verifies that power-on loads level 1 before selecting
+open-drain output, uses no internal pulls, and only then asserts level 0. It
+also verifies that power-off releases with level 1 before selecting floating
+input, every later power-on reconfigures output mode, setup failures never
+progress to the enabling low assertion, and shutdown attempts every safety
+step while returning the first failure. The fakes do not model ADC, I2C or
+1-Wire electrically; those behaviors remain in the on-device plan below.
 
 ## On-device hardware tests
 
@@ -434,12 +455,13 @@ separate physical fixture configurations. They may be selected explicitly from
 pytest rather than pretending that unplugging hardware is automated.
 
 `node_sensors_sample_all` owns immediate rail cleanup: after any path that may
-enable the shared soil/DS18B20 rail, it attempts to disable it before returning.
-The final `node_sensors_force_power_off` call is an independent, idempotent
-safety attempt. If acquisition and rail cleanup both fail, power control takes
-precedence only in `err_curag_t` and `operation`; the same 48-byte diagnostic
-context must retain the component-wide failure and every sensor-group failure.
-Both public operations use the same private gate-off primitive.
+enable the shared soil/DS18B20 rail, it attempts to disable it before beginning
+independent BME280 acquisition. The final `node_sensors_force_power_off` call is
+an independent, idempotent safety attempt. If acquisition and rail cleanup both
+fail, power control takes precedence in `err_curag_t`, operation and the single
+component slot. Blocked group slots preserve the occurrence, but not
+necessarily the exact earlier shared backend status. Both public operations use
+the same private gate-off primitive.
 
 ### `node_sensors`: automated cases
 
@@ -454,9 +476,9 @@ Both public operations use the same private gate-off primitive.
   calls. Both DS18B20 identities remain stable, no previous conversion is
   mistaken for the current one and every call completes within the configured
   sensor timing bound.
-- **BME280 returns to low power:** inspect its mode bits after sampling and
-  verify that it is back in the configured sleep mode without changing the
-  already returned enclosure values.
+- **BME280 returns to low power (deferred):** after the BME280 driver path is
+  chosen and hardened, inspect its mode bits after sampling and verify that it
+  is back in sleep mode without changing the already returned enclosure values.
 - **Final cleanup is idempotent:** call `node_sensors_force_power_off` more than
   once after successful sampling. Every call succeeds without initializing a
   sensor bus, enabling the rail or changing the collected sample.
@@ -489,19 +511,26 @@ awake after the operation so the resulting electrical state can be measured:
   only the expected logical channel follows it.
 - **DS18B20 identity mapping:** create a clear temperature difference between
   the probes and verify configured ROM identity, rather than 1-Wire enumeration
-  order, determines channel 0 and channel 1. Repeat after reconnecting or
+  order, determines channel 0 and channel 1. Confirm the textual ROM byte order
+  against the library's enumerated `uint64_t`, then repeat after reconnecting or
   reversing their physical order on the bus.
 - **Immediate successful shutdown:** after `node_sensors_sample_all` returns
   while the ESP32 remains awake, the shared rail measures off. This proves that
   cleanup occurs inside sampling rather than being deferred until final wake
   cleanup.
+- **Active-low gate states:** while sampling is deliberately paused, verify the
+  GPIO/P-MOSFET gate is low and the switched rail is on. After cleanup, verify
+  the external 47 kOhm source-to-gate resistor has pulled the released gate to
+  3.3 V and the switched rail is off.
 - **Shutdown after acquisition failure:** repeat with a detectable DS18B20 or
   BME280 failure and verify that the shared rail still measures off.
 - **Final cleanup:** after repeated `node_sensors_force_power_off` calls, the
   shared rail remains off.
 - **Reset and deep-sleep default:** enable the rail in a dedicated test stage,
   then reset or enter deep sleep and verify that the board returns the rail to
-  off when the MCU no longer actively enables it.
+  off when the MCU no longer actively enables it. Repeat while holding the MCU
+  in reset to exercise the external 47 kOhm default rather than a firmware
+  shutdown path.
 - **Back-power check:** in the real post-sampling and deep-sleep pin states,
   measure the disabled rail for voltage fed through ADC, 1-Wire, pull-up or
   protection-diode paths. A low gate-control GPIO alone is not sufficient

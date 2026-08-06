@@ -1,0 +1,69 @@
+menu "Cura Agrorum sensor board configuration"
+
+    config CURA_SOIL_0_GPIO
+        int "Soil sensor channel 0 ADC GPIO"
+        range 0 6
+        default 0
+        help
+            Provisional ESP32-C6 ADC-capable GPIO for soil channel 0.
+
+    config CURA_SOIL_1_GPIO
+        int "Soil sensor channel 1 ADC GPIO"
+        range 0 6
+        default 1
+        help
+            Provisional ESP32-C6 ADC-capable GPIO for soil channel 1.
+
+    config CURA_SOIL_ADC_GPIO
+        int "Standalone maintenance soil ADC GPIO"
+        range 0 48
+        default CURA_SOIL_0_GPIO
+        help
+            Compatibility setting used by maintenance applications that call
+            soil_sensor_read_mv() directly. Production node_sensors sampling
+            uses CURA_SOIL_0_GPIO and CURA_SOIL_1_GPIO instead.
+
+    config CURA_SENSOR_POWER_GATE_GPIO
+        int "Active-low open-drain switched sensor rail GPIO"
+        range 0 23
+        default 2
+        help
+            Provisional GPIO. Pulling the P-MOSFET gate low enables the shared
+            soil/DS18B20 rail. Releasing it lets the external 47 kOhm
+            source-to-gate resistor default the rail to off.
+
+    config CURA_SENSOR_POWER_STABILIZATION_MS
+        int "Switched sensor rail stabilization time (ms)"
+        range 1 5000
+        default 200
+        help
+            Initial pilot value. Validate it against the selected probes.
+
+    config CURA_DS18B20_GPIO
+        int "DS18B20 1-Wire GPIO"
+        range 0 23
+        default 3
+
+    config CURA_DS18B20_0_ROM
+        string "DS18B20 channel 0 ROM identity"
+        default "0000000000000000"
+        help
+            Exactly 16 hexadecimal digits. All zeroes means not provisioned.
+
+    config CURA_DS18B20_1_ROM
+        string "DS18B20 channel 1 ROM identity"
+        default "0000000000000000"
+        help
+            Exactly 16 hexadecimal digits. All zeroes means not provisioned.
+
+    config CURA_I2C_SDA_GPIO
+        int "BME280 I2C SDA GPIO"
+        range 0 23
+        default 4
+
+    config CURA_I2C_SCL_GPIO
+        int "BME280 I2C SCL GPIO"
+        range 0 23
+        default 5
+
+endmenu

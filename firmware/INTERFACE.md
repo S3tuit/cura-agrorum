@@ -623,9 +623,9 @@ non-persistent platform log.
 
 ## `node_sensors`
 
-Status: provisional pilot contract. The sensor-driver choices and exact
-backend status values may change during implementation, but the five logical
-sensor groups and all-or-none enclosure validity are fixed.
+Status: implemented pilot contract. The provisional GPIO defaults and physical
+sensor identities must be replaced when the pilot wiring is assembled. The
+five logical sensor groups and all-or-none enclosure validity are fixed.
 
 ### Public values
 
@@ -667,9 +667,13 @@ flags `ENCLOSURE_TEMP_VALID`, `ENCLOSURE_PRESSURE_VALID` and
 `ENCLOSURE_HUMIDITY_VALID`, which are therefore always equal in node-generated
 pilot readings.
 
+A set validity bit means that acquisition and structural conversion succeeded;
+it does not certify physical or agronomic plausibility. Representable outliers
+remain valid pilot data for downstream anomaly analysis.
+
 ### `node_sensors_sample_all`
 
-Proposed shape:
+Implemented shape:
 
 ```text
 err_curag_t node_sensors_sample_all(
@@ -691,9 +695,11 @@ pointer is retained. Both non-null outputs are cleared on entry.
 
 The operation lazily initializes the required private buses, enables the shared
 soil/DS18B20 rail, waits for its configured stabilization time, samples both
-soil channels, both configured DS18B20 identities and the BME280, and disables
-the shared rail through one cleanup path. The BME280 remains on its
-always-powered rail and is returned to its configured low-power state.
+soil channels and both configured DS18B20 identities, and disables the shared
+rail through one cleanup path before sampling the independent BME280. The
+BME280 remains on its always-powered rail. Bounded operation and low-power
+recovery of the current BME280 driver are known deferred work rather than a
+guarantee of this pilot interface.
 
 One sensor-group failure does not suppress attempts for independent groups.
 The shared rail is disabled before return on every path after it may have been
@@ -708,12 +714,15 @@ set.
 | At least one but not all logical groups invalid | `CURAG_ESENSORS_EPARTIAL_SAMPLE` |
 | All five logical groups invalid | `CURAG_ESENSORS_ECOMPLETE_SAMPLE` |
 | Shared rail enable or disable cannot be established | `CURAG_ESENSORS_EPOWER_CONTROL` |
+| Private sensor resource cleanup fails after acquisition | `CURAG_ESENSORS_ECLEANUP` |
 
 Power-control failure takes precedence over sampling-summary errors because it
-may affect the node's energy budget. Otherwise the return describes complete
-versus partial sampling. The diagnostic operation describes the selected
-summary failure, while the complete context retains simultaneous backend
-failures.
+may affect the node's energy budget. Cleanup failure takes precedence over
+complete/partial sampling but never clears an already valid field. Otherwise
+the return describes complete versus partial sampling. The top-level
+diagnostic operation describes the selected primary failure rather than every
+populated context pair. Its precedence is `POWER_OFF`, `POWER_ON`, `CLEANUP`,
+`VALIDATE`, `INITIALIZE`, then `READ`.
 
 **`node_core` response**
 
@@ -724,7 +733,7 @@ calls `node_sensors_force_power_off` exactly once.
 
 ### `node_sensors_force_power_off`
 
-Proposed shape:
+Implemented shape:
 
 ```text
 err_curag_t node_sensors_force_power_off(diagn_context_t *out_diag)
@@ -743,8 +752,9 @@ Best-effort enforcement of the shared soil/DS18B20 rail's off state.
 The operation is idempotent, never enables the rail and does not initialize
 ADC, I2C, 1-Wire or any sensor driver. If the component never touched the gate
 this wake, the board's hardware-default-off design makes this a successful
-no-op. Otherwise it drives the gate to its off state. It does not power-cycle
-or initialize the always-powered BME280.
+no-op. Otherwise it releases the open-drain gate control and returns the GPIO
+to floating input mode with both internal pulls disabled. It does not use GPIO
+hold, power-cycle or initialize the always-powered BME280.
 
 Failure to enforce the off state returns `CURAG_ESENSORS_EPOWER_CONTROL` with
 operation `POWER_OFF` and the component status pair populated.
@@ -755,7 +765,7 @@ Append the returned diagnostic best-effort when persistence permits, then
 continue radio and persistence cleanup and enter ESP32 deep sleep regardless
 of the result.
 
-### Proposed sensor error domain
+### Sensor error domain
 
 The third error domain is `CURAG_EDOM_SENSORS = 3`:
 
@@ -766,11 +776,12 @@ The third error domain is `CURAG_EDOM_SENSORS = 3`:
 | `2` | `CURAG_ESENSORS_EPARTIAL_SAMPLE` | One or more, but not all, sensor groups are invalid |
 | `3` | `CURAG_ESENSORS_ECOMPLETE_SAMPLE` | All five sensor groups are invalid |
 | `4` | `CURAG_ESENSORS_EPOWER_CONTROL` | The shared gated rail could not be enabled or disabled reliably |
+| `5` | `CURAG_ESENSORS_ECLEANUP` | Acquisition results may be valid, but a private sensor resource could not be released cleanly |
 
 These codes summarize component behavior; they do not replace exact backend
 statuses in the context.
 
-### Proposed sensor context V1
+### Sensor context V1
 
 `CURAG_SENSOR_CONTEXT_V1 = 1` within the sensor domain has a fixed 48-byte
 little-endian encoding. It consists of six pairs in this exact order:
@@ -806,18 +817,57 @@ The initial component-internal status assignments are:
 |---:|---|
 | `0` | `NONE` |
 | `1` | `BLOCKED_BY_SHARED_FAILURE` |
+| `2` | `UNPROVISIONED_IDENTITY`; the configured DS18B20 ROM is all zeroes or invalid |
+| `3` | `DUPLICATE_IDENTITY`; both configured nonzero DS18B20 ROM identities are equal |
 
 A successful group uses `(NONE, 0)`. A direct failure stores the exact returned
 status and its kind. A group not attempted because a shared prerequisite
 failed uses `(NODE_SENSORS_INTERNAL, BLOCKED_BY_SHARED_FAILURE)`; the component
-pair stores the underlying shared failure. Multiple failed group pairs are
-retained. A power-off failure after successful acquisition populates only the
-component pair and does not clear already valid readings.
+pair stores the selected underlying shared failure. Multiple independent group
+pairs are retained. Because there is one component pair, a later
+higher-precedence cleanup or power failure may replace an earlier exact shared
+status; blocked group pairs preserve the fact that the earlier shared failure
+occurred. A power-off or cleanup failure never clears already valid readings.
 
-Every nonzero sensor result with non-null `out_diag` sets an applicable shared
-operation and this exact context. Successful calls leave the diagnostic output
-empty. Implementations explicitly encode the 48 context bytes; they do not
-copy a native C structure with compiler padding.
+Every nonzero sensor result with non-null `out_diag` sets the selected primary
+operation and this exact context. `CURAG_OP_CLEANUP = 19` is the stable operation
+for private resource release failure. Successful calls leave the diagnostic
+output empty. Implementations explicitly encode the 48 context bytes; they do
+not copy a native C structure with compiler padding.
+
+### Pilot board configuration
+
+`node_sensors_sample_all` takes no GPIO parameters. Fixed board wiring is
+selected at build time through `CONFIG_CURA_*`; `node_core` never owns it. The
+initial ESP32-C6 defaults are provisional: soil ADC channels 0/1 use GPIO 0/1,
+the active-low open-drain gate uses GPIO 2, 1-Wire uses GPIO 3, and BME280
+SDA/SCL use GPIO 4/5. The BME280 address is fixed at `0x76`, I2C runs at 100
+kHz, soil ADC attenuation is 12 dB, and rail stabilization starts at 200 ms.
+
+The high-side P-MOSFET source connects to 3.3 V, its drain to the switched
+sensor rail and its gate to 3.3 V through 47 kOhm. The GPIO pulls the gate low
+only while the rail must be on. Before enabling open-drain output, firmware
+loads level 1 so configuration cannot produce an unintended low pulse. To turn
+the rail off it writes level 1, which means high impedance in open-drain mode,
+then selects floating input mode. Every power-on reconfigures the output after
+that transition; no cached output-mode assumption is permitted.
+
+The two DS18B20 ROM strings default to all zeroes, which deliberately makes
+those groups invalid until identities are provisioned. Enumeration order never
+assigns logical channels. Equal nonzero configured identities are rejected as a
+provisioning error before bus access and invalidate both temperature groups. An
+external 1-Wire pull-up must be connected to the switched sensor rail; the
+backend does not enable the ESP32 internal pull-up.
+
+The current Espressif BME280 driver remains a deferred risk. The eventual
+choice is a corrected and immutable pinned fork with upstream contributions or
+replacement after evaluating another driver, initially Bosch's official
+SensorAPI. Generated `managed_components` are not edited in place.
+
+The public compatibility function
+`soil_sensor_read_mv(int gpio_num, uint16_t *out_mv)` remains in the
+`node_sensors` component for maintenance applications. It assumes its probe is
+already powered and never changes the gate.
 
 ## `sx1262_radio`
 

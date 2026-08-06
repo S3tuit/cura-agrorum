@@ -73,3 +73,105 @@ set_tests_properties(
   PROPERTIES ENVIRONMENT
              "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:halt_on_error=1:fast_unwind_on_malloc=0"
 )
+
+add_executable(
+  test_node_sensors
+  fake_esp_gpio.c
+  fake_node_sensors_backend.c
+  test_node_sensors.c
+  ${FIRMWARE_ROOT}/components/node_common/node_common.c
+  ${FIRMWARE_ROOT}/components/node_sensors/node_sensors.c
+  ${FIRMWARE_ROOT}/components/node_sensors/node_sensors_power_gate_esp.c
+)
+
+target_include_directories(
+  test_node_sensors
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/fakes
+    ${FIRMWARE_ROOT}/components/node_common/include
+    ${FIRMWARE_ROOT}/components/node_sensors/include
+    ${FIRMWARE_ROOT}/components/node_sensors/private_include
+)
+
+target_compile_features(test_node_sensors PRIVATE c_std_11)
+target_compile_definitions(
+  test_node_sensors
+  PRIVATE
+    NODE_SENSORS_TESTING=1
+    CONFIG_CURA_SENSOR_POWER_STABILIZATION_MS=200
+)
+target_compile_options(
+  test_node_sensors
+  PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Werror
+    -Wformat=2
+    -Wshadow
+    -Wconversion
+    -Wsign-conversion
+)
+
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(
+    test_node_sensors PRIVATE -fsanitize=address,undefined
+                              -fno-omit-frame-pointer
+  )
+  target_link_options(
+    test_node_sensors PRIVATE -fsanitize=address,undefined
+                              -fno-omit-frame-pointer
+  )
+endif()
+
+add_test(NAME node_sensors COMMAND test_node_sensors)
+set_tests_properties(
+  node_sensors
+  PROPERTIES ENVIRONMENT
+             "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:halt_on_error=1:fast_unwind_on_malloc=0"
+)
+
+add_executable(
+  test_node_sensors_identity
+  test_node_sensors_identity.c
+  ${FIRMWARE_ROOT}/components/node_sensors/node_sensors_ds18b20_identity.c
+)
+
+target_include_directories(
+  test_node_sensors_identity
+  PRIVATE
+    ${FIRMWARE_ROOT}/components/node_common/include
+    ${FIRMWARE_ROOT}/components/node_sensors/include
+    ${FIRMWARE_ROOT}/components/node_sensors/private_include
+)
+target_compile_features(test_node_sensors_identity PRIVATE c_std_11)
+target_compile_options(
+  test_node_sensors_identity
+  PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Werror
+    -Wformat=2
+    -Wshadow
+    -Wconversion
+    -Wsign-conversion
+)
+
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(
+    test_node_sensors_identity PRIVATE -fsanitize=address,undefined
+                                       -fno-omit-frame-pointer
+  )
+  target_link_options(
+    test_node_sensors_identity PRIVATE -fsanitize=address,undefined
+                                       -fno-omit-frame-pointer
+  )
+endif()
+
+add_test(NAME node_sensors_identity COMMAND test_node_sensors_identity)
+set_tests_properties(
+  node_sensors_identity
+  PROPERTIES ENVIRONMENT
+             "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:halt_on_error=1:fast_unwind_on_malloc=0"
+)

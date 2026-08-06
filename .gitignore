@@ -95,3 +95,4 @@ firmware/main/build*/
 # personal notes
 *.notes
 analysis_*/
+WORKPLAN*.md

@@ -175,3 +175,83 @@ set_tests_properties(
   PROPERTIES ENVIRONMENT
              "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:halt_on_error=1:fast_unwind_on_malloc=0"
 )
+
+add_executable(
+  test_sx1262_radio
+  fake_sx1262_radio_backend.c
+  test_sx1262_radio.c
+  ${FIRMWARE_ROOT}/components/node_common/node_common.c
+  ${FIRMWARE_ROOT}/components/sx1262_radio/sx1262_radio.c
+  ${FIRMWARE_ROOT}/components/sx1262_radio/sx1262_radio_backend_common.c
+)
+
+target_include_directories(
+  test_sx1262_radio
+  PRIVATE
+    ${FIRMWARE_ROOT}/components/node_common/include
+    ${FIRMWARE_ROOT}/components/sx1262_radio/include
+    ${FIRMWARE_ROOT}/components/sx1262_radio/private_include
+)
+target_compile_features(test_sx1262_radio PRIVATE c_std_11)
+target_compile_options(
+  test_sx1262_radio
+  PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Werror
+    -Wformat=2
+    -Wshadow
+    -Wconversion
+    -Wsign-conversion
+)
+
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(
+    test_sx1262_radio PRIVATE -fsanitize=address,undefined
+                              -fno-omit-frame-pointer
+  )
+  target_link_options(
+    test_sx1262_radio PRIVATE -fsanitize=address,undefined
+                              -fno-omit-frame-pointer
+  )
+endif()
+
+set(
+  SX1262_RADIO_TEST_SCENARIOS
+  profile_and_lazy_initialization
+  invalid_arguments_and_initial_deadline
+  initialization_failure_is_cached
+  payload_boundaries_and_watchdog
+  deadline_reached_before_set_tx
+  failure_before_set_tx_reports_no_attempt
+  uncertain_set_tx_preserves_attempt
+  uncertain_command_before_set_tx_reports_no_attempt
+  failure_after_set_tx_preserves_attempt
+  clear_failure_preserves_tx_done
+  tx_timeout_and_unexpected_irq
+  combined_tx_done_and_timeout_preserves_progress
+  unexpected_irq_reports_device_error
+  receive_exact_packet_and_iq_transition
+  receive_pending_irq_at_deadline_wins
+  receive_snapshots_before_clear_and_rearms
+  receive_deadline_keeps_rx_armed
+  receive_discards_phy_errors
+  oversized_receive_is_bounded
+  late_packet_is_discarded
+  same_absolute_deadline_is_not_extended
+  receive_local_error_is_distinct
+  unexpected_receive_irq_fails
+  sleep_lifecycle
+  sleep_failure_retries_and_preserves_first_error
+)
+
+foreach(SCENARIO IN LISTS SX1262_RADIO_TEST_SCENARIOS)
+  add_test(NAME "sx1262_radio.${SCENARIO}"
+           COMMAND test_sx1262_radio "${SCENARIO}")
+  set_tests_properties(
+    "sx1262_radio.${SCENARIO}"
+    PROPERTIES ENVIRONMENT
+               "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:halt_on_error=1:fast_unwind_on_malloc=0"
+  )
+endforeach()

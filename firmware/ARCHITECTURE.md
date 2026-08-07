@@ -47,8 +47,8 @@ reading. It:
   `transmit_uplink`;
 - records the time immediately before the first `SetTx`;
 - charges estimated airtime and increments attempt metrics when `SetTx` is
-  successfully started;
-- after `TX_DONE`, listens continuously and calculates
+  confirmed or its effect becomes uncertain after crossing SPI;
+- after `TX_DONE`, keeps single-shot RX armed and calculates
   `retry_at = TX_DONE + 500 ms + uniform_random(100 ms, 500 ms)`;
 - logs and ignores invalid ACKs without closing the RX window;
 - retransmits at `retry_at` while another complete attempt fits both the
@@ -69,9 +69,10 @@ unmatched start means only that no durable finish was recorded: reset may have
 occurred before TX, during TX or RX, during retry waiting, or while persisting
 the finish. Failure to append either event never blocks radio work.
 
-When a started transmission does not produce `TX_DONE`, its estimated airtime
-remains charged and the delivery ends as a local radio error. Attempts that
-fail before `SetTx` starts are not counted or charged.
+When a started or uncertain transmission does not produce `TX_DONE`, its
+estimated airtime remains charged and the delivery ends as a local radio error.
+Attempts that definitively fail before `SetTx` can take effect are not counted
+or charged.
 
 The delivery result and its `DELIVERY_FINISHED.final_result` encoding are:
 
@@ -858,7 +859,7 @@ delivery or retries remain possible. Final `sleep` behaves as follows:
 1. If the radio is `UNTOUCHED`, or initialization failed before any hardware
    access, return successfully without issuing a radio command or initializing
    it.
-2. Otherwise stop continuous RX or any other active mode with
+2. Otherwise stop an armed receive or any other active mode with
    `SetStandby(STDBY_RC)`.
 3. Issue `SetSleep(COLD_START)`; the next wake performs complete lazy
    initialization rather than trusting retained radio configuration.
@@ -867,8 +868,24 @@ delivery or retries remain possible. Final `sleep` behaves as follows:
 
 The controller owns retries, deadlines, ACK validation and delivery policy; the
 radio component only executes radio operations and reports their outcomes.
-The detailed callable contract and proposed diagnostic/state model are in
+The detailed callable contract and implemented diagnostic/state model are in
 [`INTERFACE.md`](INTERFACE.md).
+
+The production backend vendors Semtech's Clear-BSD `sx126x_driver` v2.5.0 at a
+pinned upstream commit. It owns SPI2, GPIO setup, reset/BUSY handling and a
+DIO1 rising-edge ISR. `esp_timer_get_time()` is used both by ordinary deadline
+checks and by the ISR, while a static binary semaphore wakes the waiting task.
+The selected Waveshare Pico-LoRa-SX1262-868M uses its onboard DIO2 RF switch,
+DIO3 1.7 V TCXO and the SX1262 DC-DC regulator. SPI runs at 8 MHz; the seven
+ESP32-C6 pins are provisional component Kconfig values until the board is
+assembled.
+
+BUSY waits are bounded to 10 ms, reset startup to 20 ms and the radio TX
+watchdog to five milliseconds before the caller deadline when representable.
+After each non-sleep Semtech command, the backend reads chip status so a driver
+or HAL success cannot hide command timeout, processing or execution failure.
+The +14 dBm profile uses the SX1262 datasheet's lower-current PA configuration
+for that radiated power.
 
 ### Existing protocol and sensor components
 

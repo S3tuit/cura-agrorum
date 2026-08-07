@@ -96,3 +96,5 @@ firmware/main/build*/
 *.notes
 analysis_*/
 WORKPLAN*.md
+REVIEW*.md
+.workplans-archive/

@@ -107,8 +107,9 @@ typedef struct {
  * out_result:            Required caller-owned progress/timestamp output.
  * out_diag:              Optional caller-owned diagnostic detail.
  *
- * Returns CURAG_OK only after TX_DONE. A failure after SetTx may still report
- * tx_started=true so the caller can account for the attempt.
+ * Returns CURAG_OK only after TX_DONE. tx_started is also true when SetTx
+ * crossed SPI but a later failure left its effect uncertain, so the caller can
+ * conservatively account for the possible attempt.
  */
 err_curag_t sx1262_radio_transmit_uplink(const uint8_t *payload,
                                          size_t payload_length,

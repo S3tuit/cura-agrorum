@@ -225,13 +225,17 @@ set(
   payload_boundaries_and_watchdog
   deadline_reached_before_set_tx
   failure_before_set_tx_reports_no_attempt
+  uncertain_set_tx_preserves_attempt
+  uncertain_command_before_set_tx_reports_no_attempt
   failure_after_set_tx_preserves_attempt
   clear_failure_preserves_tx_done
   tx_timeout_and_unexpected_irq
   combined_tx_done_and_timeout_preserves_progress
   unexpected_irq_reports_device_error
   receive_exact_packet_and_iq_transition
-  receive_deadline_keeps_continuous_rx
+  receive_pending_irq_at_deadline_wins
+  receive_snapshots_before_clear_and_rearms
+  receive_deadline_keeps_rx_armed
   receive_discards_phy_errors
   oversized_receive_is_bounded
   late_packet_is_discarded

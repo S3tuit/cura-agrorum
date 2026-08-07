@@ -16,7 +16,7 @@ typedef struct {
   curag_radio_state_t state;
   bool hardware_touched;
   bool initialization_failure_cached;
-  bool rx_active;
+  bool rx_armed;
   err_curag_t initialization_error;
   diagn_context_t initialization_diag;
 } sx1262_radio_singleton_t;
@@ -122,7 +122,7 @@ static void mark_active_failure(const sx1262_radio_backend_error_t *detail) {
     s_radio.hardware_touched = true;
   }
   s_radio.state = CURAG_RADIO_STATE_FAILED;
-  s_radio.rx_active = false;
+  s_radio.rx_armed = false;
 }
 
 static err_curag_t ensure_initialized(diagn_context_t *out_diag) {
@@ -160,7 +160,7 @@ static err_curag_t ensure_initialized(diagn_context_t *out_diag) {
 
   s_radio.hardware_touched = true;
   s_radio.state = CURAG_RADIO_STATE_READY;
-  s_radio.rx_active = false;
+  s_radio.rx_armed = false;
   return CURAG_OK;
 }
 
@@ -237,18 +237,22 @@ err_curag_t sx1262_radio_transmit_uplink(const uint8_t *payload,
 
   sx1262_radio_backend_error_t detail;
   sx1262_radio_backend_error_clear(&detail);
-  if (s_radio.rx_active && !sx1262_radio_backend_set_standby(&detail)) {
+  if (s_radio.rx_armed &&
+      sx1262_radio_backend_set_standby(&detail) != SX1262_COMMAND_CONFIRMED) {
     return transmit_backend_failure(&detail, out_diag);
   }
-  s_radio.rx_active = false;
+  s_radio.rx_armed = false;
 
-  if (!sx1262_radio_backend_set_packet_params((uint8_t)payload_length, false,
-                                              &detail) ||
-      !sx1262_radio_backend_configure_irq(
-          SX1262_RADIO_IRQ_TX_DONE | SX1262_RADIO_IRQ_TIMEOUT, &detail) ||
-      !sx1262_radio_backend_clear_irq(SX1262_RADIO_IRQ_ALL, &detail) ||
-      !sx1262_radio_backend_write_payload(payload, (uint8_t)payload_length,
-                                          &detail)) {
+  if (sx1262_radio_backend_set_packet_params((uint8_t)payload_length, false,
+                                             &detail) !=
+          SX1262_COMMAND_CONFIRMED ||
+      sx1262_radio_backend_configure_irq(SX1262_RADIO_IRQ_TX_DONE |
+                                             SX1262_RADIO_IRQ_TIMEOUT,
+                                         &detail) != SX1262_COMMAND_CONFIRMED ||
+      sx1262_radio_backend_clear_irq(SX1262_RADIO_IRQ_ALL, &detail) !=
+          SX1262_COMMAND_CONFIRMED ||
+      sx1262_radio_backend_write_payload(payload, (uint8_t)payload_length,
+                                         &detail) != SX1262_COMMAND_CONFIRMED) {
     return transmit_backend_failure(&detail, out_diag);
   }
 
@@ -257,12 +261,16 @@ err_curag_t sx1262_radio_transmit_uplink(const uint8_t *payload,
     return semantic_failure(CURAG_ERADIO_EDEADLINE, CURAG_OP_TRANSMIT,
                             CURAG_RADIO_STAGE_VALIDATE_INPUT, out_diag);
   }
-  if (!sx1262_radio_backend_start_tx(
-          tx_watchdog_steps(set_tx_at_us, deadline_monotonic_us), &detail)) {
+  const sx1262_radio_backend_call_result_t start_result =
+      sx1262_radio_backend_start_tx(
+          tx_watchdog_steps(set_tx_at_us, deadline_monotonic_us), &detail);
+  if (start_result != SX1262_COMMAND_FAILED) {
+    out_result->tx_started = true;
+    out_result->set_tx_at_us = set_tx_at_us;
+  }
+  if (start_result != SX1262_COMMAND_CONFIRMED) {
     return transmit_backend_failure(&detail, out_diag);
   }
-  out_result->tx_started = true;
-  out_result->set_tx_at_us = set_tx_at_us;
 
   bool irq_observed = false;
   uint64_t irq_at_us = 0U;
@@ -278,7 +286,8 @@ err_curag_t sx1262_radio_transmit_uplink(const uint8_t *payload,
   }
 
   uint16_t irq_status = 0U;
-  if (!sx1262_radio_backend_get_irq(&irq_status, &detail)) {
+  if (sx1262_radio_backend_get_irq(&irq_status, &detail) !=
+      SX1262_COMMAND_CONFIRMED) {
     return transmit_backend_failure(&detail, out_diag);
   }
   if ((irq_status & SX1262_RADIO_IRQ_TX_DONE) != 0U &&
@@ -286,7 +295,8 @@ err_curag_t sx1262_radio_transmit_uplink(const uint8_t *payload,
     out_result->tx_done = true;
     out_result->tx_done_at_us = irq_at_us;
   }
-  if (!sx1262_radio_backend_clear_irq(irq_status, &detail)) {
+  if (sx1262_radio_backend_clear_irq(irq_status, &detail) !=
+      SX1262_COMMAND_CONFIRMED) {
     return transmit_backend_failure(&detail, out_diag);
   }
 
@@ -307,8 +317,8 @@ err_curag_t sx1262_radio_transmit_uplink(const uint8_t *payload,
     uint16_t device_errors = 0U;
     sx1262_radio_backend_error_t device_detail;
     sx1262_radio_backend_error_clear(&device_detail);
-    if (!sx1262_radio_backend_get_device_errors(&device_errors,
-                                                &device_detail)) {
+    if (sx1262_radio_backend_get_device_errors(
+            &device_errors, &device_detail) != SX1262_COMMAND_CONFIRMED) {
       return transmit_backend_failure(&device_detail, out_diag);
     }
     if (device_errors != 0U) {
@@ -332,18 +342,21 @@ receive_backend_failure(const sx1262_radio_backend_error_t *detail,
 static err_curag_t start_downlink_rx(diagn_context_t *out_diag) {
   sx1262_radio_backend_error_t detail;
   sx1262_radio_backend_error_clear(&detail);
-  if (!sx1262_radio_backend_set_standby(&detail) ||
-      !sx1262_radio_backend_set_packet_params(
-          (uint8_t)SX1262_RADIO_MAX_PAYLOAD_SIZE, true, &detail) ||
-      !sx1262_radio_backend_configure_irq(SX1262_RADIO_IRQ_RX_DONE |
-                                              SX1262_RADIO_IRQ_HEADER_ERROR |
-                                              SX1262_RADIO_IRQ_CRC_ERROR,
-                                          &detail) ||
-      !sx1262_radio_backend_clear_irq(SX1262_RADIO_IRQ_ALL, &detail) ||
-      !sx1262_radio_backend_start_continuous_rx(&detail)) {
+  if (sx1262_radio_backend_set_standby(&detail) != SX1262_COMMAND_CONFIRMED ||
+      sx1262_radio_backend_set_packet_params(
+          (uint8_t)SX1262_RADIO_MAX_PAYLOAD_SIZE, true, &detail) !=
+          SX1262_COMMAND_CONFIRMED ||
+      sx1262_radio_backend_configure_irq(SX1262_RADIO_IRQ_RX_DONE |
+                                             SX1262_RADIO_IRQ_HEADER_ERROR |
+                                             SX1262_RADIO_IRQ_CRC_ERROR,
+                                         &detail) != SX1262_COMMAND_CONFIRMED ||
+      sx1262_radio_backend_clear_irq(SX1262_RADIO_IRQ_ALL, &detail) !=
+          SX1262_COMMAND_CONFIRMED ||
+      sx1262_radio_backend_start_single_rx(&detail) !=
+          SX1262_COMMAND_CONFIRMED) {
     return receive_backend_failure(&detail, out_diag);
   }
-  s_radio.rx_active = true;
+  s_radio.rx_armed = true;
   return CURAG_OK;
 }
 
@@ -363,12 +376,12 @@ sx1262_radio_receive_downlink_until(uint64_t deadline_monotonic_us,
     return semantic_failure(CURAG_ERADIO_EINVALID_STATE, CURAG_OP_VALIDATE,
                             CURAG_RADIO_STAGE_STATE_CHECK, out_diag);
   }
-  if (deadline_reached(deadline_monotonic_us)) {
+  if (!s_radio.rx_armed && deadline_reached(deadline_monotonic_us)) {
     out_result->outcome = SX1262_RADIO_RX_DEADLINE;
     return CURAG_OK;
   }
 
-  if (!s_radio.rx_active) {
+  if (!s_radio.rx_armed) {
     const err_curag_t error = start_downlink_rx(out_diag);
     if (error != CURAG_OK) {
       return error;
@@ -388,24 +401,43 @@ sx1262_radio_receive_downlink_until(uint64_t deadline_monotonic_us,
       out_result->outcome = SX1262_RADIO_RX_DEADLINE;
       return CURAG_OK;
     }
+    s_radio.rx_armed = false;
 
     uint16_t irq_status = 0U;
-    if (!sx1262_radio_backend_get_irq(&irq_status, &detail)) {
+    if (sx1262_radio_backend_get_irq(&irq_status, &detail) !=
+        SX1262_COMMAND_CONFIRMED) {
       return receive_backend_failure(&detail, out_diag);
     }
-    if (!sx1262_radio_backend_clear_irq(irq_status, &detail)) {
-      return receive_backend_failure(&detail, out_diag);
-    }
-
     if (irq_at_us > deadline_monotonic_us) {
+      if (sx1262_radio_backend_clear_irq(irq_status, &detail) !=
+          SX1262_COMMAND_CONFIRMED) {
+        return receive_backend_failure(&detail, out_diag);
+      }
       out_result->outcome = SX1262_RADIO_RX_DEADLINE;
       return CURAG_OK;
     }
     if ((irq_status &
          (SX1262_RADIO_IRQ_HEADER_ERROR | SX1262_RADIO_IRQ_CRC_ERROR)) != 0U) {
+      if (sx1262_radio_backend_clear_irq(irq_status, &detail) !=
+          SX1262_COMMAND_CONFIRMED) {
+        return receive_backend_failure(&detail, out_diag);
+      }
+      if (deadline_reached(deadline_monotonic_us)) {
+        out_result->outcome = SX1262_RADIO_RX_DEADLINE;
+        return CURAG_OK;
+      }
+      if (sx1262_radio_backend_start_single_rx(&detail) !=
+          SX1262_COMMAND_CONFIRMED) {
+        return receive_backend_failure(&detail, out_diag);
+      }
+      s_radio.rx_armed = true;
       continue;
     }
     if (irq_status != SX1262_RADIO_IRQ_RX_DONE) {
+      if (sx1262_radio_backend_clear_irq(irq_status, &detail) !=
+          SX1262_COMMAND_CONFIRMED) {
+        return receive_backend_failure(&detail, out_diag);
+      }
       sx1262_radio_backend_error_clear(&detail);
       detail.error_code = CURAG_ERADIO_EUNEXPECTED_IRQ;
       detail.stage = CURAG_RADIO_STAGE_READ_IRQ;
@@ -414,12 +446,14 @@ sx1262_radio_receive_downlink_until(uint64_t deadline_monotonic_us,
       detail.irq_status = irq_status;
       return receive_backend_failure(&detail, out_diag);
     }
-    if (!sx1262_radio_backend_handle_rx_done(&detail)) {
+    if (sx1262_radio_backend_handle_rx_done(&detail) !=
+        SX1262_COMMAND_CONFIRMED) {
       return receive_backend_failure(&detail, out_diag);
     }
 
     sx1262_radio_backend_rx_buffer_status_t buffer_status = {0};
-    if (!sx1262_radio_backend_get_rx_buffer_status(&buffer_status, &detail)) {
+    if (sx1262_radio_backend_get_rx_buffer_status(&buffer_status, &detail) !=
+        SX1262_COMMAND_CONFIRMED) {
       return receive_backend_failure(&detail, out_diag);
     }
     if (buffer_status.payload_length > SX1262_RADIO_MAX_PAYLOAD_SIZE) {
@@ -430,14 +464,21 @@ sx1262_radio_receive_downlink_until(uint64_t deadline_monotonic_us,
       return receive_backend_failure(&detail, out_diag);
     }
     if (buffer_status.payload_length > 0U &&
-        !sx1262_radio_backend_read_buffer(
-            buffer_status.start_offset, out_result->payload,
-            (uint8_t)buffer_status.payload_length, &detail)) {
+        sx1262_radio_backend_read_buffer(buffer_status.start_offset,
+                                         out_result->payload,
+                                         (uint8_t)buffer_status.payload_length,
+                                         &detail) != SX1262_COMMAND_CONFIRMED) {
       return receive_backend_failure(&detail, out_diag);
     }
 
     sx1262_radio_backend_packet_status_t packet_status = {0};
-    if (!sx1262_radio_backend_get_packet_status(&packet_status, &detail)) {
+    if (sx1262_radio_backend_get_packet_status(&packet_status, &detail) !=
+        SX1262_COMMAND_CONFIRMED) {
+      memset(out_result, 0, sizeof(*out_result));
+      return receive_backend_failure(&detail, out_diag);
+    }
+    if (sx1262_radio_backend_clear_irq(irq_status, &detail) !=
+        SX1262_COMMAND_CONFIRMED) {
       memset(out_result, 0, sizeof(*out_result));
       return receive_backend_failure(&detail, out_diag);
     }
@@ -446,6 +487,15 @@ sx1262_radio_receive_downlink_until(uint64_t deadline_monotonic_us,
     out_result->rssi_dbm_x2 = packet_status.rssi_dbm_x2;
     out_result->snr_db_x4 = packet_status.snr_db_x4;
     out_result->payload_length = (uint8_t)buffer_status.payload_length;
+    /* Rearm after the snapshot so a later packet cannot replace its data. */
+    if (!deadline_reached(deadline_monotonic_us)) {
+      if (sx1262_radio_backend_start_single_rx(&detail) !=
+          SX1262_COMMAND_CONFIRMED) {
+        memset(out_result, 0, sizeof(*out_result));
+        return receive_backend_failure(&detail, out_diag);
+      }
+      s_radio.rx_armed = true;
+    }
     return CURAG_OK;
   }
 }
@@ -463,10 +513,12 @@ err_curag_t sx1262_radio_sleep(diagn_context_t *out_diag) {
   sx1262_radio_backend_error_t sleep_detail;
   sx1262_radio_backend_error_clear(&standby_detail);
   sx1262_radio_backend_error_clear(&sleep_detail);
-  const bool standby_ok = sx1262_radio_backend_set_standby(&standby_detail);
-  const bool sleep_ok = sx1262_radio_backend_set_sleep_cold(&sleep_detail);
+  const bool standby_ok = sx1262_radio_backend_set_standby(&standby_detail) ==
+                          SX1262_COMMAND_CONFIRMED;
+  const bool sleep_ok = sx1262_radio_backend_set_sleep_cold(&sleep_detail) ==
+                        SX1262_COMMAND_CONFIRMED;
 
-  s_radio.rx_active = false;
+  s_radio.rx_armed = false;
   if (standby_ok && sleep_ok) {
     s_radio.state = CURAG_RADIO_STATE_SLEEPING;
     return CURAG_OK;

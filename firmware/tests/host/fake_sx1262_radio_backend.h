@@ -44,6 +44,7 @@ typedef struct {
 typedef struct {
   bool enabled;
   size_t occurrence;
+  sx1262_radio_backend_call_result_t command_result;
   sx1262_radio_backend_error_t detail;
 } fake_radio_failure_t;
 
@@ -81,3 +82,7 @@ void fake_sx1262_radio_backend_add_irq(const fake_radio_irq_event_t *event);
 void fake_sx1262_radio_backend_fail(fake_radio_operation_t operation,
                                     size_t occurrence,
                                     const sx1262_radio_backend_error_t *detail);
+void fake_sx1262_radio_backend_set_command_result(
+    fake_radio_operation_t operation, size_t occurrence,
+    sx1262_radio_backend_call_result_t result,
+    const sx1262_radio_backend_error_t *detail);

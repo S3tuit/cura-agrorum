@@ -124,6 +124,17 @@ static bool initialize_with_tx(void) {
   return transmit_successfully(payload, sizeof(payload), UINT64_C(2000), &tx);
 }
 
+static size_t trace_find_after(fake_radio_operation_t operation,
+                               size_t start_index) {
+  for (size_t index = start_index; index < g_fake_sx1262_radio.trace_length;
+       ++index) {
+    if (g_fake_sx1262_radio.trace[index] == operation) {
+      return index;
+    }
+  }
+  return SIZE_MAX;
+}
+
 static bool test_profile_and_lazy_initialization(void) {
   fake_sx1262_radio_backend_reset();
   const uint8_t first[] = {1U, 2U, 3U};
@@ -307,6 +318,59 @@ static bool test_failure_before_set_tx_reports_no_attempt(void) {
   return true;
 }
 
+static bool test_uncertain_set_tx_preserves_attempt(void) {
+  fake_sx1262_radio_backend_reset();
+  const sx1262_radio_backend_error_t failure = {
+      .error_code = CURAG_ERADIO_EIO,
+      .command_opcode = UINT8_C(0xc0),
+      .stage = CURAG_RADIO_STAGE_READ_COMMAND,
+      .flags = CURAG_RADIO_CONTEXT_HARDWARE_TOUCHED,
+      .backend_status_kind = CURAG_RADIO_BACKEND_STATUS_ESP_ERR,
+      .backend_status = -23,
+  };
+  fake_sx1262_radio_backend_set_command_result(
+      FAKE_RADIO_OP_START_TX, 1U, SX1262_COMMAND_UNCERTAIN, &failure);
+  const uint8_t payload = 9U;
+  sx1262_radio_tx_result_t tx;
+  diagn_context_t diagnostic;
+  TEST_ASSERT(assert_radio_error(
+      sx1262_radio_transmit_uplink(&payload, 1U, 5000U, &tx, &diagnostic),
+      CURAG_ERADIO_EIO));
+  TEST_ASSERT(tx.tx_started);
+  TEST_ASSERT(!tx.tx_done);
+  TEST_ASSERT_EQ_U64(1000U, tx.set_tx_at_us);
+  TEST_ASSERT_EQ_U64(0U, tx.tx_done_at_us);
+  TEST_ASSERT_EQ_U64(0U, g_fake_sx1262_radio.calls[FAKE_RADIO_OP_WAIT_DIO1]);
+  TEST_ASSERT(assert_diagnostic(
+      &diagnostic, CURAG_OP_TRANSMIT, CURAG_RADIO_STATE_READY, 0xc0U,
+      CURAG_RADIO_STAGE_READ_COMMAND, CURAG_RADIO_CONTEXT_HARDWARE_TOUCHED,
+      CURAG_RADIO_BACKEND_STATUS_ESP_ERR, -23, 0U, 0U, 0U));
+  return true;
+}
+
+static bool test_uncertain_command_before_set_tx_reports_no_attempt(void) {
+  fake_sx1262_radio_backend_reset();
+  const sx1262_radio_backend_error_t failure = {
+      .error_code = CURAG_ERADIO_EBUSY_TIMEOUT,
+      .command_opcode = UINT8_C(0x8c),
+      .stage = CURAG_RADIO_STAGE_WAIT_BUSY,
+      .flags = CURAG_RADIO_CONTEXT_HARDWARE_TOUCHED,
+  };
+  fake_sx1262_radio_backend_set_command_result(
+      FAKE_RADIO_OP_PACKET_PARAMS, 1U, SX1262_COMMAND_UNCERTAIN, &failure);
+  const uint8_t payload = 7U;
+  sx1262_radio_tx_result_t tx;
+  diagn_context_t diagnostic;
+  TEST_ASSERT(assert_radio_error(
+      sx1262_radio_transmit_uplink(&payload, 1U, 5000U, &tx, &diagnostic),
+      CURAG_ERADIO_EBUSY_TIMEOUT));
+  TEST_ASSERT(!tx.tx_started);
+  TEST_ASSERT(!tx.tx_done);
+  TEST_ASSERT_EQ_U64(0U, tx.set_tx_at_us);
+  TEST_ASSERT_EQ_U64(0U, g_fake_sx1262_radio.calls[FAKE_RADIO_OP_START_TX]);
+  return true;
+}
+
 static bool test_failure_after_set_tx_preserves_attempt(void) {
   fake_sx1262_radio_backend_reset();
   const sx1262_radio_backend_error_t failure = {
@@ -458,7 +522,66 @@ static bool test_receive_exact_packet_and_iq_transition(void) {
   return true;
 }
 
-static bool test_receive_deadline_keeps_continuous_rx(void) {
+static bool test_receive_pending_irq_at_deadline_wins(void) {
+  fake_sx1262_radio_backend_reset();
+  TEST_ASSERT(initialize_with_tx());
+
+  sx1262_radio_rx_result_t rx;
+  TEST_ASSERT_EQ_U64(CURAG_OK,
+                     sx1262_radio_receive_downlink_until(3000U, &rx, NULL));
+  TEST_ASSERT_EQ_U64(SX1262_RADIO_RX_DEADLINE, rx.outcome);
+
+  /* Model DIO1 arriving at the boundary as the timed wait returns. */
+  const uint8_t payload[] = {0x31U, 0x32U};
+  const fake_radio_irq_event_t pending =
+      rx_event(UINT64_C(3000), payload, sizeof(payload));
+  fake_sx1262_radio_backend_add_irq(&pending);
+
+  TEST_ASSERT_EQ_U64(CURAG_OK,
+                     sx1262_radio_receive_downlink_until(3000U, &rx, NULL));
+  TEST_ASSERT_EQ_U64(SX1262_RADIO_RX_PACKET, rx.outcome);
+  TEST_ASSERT_EQ_U64(3000U, rx.rx_done_at_us);
+  TEST_ASSERT_EQ_U64(sizeof(payload), rx.payload_length);
+  TEST_ASSERT(memcmp(payload, rx.payload, sizeof(payload)) == 0);
+  return true;
+}
+
+static bool test_receive_snapshots_before_clear_and_rearms(void) {
+  fake_sx1262_radio_backend_reset();
+  TEST_ASSERT(initialize_with_tx());
+  const uint8_t payload[] = {0x41U, 0x42U, 0x43U};
+  const fake_radio_irq_event_t packet =
+      rx_event(UINT64_C(3000), payload, sizeof(payload));
+  fake_sx1262_radio_backend_add_irq(&packet);
+
+  const size_t trace_start = g_fake_sx1262_radio.trace_length;
+  sx1262_radio_rx_result_t rx;
+  TEST_ASSERT_EQ_U64(CURAG_OK,
+                     sx1262_radio_receive_downlink_until(5000U, &rx, NULL));
+  TEST_ASSERT_EQ_U64(SX1262_RADIO_RX_PACKET, rx.outcome);
+
+  const size_t get_irq = trace_find_after(FAKE_RADIO_OP_GET_IRQ, trace_start);
+  TEST_ASSERT(get_irq != SIZE_MAX);
+  const size_t read_buffer =
+      trace_find_after(FAKE_RADIO_OP_READ_BUFFER, get_irq + 1U);
+  TEST_ASSERT(read_buffer != SIZE_MAX);
+  const size_t packet_status =
+      trace_find_after(FAKE_RADIO_OP_GET_PACKET_STATUS, read_buffer + 1U);
+  TEST_ASSERT(packet_status != SIZE_MAX);
+  const size_t clear_irq =
+      trace_find_after(FAKE_RADIO_OP_CLEAR_IRQ, get_irq + 1U);
+  TEST_ASSERT(clear_irq != SIZE_MAX);
+  const size_t rearm = trace_find_after(FAKE_RADIO_OP_START_RX, clear_irq + 1U);
+  TEST_ASSERT(rearm != SIZE_MAX);
+  TEST_ASSERT(get_irq < read_buffer);
+  TEST_ASSERT(read_buffer < packet_status);
+  TEST_ASSERT(packet_status < clear_irq);
+  TEST_ASSERT(clear_irq < rearm);
+  TEST_ASSERT_EQ_U64(2U, g_fake_sx1262_radio.calls[FAKE_RADIO_OP_START_RX]);
+  return true;
+}
+
+static bool test_receive_deadline_keeps_rx_armed(void) {
   fake_sx1262_radio_backend_reset();
   TEST_ASSERT(initialize_with_tx());
   sx1262_radio_rx_result_t rx;
@@ -565,7 +688,7 @@ static bool test_same_absolute_deadline_is_not_extended(void) {
                      sx1262_radio_receive_downlink_until(5000U, &rx, NULL));
   TEST_ASSERT_EQ_U64(SX1262_RADIO_RX_DEADLINE, rx.outcome);
   TEST_ASSERT_EQ_U64(5000U, g_fake_sx1262_radio.now_us);
-  TEST_ASSERT_EQ_U64(1U, g_fake_sx1262_radio.calls[FAKE_RADIO_OP_START_RX]);
+  TEST_ASSERT_EQ_U64(2U, g_fake_sx1262_radio.calls[FAKE_RADIO_OP_START_RX]);
   return true;
 }
 
@@ -679,6 +802,10 @@ static const test_case_t k_tests[] = {
     {"deadline_reached_before_set_tx", test_deadline_reached_before_set_tx},
     {"failure_before_set_tx_reports_no_attempt",
      test_failure_before_set_tx_reports_no_attempt},
+    {"uncertain_set_tx_preserves_attempt",
+     test_uncertain_set_tx_preserves_attempt},
+    {"uncertain_command_before_set_tx_reports_no_attempt",
+     test_uncertain_command_before_set_tx_reports_no_attempt},
     {"failure_after_set_tx_preserves_attempt",
      test_failure_after_set_tx_preserves_attempt},
     {"clear_failure_preserves_tx_done", test_clear_failure_preserves_tx_done},
@@ -689,8 +816,11 @@ static const test_case_t k_tests[] = {
      test_unexpected_irq_reports_device_error},
     {"receive_exact_packet_and_iq_transition",
      test_receive_exact_packet_and_iq_transition},
-    {"receive_deadline_keeps_continuous_rx",
-     test_receive_deadline_keeps_continuous_rx},
+    {"receive_pending_irq_at_deadline_wins",
+     test_receive_pending_irq_at_deadline_wins},
+    {"receive_snapshots_before_clear_and_rearms",
+     test_receive_snapshots_before_clear_and_rearms},
+    {"receive_deadline_keeps_rx_armed", test_receive_deadline_keeps_rx_armed},
     {"receive_discards_phy_errors", test_receive_discards_phy_errors},
     {"oversized_receive_is_bounded", test_oversized_receive_is_bounded},
     {"late_packet_is_discarded", test_late_packet_is_discarded},

@@ -47,8 +47,8 @@ reading. It:
   `transmit_uplink`;
 - records the time immediately before the first `SetTx`;
 - charges estimated airtime and increments attempt metrics when `SetTx` is
-  successfully started;
-- after `TX_DONE`, listens continuously and calculates
+  confirmed or its effect becomes uncertain after crossing SPI;
+- after `TX_DONE`, keeps single-shot RX armed and calculates
   `retry_at = TX_DONE + 500 ms + uniform_random(100 ms, 500 ms)`;
 - logs and ignores invalid ACKs without closing the RX window;
 - retransmits at `retry_at` while another complete attempt fits both the
@@ -69,9 +69,10 @@ unmatched start means only that no durable finish was recorded: reset may have
 occurred before TX, during TX or RX, during retry waiting, or while persisting
 the finish. Failure to append either event never blocks radio work.
 
-When a started transmission does not produce `TX_DONE`, its estimated airtime
-remains charged and the delivery ends as a local radio error. Attempts that
-fail before `SetTx` starts are not counted or charged.
+When a started or uncertain transmission does not produce `TX_DONE`, its
+estimated airtime remains charged and the delivery ends as a local radio error.
+Attempts that definitively fail before `SetTx` can take effect are not counted
+or charged.
 
 The delivery result and its `DELIVERY_FINISHED.final_result` encoding are:
 
@@ -858,7 +859,7 @@ delivery or retries remain possible. Final `sleep` behaves as follows:
 1. If the radio is `UNTOUCHED`, or initialization failed before any hardware
    access, return successfully without issuing a radio command or initializing
    it.
-2. Otherwise stop continuous RX or any other active mode with
+2. Otherwise stop an armed receive or any other active mode with
    `SetStandby(STDBY_RC)`.
 3. Issue `SetSleep(COLD_START)`; the next wake performs complete lazy
    initialization rather than trusting retained radio configuration.

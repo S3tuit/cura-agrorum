@@ -65,41 +65,61 @@ typedef struct {
   int16_t snr_db_x4;
 } sx1262_radio_backend_packet_status_t;
 
+/*
+ * Keep command effect separate from error reporting: once SPI accepts a
+ * command, a later BUSY or GetStatus failure cannot prove it had no effect.
+ */
+typedef enum {
+  SX1262_COMMAND_FAILED = 0, /* Intended effect definitively did not occur. */
+  SX1262_COMMAND_UNCERTAIN,  /* It crossed SPI but could not be verified. */
+  SX1262_COMMAND_CONFIRMED,  /* Available verification completed. */
+} sx1262_radio_backend_call_result_t;
+
 void sx1262_radio_backend_error_clear(sx1262_radio_backend_error_t *error);
 uint64_t sx1262_radio_backend_monotonic_us(void);
 
 bool sx1262_radio_backend_initialize(const sx1262_radio_profile_t *profile,
                                      sx1262_radio_backend_error_t *error);
-bool sx1262_radio_backend_set_standby(sx1262_radio_backend_error_t *error);
-bool sx1262_radio_backend_set_packet_params(
-    uint8_t payload_length, bool inverted_iq,
-    sx1262_radio_backend_error_t *error);
-bool sx1262_radio_backend_configure_irq(uint16_t irq_mask,
-                                        sx1262_radio_backend_error_t *error);
-bool sx1262_radio_backend_clear_irq(uint16_t irq_mask,
-                                    sx1262_radio_backend_error_t *error);
-bool sx1262_radio_backend_write_payload(const uint8_t *payload,
-                                        uint8_t payload_length,
-                                        sx1262_radio_backend_error_t *error);
-bool sx1262_radio_backend_start_tx(uint32_t watchdog_rtc_steps,
+sx1262_radio_backend_call_result_t
+sx1262_radio_backend_set_standby(sx1262_radio_backend_error_t *error);
+sx1262_radio_backend_call_result_t
+sx1262_radio_backend_set_packet_params(uint8_t payload_length, bool inverted_iq,
+                                       sx1262_radio_backend_error_t *error);
+sx1262_radio_backend_call_result_t
+sx1262_radio_backend_configure_irq(uint16_t irq_mask,
                                    sx1262_radio_backend_error_t *error);
-bool sx1262_radio_backend_start_continuous_rx(
-    sx1262_radio_backend_error_t *error);
+sx1262_radio_backend_call_result_t
+sx1262_radio_backend_clear_irq(uint16_t irq_mask,
+                               sx1262_radio_backend_error_t *error);
+sx1262_radio_backend_call_result_t
+sx1262_radio_backend_write_payload(const uint8_t *payload,
+                                   uint8_t payload_length,
+                                   sx1262_radio_backend_error_t *error);
+sx1262_radio_backend_call_result_t
+sx1262_radio_backend_start_tx(uint32_t watchdog_rtc_steps,
+                              sx1262_radio_backend_error_t *error);
+sx1262_radio_backend_call_result_t
+sx1262_radio_backend_start_single_rx(sx1262_radio_backend_error_t *error);
 bool sx1262_radio_backend_wait_dio1(uint64_t deadline_monotonic_us,
                                     bool *out_observed, uint64_t *out_irq_at_us,
                                     sx1262_radio_backend_error_t *error);
-bool sx1262_radio_backend_get_irq(uint16_t *out_irq_status,
-                                  sx1262_radio_backend_error_t *error);
-bool sx1262_radio_backend_handle_rx_done(sx1262_radio_backend_error_t *error);
-bool sx1262_radio_backend_get_rx_buffer_status(
+sx1262_radio_backend_call_result_t
+sx1262_radio_backend_get_irq(uint16_t *out_irq_status,
+                             sx1262_radio_backend_error_t *error);
+sx1262_radio_backend_call_result_t
+sx1262_radio_backend_handle_rx_done(sx1262_radio_backend_error_t *error);
+sx1262_radio_backend_call_result_t sx1262_radio_backend_get_rx_buffer_status(
     sx1262_radio_backend_rx_buffer_status_t *out_status,
     sx1262_radio_backend_error_t *error);
-bool sx1262_radio_backend_read_buffer(uint8_t offset, uint8_t *output,
-                                      uint8_t output_length,
-                                      sx1262_radio_backend_error_t *error);
-bool sx1262_radio_backend_get_packet_status(
+sx1262_radio_backend_call_result_t
+sx1262_radio_backend_read_buffer(uint8_t offset, uint8_t *output,
+                                 uint8_t output_length,
+                                 sx1262_radio_backend_error_t *error);
+sx1262_radio_backend_call_result_t sx1262_radio_backend_get_packet_status(
     sx1262_radio_backend_packet_status_t *out_status,
     sx1262_radio_backend_error_t *error);
-bool sx1262_radio_backend_get_device_errors(
-    uint16_t *out_device_errors, sx1262_radio_backend_error_t *error);
-bool sx1262_radio_backend_set_sleep_cold(sx1262_radio_backend_error_t *error);
+sx1262_radio_backend_call_result_t
+sx1262_radio_backend_get_device_errors(uint16_t *out_device_errors,
+                                       sx1262_radio_backend_error_t *error);
+sx1262_radio_backend_call_result_t
+sx1262_radio_backend_set_sleep_cold(sx1262_radio_backend_error_t *error);

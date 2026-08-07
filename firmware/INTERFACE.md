@@ -950,8 +950,10 @@ timeout no later than that bound.
 **Outputs**
 
 On success, both booleans are true. `set_tx_at_us` is sampled immediately before
-issuing the `SetTx` command and becomes valid only if that command succeeds.
-`tx_done_at_us` is the captured `TX_DONE` IRQ time. Required invariants are:
+issuing the `SetTx` command. It becomes valid when the command is confirmed or
+when it crossed SPI but a later BUSY or `GetStatus` failure makes its effect
+uncertain. `tx_done_at_us` is the captured `TX_DONE` IRQ time. Required
+invariants are:
 
 ```text
 tx_done -> tx_started
@@ -961,12 +963,14 @@ tx_done -> tx_done_at_us >= set_tx_at_us
 ```
 
 A nonzero result may therefore still report `tx_started = true`, allowing
-`node_core` to count and charge an attempt whose later IRQ or cleanup failed.
+`node_core` to count and charge an attempt whose command effect is uncertain or
+whose later IRQ or cleanup failed. `tx_started` is deliberately a conservative
+accounting signal: false proves that `SetTx` did not take effect.
 
 **Side effects**
 
 The first transmit performs cached lazy initialization and applies the complete
-pilot profile. Each call leaves continuous RX through `STDBY_RC` when needed,
+pilot profile. Each call leaves armed RX through `STDBY_RC` when needed,
 selects normal IQ, clears stale IRQs, writes the payload and issues `SetTx`.
 It performs no encryption, retry, ACK validation or airtime-policy accounting.
 
@@ -974,9 +978,11 @@ It performs no encryption, retry, ACK validation or airtime-policy accounting.
 
 - Invalid input or expired deadline before `SetTx`: no transmission starts.
 - Cached/initial lazy-initialization failure: no transmission starts.
-- GPIO, SPI, BUSY, command-status or pre-`SetTx` failure: no transmission
-  starts.
-- Deadline, IRQ, device-status or cleanup failure after successful `SetTx`:
+- GPIO, pre-transfer BUSY, SPI or explicit command-status failure before
+  `SetTx` can take effect: no transmission starts.
+- A post-transfer BUSY or `GetStatus` failure leaves the `SetTx` effect
+  uncertain: `tx_started` is true and `tx_done` is false.
+- Deadline, IRQ, device-status or cleanup failure after confirmed `SetTx`:
   `tx_started` remains true; `tx_done` reflects whether the IRQ was captured.
 
 **`node_core` response**
@@ -1000,8 +1006,8 @@ err_curag_t sx1262_radio_receive_downlink_until(
 
 **Purpose**
 
-Keep inverted-IQ continuous RX open until the first PHY-valid packet completes
-at or before the caller's absolute deadline.
+Keep inverted-IQ reception armed until the first PHY-valid packet completes at
+or before the caller's absolute deadline.
 
 **Inputs and ownership**
 
@@ -1019,12 +1025,16 @@ delays later processing. A packet completed after the deadline does not win.
 
 **Side effects**
 
-The operation selects inverted IQ and enters or continues continuous RX. PHY
-header and payload-CRC failures are discarded internally while RX remains
-open. A returned application packet is not parsed or authenticated. After
-`node_core` rejects an application-invalid packet, it calls this operation
-again with the unchanged absolute deadline. The radio remains available for a
-normal-IQ retransmission without being put to sleep between attempts.
+The operation selects inverted IQ and uses single-shot RX so the radio enters
+`STDBY_RC` after each reception. It snapshots the IRQ timestamp, payload and
+packet status before clearing the IRQ, then immediately rearms single-shot RX
+while time remains. PHY header and payload-CRC failures are cleared and
+rearmed internally. A returned application packet is not parsed or
+authenticated. After `node_core` rejects an application-invalid packet, it
+calls this operation again with the unchanged absolute deadline; an IRQ already
+pending at that deadline is examined before the clock. The radio remains
+available for a normal-IQ retransmission without being put to sleep between
+attempts.
 
 **Failure classes**
 

@@ -177,6 +177,51 @@ set_tests_properties(
 )
 
 add_executable(
+  test_node_platform_esp
+  test_node_platform_esp.c
+  ${FIRMWARE_ROOT}/components/node_platform_esp/node_platform_esp.c
+)
+
+target_include_directories(
+  test_node_platform_esp
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/fakes
+    ${FIRMWARE_ROOT}/components/node_core/include
+    ${FIRMWARE_ROOT}/components/node_platform_esp/include
+)
+target_compile_features(test_node_platform_esp PRIVATE c_std_11)
+target_compile_options(
+  test_node_platform_esp
+  PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Werror
+    -Wformat=2
+    -Wshadow
+    -Wconversion
+    -Wsign-conversion
+)
+
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(
+    test_node_platform_esp PRIVATE -fsanitize=address,undefined
+                                   -fno-omit-frame-pointer
+  )
+  target_link_options(
+    test_node_platform_esp PRIVATE -fsanitize=address,undefined
+                                   -fno-omit-frame-pointer
+  )
+endif()
+
+add_test(NAME node_platform_esp COMMAND test_node_platform_esp)
+set_tests_properties(
+  node_platform_esp
+  PROPERTIES ENVIRONMENT
+             "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:halt_on_error=1:fast_unwind_on_malloc=0"
+)
+
+add_executable(
   test_sx1262_radio
   fake_sx1262_radio_backend.c
   test_sx1262_radio.c

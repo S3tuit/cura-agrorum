@@ -3,12 +3,15 @@ idf_component_register(
       "test_app_main.c"
       "persistence_test_support.c"
       "test_node_persistence_on_device.c"
+      "test_node_platform_esp_on_device.c"
     PRIV_REQUIRES
       unity
       node_persistence
+      node_platform_esp
       protocol_v2_lora
       nvs_flash
       esp_partition
+      freertos
       joltwallet__littlefs
     WHOLE_ARCHIVE)
 

@@ -5,11 +5,20 @@ enclosure measurements from a remote sensor node. The current design uses an
 ESP32-C6 node and a Raspberry Pi receiver connected over authenticated EU868
 LoRa.
 
+This repository owns the production firmware, receiver, wire protocol, and
+server code. Experiments and their firmware, acquisition tools, datasets,
+analysis, findings, reference material, and deployment records live in the
+separate
+[`cura-agrorum-logbook`](https://github.com/S3tuit/cura-agrorum-logbook)
+repository. A local checkout of that repository is expected at
+`../cura-agrorum-logbook` so contributors and agents can inspect the evidence
+behind production decisions.
+
 ## Current goal
 
-The project is working toward the one-week pilot described in
-[`deployment/field_deployment_v2.md`](deployment/field_deployment_v2.md). The
-pilot will use development hardware to:
+The project is working toward the one-week pilot described in the logbook's
+[`field-pilot-v2`](https://github.com/S3tuit/cura-agrorum-logbook/blob/main/deployments/field-pilot-v2/README.md)
+record. The pilot will use development hardware to:
 
 - measure soil moisture and temperature at two depths;
 - validate LoRa reliability, retries, RSSI and SNR in the intended field;
@@ -22,17 +31,20 @@ solar-autonomy test.
 
 ## Repository map
 
-- `deployment/` — field plans; `field_deployment_v2.md` is the active target.
-- `firmware/` — ESP-IDF node firmware, reusable components, maintenance apps,
+- `firmware/` — ESP-IDF node firmware, reusable production components,
   architecture notes and host/on-device tests.
 - `protocol/` — the current LoRa v2 wire contract, schemas, generated codecs,
   provisioning tools and cross-language tests; v1 documents the earlier Wi-Fi
   protocol.
 - `receiver/` — Python v2 codec and authenticated-frame building blocks for
   the Raspberry Pi receiver.
-- `hardware/` — notes and measurements for candidate hardware.
-- `logbook/` — soil characterization and moisture-sensor experiments.
 - `server/` — legacy code retained temporarily and scheduled for removal.
+
+The logbook may depend on public components exposed from
+`firmware/components/`. Production code in this repository must not depend on
+the logbook. During the repository split, old experiment, deployment, or
+reference files may remain here temporarily until their migrated copies have
+been reviewed; the logbook versions are the authoritative records.
 
 The v2 protocol and the persistence, sensor and SX1262 firmware components are
 implemented. Full node wake-cycle orchestration and the receiver application

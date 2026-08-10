@@ -1,9 +1,9 @@
 # Firmware testing
 
-Status: the `node_persistence` host/on-device matrices and the `node_sensors`
-and `sx1262_radio` host matrices are implemented. The remaining `node_core`,
-RTC, radio and sensor on-device, and platform-port suites below are agreed but
-not yet implemented.
+Status: the `node_core`, `node_persistence`, `node_sensors`, `sx1262_radio` and
+platform-port host matrices and the `node_persistence` on-device matrix are
+implemented. The remaining RTC, radio and sensor on-device, platform-port, and
+`node_core` integration suites below are agreed but not yet implemented.
 
 ## Philosophy and build
 
@@ -22,6 +22,13 @@ its scenarios by NVS, record behavior, recovery, fault handling and retention.
 The existing pytest suite remains responsible for protocol generation, shared
 Python/C vectors and Hypothesis. `pytest-embedded` provides hardware
 orchestration as described below.
+
+The `test_node_core` executable links the production controller, protocol codec
+and OpenSSL-backed production crypto layer to deterministic link-time fakes for
+persistence, sensors, radio and the injected platform ports. Each named CTest
+scenario is a fresh process. The fake clock advances only through scripted
+component behavior, so retry, deadline, awake-time and terminal-sleep ordering
+are tested without real waiting.
 
 ## `node_core`
 

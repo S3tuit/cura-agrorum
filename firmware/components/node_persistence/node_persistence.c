@@ -964,7 +964,7 @@ static bool validate_diagnostic_event(const node_diagnostic_event_t *event) {
     return true;
   }
   const diagn_context_t *context = event->context;
-  if (context->operation > CURAG_OP_SLEEP ||
+  if (context->operation > CURAG_OP_CLEANUP ||
       ((context->context_schema == CURAG_CONTEXT_SCHEMA_NONE) !=
        (context->context_length == 0U)) ||
       (context->context_length != 0U && context->operation == CURAG_OP_NONE)) {

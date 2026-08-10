@@ -621,6 +621,79 @@ non-persistent platform log.
   particular, persistence must not guess a boundary, reformat LittleFS or use
   `pending.compact` as a recovery source.
 
+## `node_core`
+
+Status: implemented pilot contract. The public declarations are in
+`components/node_core/include/node_core.h` and the production composition root
+provides the generated identity, platform ports and retained RTC record.
+
+`node_cycle_run` receives borrowed immutable platform and identity values plus
+the caller-owned RTC record:
+
+```text
+void node_cycle_run(
+    const node_platform_ports_t *platform,
+    const node_identity_t *identity,
+    node_rtc_record_t *rtc_record)
+```
+
+Every platform callback is required. A null argument or missing callback is a
+composition error: the function returns without touching RTC or invoking a
+component because it cannot guarantee normal cleanup. Valid inputs execute one
+complete wake and treat `enter_deep_sleep_for` as terminal even when a host fake
+returns.
+
+`node_identity_t` contains the opaque eight-byte node ID and 16-byte derived
+node key. `app_main` constructs it from the generated private identity header;
+the reusable component does not include that header itself.
+
+The native retained record contains `commit_marker`, `completed_sample_id` and
+the wire-sized completed-cycle metrics. `NODE_RTC_COMMITTED_V1` is
+`0x43524731`. `node_rtc_record_take` copies the record and invalidates the
+resident marker immediately. Previous metrics are accepted only under the RTC
+conditions in `ARCHITECTURE.md` and these semantic invariants:
+
+- current attempts do not exceed all-cycle attempts;
+- accepted readings do not exceed all-cycle attempts;
+- current acceptance is true exactly when accepted count is nonzero; and
+- current delivery time is zero when current acceptance is false.
+
+`node_rtc_record_commit` invalidates the marker first, stores the ID and
+metrics, applies compiler and memory ordering, and writes the committed marker
+last. Internal counters and durations are wider than their wire fields. An
+unrepresentable completed-cycle metric leaves the outgoing marker invalid.
+Elapsed microseconds are converted to milliseconds by truncating the
+sub-millisecond remainder.
+
+The controller's stable error domain is `CURAG_EDOM_CORE = 4`:
+
+| Value | Error code | Meaning |
+|---:|---|---|
+| `1` | `CURAG_ECORE_EINVALID_ARGUMENT` | Invalid core composition or helper input |
+| `2` | `CURAG_ECORE_ETIME_RANGE` | A wire timing field cannot represent the elapsed duration |
+| `3` | `CURAG_ECORE_ECODEC` | Protocol reading or ACK codec failure |
+| `4` | `CURAG_ECORE_ECRYPTO` | Local authenticated-frame backend failure |
+| `5` | `CURAG_ECORE_EMETRICS_OVERFLOW` | Completed-cycle metrics are not representable |
+| `6` | `CURAG_ECORE_EACK_LENGTH` | ACK frame length is not exactly 23 bytes |
+| `7` | `CURAG_ECORE_EACK_AUTHENTICATION` | ACK authentication failed |
+| `8` | `CURAG_ECORE_EACK_CONTROL` | Authenticated ACK control is unsupported |
+| `9` | `CURAG_ECORE_EACK_NODE_ID` | Authenticated ACK is for another node |
+| `10` | `CURAG_ECORE_EACK_SAMPLE_ID` | Authenticated ACK is for another sample |
+| `11` | `CURAG_ECORE_EACK_DOMAIN` | Authenticated packet is not in an ACK domain |
+| `12` | `CURAG_ECORE_EACK_BODY` | Authenticated ACK body is malformed |
+| `13` | `CURAG_ECORE_EACK_STATUS` | ACK status is unknown or mismatched with its domain |
+| `14` | `CURAG_ECORE_EACK_TIMESTAMP` | ACK completed after the unchanged receive/retry deadline |
+
+Core diagnostics use the stable operation that failed and no context schema.
+Component diagnostics are copied opaquely. Invalid ACK diagnostics do not close
+or extend the active receive interval.
+
+Deadline and retry additions saturate at `UINT64_MAX`; subtraction-based
+boundary checks avoid unsigned wrap, and equality fits. `run_ms` saturates at
+`UINT16_MAX` with a diagnostic rather than wrapping or discarding the reading.
+An application diagnostic offset beyond `UINT32_MAX` is encoded without its
+offset-valid flag.
+
 ## `node_sensors`
 
 Status: implemented pilot contract. The provisional GPIO defaults and physical

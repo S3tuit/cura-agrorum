@@ -289,6 +289,37 @@ static bool invalid_inputs_and_optional_diagnostics_are_consistent(void) {
   return true;
 }
 
+static bool cleanup_diagnostic_is_valid_but_next_operation_is_not(void) {
+  node_persistence_test_reset_all();
+  diagn_context_t diag;
+  diagn_context_t sensor_context;
+  curag_diagnostic_context_clear(&sensor_context);
+  sensor_context.operation = CURAG_OP_CLEANUP;
+  sensor_context.context_schema = UINT8_C(1);
+  sensor_context.context_length = UINT8_C(48);
+  sensor_context.context[0] = UINT8_C(0xa5);
+  node_diagnostic_event_t event = {
+      .error = curag_error_make(CURAG_EDOM_SENSORS, UINT16_C(5)),
+      .flags = NODE_DIAGNOSTIC_APPLICATION_OFFSET_VALID |
+               NODE_DIAGNOSTIC_CYCLE_SAMPLE_ID_VALID,
+      .application_offset_ms = 12U,
+      .cycle_sample_id = 34U,
+      .context = &sensor_context,
+  };
+  TEST_ASSERT_EQ_U32(CURAG_OK,
+                     node_persistence_append_diagnostic_event(&event, &diag));
+
+  sensor_context.operation = (curag_operation_t)(CURAG_OP_CLEANUP + 1U);
+  TEST_ASSERT_EQ_U32(CURAG_EINVALID_ARGUMENT,
+                     node_persistence_append_diagnostic_event(&event, &diag));
+  TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_sync_all(&diag));
+
+  node_persistence_test_snapshot_t snapshot;
+  TEST_ASSERT(node_persistence_test_snapshot(TEST_DIAGNOSTIC_PATH, &snapshot));
+  TEST_ASSERT(validate_records(&snapshot, NODE_PERSISTENCE_LOG_DIAGNOSTIC, 1U));
+  return true;
+}
+
 static const node_persistence_test_case_t CASES[] = {
     {"pending_round_trip_is_newest_first_and_survives_restart",
      pending_round_trip_is_newest_first_and_survives_restart},
@@ -302,6 +333,8 @@ static const node_persistence_test_case_t CASES[] = {
      diagnostics_buffer_until_sync_and_sync_closes_without_unmount},
     {"invalid_inputs_and_optional_diagnostics_are_consistent",
      invalid_inputs_and_optional_diagnostics_are_consistent},
+    {"cleanup_diagnostic_is_valid_but_next_operation_is_not",
+     cleanup_diagnostic_is_valid_but_next_operation_is_not},
 };
 
 const node_persistence_test_group_t NODE_PERSISTENCE_RECORD_TEST_GROUP = {

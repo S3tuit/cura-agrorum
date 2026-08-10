@@ -210,6 +210,7 @@ The assigned component domains are:
 | `1` | `CURAG_EDOM_PERSISTENCE` |
 | `2` | `CURAG_EDOM_RADIO` |
 | `3` | `CURAG_EDOM_SENSORS` |
+| `4` | `CURAG_EDOM_CORE` |
 
 Firmware C identifiers use the `CURAG_` prefix. Unprefixed identifiers that
 begin with `E` followed by an uppercase letter are reserved by the C standard
@@ -239,6 +240,7 @@ The shared operation values are deliberately coarse and stable:
 | `16` | `TRANSMIT` |
 | `17` | `RECEIVE` |
 | `18` | `SLEEP` |
+| `19` | `CLEANUP` |
 
 `NONE` is used when no operation is meaningful, so operation does not need a
 validity flag. New component methods normally reuse one of these actions; an
@@ -943,9 +945,14 @@ RTC memory is direct retained data rather than an injected interface:
 RTC_DATA_ATTR static node_rtc_record_t rtc_record;
 
 void app_main(void) {
-  node_cycle_run(&platform, &rtc_record);
+  node_cycle_run(&platform, &identity, &rtc_record);
 }
 ```
+
+The composition root constructs `identity` from the generated private node
+identity header. Passing it into the reusable controller keeps that secret
+header out of the `node_core` component and lets host tests use a fixed test
+identity.
 
 The pilot record contains:
 

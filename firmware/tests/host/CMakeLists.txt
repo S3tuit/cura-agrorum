@@ -6,6 +6,103 @@ include(CTest)
 
 set(FIRMWARE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
 
+find_package(OpenSSL REQUIRED)
+
+add_executable(
+  test_node_core
+  fake_node_core_dependencies.c
+  test_node_core.c
+  test_node_core_support.c
+  test_node_core_initialization.c
+  test_node_core_delivery.c
+  test_node_core_transitions.c
+  test_node_core_finalization.c
+  ${FIRMWARE_ROOT}/components/node_common/node_common.c
+  ${FIRMWARE_ROOT}/components/node_core/node_core.c
+  ${FIRMWARE_ROOT}/components/protocol_v2_lora/protocol_v2_lora_crypto.c
+  ${FIRMWARE_ROOT}/components/protocol_v2_lora/protocol_v2_lora_schema_generated.c
+)
+
+target_include_directories(
+  test_node_core
+  PRIVATE
+    ${FIRMWARE_ROOT}/components/node_common/include
+    ${FIRMWARE_ROOT}/components/node_core/include
+    ${FIRMWARE_ROOT}/components/node_persistence/include
+    ${FIRMWARE_ROOT}/components/node_sensors/include
+    ${FIRMWARE_ROOT}/components/protocol_v2_lora/include
+    ${FIRMWARE_ROOT}/components/sx1262_radio/include
+)
+target_compile_features(test_node_core PRIVATE c_std_11)
+target_compile_definitions(test_node_core PRIVATE CURA_LORA_V2_CRYPTO_USE_OPENSSL)
+target_compile_options(
+  test_node_core
+  PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Werror
+    -Wformat=2
+    -Wshadow
+    -Wconversion
+    -Wsign-conversion
+)
+target_link_libraries(test_node_core PRIVATE OpenSSL::Crypto)
+
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(
+    test_node_core PRIVATE -fsanitize=address,undefined
+                           -fno-omit-frame-pointer
+  )
+  target_link_options(
+    test_node_core PRIVATE -fsanitize=address,undefined
+                           -fno-omit-frame-pointer
+  )
+endif()
+
+set(
+  NODE_CORE_TEST_SCENARIOS
+  first_attempt_success
+  claim_failure_invalidates_and_cleans_up
+  valid_rtc_reaches_next_reading
+  rejected_rtc_is_zeroed
+  sensor_validity_maps_independently
+  run_time_and_sampling_deadline_boundaries
+  pending_failure_allows_ram_only_delivery
+  invalid_composition_returns_without_side_effects
+  retries_reuse_identical_frame
+  invalid_acks_share_one_receive_interval
+  radio_progress_and_rx_errors_are_accounted
+  ack_retry_timestamp_boundary_is_enforced
+  budget_boundaries_are_inclusive_and_independent
+  zero_epoch_first_attempt_timestamp_is_retained
+  current_ack_outcomes_apply_policy
+  current_removal_failure_prevents_backlog
+  backlog_is_drained_in_persistence_order_with_unchanged_body
+  backlog_retry_later_and_lookup_failure_stop
+  backlog_quarantine_removal_combinations
+  accepted_backlog_removal_failure_stops
+  airtime_budget_is_shared_across_backlog
+  backlog_silence_retries_the_same_frame
+  delivery_events_bracket_retries_and_failures_are_best_effort
+  diagnostic_failure_is_not_logged_recursively
+  current_and_backlog_metrics_accumulate_in_correct_domains
+  unaccepted_current_has_zero_delivery_metric
+  awake_time_includes_cleanup_and_sync_and_sleep_is_terminal
+  rtc_metric_boundaries_and_semantics_are_enforced
+  component_diagnostics_are_copied_opaquely
+  cleanup_failures_do_not_prevent_sync_or_sleep
+)
+
+foreach(SCENARIO IN LISTS NODE_CORE_TEST_SCENARIOS)
+  add_test(NAME "node_core.${SCENARIO}" COMMAND test_node_core "${SCENARIO}")
+  set_tests_properties(
+    "node_core.${SCENARIO}"
+    PROPERTIES ENVIRONMENT
+               "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:halt_on_error=1:fast_unwind_on_malloc=0"
+  )
+endforeach()
+
 add_executable(
   test_node_persistence
   fake_node_persistence_backend.c

@@ -127,13 +127,28 @@ static uint64_t elapsed_ms(uint64_t start, uint64_t end) {
   return elapsed_us(start, end) / UINT64_C(1000);
 }
 
+static uint64_t reading_airtime_charge_us(void) {
+  const uint64_t airtime_us =
+      sx1262_radio_airtime_us(CURA_LORA_V2_READING_FRAME_SIZE);
+  if (airtime_us == UINT64_MAX) {
+    return UINT64_MAX;
+  }
+  const uint64_t ten_percent_us =
+      airtime_us / UINT64_C(10) + (airtime_us % UINT64_C(10) != 0U ? 1U : 0U);
+  return saturating_add_u64(airtime_us, ten_percent_us);
+}
+
 bool node_core_attempt_fits(uint64_t now_us, uint64_t deadline_us,
                             uint64_t charged_airtime_us) {
+  const uint64_t airtime_charge_us = reading_airtime_charge_us();
   const bool airtime_fits =
-      charged_airtime_us <=
-      NODE_CORE_TX_AIRTIME_BUDGET_US - NODE_CORE_READING_AIRTIME_CHARGE_US;
-  const bool time_fits = now_us <= deadline_us &&
-                         NODE_CORE_READING_AIRTIME_US <= deadline_us - now_us;
+      airtime_charge_us <= NODE_CORE_TX_AIRTIME_BUDGET_US &&
+      charged_airtime_us <= NODE_CORE_TX_AIRTIME_BUDGET_US - airtime_charge_us;
+  const uint64_t minimum_window_us =
+      sx1262_radio_min_tx_window_us(CURA_LORA_V2_READING_FRAME_SIZE);
+  const bool time_fits = minimum_window_us != UINT64_MAX &&
+                         now_us <= deadline_us &&
+                         minimum_window_us <= deadline_us - now_us;
   return airtime_fits && time_fits;
 }
 
@@ -358,8 +373,12 @@ validate_ack(const node_identity_t *identity, uint32_t sample_id,
     return invalid_ack(CURAG_ECORE_EACK_BODY, CURAG_OP_DECODE);
   }
   cura_lora_v2_ack_t ack;
-  if (cura_lora_v2_decode_ack(&ack, body, body_length) !=
-      CURA_LORA_V2_CODEC_OK) {
+  const cura_lora_v2_codec_result_t decode_result =
+      cura_lora_v2_decode_ack(&ack, body, body_length);
+  if (decode_result == CURA_LORA_V2_CODEC_MALFORMED) {
+    return invalid_ack(CURAG_ECORE_EACK_STATUS, CURAG_OP_VALIDATE);
+  }
+  if (decode_result != CURA_LORA_V2_CODEC_OK) {
     return invalid_ack(CURAG_ECORE_EACK_BODY, CURAG_OP_DECODE);
   }
   if (!cura_lora_v2_ack_status_matches_domain(header.domain, ack.status)) {
@@ -394,12 +413,15 @@ validate_ack(const node_identity_t *identity, uint32_t sample_id,
 static node_delivery_final_result_t limit_result(uint64_t now_us,
                                                  uint64_t deadline_us,
                                                  uint64_t charged_airtime_us) {
-  if (charged_airtime_us >
-      NODE_CORE_TX_AIRTIME_BUDGET_US - NODE_CORE_READING_AIRTIME_CHARGE_US) {
+  const uint64_t airtime_charge_us = reading_airtime_charge_us();
+  if (airtime_charge_us > NODE_CORE_TX_AIRTIME_BUDGET_US ||
+      charged_airtime_us > NODE_CORE_TX_AIRTIME_BUDGET_US - airtime_charge_us) {
     return NODE_DELIVERY_RESULT_AIRTIME_BUDGET_END;
   }
-  if (now_us > deadline_us ||
-      NODE_CORE_READING_AIRTIME_US > deadline_us - now_us) {
+  const uint64_t minimum_window_us =
+      sx1262_radio_min_tx_window_us(CURA_LORA_V2_READING_FRAME_SIZE);
+  if (minimum_window_us == UINT64_MAX || now_us > deadline_us ||
+      minimum_window_us > deadline_us - now_us) {
     return NODE_DELIVERY_RESULT_RADIO_CYCLE_DEADLINE;
   }
   return NODE_DELIVERY_RESULT_INVALID;
@@ -488,7 +510,7 @@ deliver_reading(node_cycle_context_t *cycle, uint32_t sample_id,
       if (is_current) {
         cycle->metrics.current_tx_attempts++;
       }
-      cycle->metrics.charged_airtime_us += NODE_CORE_READING_AIRTIME_CHARGE_US;
+      cycle->metrics.charged_airtime_us += reading_airtime_charge_us();
       if (!first_set_tx_valid) {
         first_set_tx_us = tx_result.set_tx_at_us;
         first_set_tx_valid = true;
@@ -507,6 +529,7 @@ deliver_reading(node_cycle_context_t *cycle, uint32_t sample_id,
     }
     if (tx_error != CURAG_OK) {
       append_diagnostic(cycle, tx_error, &diagnostic);
+      /* A deadline after SetTx is a charged radio failure, not admission. */
       if (!tx_result.tx_started &&
           curag_error_domain(tx_error) == CURAG_EDOM_RADIO &&
           curag_error_code(tx_error) == CURAG_ERADIO_EDEADLINE) {
@@ -602,6 +625,7 @@ static bool result_is_permanent_rejection(node_delivery_final_result_t result) {
 }
 
 static bool remove_pending(node_cycle_context_t *cycle, uint32_t sample_id) {
+  /* Callers delete only at authenticated or permanent protocol boundaries. */
   diagn_context_t diagnostic;
   const err_curag_t result =
       node_persistence_remove_newest_reading(sample_id, &diagnostic);
@@ -625,6 +649,7 @@ static bool quarantine_and_remove(node_cycle_context_t *cycle,
   if (!remove_persisted_copy) {
     return true;
   }
+  /* A permanently rejected tail must not obstruct newer pending readings. */
   return remove_pending(cycle, sample_id);
 }
 
@@ -713,6 +738,7 @@ static void run_claimed_cycle(node_cycle_context_t *cycle,
     current_persisted = true;
   } else {
     append_diagnostic(cycle, append_result, &diagnostic);
+    /* Continue volatile; deep sleep may discard an unaccepted reading. */
   }
   if (run_ms_overflow) {
     core_diagnostic_context(CURAG_OP_VALIDATE, &diagnostic);
@@ -754,6 +780,7 @@ static void finalize_cycle(node_cycle_context_t *cycle,
     const uint64_t before_sync_us =
         cycle->platform->clock.monotonic_us(cycle->platform->clock.context);
     node_cycle_metrics_t ignored;
+    /* Report overflows still knowable before diagnostics are synchronized. */
     if (!wake_metrics_encode(
             &cycle->metrics,
             elapsed_us(cycle->application_start_us, before_sync_us),
@@ -764,11 +791,13 @@ static void finalize_cycle(node_cycle_context_t *cycle,
     }
   }
 
+  /* A failed final sync cannot be durably logged without a second sync. */
   (void)node_persistence_sync_all(&diagnostic);
   const uint64_t completed_us =
       cycle->platform->clock.monotonic_us(cycle->platform->clock.context);
   if (cycle->cycle_sample_id_valid) {
     node_cycle_metrics_t encoded_metrics;
+    /* After the only sync, fail closed in RTC without a late diagnostic. */
     if (wake_metrics_encode(
             &cycle->metrics,
             elapsed_us(cycle->application_start_us, completed_us),

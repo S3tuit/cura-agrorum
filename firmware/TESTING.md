@@ -46,9 +46,9 @@ are tested without real waiting.
 - One parameterized test rejects incoming RTC state for a wrong marker,
   non-deep-sleep reset, nonconsecutive sample ID or invalid metric invariants;
   previous metrics become zero and both previous flags are clear.
-- Each soil or DS18B20 failure zeroes only its corresponding field and clears
-  only its validity bit. A BME280 failure zeroes all three enclosure fields and
-  clears their three protocol validity bits together.
+- Each soil and DS18B20 validity group maps its exact value and flag while
+  invalid groups stay zero. A BME280 failure zeroes all three enclosure fields
+  and clears their three protocol validity bits together.
 - Failure of all sensors still produces a structurally valid reading.
 - `DEEP_SLEEP_BOOT` is set exactly when reset reason is 8.
 - `run_ms` uses the application-start and body-finalization clock samples.
@@ -68,12 +68,15 @@ are tested without real waiting.
   not restart that interval.
 - Parameterized invalid ACKs cover bad length, bad tag, foreign node, wrong
   sample ID, unsupported control, uplink domain and domain/status mismatch.
+- An authenticated unknown ACK status is isolated from domain/status mismatch
+  and reports `CURAG_ECORE_EACK_STATUS`.
 - `ACCEPTED`, `RETRY_LATER`, `REJECTED_UNSUPPORTED` and
   `REJECTED_MALFORMED` are each exercised for current and backlog delivery.
 - Failure before `SetTx` can take effect neither increments attempts nor
   charges airtime; an uncertain result after the command crosses SPI does both.
-- Failure after `SetTx` starts but before `TX_DONE` increments attempts,
-  charges airtime, records a local error and does not retry.
+- Failure after `SetTx` starts but before `TX_DONE`, including radio deadline,
+  increments attempts, charges airtime, records a local error and does not
+  retry.
 - An RX local error after `TX_DONE` terminates delivery rather than being
   treated as silence.
 - An authenticated ACK whose `RX_DONE` timestamp is at or before `retry_at`
@@ -81,14 +84,21 @@ are tested without real waiting.
 
 ### Airtime and wall-clock budgets
 
+- The fixed-profile integer model returns 97,536 us for the 50-byte reading
+  frame, and core applies the independent 10% charge of 107,290 us.
 - Exactly one more reading-airtime charge fits.
 - One microsecond more than the available airtime does not fit.
-- TX finishing exactly at the wall-clock deadline and just after it exercise
-  opposite boundary outcomes.
+- Exactly one radio-reported minimum TX window fits the wall-clock deadline;
+  one microsecond less and the reported 100,000 us regression window do not.
+- A full cycle whose completed TX reaches the wall-clock deadline reports
+  `RADIO_CYCLE_DEADLINE`; a radio deadline after `SetTx` reports a charged
+  `LOCAL_RADIO_ERROR` instead.
 - Airtime can exhaust while wall-clock time remains, and wall-clock time can
   exhaust while airtime remains.
 - Current and backlog deliveries share both limits; neither budget resets per
   reading.
+- After accepted current and backlog traffic consumes the shared airtime, a
+  final silent backlog delivery ends as `AIRTIME_BUDGET_END` before retry.
 - A started TX remains charged when `TX_DONE` never arrives.
 - An attempt that cannot fit either limit is never passed to the radio.
 
@@ -142,8 +152,11 @@ are tested without real waiting.
   delivery time.
 - A completed cycle with zero TX attempts can still produce valid outgoing
   metrics.
-- Every metric is tested at its exact encoded maximum and one above it;
-  overflow emits a diagnostic and leaves the outgoing RTC marker invalid.
+- RTC helpers cover exact wire maxima and semantic-invalid combinations.
+  Full-cycle tests cover reachable metric boundaries; awake-time overflow known
+  before `sync_all` emits a diagnostic and invalidates RTC.
+- Awake-time overflow caused only by `sync_all` invalidates RTC without a
+  diagnostic append after the single final synchronization.
 - `previous_awake_ms` includes final logging and `sync_all`, but excludes RTC
   commit and the sleep call.
 - Outgoing metrics never alter an already constructed body or frame.
@@ -235,6 +248,12 @@ the same strict warnings, ASan and UBSan as the other native component tests.
   timeout makes the overall operation fail.
 - Zero, oversized and null TX inputs are rejected without touching hardware;
   1- and 255-byte payloads are transmitted without truncation.
+- The airtime model covers invalid, 1-, 50- and 255-byte inputs with exact
+  fixed-profile values, including watchdog quantization in each corresponding
+  minimum TX window.
+- A 50-byte call with only 100,000 us remaining completes packet setup but is
+  rejected before `SetTx`; it reports no started or charged attempt because
+  the five-millisecond watchdog margin would undercut modeled airtime.
 - Expired and boundary deadlines, an already-pending IRQ at the inclusive
   boundary, reused absolute RX deadlines, late packets and the maximum
   TX-watchdog conversion are covered without sleeping in real time.
@@ -647,7 +666,8 @@ Each independent case reboots the ESP32 so ordinary BSS restores the hidden
 radio singleton to `UNTOUCHED`. No test-only singleton setter, getter or reset
 operation is required by this plan.
 
-Timing assertions are asymmetric. For calculated airtime `T`:
+Timing assertions are asymmetric. For calculated airtime `T` from
+`sx1262_radio_airtime_us`:
 
 ```text
 T <= tx_done_at_us - set_tx_at_us <= ceil(T * 1.10)

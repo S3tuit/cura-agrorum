@@ -21,14 +21,14 @@ static bool delivery_events_bracket_retries_and_failures_are_best_effort(void) {
   core_test_setup(&rtc, &platform);
   fake_node_core.claimed_sample_id = 22U;
   const uint64_t first_set = UINT64_C(1001000);
-  const uint64_t first_done = first_set + NODE_CORE_READING_AIRTIME_US;
+  const uint64_t first_done = first_set + core_test_reading_airtime_us();
   const uint64_t retry_at =
       first_done + NODE_CORE_ACK_WAIT_US + NODE_CORE_RETRY_JITTER_MIN_US;
   fake_node_core_script_tx_done(first_set, first_done);
   fake_node_core_script_rx_deadline(retry_at);
   CORE_TEST_ASSERT(script_status(
       22U, CURA_LORA_V2_ACK_STATUS_ACCEPTED, retry_at + UINT64_C(1000),
-      retry_at + UINT64_C(1000) + NODE_CORE_READING_AIRTIME_US,
+      retry_at + UINT64_C(1000) + core_test_reading_airtime_us(),
       retry_at + UINT64_C(110000)));
   core_test_run(&rtc, &platform);
   CORE_TEST_ASSERT_EQ_SIZE(2U, fake_node_core.delivery_event_count);
@@ -83,20 +83,20 @@ static bool current_and_backlog_metrics_accumulate_in_correct_domains(void) {
   fake_node_core.claimed_sample_id = 5U;
 
   const uint64_t first_set = UINT64_C(1001000);
-  const uint64_t first_done = first_set + NODE_CORE_READING_AIRTIME_US;
+  const uint64_t first_done = first_set + core_test_reading_airtime_us();
   const uint64_t retry_at =
       first_done + NODE_CORE_ACK_WAIT_US + NODE_CORE_RETRY_JITTER_MIN_US;
   fake_node_core_script_tx_done(first_set, first_done);
   fake_node_core_script_rx_deadline(retry_at);
   const uint64_t current_second_set = retry_at + UINT64_C(1000);
   const uint64_t current_second_done =
-      current_second_set + NODE_CORE_READING_AIRTIME_US;
+      current_second_set + core_test_reading_airtime_us();
   const uint64_t current_ack = current_second_done + UINT64_C(2000);
   CORE_TEST_ASSERT(script_status(5U, CURA_LORA_V2_ACK_STATUS_ACCEPTED,
                                  current_second_set, current_second_done,
                                  current_ack));
   const uint64_t backlog_set = current_ack + UINT64_C(1000);
-  const uint64_t backlog_done = backlog_set + NODE_CORE_READING_AIRTIME_US;
+  const uint64_t backlog_done = backlog_set + core_test_reading_airtime_us();
   CORE_TEST_ASSERT(script_status(4U, CURA_LORA_V2_ACK_STATUS_ACCEPTED,
                                  backlog_set, backlog_done,
                                  backlog_done + UINT64_C(2000)));
@@ -201,6 +201,25 @@ static bool rtc_metric_boundaries_and_semantics_are_enforced(void) {
   return true;
 }
 
+static bool sync_induced_metric_overflow_has_no_late_diagnostic(void) {
+  node_rtc_record_t rtc;
+  node_platform_ports_t platform;
+  core_test_setup(&rtc, &platform);
+  fake_node_core.sensor_advance_us = UINT64_C(65535000);
+  fake_node_core.sync_advance_us = UINT64_C(1000);
+
+  core_test_run(&rtc, &platform);
+
+  CORE_TEST_ASSERT_EQ_U32(0U, rtc.commit_marker);
+  CORE_TEST_ASSERT_EQ_SIZE(0U, fake_node_core.diagnostic_event_count);
+  const size_t sync = fake_node_core_trace_find(FAKE_CORE_TRACE_SYNC, 0U);
+  CORE_TEST_ASSERT(sync != SIZE_MAX);
+  CORE_TEST_ASSERT(fake_node_core_trace_find(FAKE_CORE_TRACE_DIAGNOSTIC,
+                                             sync + 1U) == SIZE_MAX);
+  CORE_TEST_ASSERT(core_test_cleanup_is_complete());
+  return true;
+}
+
 static bool component_diagnostics_are_copied_opaquely(void) {
   node_rtc_record_t rtc;
   node_platform_ports_t platform;
@@ -278,6 +297,10 @@ bool node_core_test_finalization(const char *name) {
   }
   if (strcmp(name, "rtc_metric_boundaries_and_semantics_are_enforced") == 0) {
     return rtc_metric_boundaries_and_semantics_are_enforced();
+  }
+  if (strcmp(name, "sync_induced_metric_overflow_has_no_late_diagnostic") ==
+      0) {
+    return sync_induced_metric_overflow_has_no_late_diagnostic();
   }
   if (strcmp(name, "component_diagnostics_are_copied_opaquely") == 0) {
     return component_diagnostics_are_copied_opaquely();

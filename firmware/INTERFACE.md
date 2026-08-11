@@ -662,6 +662,8 @@ conditions in `ARCHITECTURE.md` and these semantic invariants:
 metrics, applies compiler and memory ordering, and writes the committed marker
 last. Internal counters and durations are wider than their wire fields. An
 unrepresentable completed-cycle metric leaves the outgoing marker invalid.
+If awake time becomes unrepresentable only during `sync_all`, the controller
+does not append an undurable diagnostic after that single final sync.
 Elapsed microseconds are converted to milliseconds by truncating the
 sub-millisecond remainder.
 
@@ -994,6 +996,46 @@ unsigned 64-bit monotonic-microsecond domain as the controller's
 RX window. Production `node_core` and radio clock adapters must use the same
 clock source.
 
+### Radio timing queries
+
+Interfaces:
+
+```text
+u64 sx1262_radio_airtime_us(size_t payload_length)
+u64 sx1262_radio_min_tx_window_us(size_t payload_length)
+```
+
+`sx1262_radio_airtime_us` returns modeled LoRa time-on-air for the fixed pilot
+profile. It uses integer arithmetic equivalent to the
+[Semtech LoRa Calculator](https://www.semtech.com/design-support/lora-calculator):
+
+```text
+symbol_time = 2^SF / bandwidth
+packet_symbols = preamble + 4.25 + payload_symbols
+airtime = ceil(packet_symbols * symbol_time)
+```
+
+`payload_symbols` incorporates coding rate, low-data-rate optimization,
+explicit/implicit header mode, payload length and payload CRC. Frequency does
+not enter the calculation because it does not affect symbol duration. The
+current SF7, BW125, CR4/5, preamble-8, explicit-header, CRC-enabled profile
+returns 25,856 us for 1 byte, 97,536 us for 50 bytes and 399,616 us for 255
+bytes.
+
+`sx1262_radio_min_tx_window_us` returns a conservative wall-clock admission
+estimate for the controller. It adds TX ramp, the five-millisecond watchdog
+margin, 64 kHz watchdog quantization and a five-millisecond routine packet-setup
+allowance. Lazy initialization and unusually long BUSY waits are not predicted;
+the mandatory post-setup radio check remains the correctness boundary. The
+corresponding 1-, 50- and 255-byte windows are 35,907 us, 107,579 us and 409,657
+us. Both functions return `UINT64_MAX` for a zero or oversized payload, causing
+budget callers to fail closed.
+
+These queries report radio mechanism. `node_core` owns policy: it adds a
+separate 10% allowance to modeled airtime for the eight-second charged-TX
+budget and compares the minimum window with its 30-second deadline. Setup and
+watchdog margins are never charged as RF airtime.
+
 ### `sx1262_radio_transmit_uplink`
 
 Interface:
@@ -1018,7 +1060,9 @@ far the physical attempt progressed.
 255. `out_result` is non-null caller memory. `out_diag` is optional. The
 deadline is the latest monotonic time at which the operation may continue
 waiting for completion; the component also applies its private SX1262 command
-timeout no later than that bound.
+timeout no later than that bound. After packet setup and immediately before
+`SetTx`, the component revalidates that the remaining time can produce a
+watchdog window long enough for the modeled packet airtime and TX ramp.
 
 **Outputs**
 
@@ -1049,7 +1093,8 @@ It performs no encryption, retry, ACK validation or airtime-policy accounting.
 
 **Failure classes**
 
-- Invalid input or expired deadline before `SetTx`: no transmission starts.
+- Invalid input, an expired deadline or an insufficient watchdog-capable
+  window before `SetTx`: no transmission starts.
 - Cached/initial lazy-initialization failure: no transmission starts.
 - GPIO, pre-transfer BUSY, SPI or explicit command-status failure before
   `SetTx` can take effect: no transmission starts.
@@ -1304,7 +1349,9 @@ operations is part of the public interface.
 - BUSY waits are bounded to 10 ms, with 20 ms allowed after hardware reset.
   The SX1262 TX watchdog is programmed to expire 5 ms before the caller's
   absolute deadline when enough time remains. The software deadline remains
-  authoritative.
+  authoritative. A second post-setup check rejects the operation before
+  `SetTx` if watchdog margin or 64 kHz quantization would make the watchdog
+  shorter than the modeled transmission.
 - The +14 dBm pilot output uses the SX1262 optimal PA row from datasheet table
   13-21: `paDutyCycle=0x02`, `hpMax=0x02`, `deviceSel=0x00`,
   `paLut=0x01`, followed by `SetTxParams(+22 dBm, 40 us)`. In this PA mode the

@@ -42,6 +42,9 @@ void core_test_setup(node_rtc_record_t *rtc,
 void core_test_run(node_rtc_record_t *rtc,
                    const node_platform_ports_t *platform);
 cura_lora_v2_reading_t core_test_reading(uint16_t marker);
+uint64_t core_test_reading_airtime_us(void);
+uint64_t core_test_reading_airtime_charge_us(void);
+uint64_t core_test_reading_min_tx_window_us(void);
 bool core_test_script_ack(uint32_t sample_id, cura_lora_v2_domain_t domain,
                           cura_lora_v2_ack_status_t status,
                           uint64_t set_tx_at_us, uint64_t tx_done_at_us,

@@ -21,6 +21,7 @@ add_executable(
   ${FIRMWARE_ROOT}/components/node_core/node_core.c
   ${FIRMWARE_ROOT}/components/protocol_v2_lora/protocol_v2_lora_crypto.c
   ${FIRMWARE_ROOT}/components/protocol_v2_lora/protocol_v2_lora_schema_generated.c
+  ${FIRMWARE_ROOT}/components/sx1262_radio/sx1262_radio_timing.c
 )
 
 target_include_directories(
@@ -32,6 +33,7 @@ target_include_directories(
     ${FIRMWARE_ROOT}/components/node_sensors/include
     ${FIRMWARE_ROOT}/components/protocol_v2_lora/include
     ${FIRMWARE_ROOT}/components/sx1262_radio/include
+    ${FIRMWARE_ROOT}/components/sx1262_radio/private_include
 )
 target_compile_features(test_node_core PRIVATE c_std_11)
 target_compile_definitions(test_node_core PRIVATE CURA_LORA_V2_CRYPTO_USE_OPENSSL)
@@ -72,9 +74,12 @@ set(
   invalid_composition_returns_without_side_effects
   retries_reuse_identical_frame
   invalid_acks_share_one_receive_interval
+  unknown_ack_status_reports_status_diagnostic
   radio_progress_and_rx_errors_are_accounted
+  started_tx_deadline_is_charged_local_error
   ack_retry_timestamp_boundary_is_enforced
   budget_boundaries_are_inclusive_and_independent
+  wall_clock_exhaustion_reports_cycle_deadline
   zero_epoch_first_attempt_timestamp_is_retained
   current_ack_outcomes_apply_policy
   current_removal_failure_prevents_backlog
@@ -90,6 +95,7 @@ set(
   unaccepted_current_has_zero_delivery_metric
   awake_time_includes_cleanup_and_sync_and_sleep_is_terminal
   rtc_metric_boundaries_and_semantics_are_enforced
+  sync_induced_metric_overflow_has_no_late_diagnostic
   component_diagnostics_are_copied_opaquely
   cleanup_failures_do_not_prevent_sync_or_sleep
 )
@@ -325,6 +331,7 @@ add_executable(
   ${FIRMWARE_ROOT}/components/node_common/node_common.c
   ${FIRMWARE_ROOT}/components/sx1262_radio/sx1262_radio.c
   ${FIRMWARE_ROOT}/components/sx1262_radio/sx1262_radio_backend_common.c
+  ${FIRMWARE_ROOT}/components/sx1262_radio/sx1262_radio_timing.c
 )
 
 target_include_directories(
@@ -365,6 +372,7 @@ set(
   invalid_arguments_and_initial_deadline
   initialization_failure_is_cached
   payload_boundaries_and_watchdog
+  insufficient_watchdog_window_is_rejected_before_set_tx
   deadline_reached_before_set_tx
   failure_before_set_tx_reports_no_attempt
   uncertain_set_tx_preserves_attempt

@@ -8,7 +8,7 @@
 static bool script_current_ack(uint32_t sample_id,
                                cura_lora_v2_ack_status_t status) {
   const uint64_t set_tx = fake_node_core.now_us + UINT64_C(1000);
-  const uint64_t tx_done = set_tx + NODE_CORE_READING_AIRTIME_US;
+  const uint64_t tx_done = set_tx + core_test_reading_airtime_us();
   const uint64_t ack_at = tx_done + UINT64_C(20000);
   cura_lora_v2_domain_t domain = CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK;
   if (status == CURA_LORA_V2_ACK_STATUS_RETRY_LATER) {
@@ -162,12 +162,26 @@ static bool sensor_validity_maps_independently(void) {
     CORE_TEST_ASSERT(script_current_ack(0U, CURA_LORA_V2_ACK_STATUS_ACCEPTED));
     core_test_run(&rtc, &platform);
     const cura_lora_v2_reading_t *reading = &fake_node_core.appended[0].reading;
+    const bool soil_0 = (validities[index] & NODE_SENSOR_SOIL_0_VALID) != 0U;
+    const bool soil_1 = (validities[index] & NODE_SENSOR_SOIL_1_VALID) != 0U;
+    const bool soil_temp_0 =
+        (validities[index] & NODE_SENSOR_SOIL_TEMP_0_VALID) != 0U;
+    const bool soil_temp_1 =
+        (validities[index] & NODE_SENSOR_SOIL_TEMP_1_VALID) != 0U;
     CORE_TEST_ASSERT(
-        ((reading->flags & CURA_LORA_V2_FLAG_SOIL_0_VALID) != 0U) ==
-        ((validities[index] & NODE_SENSOR_SOIL_0_VALID) != 0U));
+        ((reading->flags & CURA_LORA_V2_FLAG_SOIL_0_VALID) != 0U) == soil_0);
     CORE_TEST_ASSERT(
-        ((reading->flags & CURA_LORA_V2_FLAG_SOIL_1_VALID) != 0U) ==
-        ((validities[index] & NODE_SENSOR_SOIL_1_VALID) != 0U));
+        ((reading->flags & CURA_LORA_V2_FLAG_SOIL_1_VALID) != 0U) == soil_1);
+    CORE_TEST_ASSERT(((reading->flags & CURA_LORA_V2_FLAG_SOIL_TEMP_0_VALID) !=
+                      0U) == soil_temp_0);
+    CORE_TEST_ASSERT(((reading->flags & CURA_LORA_V2_FLAG_SOIL_TEMP_1_VALID) !=
+                      0U) == soil_temp_1);
+    CORE_TEST_ASSERT_EQ_U32(soil_0 ? 101U : 0U, reading->soil_0_mv);
+    CORE_TEST_ASSERT_EQ_U32(soil_1 ? 202U : 0U, reading->soil_1_mv);
+    CORE_TEST_ASSERT(reading->soil_temp_0_centi_c ==
+                     (soil_temp_0 ? INT16_C(303) : INT16_C(0)));
+    CORE_TEST_ASSERT(reading->soil_temp_1_centi_c ==
+                     (soil_temp_1 ? INT16_C(404) : INT16_C(0)));
     const bool enclosure =
         (validities[index] & NODE_SENSOR_ENCLOSURE_ENV_VALID) != 0U;
     CORE_TEST_ASSERT(
@@ -179,10 +193,12 @@ static bool sensor_validity_maps_independently(void) {
     CORE_TEST_ASSERT(
         ((reading->flags & CURA_LORA_V2_FLAG_ENCLOSURE_HUMIDITY_VALID) != 0U) ==
         enclosure);
-    if (!enclosure) {
-      CORE_TEST_ASSERT_EQ_U32(0U, reading->enclosure_pressure_pa);
-      CORE_TEST_ASSERT_EQ_U32(0U, reading->enclosure_humidity_centi_pct);
-    }
+    CORE_TEST_ASSERT(reading->enclosure_centi_c ==
+                     (enclosure ? INT16_C(505) : INT16_C(0)));
+    CORE_TEST_ASSERT_EQ_U32(enclosure ? 100600U : 0U,
+                            reading->enclosure_pressure_pa);
+    CORE_TEST_ASSERT_EQ_U32(enclosure ? 707U : 0U,
+                            reading->enclosure_humidity_centi_pct);
     CORE_TEST_ASSERT_EQ_U32(CURA_LORA_V2_CODEC_OK,
                             cura_lora_v2_validate_reading(reading));
   }
@@ -208,8 +224,8 @@ static bool run_time_and_sampling_deadline_boundaries(void) {
       core_test_has_diagnostic(CURAG_EDOM_CORE, CURAG_ECORE_ETIME_RANGE));
 
   core_test_setup(&rtc, &platform);
-  fake_node_core.sensor_advance_us =
-      NODE_CORE_RADIO_CYCLE_LIMIT_US - NODE_CORE_READING_AIRTIME_US + 1U;
+  fake_node_core.sensor_advance_us = NODE_CORE_RADIO_CYCLE_LIMIT_US -
+                                     core_test_reading_min_tx_window_us() + 1U;
   core_test_run(&rtc, &platform);
   CORE_TEST_ASSERT_EQ_SIZE(0U, fake_node_core.transmission_count);
   CORE_TEST_ASSERT_EQ_SIZE(2U, fake_node_core.delivery_event_count);

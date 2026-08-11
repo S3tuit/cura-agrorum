@@ -36,6 +36,20 @@ cura_lora_v2_reading_t core_test_reading(uint16_t marker) {
   };
 }
 
+uint64_t core_test_reading_airtime_us(void) {
+  return sx1262_radio_airtime_us(CURA_LORA_V2_READING_FRAME_SIZE);
+}
+
+uint64_t core_test_reading_airtime_charge_us(void) {
+  const uint64_t airtime_us = core_test_reading_airtime_us();
+  return airtime_us + airtime_us / UINT64_C(10) +
+         (airtime_us % UINT64_C(10) != 0U ? 1U : 0U);
+}
+
+uint64_t core_test_reading_min_tx_window_us(void) {
+  return sx1262_radio_min_tx_window_us(CURA_LORA_V2_READING_FRAME_SIZE);
+}
+
 bool core_test_script_ack(uint32_t sample_id, cura_lora_v2_domain_t domain,
                           cura_lora_v2_ack_status_t status,
                           uint64_t set_tx_at_us, uint64_t tx_done_at_us,

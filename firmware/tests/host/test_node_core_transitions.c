@@ -22,7 +22,7 @@ static bool script_ack_after(uint32_t sample_id,
                              cura_lora_v2_ack_status_t status,
                              uint64_t *time_us) {
   const uint64_t set_tx = *time_us + UINT64_C(1000);
-  const uint64_t tx_done = set_tx + NODE_CORE_READING_AIRTIME_US;
+  const uint64_t tx_done = set_tx + core_test_reading_airtime_us();
   const uint64_t ack_at = tx_done + UINT64_C(1000);
   *time_us = ack_at;
   return core_test_script_ack(sample_id, ack_domain(status), status, set_tx,
@@ -245,17 +245,24 @@ static bool airtime_budget_is_shared_across_backlog(void) {
   node_rtc_record_t rtc;
   node_platform_ports_t platform;
   core_test_setup(&rtc, &platform);
-  for (uint32_t id = 0U; id < 74U; id++) {
+  for (uint32_t id = 0U; id < 73U; id++) {
     const cura_lora_v2_reading_t reading = core_test_reading((uint16_t)id);
     fake_node_core_add_pending(id, &reading);
   }
-  fake_node_core.claimed_sample_id = 74U;
+  fake_node_core.claimed_sample_id = 73U;
   uint64_t time_us = fake_node_core.now_us;
-  for (uint32_t count = 0U; count < 74U; count++) {
-    const uint32_t id = count == 0U ? 74U : 74U - count;
+  for (uint32_t count = 0U; count < 73U; count++) {
+    const uint32_t id = count == 0U ? 73U : 73U - count;
     CORE_TEST_ASSERT(
         script_ack_after(id, CURA_LORA_V2_ACK_STATUS_ACCEPTED, &time_us));
   }
+  const uint64_t target_set_us = time_us + UINT64_C(1000);
+  const uint64_t target_done_us =
+      target_set_us + core_test_reading_airtime_us();
+  const uint64_t retry_at_us =
+      target_done_us + NODE_CORE_ACK_WAIT_US + NODE_CORE_RETRY_JITTER_MIN_US;
+  fake_node_core_script_tx_done(target_set_us, target_done_us);
+  fake_node_core_script_rx_deadline(retry_at_us);
 
   core_test_run(&rtc, &platform);
 
@@ -263,7 +270,15 @@ static bool airtime_budget_is_shared_across_backlog(void) {
   CORE_TEST_ASSERT_EQ_SIZE(1U, fake_node_core.pending_count);
   CORE_TEST_ASSERT_EQ_U32(0U, fake_node_core.pending[0].sample_id);
   CORE_TEST_ASSERT_EQ_U32(74U, rtc.metrics.cycle_tx_attempts);
-  CORE_TEST_ASSERT_EQ_U32(74U, rtc.metrics.accepted_readings);
+  CORE_TEST_ASSERT_EQ_U32(73U, rtc.metrics.accepted_readings);
+  CORE_TEST_ASSERT_EQ_U32(
+      NODE_DELIVERY_RESULT_AIRTIME_BUDGET_END,
+      fake_node_core.delivery_events[fake_node_core.delivery_event_count - 1U]
+          .detail.finished.final_result);
+  CORE_TEST_ASSERT_EQ_U32(
+      1U,
+      fake_node_core.delivery_events[fake_node_core.delivery_event_count - 1U]
+          .detail.finished.attempt_count);
   return true;
 }
 
@@ -279,7 +294,7 @@ static bool backlog_silence_retries_the_same_frame(void) {
       script_ack_after(31U, CURA_LORA_V2_ACK_STATUS_ACCEPTED, &time_us));
 
   const uint64_t first_set = time_us + UINT64_C(1000);
-  const uint64_t first_done = first_set + NODE_CORE_READING_AIRTIME_US;
+  const uint64_t first_done = first_set + core_test_reading_airtime_us();
   const uint64_t retry_at =
       first_done + NODE_CORE_ACK_WAIT_US + NODE_CORE_RETRY_JITTER_MIN_US;
   fake_node_core_script_tx_done(first_set, first_done);

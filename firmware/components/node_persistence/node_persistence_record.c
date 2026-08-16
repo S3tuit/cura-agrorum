@@ -129,7 +129,7 @@ static bool validate_diagnostic_context(uint16_t error_domain,
                                         uint16_t operation,
                                         uint8_t context_length,
                                         uint8_t context_schema) {
-  if (operation > CURAG_OP_SLEEP) {
+  if (operation > CURAG_OP_CLEANUP) {
     return false;
   }
   if ((context_schema == CURAG_CONTEXT_SCHEMA_NONE) != (context_length == 0U)) {

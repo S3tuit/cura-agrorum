@@ -19,6 +19,9 @@ extern "C" {
 #define SX1262_RADIO_BANDWIDTH_HZ UINT32_C(125000)
 #define SX1262_RADIO_CODING_RATE_DENOMINATOR UINT8_C(5)
 #define SX1262_RADIO_PREAMBLE_SYMBOLS UINT16_C(8)
+#define SX1262_RADIO_LOW_DATA_RATE_OPTIMIZE false
+#define SX1262_RADIO_EXPLICIT_HEADER true
+#define SX1262_RADIO_PAYLOAD_CRC true
 #define SX1262_RADIO_SYNC_WORD UINT8_C(0x12)
 #define SX1262_RADIO_TX_RAMP_US UINT16_C(40)
 
@@ -96,6 +99,21 @@ typedef struct {
   uint8_t payload_length;
   uint8_t payload[SX1262_RADIO_MAX_PAYLOAD_SIZE];
 } sx1262_radio_rx_result_t;
+
+/*
+ * Returns the modeled LoRa time-on-air for the fixed pilot profile.
+ * Frequency does not enter the calculation because it does not affect LoRa
+ * symbol duration. Invalid payload lengths return UINT64_MAX.
+ */
+uint64_t sx1262_radio_airtime_us(size_t payload_length);
+
+/*
+ * Returns the conservative controller admission window for one uplink.
+ * This includes modeled airtime, TX ramp, watchdog margin and quantization,
+ * plus a small routine packet-setup allowance before SetTx. The radio still
+ * rechecks after setup. Invalid payload lengths return UINT64_MAX.
+ */
+uint64_t sx1262_radio_min_tx_window_us(size_t payload_length);
 
 /*
  * Transmits one normal-IQ uplink before deadline_monotonic_us.

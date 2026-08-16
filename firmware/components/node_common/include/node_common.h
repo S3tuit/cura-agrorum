@@ -25,6 +25,7 @@ typedef uint16_t curag_error_code_t;
 #define CURAG_EDOM_PERSISTENCE UINT16_C(1)
 #define CURAG_EDOM_RADIO UINT16_C(2)
 #define CURAG_EDOM_SENSORS UINT16_C(3)
+#define CURAG_EDOM_CORE UINT16_C(4)
 
 #define CURAG_ECODE_NONE UINT16_C(0)
 

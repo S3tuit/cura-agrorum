@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "sx1262_radio.c"
+        "sx1262_radio_timing.c"
         "sx1262_radio_backend_common.c"
         "sx1262_radio_backend_esp.c"
         "vendor/semtech_sx126x_driver/sx126x.c"

@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "sx1262_radio_backend.h"
+#include "sx1262_radio_timing.h"
 
 #define SX1262_RADIO_TX_WATCHDOG_MARGIN_US UINT64_C(5000)
 #define SX1262_RADIO_RTC_STEPS_PER_SECOND UINT64_C(64000)
@@ -39,9 +40,9 @@ static const sx1262_radio_profile_t k_pilot_profile = {
     .pa_device_sel = UINT8_C(0x00),
     .pa_lut = UINT8_C(0x01),
     .tcxo_voltage = UINT8_C(0x01), /* SX126x TCXO_CTRL_1_7V. */
-    .low_data_rate_optimize = false,
-    .explicit_header = true,
-    .payload_crc = true,
+    .low_data_rate_optimize = SX1262_RADIO_LOW_DATA_RATE_OPTIMIZE,
+    .explicit_header = SX1262_RADIO_EXPLICIT_HEADER,
+    .payload_crc = SX1262_RADIO_PAYLOAD_CRC,
     .boosted_rx = true,
     .dcdc_regulator = true,
     .dio2_rf_switch = true,
@@ -257,7 +258,10 @@ err_curag_t sx1262_radio_transmit_uplink(const uint8_t *payload,
   }
 
   const uint64_t set_tx_at_us = sx1262_radio_backend_monotonic_us();
-  if (set_tx_at_us >= deadline_monotonic_us) {
+  if (set_tx_at_us >= deadline_monotonic_us ||
+      sx1262_radio_min_set_tx_window_us(payload_length) >
+          deadline_monotonic_us - set_tx_at_us) {
+    /* Setup consumes time; recheck so the watchdog cannot undercut this TX. */
     return semantic_failure(CURAG_ERADIO_EDEADLINE, CURAG_OP_TRANSMIT,
                             CURAG_RADIO_STAGE_VALIDATE_INPUT, out_diag);
   }

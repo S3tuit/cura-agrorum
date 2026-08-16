@@ -46,12 +46,14 @@ reading. It:
 - appends one durable `DELIVERY_STARTED` event before its first call to
   `transmit_uplink`;
 - records the time immediately before the first `SetTx`;
-- charges estimated airtime and increments attempt metrics when `SetTx` is
-  confirmed or its effect becomes uncertain after crossing SPI;
+- charges the radio's modeled airtime plus a controller-owned 10% allowance
+  and increments attempt metrics when `SetTx` is confirmed or its effect
+  becomes uncertain after crossing SPI;
 - after `TX_DONE`, keeps single-shot RX armed and calculates
   `retry_at = TX_DONE + 500 ms + uniform_random(100 ms, 500 ms)`;
 - logs and ignores invalid ACKs without closing the RX window;
-- retransmits at `retry_at` while another complete attempt fits both the
+- retransmits at `retry_at` while another complete attempt's 10%-padded
+  airtime charge and radio-reported minimum TX window fit the independent
   eight-second charged-TX budget and 30-second radio-cycle deadline; and
 - returns a terminal ACK, exhausted-limit or local-error result.
 
@@ -73,6 +75,52 @@ When a started or uncertain transmission does not produce `TX_DONE`, its
 estimated airtime remains charged and the delivery ends as a local radio error.
 Attempts that definitively fail before `SetTx` can take effect are not counted
 or charged.
+
+The two limits intentionally use different radio timing values. The charged-TX
+limit counts only modeled RF airtime plus 10%; watchdog, command and setup time
+are not RF airtime. Wall-clock admission uses
+`sx1262_radio_min_tx_window_us(50)`, which includes modeled airtime, TX ramp,
+watchdog margin and quantization, and a conservative pre-`SetTx` setup
+allowance. The radio checks the remaining watchdog-capable window again after
+setup and immediately before `SetTx`, so an unexpectedly slow preparation can
+fail without starting or charging a doomed attempt.
+
+#### Continuous-hour duty-cycle accounting
+
+For the 868.1 MHz pilot profile, when relying on the EU 1% duty-cycle
+alternative, transmitter on-time is limited to 36 seconds in every continuous
+one-hour observation period. This is a rolling window, not a wall-clock-hour
+allowance: for example, 30 seconds transmitted at 03:58 leaves only six seconds
+available at 04:00. The earlier airtime becomes available again only as it ages
+out of the continuous one-hour window.
+
+The implemented eight-second charged-TX budget is a per-wake retry and energy
+guard, not an hour-spanning regulatory ledger. It starts from zero in each
+`node_cycle_run` invocation and is absent from retained RTC metrics. Under the
+normal lifecycle, which enters 15 minutes of deep sleep only after completing a
+wake, at most four such budgets occur in a continuous hour, limiting
+conservatively charged airtime to at most 32 seconds. A restart, brownout or
+other reset can create another fresh per-wake budget without first completing
+that sleep. The current pilot therefore depends on uninterrupted normal cadence
+for its intended hourly margin and does not independently enforce the 1% limit
+across resets.
+
+Before production compliance is claimed, add a durable per-band rolling ledger
+with these fail-conservative properties:
+
+- retain charged transmissions until they age out of the continuous one-hour
+  window rather than resetting at a clock-hour boundary;
+- use an elapsed-time basis that survives deep sleep, and do not grant elapsed
+  time after a reset unless it can be established conservatively;
+- durably reserve the padded airtime before `SetTx`, retain that reservation
+  when command effect is uncertain or reset interrupts the result, and reclaim
+  it only after a definite pre-`SetTx` failure; and
+- treat unavailable or invalid regulatory state as exhausted until sufficient
+  verified time has elapsed. RTC retention may cache the ledger, but durable
+  storage must remain authoritative across brownouts and cold restarts.
+
+The eight-second per-wake budget remains as an independent operational limit
+after this ledger is introduced.
 
 The delivery result and its `DELIVERY_FINISHED.final_result` encoding are:
 
@@ -210,6 +258,7 @@ The assigned component domains are:
 | `1` | `CURAG_EDOM_PERSISTENCE` |
 | `2` | `CURAG_EDOM_RADIO` |
 | `3` | `CURAG_EDOM_SENSORS` |
+| `4` | `CURAG_EDOM_CORE` |
 
 Firmware C identifiers use the `CURAG_` prefix. Unprefixed identifiers that
 begin with `E` followed by an uppercase letter are reserved by the C standard
@@ -239,6 +288,7 @@ The shared operation values are deliberately coarse and stable:
 | `16` | `TRANSMIT` |
 | `17` | `RECEIVE` |
 | `18` | `SLEEP` |
+| `19` | `CLEANUP` |
 
 `NONE` is used when no operation is meaningful, so operation does not need a
 validity flag. New component methods normally reuse one of these actions; an
@@ -294,6 +344,8 @@ but never prevents the ESP32 from entering deep sleep.
 - `RETRY_LATER` stops all transmissions for the wake.
 - Current delivery always precedes backlog drainage.
 - The charged-TX budget and radio-cycle deadline are independent limits.
+- Core admission uses radio timing queries rather than duplicating PHY timing
+  constants.
 - Final persistence may exceed the radio deadline but completes before sleep.
 - No protocol key is written to diagnostics.
 - A delivery event failure never changes the delivery result or radio policy.
@@ -353,10 +405,16 @@ and a new RTC record is written. Its marker is set to
 `NODE_RTC_COMMITTED_V1` last, after enforcing the required compiler and memory
 store ordering. No RTC CRC is used during the pilot.
 
+Known limitation: the native-layout record is protected only by its marker and
+semantic checks. A retained-memory bit error that preserves those checks can
+therefore be reported as valid previous-cycle metrics; a future version should
+CRC a deterministic field encoding rather than raw struct bytes and padding.
+
 Metric accumulators use wider internal types. They are serialized to the
 protocol's `u8` and `u16` fields only if all values are representable. Overflow
-is logged and produces an invalid outgoing RTC metrics record instead of
-wrapping or clamping.
+known before final synchronization is logged best-effort. Overflow caused only
+while `sync_all` advances awake time invalidates outgoing RTC without a late
+persistent diagnostic; persistence is not reopened after the single sync.
 
 ## Components and responsibilities
 
@@ -852,6 +910,14 @@ radio metadata, or a normal deadline outcome or local error. It never exposes
 the LoRa preamble, PHY header or modem-generated CRC, and it never parses the
 Cura frame.
 
+The radio exposes fixed-profile timing queries for modeled LoRa time-on-air and
+a conservative controller-admission TX window. Time-on-air is calculated with
+quarter-symbol arithmetic from SF, bandwidth, coding rate, low-data-rate
+optimization, preamble length, header mode, payload length and CRC. Carrier
+frequency remains a profile setting but does not change symbol duration. For
+the 50-byte pilot frame the model returns 97,536 us; `node_core` independently
+charges 107,290 us after its 10% allowance.
+
 Within an active wake the radio uses `STDBY_RC` as the intermediate state for
 configuration and transitions between TX and RX. It is not put to sleep while
 delivery or retries remain possible. Final `sleep` behaves as follows:
@@ -882,6 +948,9 @@ assembled.
 
 BUSY waits are bounded to 10 ms, reset startup to 20 ms and the radio TX
 watchdog to five milliseconds before the caller deadline when representable.
+After packet setup, transmission is rejected before `SetTx` unless the
+programmed watchdog can contain the modeled airtime and TX ramp after its
+five-millisecond margin and 64 kHz quantization.
 After each non-sleep Semtech command, the backend reads chip status so a driver
 or HAL success cannot hide command timeout, processing or execution failure.
 The +14 dBm profile uses the SX1262 datasheet's lower-current PA configuration
@@ -943,9 +1012,14 @@ RTC memory is direct retained data rather than an injected interface:
 RTC_DATA_ATTR static node_rtc_record_t rtc_record;
 
 void app_main(void) {
-  node_cycle_run(&platform, &rtc_record);
+  node_cycle_run(&platform, &identity, &rtc_record);
 }
 ```
+
+The composition root constructs `identity` from the generated private node
+identity header. Passing it into the reusable controller keeps that secret
+header out of the `node_core` component and lets host tests use a fixed test
+identity.
 
 The pilot record contains:
 

@@ -85,6 +85,43 @@ allowance. The radio checks the remaining watchdog-capable window again after
 setup and immediately before `SetTx`, so an unexpectedly slow preparation can
 fail without starting or charging a doomed attempt.
 
+#### Continuous-hour duty-cycle accounting
+
+For the 868.1 MHz pilot profile, when relying on the EU 1% duty-cycle
+alternative, transmitter on-time is limited to 36 seconds in every continuous
+one-hour observation period. This is a rolling window, not a wall-clock-hour
+allowance: for example, 30 seconds transmitted at 03:58 leaves only six seconds
+available at 04:00. The earlier airtime becomes available again only as it ages
+out of the continuous one-hour window.
+
+The implemented eight-second charged-TX budget is a per-wake retry and energy
+guard, not an hour-spanning regulatory ledger. It starts from zero in each
+`node_cycle_run` invocation and is absent from retained RTC metrics. Under the
+normal lifecycle, which enters 15 minutes of deep sleep only after completing a
+wake, at most four such budgets occur in a continuous hour, limiting
+conservatively charged airtime to at most 32 seconds. A restart, brownout or
+other reset can create another fresh per-wake budget without first completing
+that sleep. The current pilot therefore depends on uninterrupted normal cadence
+for its intended hourly margin and does not independently enforce the 1% limit
+across resets.
+
+Before production compliance is claimed, add a durable per-band rolling ledger
+with these fail-conservative properties:
+
+- retain charged transmissions until they age out of the continuous one-hour
+  window rather than resetting at a clock-hour boundary;
+- use an elapsed-time basis that survives deep sleep, and do not grant elapsed
+  time after a reset unless it can be established conservatively;
+- durably reserve the padded airtime before `SetTx`, retain that reservation
+  when command effect is uncertain or reset interrupts the result, and reclaim
+  it only after a definite pre-`SetTx` failure; and
+- treat unavailable or invalid regulatory state as exhausted until sufficient
+  verified time has elapsed. RTC retention may cache the ledger, but durable
+  storage must remain authoritative across brownouts and cold restarts.
+
+The eight-second per-wake budget remains as an independent operational limit
+after this ledger is introduced.
+
 The delivery result and its `DELIVERY_FINISHED.final_result` encoding are:
 
 | Value | Result | Meaning |

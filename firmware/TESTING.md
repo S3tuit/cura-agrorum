@@ -61,13 +61,15 @@ are tested without real waiting.
 
 ### ACKs and retries
 
-- Silence retransmits the identical 50-byte frame.
+- Silence retransmits the identical 54-byte authenticated frame. The test uses
+  different `message_id` and `sample_id` values and verifies that only the
+  former occupies clear-header bytes 10-13.
 - Every `TX_DONE` consumes the next scripted random value and produces the
   expected `retry_at`.
 - Multiple invalid ACKs followed by a valid ACK stay in one RX interval and do
   not restart that interval.
 - Parameterized invalid ACKs cover bad length, bad tag, foreign node, wrong
-  sample ID, unsupported control, uplink domain and domain/status mismatch.
+  message ID, unsupported control, uplink domain and domain/status mismatch.
 - An authenticated unknown ACK status is isolated from domain/status mismatch
   and reports `CURAG_ECORE_EACK_STATUS`.
 - `ACCEPTED`, `RETRY_LATER`, `REJECTED_UNSUPPORTED` and
@@ -84,8 +86,9 @@ are tested without real waiting.
 
 ### Airtime and wall-clock budgets
 
-- The fixed-profile integer model returns 97,536 us for the 50-byte reading
-  frame, and core applies the independent 10% charge of 107,290 us.
+- The fixed-profile integer model returns 102,656 us for the 54-byte reading
+  frame, and core applies the independent 10% charge of 112,922 us. The radio
+  reports a 112,704 us minimum TX window.
 - Exactly one more reading-airtime charge fits.
 - One microsecond more than the available airtime does not fit.
 - Exactly one radio-reported minimum TX window fits the wall-clock deadline;
@@ -113,8 +116,12 @@ are tested without real waiting.
   directly for RAM-only current data when backlog storage remains available.
 - `node_core` consumes backlog entries in persistence-provided order; actual
   newest-first reconstruction is a persistence responsibility.
-- A backlog body remains unchanged; only its domain, header and resulting
-  authenticated frame change.
+- A current reading converted to backlog retains its `sample_id` and exact
+  32-byte body but receives a newly committed `message_id` and backlog-domain
+  frame before its first backlog TX.
+- Current retries reuse one RAM-resident frame. Backlog retries in the same or
+  later wakes reuse the exact durably bound frame; a binding failure permits no
+  first backlog transmission.
 - Accepted-backlog removal failure stops drainage.
 - Permanent backlog rejection quarantines and continues.
 - A lost quarantine copy with successful pending removal logs and continues.
@@ -130,8 +137,9 @@ are tested without real waiting.
   first `transmit_uplink` call and one durable `DELIVERY_FINISHED` after its
   terminal result.
 - One start/finish pair brackets the whole operation, not each retry.
-- The pair uses `cycle_sample_id`, packet `sample_id` and domain, allowing the
-  same backlog packet to be distinguished across wakes.
+- The pair uses `cycle_sample_id`, reading `sample_id`, transport `message_id`
+  and domain, allowing one logical backlog message to be recognized across
+  wakes independently from the reading it carries.
 - First-attempt acceptance produces a matched start and finish.
 - Silence followed by acceptance produces one pair whose finish contains all
   attempts and offsets.
@@ -168,9 +176,12 @@ are tested without real waiting.
 
 Tests that do not depend on the pending/log record encoding cover:
 
-- Fresh storage claims sample ID 0; consecutive claims commit and never reuse
-  IDs.
-- `UINT32_MAX` exhaustion and NVS commit failure return no claimed ID.
+- Fresh storage independently claims sample ID 0 and message ID 0;
+  consecutive claims commit before returning and never reuse IDs.
+- Sample and message counters advance independently. Their `UINT32_MAX`
+  exhaustion and NVS commit failures return no claimed ID.
+- An ambiguous message-counter commit may skip an ID, but the next successful
+  claim never reuses the possibly committed value.
 - NVS and LittleFS initialize independently and at most once per wake.
 - Initialization failure is cached only for the affected backend.
 - Failed NVS initialization does not prevent a LittleFS diagnostic attempt.
@@ -198,7 +209,8 @@ After choosing the record encoding, tests also cover:
   is therefore not buried in the middle of the log.
 - An unprovable boundary preserves the file and repeatedly reports corruption
   rather than guessing.
-- Newest-first backlog reconstruction.
+- Newest-first backlog reconstruction, including exact 54-byte binding
+  round-trip and compaction that preserves a reading/binding pair as one item.
 - `remove_newest_reading` removes only a supported pending tail with the
   expected sample ID; empty, different and recovered tails are not mistaken for
   that reading.
@@ -248,12 +260,13 @@ the same strict warnings, ASan and UBSan as the other native component tests.
   timeout makes the overall operation fail.
 - Zero, oversized and null TX inputs are rejected without touching hardware;
   1- and 255-byte payloads are transmitted without truncation.
-- The airtime model covers invalid, 1-, 50- and 255-byte inputs with exact
+- The airtime model covers invalid, 1-, 50-, 54- and 255-byte inputs with exact
   fixed-profile values, including watchdog quantization in each corresponding
   minimum TX window.
-- A 50-byte call with only 100,000 us remaining completes packet setup but is
-  rejected before `SetTx`; it reports no started or charged attempt because
-  the five-millisecond watchdog margin would undercut modeled airtime.
+- A 50-byte regression call with only 100,000 us remaining completes packet
+  setup but is rejected before `SetTx`; it reports no started or charged
+  attempt because the five-millisecond watchdog margin would undercut modeled
+  airtime.
 - Expired and boundary deadlines, an already-pending IRQ at the inclusive
   boundary, reused absolute RX deadlines, late packets and the maximum
   TX-watchdog conversion are covered without sleeping in real time.
@@ -420,18 +433,26 @@ boundary remain host tests.
 
 - **Sample IDs are monotonic across restarts:** claim `0`, restart, claim `1`,
   restart and claim `2`; no ID may be reused.
-- **A successful claim is already committed:** claim once, immediately restart
-  after the successful return and verify the next claim returns its successor.
-- **Exhaustion preserves state:** seed the test namespace at the exhaustion
-  boundary and verify claiming fails repeatedly across restart without wrapping
-  or changing the stored value.
+- **Message IDs mirror counter correctness:** independently claim `0`, restart,
+  claim `1`, restart and claim `2`; no transport ID may be reused.
+- **A successful claim is already committed:** run this scenario for both
+  counters by claiming once, immediately restarting after the successful return
+  and verifying the next claim or stored value is its successor.
+- **Exhaustion preserves state:** seed each counter at the exhaustion boundary
+  and verify claiming fails repeatedly across restart without wrapping or
+  changing the stored value.
+- **Counter independence:** claim one sample ID and one message ID and verify
+  that each stored successor advances without disturbing the other.
 - **NVS and LittleFS initialize independently:** claiming an ID must not mount
   LittleFS; the first log operation mounts it without disturbing NVS state.
 
 ### `node_persistence`: pending readings
 
 - **Pending round trip survives restart:** append one reading, restart, peek and
-  compare its sample ID and canonical 28-byte body.
+  compare its sample ID and canonical 32-byte body.
+- **Bound backlog frame survives restart:** append a reading, bind a distinct
+  message ID and exact 54-byte backlog frame, restart, and verify the ID and
+  every frame byte are returned unchanged.
 - **Pending selection is newest-first:** append samples 0, 1 and 2, then verify
   peek/removal order 2, 1, 0.
 - **Removal requires the expected ID:** request removal with a different ID and
@@ -673,9 +694,9 @@ Timing assertions are asymmetric. For calculated airtime `T` from
 T <= tx_done_at_us - set_tx_at_us <= ceil(T * 1.10)
 ```
 
-The current 50-byte profile therefore permits 97.536 through 107.290 ms. For a
-receive call made at `S` with absolute deadline `D`, normal silence must return
-within:
+The current 54-byte reading profile therefore permits 102.656 through 112.922
+ms. For a receive call made at `S` with absolute deadline `D`, normal silence
+must return within:
 
 ```text
 D <= returned_at_us <= D + ceil((D - S) * 0.15)
@@ -687,16 +708,16 @@ the exact equality boundary remains a deterministic host test.
 ### `sx1262_radio`: fast automated cases
 
 - **First transmit initializes and sends exact bytes:** reboot the node,
-  transmit a known 50-byte pattern and verify the peer receives those exact
+  transmit a known 54-byte pattern and verify the peer receives those exact
   bytes with normal IQ. Require success, `tx_started`, `tx_done`, ordered
   nonzero timestamps and an empty diagnostic.
-- **Payload-length boundaries:** transmit distinctive 1-, 50- and 255-byte
+- **Payload-length boundaries:** transmit distinctive 1-, 54- and 255-byte
   payloads and verify exact length and contents at the peer. Exhaustive invalid
   input lengths remain host tests.
-- **TX airtime matches the pilot profile:** for the 50-byte frame, require the
-  measured pre-`SetTx` to `TX_DONE` duration to satisfy the 10% asymmetric
-  airtime bound above. This detects major PHY-profile misconfiguration without
-  claiming laboratory-grade RF timing.
+- **TX airtime matches the pilot profile:** for the 54-byte reading frame,
+  require the measured pre-`SetTx` to `TX_DONE` duration to satisfy the 10%
+  asymmetric airtime bound above. This detects major PHY-profile
+  misconfiguration without claiming laboratory-grade RF timing.
 - **Inverted-IQ downlink reception:** initialize with an uplink, have the peer
   send a known 23-byte inverted-IQ downlink, and require exact payload,
   `RX_PACKET`, `rx_done_at_us` no later than the deadline and plausibly encoded

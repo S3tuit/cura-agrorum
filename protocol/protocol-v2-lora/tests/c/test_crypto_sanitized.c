@@ -42,7 +42,7 @@ static bool headers_equal(const cura_lora_v2_clear_header_t *left,
                           const cura_lora_v2_clear_header_t *right) {
   return left->control == right->control && left->domain == right->domain &&
          memcmp(left->node_id, right->node_id, sizeof(left->node_id)) == 0 &&
-         left->sample_id == right->sample_id;
+         left->message_id == right->message_id;
 }
 
 static void set_header_sentinel(cura_lora_v2_clear_header_t *header) {

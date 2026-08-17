@@ -6,8 +6,9 @@ from typing import Any
 import pytest
 
 
-READING_STRUCT = struct.Struct("<HHHhhhIHBBHHBBH")
+READING_STRUCT = struct.Struct("<IHHHhhhIHBBHHBBH")
 READING_FIELDS = (
+    "sample_id",
     "run_ms",
     "soil_0_mv",
     "soil_1_mv",
@@ -93,7 +94,7 @@ def test_rejects_invalid_header_length(codec: Any, length: int) -> None:
         codec.decode_header(bytes(length))
 
 
-@pytest.mark.parametrize("length", (0, 27, 29))
+@pytest.mark.parametrize("length", (0, 31, 33))
 def test_rejects_invalid_reading_length(codec: Any, length: int) -> None:
     with pytest.raises(ValueError):
         codec.decode_reading(bytes(length))

@@ -1,25 +1,25 @@
 # Generated from protocol/protocol-v2-lora/schemas/protocol_v2_lora.json by protocol/protocol-v2-lora/tools/generate.py.
-# Schema SHA-256: 12f34aea53874681f3ac8db6978f6e202301f57c92682b3080a5e082d51bf333. Do not edit by hand.
+# Schema SHA-256: ece4ec58bad29ddad03be41ccb257ffef960fa11a2df1d9f8650f4eb499de009. Do not edit by hand.
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import IntEnum, IntFlag
 import struct
 
-SCHEMA_SHA256 = "12f34aea53874681f3ac8db6978f6e202301f57c92682b3080a5e082d51bf333"
+SCHEMA_SHA256 = "ece4ec58bad29ddad03be41ccb257ffef960fa11a2df1d9f8650f4eb499de009"
 PROTOCOL_VERSION = 2
 CONTROL = 32
 KEY_SIZE = 16
 NONCE_SIZE = 13
 TAG_SIZE = 8
 CLEAR_HEADER_SIZE = 14
-READING_BODY_SIZE = 28
+READING_BODY_SIZE = 32
 ACK_BODY_SIZE = 1
-READING_FRAME_SIZE = 50
+READING_FRAME_SIZE = 54
 ACK_FRAME_SIZE = 23
 
 CLEAR_HEADER_STRUCT = struct.Struct("<BB8sI")
-READING_BODY_STRUCT = struct.Struct("<HHHhhhIHBBHHBBH")
+READING_BODY_STRUCT = struct.Struct("<IHHHhhhIHBBHHBBH")
 ACK_BODY_STRUCT = struct.Struct("<B")
 NONCE_STRUCT = struct.Struct("<8sIB")
 
@@ -96,11 +96,12 @@ class ClearHeader:
   control: int
   domain: int
   node_id: bytes
-  sample_id: int
+  message_id: int
 
 
 @dataclass(frozen=True)
 class Reading:
+  sample_id: int
   run_ms: int
   soil_0_mv: int
   soil_1_mv: int
@@ -183,7 +184,7 @@ def encode_clear_header(value: ClearHeader) -> bytes:
         value.control,
         value.domain,
         value.node_id,
-        value.sample_id,
+        value.message_id,
     )
   except (struct.error, TypeError) as exc:
     raise CodecError(f"invalid clear_header: {exc}") from exc
@@ -198,7 +199,7 @@ def decode_clear_header(data: bytes) -> ClearHeader:
       control=values[0],
       domain=values[1],
       node_id=values[2],
-      sample_id=values[3],
+      message_id=values[3],
   )
   return result
 
@@ -207,7 +208,7 @@ def build_nonce(header: ClearHeader) -> bytes:
   try:
     return NONCE_STRUCT.pack(
         header.node_id,
-        header.sample_id,
+        header.message_id,
         header.domain,
     )
   except (struct.error, TypeError) as exc:
@@ -218,6 +219,7 @@ def encode_reading(value: Reading) -> bytes:
   validate_reading(value)
   try:
     return READING_BODY_STRUCT.pack(
+        value.sample_id,
         value.run_ms,
         value.soil_0_mv,
         value.soil_1_mv,
@@ -244,21 +246,22 @@ def decode_reading(data: bytes) -> Reading:
                      f"{READING_BODY_STRUCT.size} bytes, got {len(data)}")
   values = READING_BODY_STRUCT.unpack(data)
   result = Reading(
-      run_ms=values[0],
-      soil_0_mv=values[1],
-      soil_1_mv=values[2],
-      soil_temp_0_centi_c=values[3],
-      soil_temp_1_centi_c=values[4],
-      enclosure_centi_c=values[5],
-      enclosure_pressure_pa=values[6],
-      enclosure_humidity_centi_pct=values[7],
-      reset_reason=values[8],
-      previous_current_tx_attempts=values[9],
-      previous_awake_ms=values[10],
-      previous_current_delivery_ms=values[11],
-      previous_cycle_tx_attempts=values[12],
-      previous_cycle_accepted_readings=values[13],
-      flags=values[14],
+      sample_id=values[0],
+      run_ms=values[1],
+      soil_0_mv=values[2],
+      soil_1_mv=values[3],
+      soil_temp_0_centi_c=values[4],
+      soil_temp_1_centi_c=values[5],
+      enclosure_centi_c=values[6],
+      enclosure_pressure_pa=values[7],
+      enclosure_humidity_centi_pct=values[8],
+      reset_reason=values[9],
+      previous_current_tx_attempts=values[10],
+      previous_awake_ms=values[11],
+      previous_current_delivery_ms=values[12],
+      previous_cycle_tx_attempts=values[13],
+      previous_cycle_accepted_readings=values[14],
+      flags=values[15],
   )
   validate_reading(result)
   return result

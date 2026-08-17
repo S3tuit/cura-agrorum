@@ -15,10 +15,12 @@
 
 typedef enum {
   FAKE_CORE_TRACE_RESET_REASON = 1,
-  FAKE_CORE_TRACE_CLAIM,
+  FAKE_CORE_TRACE_CLAIM_SAMPLE,
+  FAKE_CORE_TRACE_CLAIM_MESSAGE,
   FAKE_CORE_TRACE_DIAGNOSTIC,
   FAKE_CORE_TRACE_SAMPLE,
   FAKE_CORE_TRACE_APPEND_PENDING,
+  FAKE_CORE_TRACE_BIND_BACKLOG,
   FAKE_CORE_TRACE_DELIVERY_EVENT,
   FAKE_CORE_TRACE_TRANSMIT,
   FAKE_CORE_TRACE_RANDOM,
@@ -33,8 +35,7 @@ typedef enum {
 } fake_node_core_trace_t;
 
 typedef struct {
-  uint32_t sample_id;
-  cura_lora_v2_reading_t reading;
+  node_pending_reading_t value;
 } fake_node_core_pending_t;
 
 typedef struct {
@@ -75,6 +76,15 @@ typedef struct {
   diagn_context_t claim_diagnostic;
   uint64_t claim_advance_us;
 
+  uint32_t claimed_message_ids[FAKE_NODE_CORE_MAX_ITEMS];
+  size_t claimed_message_id_count;
+  size_t claimed_message_id_index;
+  err_curag_t message_claim_errors[FAKE_NODE_CORE_MAX_ITEMS];
+  size_t message_claim_error_count;
+  size_t message_claim_error_index;
+  diagn_context_t message_claim_diagnostic;
+  uint64_t message_claim_advance_us;
+
   node_sensor_sample_t sensor_sample;
   err_curag_t sensor_error;
   diagn_context_t sensor_diagnostic;
@@ -86,6 +96,9 @@ typedef struct {
   err_curag_t append_pending_error;
   diagn_context_t append_pending_diagnostic;
   uint64_t append_pending_advance_us;
+  err_curag_t bind_backlog_errors[FAKE_NODE_CORE_MAX_ITEMS];
+  size_t bind_backlog_error_count;
+  size_t bind_backlog_error_index;
   err_curag_t peek_errors[FAKE_NODE_CORE_MAX_ITEMS];
   size_t peek_error_count;
   size_t peek_error_index;
@@ -146,6 +159,8 @@ typedef struct {
   size_t clock_call_count;
   size_t reset_reason_call_count;
   size_t claim_call_count;
+  size_t message_claim_call_count;
+  size_t bind_backlog_call_count;
   size_t sample_call_count;
   size_t force_power_off_call_count;
   size_t radio_sleep_call_count;
@@ -162,6 +177,9 @@ node_platform_ports_t fake_node_core_platform(void);
 void fake_node_core_advance_us(uint64_t amount_us);
 void fake_node_core_add_pending(uint32_t sample_id,
                                 const cura_lora_v2_reading_t *reading);
+void fake_node_core_add_bound_pending(
+    uint32_t message_id, const cura_lora_v2_reading_t *reading,
+    const uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE]);
 void fake_node_core_script_tx_done(uint64_t set_tx_at_us,
                                    uint64_t tx_done_at_us);
 void fake_node_core_script_tx_error(err_curag_t error, bool tx_started,
@@ -176,7 +194,7 @@ void fake_node_core_script_rx_packet(const uint8_t *payload,
 void fake_node_core_script_rx_error(err_curag_t error, uint64_t return_at_us);
 bool fake_node_core_make_ack(uint8_t output[CURA_LORA_V2_ACK_FRAME_SIZE],
                              const uint8_t node_key[CURA_LORA_V2_KEY_SIZE],
-                             const uint8_t node_id[8], uint32_t sample_id,
+                             const uint8_t node_id[8], uint32_t message_id,
                              uint8_t control, cura_lora_v2_domain_t domain,
                              cura_lora_v2_ack_status_t status);
 size_t fake_node_core_trace_find(fake_node_core_trace_t value, size_t start);

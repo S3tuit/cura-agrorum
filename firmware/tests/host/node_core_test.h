@@ -8,6 +8,8 @@
 #include "fake_node_core_dependencies.h"
 #include "node_core.h"
 
+#define CORE_TEST_FIRST_MESSAGE_ID UINT32_C(1001)
+
 #define CORE_TEST_ASSERT(expression)                                           \
   do {                                                                         \
     if (!(expression)) {                                                       \
@@ -45,7 +47,7 @@ cura_lora_v2_reading_t core_test_reading(uint16_t marker);
 uint64_t core_test_reading_airtime_us(void);
 uint64_t core_test_reading_airtime_charge_us(void);
 uint64_t core_test_reading_min_tx_window_us(void);
-bool core_test_script_ack(uint32_t sample_id, cura_lora_v2_domain_t domain,
+bool core_test_script_ack(uint32_t message_id, cura_lora_v2_domain_t domain,
                           cura_lora_v2_ack_status_t status,
                           uint64_t set_tx_at_us, uint64_t tx_done_at_us,
                           uint64_t ack_at_us);

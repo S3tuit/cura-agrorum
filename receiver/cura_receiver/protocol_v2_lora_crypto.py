@@ -1,5 +1,8 @@
 """Authenticated frame construction for Cura Agrorum LoRa protocol v2.
 
+The clear authenticated header carries transport ``message_id``. Application
+``sample_id`` is present only in an authenticated, decoded reading body.
+
 Wire contract: protocol/protocol-v2-lora/README.md, especially "Routine
 packet", "CCM nonce", and "Receiver validation".
 """

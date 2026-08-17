@@ -101,7 +101,8 @@ static bool record_type_allowed(node_persistence_log_kind_t log_kind,
                                 uint8_t record_type) {
   switch (log_kind) {
   case NODE_PERSISTENCE_LOG_PENDING:
-    return record_type == NODE_PERSISTENCE_RECORD_TYPE_PENDING_READING;
+    return record_type == NODE_PERSISTENCE_RECORD_TYPE_PENDING_READING ||
+           record_type == NODE_PERSISTENCE_RECORD_TYPE_PENDING_BACKLOG_BINDING;
   case NODE_PERSISTENCE_LOG_QUARANTINE:
     return record_type == NODE_PERSISTENCE_RECORD_TYPE_QUARANTINED_READING;
   case NODE_PERSISTENCE_LOG_DIAGNOSTIC:
@@ -120,9 +121,24 @@ static bool validate_reading_payload(const uint8_t *payload,
     return false;
   }
   cura_lora_v2_reading_t reading;
-  return cura_lora_v2_decode_reading(&reading, payload + sizeof(uint32_t),
+  return cura_lora_v2_decode_reading(&reading, payload,
                                      CURA_LORA_V2_READING_BODY_SIZE) ==
          CURA_LORA_V2_CODEC_OK;
+}
+
+static bool validate_backlog_binding_payload(const uint8_t *payload,
+                                             size_t payload_length) {
+  if (payload_length != NODE_PERSISTENCE_BACKLOG_BINDING_PAYLOAD_SIZE) {
+    return false;
+  }
+  const uint32_t message_id = node_persistence_load_le32(payload + 4U);
+  const uint8_t *frame = payload + 8U;
+  return frame[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] ==
+             CURA_LORA_V2_CONTROL &&
+         frame[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] ==
+             CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK &&
+         node_persistence_load_le32(
+             frame + CURA_LORA_V2_CLEAR_HEADER_MESSAGE_ID_OFFSET) == message_id;
 }
 
 static bool validate_diagnostic_context(uint16_t error_domain,
@@ -168,9 +184,10 @@ static bool validate_diagnostic_payload(const uint8_t *payload,
   const uint32_t application_offset_ms =
       node_persistence_load_le32(payload + 6U);
   const uint32_t cycle_sample_id = node_persistence_load_le32(payload + 10U);
-  const uint16_t operation = node_persistence_load_le16(payload + 14U);
-  const uint8_t context_length = payload[16U];
-  const uint8_t context_schema = payload[17U];
+  const uint32_t message_id = node_persistence_load_le32(payload + 14U);
+  const uint16_t operation = node_persistence_load_le16(payload + 18U);
+  const uint8_t context_length = payload[20U];
+  const uint8_t context_schema = payload[21U];
 
   if (error_domain == CURAG_EDOM_NONE || error_code == CURAG_ECODE_NONE ||
       (flags & NODE_DIAGNOSTIC_RESERVED_FLAGS_MASK) != 0U ||
@@ -178,6 +195,7 @@ static bool validate_diagnostic_payload(const uint8_t *payload,
        application_offset_ms != 0U) ||
       ((flags & NODE_DIAGNOSTIC_CYCLE_SAMPLE_ID_VALID) == 0U &&
        cycle_sample_id != 0U) ||
+      ((flags & NODE_DIAGNOSTIC_MESSAGE_ID_VALID) == 0U && message_id != 0U) ||
       (size_t)context_length + NODE_PERSISTENCE_DIAGNOSTIC_PREFIX_SIZE !=
           payload_length) {
     return false;
@@ -194,16 +212,16 @@ static bool domain_is_reading(uint8_t domain) {
 static bool validate_delivery_started_payload(const uint8_t *payload,
                                               size_t payload_length) {
   return payload_length == NODE_PERSISTENCE_DELIVERY_STARTED_PAYLOAD_SIZE &&
-         domain_is_reading(payload[8U]);
+         domain_is_reading(payload[12U]);
 }
 
 static bool validate_delivery_finished_payload(const uint8_t *payload,
                                                size_t payload_length) {
   if (payload_length != NODE_PERSISTENCE_DELIVERY_FINISHED_PAYLOAD_SIZE ||
-      !domain_is_reading(payload[8U])) {
+      !domain_is_reading(payload[12U])) {
     return false;
   }
-  const uint8_t final_result = payload[10U];
+  const uint8_t final_result = payload[14U];
   return final_result >= NODE_DELIVERY_RESULT_ACCEPTED &&
          final_result <= NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR;
 }
@@ -237,6 +255,9 @@ node_persistence_record_validate(const node_persistence_backend_t *backend,
   case NODE_PERSISTENCE_RECORD_TYPE_QUARANTINED_READING:
     valid_payload = validate_reading_payload(payload, payload_length);
     break;
+  case NODE_PERSISTENCE_RECORD_TYPE_PENDING_BACKLOG_BINDING:
+    valid_payload = validate_backlog_binding_payload(payload, payload_length);
+    break;
   case NODE_PERSISTENCE_RECORD_TYPE_DIAGNOSTIC_EVENT:
     valid_payload = validate_diagnostic_payload(payload, payload_length);
     break;
@@ -254,9 +275,9 @@ node_persistence_record_validate(const node_persistence_backend_t *backend,
 }
 
 bool node_persistence_record_decode_reading(
-    const uint8_t *record, size_t record_length, uint32_t *out_sample_id,
+    const uint8_t *record, size_t record_length,
     uint8_t out_reading_body[CURA_LORA_V2_READING_BODY_SIZE]) {
-  if (record == NULL || out_sample_id == NULL || out_reading_body == NULL ||
+  if (record == NULL || out_reading_body == NULL ||
       record_length != NODE_PERSISTENCE_READING_PAYLOAD_SIZE +
                            NODE_PERSISTENCE_RECORD_OVERHEAD) {
     return false;
@@ -266,8 +287,26 @@ bool node_persistence_record_decode_reading(
       record_type != NODE_PERSISTENCE_RECORD_TYPE_QUARANTINED_READING) {
     return false;
   }
-  *out_sample_id = node_persistence_load_le32(record + RECORD_PAYLOAD_OFFSET);
-  memcpy(out_reading_body, record + RECORD_PAYLOAD_OFFSET + sizeof(uint32_t),
+  memcpy(out_reading_body, record + RECORD_PAYLOAD_OFFSET,
          CURA_LORA_V2_READING_BODY_SIZE);
+  return true;
+}
+
+bool node_persistence_record_decode_backlog_binding(
+    const uint8_t *record, size_t record_length, uint32_t *out_sample_id,
+    uint32_t *out_message_id,
+    uint8_t out_frame[CURA_LORA_V2_READING_FRAME_SIZE]) {
+  if (record == NULL || out_sample_id == NULL || out_message_id == NULL ||
+      out_frame == NULL ||
+      record_length != NODE_PERSISTENCE_BACKLOG_BINDING_PAYLOAD_SIZE +
+                           NODE_PERSISTENCE_RECORD_OVERHEAD ||
+      record[RECORD_TYPE_OFFSET] !=
+          NODE_PERSISTENCE_RECORD_TYPE_PENDING_BACKLOG_BINDING) {
+    return false;
+  }
+  const uint8_t *payload = record + RECORD_PAYLOAD_OFFSET;
+  *out_sample_id = node_persistence_load_le32(payload);
+  *out_message_id = node_persistence_load_le32(payload + 4U);
+  memcpy(out_frame, payload + 8U, CURA_LORA_V2_READING_FRAME_SIZE);
   return true;
 }

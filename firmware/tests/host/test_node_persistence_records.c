@@ -33,31 +33,31 @@ static bool pending_round_trip_is_newest_first_and_survives_restart(void) {
   cura_lora_v2_reading_t expected[3];
   for (uint32_t id = 0U; id < 3U; ++id) {
     expected[id] = node_persistence_test_make_reading((uint16_t)(10U + id));
+    expected[id].sample_id = id;
     TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_append_pending_reading(
-                                     id, &expected[id], &diag));
+                                     &expected[id], &diag));
   }
 
   for (uint32_t id = 3U; id > 0U; --id) {
     node_persistence_test_restart();
-    uint32_t actual_id = UINT32_MAX;
-    cura_lora_v2_reading_t actual;
+    node_pending_reading_t pending;
     bool found = false;
     TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_peek_most_recent_pending(
-                                     &actual_id, &actual, &found, &diag));
+                                     &pending, &found, &diag));
     TEST_ASSERT(found);
-    TEST_ASSERT_EQ_U32(id - 1U, actual_id);
-    TEST_ASSERT(
-        node_persistence_test_readings_equal(&expected[id - 1U], &actual));
-    TEST_ASSERT_EQ_U32(
-        CURAG_OK, node_persistence_remove_newest_reading(actual_id, &diag));
+    TEST_ASSERT(!pending.backlog_bound);
+    TEST_ASSERT_EQ_U32(id - 1U, pending.reading.sample_id);
+    TEST_ASSERT(node_persistence_test_readings_equal(&expected[id - 1U],
+                                                     &pending.reading));
+    TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_remove_newest_reading(
+                                     pending.reading.sample_id, &diag));
   }
 
   node_persistence_test_restart();
-  uint32_t unused_id = 0U;
-  cura_lora_v2_reading_t unused_reading;
+  node_pending_reading_t unused;
   bool found = true;
   TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_peek_most_recent_pending(
-                                   &unused_id, &unused_reading, &found, &diag));
+                                   &unused, &found, &diag));
   TEST_ASSERT(!found);
   return true;
 }
@@ -69,8 +69,8 @@ static bool removal_requires_exact_id_and_empty_is_not_an_error(void) {
                      node_persistence_remove_newest_reading(1U, &diag));
 
   const cura_lora_v2_reading_t reading = node_persistence_test_make_reading(4U);
-  TEST_ASSERT_EQ_U32(
-      CURAG_OK, node_persistence_append_pending_reading(4U, &reading, &diag));
+  TEST_ASSERT_EQ_U32(CURAG_OK,
+                     node_persistence_append_pending_reading(&reading, &diag));
   node_persistence_test_snapshot_t before;
   node_persistence_test_snapshot_t after;
   TEST_ASSERT(node_persistence_test_snapshot(TEST_PENDING_PATH, &before));
@@ -86,10 +86,10 @@ static bool every_record_type_round_trips_boundary_values(void) {
   diagn_context_t diag;
   const cura_lora_v2_reading_t reading =
       node_persistence_test_make_boundary_reading();
-  TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_append_pending_reading(
-                                   UINT32_MAX, &reading, &diag));
-  TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_quarantine_reading(
-                                   UINT32_MAX, &reading, &diag));
+  TEST_ASSERT_EQ_U32(CURAG_OK,
+                     node_persistence_append_pending_reading(&reading, &diag));
+  TEST_ASSERT_EQ_U32(CURAG_OK,
+                     node_persistence_quarantine_reading(&reading, &diag));
 
   diagn_context_t context;
   curag_diagnostic_context_clear(&context);
@@ -100,9 +100,11 @@ static bool every_record_type_round_trips_boundary_values(void) {
   const node_diagnostic_event_t diagnostic = {
       .error = UINT32_MAX,
       .flags = NODE_DIAGNOSTIC_APPLICATION_OFFSET_VALID |
-               NODE_DIAGNOSTIC_CYCLE_SAMPLE_ID_VALID,
+               NODE_DIAGNOSTIC_CYCLE_SAMPLE_ID_VALID |
+               NODE_DIAGNOSTIC_MESSAGE_ID_VALID,
       .application_offset_ms = UINT32_MAX,
       .cycle_sample_id = UINT32_MAX,
+      .message_id = UINT32_MAX,
       .context = &context,
   };
   TEST_ASSERT_EQ_U32(
@@ -112,6 +114,7 @@ static bool every_record_type_round_trips_boundary_values(void) {
       .type = NODE_DELIVERY_EVENT_STARTED,
       .cycle_sample_id = UINT32_MAX,
       .sample_id = UINT32_MAX,
+      .message_id = UINT32_MAX,
       .domain = CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK,
       .detail.started = {.start_offset_ms = UINT32_MAX},
   };
@@ -131,12 +134,10 @@ static bool every_record_type_round_trips_boundary_values(void) {
   TEST_ASSERT(validate_records(&snapshot, NODE_PERSISTENCE_LOG_PENDING, 1U));
   TEST_ASSERT_EQ_U32(UINT32_MAX,
                      node_persistence_load_le32(snapshot.bytes + 8U));
-  uint32_t decoded_id = 0U;
   uint8_t body[CURA_LORA_V2_READING_BODY_SIZE];
   cura_lora_v2_reading_t decoded;
-  TEST_ASSERT(node_persistence_record_decode_reading(
-      snapshot.bytes, snapshot.length, &decoded_id, body));
-  TEST_ASSERT_EQ_U32(UINT32_MAX, decoded_id);
+  TEST_ASSERT(node_persistence_record_decode_reading(snapshot.bytes,
+                                                     snapshot.length, body));
   TEST_ASSERT_EQ_U32(CURA_LORA_V2_CODEC_OK,
                      cura_lora_v2_decode_reading(&decoded, body, sizeof(body)));
   TEST_ASSERT(node_persistence_test_readings_equal(&reading, &decoded));
@@ -145,7 +146,7 @@ static bool every_record_type_round_trips_boundary_values(void) {
   TEST_ASSERT(validate_records(&snapshot, NODE_PERSISTENCE_LOG_QUARANTINE, 1U));
   TEST_ASSERT(node_persistence_test_snapshot(TEST_DIAGNOSTIC_PATH, &snapshot));
   TEST_ASSERT(validate_records(&snapshot, NODE_PERSISTENCE_LOG_DIAGNOSTIC, 1U));
-  TEST_ASSERT_EQ_SIZE(284U, snapshot.length);
+  TEST_ASSERT_EQ_SIZE(288U, snapshot.length);
   TEST_ASSERT(node_persistence_test_snapshot(TEST_DELIVERY_PATH, &snapshot));
   TEST_ASSERT(validate_records(&snapshot, NODE_PERSISTENCE_LOG_DELIVERY, 2U));
 
@@ -173,6 +174,47 @@ static bool every_record_type_round_trips_boundary_values(void) {
   return true;
 }
 
+static bool backlog_binding_round_trips_exact_frame_across_restart(void) {
+  node_persistence_test_reset_all();
+  cura_lora_v2_reading_t reading = node_persistence_test_make_reading(17U);
+  const uint32_t message_id = UINT32_C(0x11223344);
+  uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE];
+  memset(frame, 0xa5, sizeof(frame));
+  frame[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] = CURA_LORA_V2_CONTROL;
+  frame[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] =
+      CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK;
+  node_persistence_store_le32(
+      frame + CURA_LORA_V2_CLEAR_HEADER_MESSAGE_ID_OFFSET, message_id);
+
+  diagn_context_t diag;
+  TEST_ASSERT_EQ_U32(CURAG_OK,
+                     node_persistence_append_pending_reading(&reading, &diag));
+  TEST_ASSERT_EQ_U32(CURAG_ERECORD_MISMATCH,
+                     node_persistence_bind_newest_backlog_frame(
+                         reading.sample_id + 1U, message_id, frame, &diag));
+  TEST_ASSERT_EQ_U32(CURAG_OK,
+                     node_persistence_bind_newest_backlog_frame(
+                         reading.sample_id, message_id, frame, &diag));
+  TEST_ASSERT_EQ_U32(CURAG_ERECORD_MISMATCH,
+                     node_persistence_bind_newest_backlog_frame(
+                         reading.sample_id, message_id, frame, &diag));
+
+  node_persistence_test_restart();
+  node_pending_reading_t pending;
+  bool found = false;
+  TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_peek_most_recent_pending(
+                                   &pending, &found, &diag));
+  TEST_ASSERT(found);
+  TEST_ASSERT(pending.backlog_bound);
+  TEST_ASSERT_EQ_U32(reading.sample_id, pending.reading.sample_id);
+  TEST_ASSERT_EQ_U32(message_id, pending.message_id);
+  TEST_ASSERT(memcmp(frame, pending.frame, sizeof(frame)) == 0);
+  TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_remove_newest_reading(
+                                   reading.sample_id, &diag));
+  TEST_ASSERT_EQ_SIZE(0U, fake_backend_file_size(TEST_PENDING_PATH));
+  return true;
+}
+
 static bool delivery_is_synced_before_each_successful_return(void) {
   node_persistence_test_reset_all();
   diagn_context_t diag;
@@ -180,6 +222,7 @@ static bool delivery_is_synced_before_each_successful_return(void) {
       .type = NODE_DELIVERY_EVENT_STARTED,
       .cycle_sample_id = 8U,
       .sample_id = 7U,
+      .message_id = 9U,
       .domain = CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK,
       .detail.started = {.start_offset_ms = 6U},
   };
@@ -238,28 +281,22 @@ static bool invalid_inputs_and_optional_diagnostics_are_consistent(void) {
   diagn_context_t diag;
   cura_lora_v2_reading_t invalid = {0};
   invalid.soil_0_mv = 1U;
-  TEST_ASSERT_EQ_U32(
-      CURAG_EINVALID_ARGUMENT,
-      node_persistence_append_pending_reading(0U, &invalid, &diag));
+  TEST_ASSERT_EQ_U32(CURAG_EINVALID_ARGUMENT,
+                     node_persistence_append_pending_reading(&invalid, &diag));
   TEST_ASSERT(node_persistence_test_assert_diag(
       &diag, CURAG_OP_VALIDATE, NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
       NODE_PERSISTENCE_STAGE_NONE, NODE_PERSISTENCE_BACKEND_NO_ERROR, 0));
-  TEST_ASSERT_EQ_U32(
-      CURAG_EINVALID_ARGUMENT,
-      node_persistence_append_pending_reading(0U, &invalid, NULL));
+  TEST_ASSERT_EQ_U32(CURAG_EINVALID_ARGUMENT,
+                     node_persistence_append_pending_reading(&invalid, NULL));
 
-  uint32_t id = 0U;
-  cura_lora_v2_reading_t reading;
+  node_pending_reading_t pending;
   bool found = false;
   TEST_ASSERT_EQ_U32(
       CURAG_EINVALID_ARGUMENT,
-      node_persistence_peek_most_recent_pending(NULL, &reading, &found, &diag));
+      node_persistence_peek_most_recent_pending(NULL, &found, &diag));
   TEST_ASSERT_EQ_U32(
       CURAG_EINVALID_ARGUMENT,
-      node_persistence_peek_most_recent_pending(&id, NULL, &found, &diag));
-  TEST_ASSERT_EQ_U32(
-      CURAG_EINVALID_ARGUMENT,
-      node_persistence_peek_most_recent_pending(&id, &reading, NULL, &diag));
+      node_persistence_peek_most_recent_pending(&pending, NULL, &diag));
 
   node_diagnostic_event_t diagnostic = {
       .error = CURAG_EIO,
@@ -282,8 +319,8 @@ static bool invalid_inputs_and_optional_diagnostics_are_consistent(void) {
 
   const cura_lora_v2_reading_t valid = node_persistence_test_make_reading(2U);
   memset(&diag, 0xa5, sizeof(diag));
-  TEST_ASSERT_EQ_U32(
-      CURAG_OK, node_persistence_append_pending_reading(2U, &valid, &diag));
+  TEST_ASSERT_EQ_U32(CURAG_OK,
+                     node_persistence_append_pending_reading(&valid, &diag));
   const diagn_context_t cleared = {0};
   TEST_ASSERT(memcmp(&diag, &cleared, sizeof(diag)) == 0);
   return true;
@@ -327,6 +364,8 @@ static const node_persistence_test_case_t CASES[] = {
      removal_requires_exact_id_and_empty_is_not_an_error},
     {"every_record_type_round_trips_boundary_values",
      every_record_type_round_trips_boundary_values},
+    {"backlog_binding_round_trips_exact_frame_across_restart",
+     backlog_binding_round_trips_exact_frame_across_restart},
     {"delivery_is_synced_before_each_successful_return",
      delivery_is_synced_before_each_successful_return},
     {"diagnostics_buffer_until_sync_and_sync_closes_without_unmount",

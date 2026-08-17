@@ -212,7 +212,7 @@ def validate_schema(schema: dict[str, Any]) -> None:
             ("control", "u8"),
             ("domain", "u8"),
             ("node_id", "bytes[8]"),
-            ("sample_id", "u32"),
+            ("message_id", "u32"),
         ),
         "clear_header",
     )
@@ -233,6 +233,7 @@ def validate_schema(schema: dict[str, Any]) -> None:
     require_exact_fields(
         reading_fields,
         (
+            ("sample_id", "u32"),
             ("run_ms", "u16"),
             ("soil_0_mv", "u16"),
             ("soil_1_mv", "u16"),

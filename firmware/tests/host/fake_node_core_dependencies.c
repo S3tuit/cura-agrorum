@@ -56,6 +56,8 @@ void fake_node_core_reset(void) {
   };
   make_context(&fake_node_core.claim_diagnostic, CURAG_OP_READ,
                CURAG_PERSISTENCE_CONTEXT_V1, CURAG_PERSISTENCE_CONTEXT_V1_SIZE);
+  make_context(&fake_node_core.message_claim_diagnostic, CURAG_OP_READ,
+               CURAG_PERSISTENCE_CONTEXT_V1, CURAG_PERSISTENCE_CONTEXT_V1_SIZE);
   make_context(&fake_node_core.append_pending_diagnostic, CURAG_OP_APPEND,
                CURAG_PERSISTENCE_CONTEXT_V1, CURAG_PERSISTENCE_CONTEXT_V1_SIZE);
   make_context(&fake_node_core.persistence_diagnostic, CURAG_OP_READ,
@@ -74,8 +76,21 @@ void fake_node_core_add_pending(uint32_t sample_id,
                                 const cura_lora_v2_reading_t *reading) {
   assert(reading != NULL);
   assert(fake_node_core.pending_count < FAKE_NODE_CORE_MAX_PENDING);
-  fake_node_core.pending[fake_node_core.pending_count++] =
-      (fake_node_core_pending_t){.sample_id = sample_id, .reading = *reading};
+  fake_node_core_pending_t *pending =
+      &fake_node_core.pending[fake_node_core.pending_count++];
+  pending->value.reading = *reading;
+  pending->value.reading.sample_id = sample_id;
+}
+
+void fake_node_core_add_bound_pending(
+    uint32_t message_id, const cura_lora_v2_reading_t *reading,
+    const uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE]) {
+  fake_node_core_add_pending(reading->sample_id, reading);
+  fake_node_core_pending_t *pending =
+      &fake_node_core.pending[fake_node_core.pending_count - 1U];
+  pending->value.backlog_bound = true;
+  pending->value.message_id = message_id;
+  memcpy(pending->value.frame, frame, sizeof(pending->value.frame));
 }
 
 void fake_node_core_script_tx_done(uint64_t set_tx_at_us,
@@ -163,7 +178,7 @@ void fake_node_core_script_rx_error(err_curag_t error, uint64_t return_at_us) {
 
 bool fake_node_core_make_ack(uint8_t output[CURA_LORA_V2_ACK_FRAME_SIZE],
                              const uint8_t node_key[CURA_LORA_V2_KEY_SIZE],
-                             const uint8_t node_id[8], uint32_t sample_id,
+                             const uint8_t node_id[8], uint32_t message_id,
                              uint8_t control, cura_lora_v2_domain_t domain,
                              cura_lora_v2_ack_status_t status) {
   cura_lora_v2_ack_t ack = {.status = status};
@@ -175,7 +190,7 @@ bool fake_node_core_make_ack(uint8_t output[CURA_LORA_V2_ACK_FRAME_SIZE],
   cura_lora_v2_clear_header_t header = {
       .control = control,
       .domain = domain,
-      .sample_id = sample_id,
+      .message_id = message_id,
   };
   memcpy(header.node_id, node_id, sizeof(header.node_id));
   size_t output_length = 0U;
@@ -266,7 +281,7 @@ static void return_diagnostic(err_curag_t error,
 
 err_curag_t node_persistence_claim_sample_id(uint32_t *out_sample_id,
                                              diagn_context_t *out_diag) {
-  trace_call(FAKE_CORE_TRACE_CLAIM);
+  trace_call(FAKE_CORE_TRACE_CLAIM_SAMPLE);
   fake_node_core.claim_call_count++;
   if (fake_node_core.observed_rtc != NULL) {
     fake_node_core.rtc_marker_at_claim =
@@ -282,27 +297,75 @@ err_curag_t node_persistence_claim_sample_id(uint32_t *out_sample_id,
   return fake_node_core.claim_error;
 }
 
+err_curag_t node_persistence_claim_message_id(uint32_t *out_message_id,
+                                              diagn_context_t *out_diag) {
+  trace_call(FAKE_CORE_TRACE_CLAIM_MESSAGE);
+  fake_node_core.message_claim_call_count++;
+  advance_time(fake_node_core.message_claim_advance_us);
+  const err_curag_t error =
+      queued_error(fake_node_core.message_claim_errors,
+                   fake_node_core.message_claim_error_count,
+                   &fake_node_core.message_claim_error_index);
+  return_diagnostic(error, &fake_node_core.message_claim_diagnostic, out_diag);
+  if (error == CURAG_OK) {
+    assert(out_message_id != NULL);
+    if (fake_node_core.claimed_message_id_index <
+        fake_node_core.claimed_message_id_count) {
+      *out_message_id =
+          fake_node_core
+              .claimed_message_ids[fake_node_core.claimed_message_id_index++];
+    } else {
+      *out_message_id =
+          (uint32_t)(UINT32_C(1000) + fake_node_core.message_claim_call_count);
+    }
+  }
+  return error;
+}
+
 err_curag_t
-node_persistence_append_pending_reading(uint32_t sample_id,
-                                        const cura_lora_v2_reading_t *reading,
+node_persistence_append_pending_reading(const cura_lora_v2_reading_t *reading,
                                         diagn_context_t *out_diag) {
   trace_call(FAKE_CORE_TRACE_APPEND_PENDING);
   assert(reading != NULL);
   assert(fake_node_core.appended_count < FAKE_NODE_CORE_MAX_ITEMS);
-  fake_node_core.appended[fake_node_core.appended_count++] =
-      (fake_node_core_pending_t){.sample_id = sample_id, .reading = *reading};
+  fake_node_core.appended[fake_node_core.appended_count++].value.reading =
+      *reading;
   advance_time(fake_node_core.append_pending_advance_us);
   return_diagnostic(fake_node_core.append_pending_error,
                     &fake_node_core.append_pending_diagnostic, out_diag);
   if (fake_node_core.append_pending_error == CURAG_OK) {
-    fake_node_core_add_pending(sample_id, reading);
+    fake_node_core_add_pending(reading->sample_id, reading);
   }
   return fake_node_core.append_pending_error;
 }
 
-err_curag_t node_persistence_peek_most_recent_pending(
-    uint32_t *out_sample_id, cura_lora_v2_reading_t *out_reading,
-    bool *out_found, diagn_context_t *out_diag) {
+err_curag_t node_persistence_bind_newest_backlog_frame(
+    uint32_t expected_sample_id, uint32_t message_id,
+    const uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE],
+    diagn_context_t *out_diag) {
+  trace_call(FAKE_CORE_TRACE_BIND_BACKLOG);
+  fake_node_core.bind_backlog_call_count++;
+  const err_curag_t error =
+      queued_error(fake_node_core.bind_backlog_errors,
+                   fake_node_core.bind_backlog_error_count,
+                   &fake_node_core.bind_backlog_error_index);
+  return_diagnostic(error, &fake_node_core.persistence_diagnostic, out_diag);
+  if (error == CURAG_OK) {
+    assert(fake_node_core.pending_count != 0U);
+    fake_node_core_pending_t *pending =
+        &fake_node_core.pending[fake_node_core.pending_count - 1U];
+    assert(pending->value.reading.sample_id == expected_sample_id);
+    pending->value.backlog_bound = true;
+    pending->value.message_id = message_id;
+    memcpy(pending->value.frame, frame, sizeof(pending->value.frame));
+  }
+  return error;
+}
+
+err_curag_t
+node_persistence_peek_most_recent_pending(node_pending_reading_t *out_pending,
+                                          bool *out_found,
+                                          diagn_context_t *out_diag) {
   trace_call(FAKE_CORE_TRACE_PEEK);
   const err_curag_t error =
       queued_error(fake_node_core.peek_errors, fake_node_core.peek_error_count,
@@ -311,15 +374,14 @@ err_curag_t node_persistence_peek_most_recent_pending(
   if (error != CURAG_OK) {
     return error;
   }
-  assert(out_sample_id != NULL && out_reading != NULL && out_found != NULL);
+  assert(out_pending != NULL && out_found != NULL);
   if (fake_node_core.pending_count == 0U) {
     *out_found = false;
     return CURAG_OK;
   }
   const fake_node_core_pending_t *pending =
       &fake_node_core.pending[fake_node_core.pending_count - 1U];
-  *out_sample_id = pending->sample_id;
-  *out_reading = pending->reading;
+  *out_pending = pending->value;
   *out_found = true;
   return CURAG_OK;
 }
@@ -335,8 +397,8 @@ err_curag_t node_persistence_remove_newest_reading(uint32_t expected_sample_id,
                                    &fake_node_core.remove_error_index);
   if (error == CURAG_OK &&
       (fake_node_core.pending_count == 0U ||
-       fake_node_core.pending[fake_node_core.pending_count - 1U].sample_id !=
-           expected_sample_id)) {
+       fake_node_core.pending[fake_node_core.pending_count - 1U]
+               .value.reading.sample_id != expected_sample_id)) {
     error = CURAG_ERECORD_MISMATCH;
   }
   return_diagnostic(error, &fake_node_core.persistence_diagnostic, out_diag);
@@ -347,14 +409,13 @@ err_curag_t node_persistence_remove_newest_reading(uint32_t expected_sample_id,
 }
 
 err_curag_t
-node_persistence_quarantine_reading(uint32_t sample_id,
-                                    const cura_lora_v2_reading_t *reading,
+node_persistence_quarantine_reading(const cura_lora_v2_reading_t *reading,
                                     diagn_context_t *out_diag) {
   trace_call(FAKE_CORE_TRACE_QUARANTINE);
   assert(reading != NULL);
   assert(fake_node_core.quarantined_count < FAKE_NODE_CORE_MAX_ITEMS);
-  fake_node_core.quarantined[fake_node_core.quarantined_count++] =
-      (fake_node_core_pending_t){.sample_id = sample_id, .reading = *reading};
+  fake_node_core.quarantined[fake_node_core.quarantined_count++].value.reading =
+      *reading;
   const err_curag_t error = queued_error(
       fake_node_core.quarantine_errors, fake_node_core.quarantine_error_count,
       &fake_node_core.quarantine_error_index);

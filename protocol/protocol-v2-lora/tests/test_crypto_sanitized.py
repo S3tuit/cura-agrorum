@@ -37,7 +37,7 @@ static const cura_lora_v2_clear_header_t TEST_CRYPTO_HEADER = {{
   .control = UINT8_C({header["control"]}),
   .domain = UINT8_C({header["domain"]}),
   .node_id = {{{_u8_array(header["node_id_hex"])}}},
-  .sample_id = UINT32_C({header["sample_id"]}),
+  .message_id = UINT32_C({header["message_id"]}),
 }};
 
 static const uint8_t

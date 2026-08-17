@@ -17,6 +17,18 @@
 
 #define NODE_PERSISTENCE_NVS_NAMESPACE "cura_lora_v2"
 #define NODE_PERSISTENCE_NVS_SAMPLE_ID_KEY "next_sample_id"
+#define NODE_PERSISTENCE_NVS_MESSAGE_ID_KEY "next_message_id"
+
+static const char *counter_key(node_persistence_nvs_counter_t counter) {
+  switch (counter) {
+  case NODE_PERSISTENCE_NVS_COUNTER_SAMPLE:
+    return NODE_PERSISTENCE_NVS_SAMPLE_ID_KEY;
+  case NODE_PERSISTENCE_NVS_COUNTER_MESSAGE:
+    return NODE_PERSISTENCE_NVS_MESSAGE_ID_KEY;
+  default:
+    return NULL;
+  }
+}
 
 static int32_t backend_nvs_init(void) {
   return (int32_t)nvs_flash_init_partition(
@@ -37,14 +49,14 @@ static int32_t backend_nvs_open(node_persistence_nvs_handle_t *out_handle) {
   return (int32_t)result;
 }
 
-static int32_t
-backend_nvs_get_next_sample_id(node_persistence_nvs_handle_t handle,
-                               uint32_t *out_value, bool *out_found) {
-  if (out_value == NULL || out_found == NULL) {
+static int32_t backend_nvs_get_counter(node_persistence_nvs_handle_t handle,
+                                       node_persistence_nvs_counter_t counter,
+                                       uint32_t *out_value, bool *out_found) {
+  const char *key = counter_key(counter);
+  if (key == NULL || out_value == NULL || out_found == NULL) {
     return (int32_t)ESP_ERR_INVALID_ARG;
   }
-  const esp_err_t result = nvs_get_u32(
-      (nvs_handle_t)handle, NODE_PERSISTENCE_NVS_SAMPLE_ID_KEY, out_value);
+  const esp_err_t result = nvs_get_u32((nvs_handle_t)handle, key, out_value);
   if (result == ESP_ERR_NVS_NOT_FOUND) {
     *out_found = false;
     *out_value = 0U;
@@ -56,11 +68,12 @@ backend_nvs_get_next_sample_id(node_persistence_nvs_handle_t handle,
   return (int32_t)result;
 }
 
-static int32_t
-backend_nvs_set_next_sample_id(node_persistence_nvs_handle_t handle,
-                               uint32_t value) {
-  return (int32_t)nvs_set_u32((nvs_handle_t)handle,
-                              NODE_PERSISTENCE_NVS_SAMPLE_ID_KEY, value);
+static int32_t backend_nvs_set_counter(node_persistence_nvs_handle_t handle,
+                                       node_persistence_nvs_counter_t counter,
+                                       uint32_t value) {
+  const char *key = counter_key(counter);
+  return key == NULL ? (int32_t)ESP_ERR_INVALID_ARG
+                     : (int32_t)nvs_set_u32((nvs_handle_t)handle, key, value);
 }
 
 static int32_t backend_nvs_commit(node_persistence_nvs_handle_t handle) {
@@ -245,8 +258,8 @@ static uint32_t backend_crc32_iso_hdlc(const uint8_t *input, size_t length) {
 static const node_persistence_backend_t BACKEND = {
     .nvs_init = backend_nvs_init,
     .nvs_open = backend_nvs_open,
-    .nvs_get_next_sample_id = backend_nvs_get_next_sample_id,
-    .nvs_set_next_sample_id = backend_nvs_set_next_sample_id,
+    .nvs_get_counter = backend_nvs_get_counter,
+    .nvs_set_counter = backend_nvs_set_counter,
     .nvs_commit = backend_nvs_commit,
     .nvs_close = backend_nvs_close,
     .littlefs_mount = backend_littlefs_mount,

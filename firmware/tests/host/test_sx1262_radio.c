@@ -270,9 +270,11 @@ static bool test_payload_boundaries_and_watchdog(void) {
   TEST_ASSERT_EQ_U64(UINT64_MAX, sx1262_radio_min_tx_window_us(256U));
   TEST_ASSERT_EQ_U64(UINT64_C(25856), sx1262_radio_airtime_us(1U));
   TEST_ASSERT_EQ_U64(UINT64_C(97536), sx1262_radio_airtime_us(50U));
+  TEST_ASSERT_EQ_U64(UINT64_C(102656), sx1262_radio_airtime_us(54U));
   TEST_ASSERT_EQ_U64(UINT64_C(399616), sx1262_radio_airtime_us(255U));
   TEST_ASSERT_EQ_U64(UINT64_C(35907), sx1262_radio_min_tx_window_us(1U));
   TEST_ASSERT_EQ_U64(UINT64_C(107579), sx1262_radio_min_tx_window_us(50U));
+  TEST_ASSERT_EQ_U64(UINT64_C(112704), sx1262_radio_min_tx_window_us(54U));
   TEST_ASSERT_EQ_U64(UINT64_C(409657), sx1262_radio_min_tx_window_us(255U));
 
   uint8_t payload[SX1262_RADIO_MAX_PAYLOAD_SIZE];

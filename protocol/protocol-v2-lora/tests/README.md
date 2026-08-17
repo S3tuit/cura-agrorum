@@ -30,14 +30,18 @@ file freshness, C memory safety, and broader input spaces.
   guards, staged identity replacement, node rotation, and destructive receiver
   master-key rotation.
 - `test_golden.py`: checks the reviewed header, nonce, reading, and ACK vectors
-  against both codecs.
+  against both codecs. The vectors deliberately use different `message_id` and
+  `sample_id` values and assert the 14-byte header, 13-byte nonce, 32-byte
+  reading body, 54-byte reading frame and unchanged 23-byte ACK frame.
 - `test_validation.py`: applies shared negative and classification tests to
   both codecs.
 - `test_crypto.py`: checks exact encrypted frames, authenticated round trips,
-  tampering, key and length failures, and C/Python interoperability.
+  tampering, key and length failures, C/Python interoperability, exact retry
+  bytes, current/backlog domain separation, and identical repeated ACK bytes
+  for one message ID and status.
 - `test_properties.py`: uses Hypothesis for C/Python agreement, round trips,
-  integer boundaries, valid readings, arbitrary reading bodies, and
-  authenticated frames.
+  integer boundaries, independent transport and reading identities, valid
+  readings, arbitrary reading bodies, and authenticated frames.
 - `test_c_sanitized.py` and `c/test_codec_sanitized.c`: compile and execute the
   standalone C boundary harness with ASan and UBSan.
 - `test_crypto_sanitized.py` and `c/test_crypto_sanitized.c`: check the firmware

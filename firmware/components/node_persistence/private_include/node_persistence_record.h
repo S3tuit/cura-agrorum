@@ -7,13 +7,14 @@
 #include "protocol_v2_lora_schema_generated.h"
 
 #define NODE_PERSISTENCE_RECORD_MAGIC UINT32_C(0x756fec23)
-#define NODE_PERSISTENCE_RECORD_FORMAT_VERSION UINT8_C(1)
+#define NODE_PERSISTENCE_RECORD_FORMAT_VERSION UINT8_C(2)
 
 #define NODE_PERSISTENCE_RECORD_TYPE_PENDING_READING UINT8_C(1)
 #define NODE_PERSISTENCE_RECORD_TYPE_QUARANTINED_READING UINT8_C(2)
 #define NODE_PERSISTENCE_RECORD_TYPE_DIAGNOSTIC_EVENT UINT8_C(3)
 #define NODE_PERSISTENCE_RECORD_TYPE_DELIVERY_STARTED UINT8_C(4)
 #define NODE_PERSISTENCE_RECORD_TYPE_DELIVERY_FINISHED UINT8_C(5)
+#define NODE_PERSISTENCE_RECORD_TYPE_PENDING_BACKLOG_BINDING UINT8_C(6)
 
 #define NODE_PERSISTENCE_RECORD_HEADER_SIZE 8U
 #define NODE_PERSISTENCE_RECORD_FOOTER_SIZE 6U
@@ -22,10 +23,11 @@
 #define NODE_PERSISTENCE_RECORD_MAX_SIZE 512U
 
 #define NODE_PERSISTENCE_READING_PAYLOAD_SIZE 32U
-#define NODE_PERSISTENCE_DELIVERY_STARTED_PAYLOAD_SIZE 13U
-#define NODE_PERSISTENCE_DELIVERY_FINISHED_PAYLOAD_SIZE 11U
-#define NODE_PERSISTENCE_DIAGNOSTIC_PREFIX_SIZE 18U
-#define NODE_PERSISTENCE_DIAGNOSTIC_MAX_PAYLOAD_SIZE 270U
+#define NODE_PERSISTENCE_BACKLOG_BINDING_PAYLOAD_SIZE 62U
+#define NODE_PERSISTENCE_DELIVERY_STARTED_PAYLOAD_SIZE 17U
+#define NODE_PERSISTENCE_DELIVERY_FINISHED_PAYLOAD_SIZE 15U
+#define NODE_PERSISTENCE_DIAGNOSTIC_PREFIX_SIZE 22U
+#define NODE_PERSISTENCE_DIAGNOSTIC_MAX_PAYLOAD_SIZE 274U
 
 typedef uint8_t node_persistence_log_kind_t;
 #define NODE_PERSISTENCE_LOG_PENDING UINT8_C(0)
@@ -61,8 +63,13 @@ node_persistence_record_validate(const node_persistence_backend_t *backend,
                                  const uint8_t *record, size_t record_length);
 
 bool node_persistence_record_decode_reading(
-    const uint8_t *record, size_t record_length, uint32_t *out_sample_id,
+    const uint8_t *record, size_t record_length,
     uint8_t out_reading_body[CURA_LORA_V2_READING_BODY_SIZE]);
+
+bool node_persistence_record_decode_backlog_binding(
+    const uint8_t *record, size_t record_length, uint32_t *out_sample_id,
+    uint32_t *out_message_id,
+    uint8_t out_frame[CURA_LORA_V2_READING_FRAME_SIZE]);
 
 #ifdef NODE_PERSISTENCE_TESTING
 void node_persistence_test_reset(void);

@@ -15,6 +15,7 @@
 #define QUARANTINE_LOG_PATH NODE_PERSISTENCE_MOUNT_PATH "/quarantine.log"
 #define DIAGNOSTIC_LOG_PATH NODE_PERSISTENCE_MOUNT_PATH "/diagnostic.log"
 #define DELIVERY_LOG_PATH NODE_PERSISTENCE_MOUNT_PATH "/delivery.log"
+#define PERSISTENCE_RECORD_TYPE_OFFSET 5U
 
 #ifndef NODE_PERSISTENCE_PENDING_LOG_LIMIT
 #define NODE_PERSISTENCE_PENDING_LOG_LIMIT (UINT64_C(512) * UINT64_C(1024))
@@ -126,7 +127,8 @@ static bool valid_log_kind(node_persistence_log_kind_t log_kind) {
   return log_kind < NODE_PERSISTENCE_LOG_COUNT;
 }
 
-static err_curag_t ensure_nvs(diagn_context_t *out_diag) {
+static err_curag_t ensure_nvs(node_persistence_resource_t resource,
+                              diagn_context_t *out_diag) {
   if (s_state.nvs_state == BACKEND_READY) {
     return CURAG_OK;
   }
@@ -140,8 +142,7 @@ static err_curag_t ensure_nvs(diagn_context_t *out_diag) {
   if (status != 0) {
     s_state.nvs_state = BACKEND_FAILED;
     s_state.nvs_init_error = CURAG_ENVS_INIT;
-    set_diag(&s_state.nvs_init_diag, CURAG_OP_INITIALIZE,
-             NODE_PERSISTENCE_RESOURCE_NVS_SAMPLE_COUNTER,
+    set_diag(&s_state.nvs_init_diag, CURAG_OP_INITIALIZE, resource,
              NODE_PERSISTENCE_STAGE_INITIALIZE,
              NODE_PERSISTENCE_BACKEND_ESP_ERR, status);
     copy_diag(out_diag, &s_state.nvs_init_diag);
@@ -152,8 +153,7 @@ static err_curag_t ensure_nvs(diagn_context_t *out_diag) {
   if (status != 0) {
     s_state.nvs_state = BACKEND_FAILED;
     s_state.nvs_init_error = CURAG_ENVS_ACCESS;
-    set_diag(&s_state.nvs_init_diag, CURAG_OP_INITIALIZE,
-             NODE_PERSISTENCE_RESOURCE_NVS_SAMPLE_COUNTER,
+    set_diag(&s_state.nvs_init_diag, CURAG_OP_INITIALIZE, resource,
              NODE_PERSISTENCE_STAGE_OPEN, NODE_PERSISTENCE_BACKEND_ESP_ERR,
              status);
     copy_diag(out_diag, &s_state.nvs_init_diag);
@@ -287,6 +287,71 @@ static err_curag_t read_candidate(node_persistence_log_kind_t log_kind,
                         CURAG_OP_RECOVER, out_diag);
 }
 
+static err_curag_t read_record_ending_at(node_persistence_log_kind_t log_kind,
+                                         uint64_t end,
+                                         tail_record_t *out_record,
+                                         diagn_context_t *out_diag) {
+  memset(out_record, 0, sizeof(*out_record));
+  if (end < NODE_PERSISTENCE_RECORD_FOOTER_SIZE) {
+    return CURAG_ECORRUPT_RECORD;
+  }
+  uint8_t footer[NODE_PERSISTENCE_RECORD_FOOTER_SIZE];
+  err_curag_t result =
+      read_log_exact(log_kind, end - NODE_PERSISTENCE_RECORD_FOOTER_SIZE,
+                     footer, sizeof(footer), CURAG_OP_READ, out_diag);
+  if (result != CURAG_OK) {
+    return result;
+  }
+  const uint16_t length = node_persistence_load_le16(footer);
+  if (length < NODE_PERSISTENCE_RECORD_OVERHEAD ||
+      length > NODE_PERSISTENCE_RECORD_MAX_SIZE || (uint64_t)length > end) {
+    return CURAG_ECORRUPT_RECORD;
+  }
+  result = read_candidate(log_kind, end, length, out_record->record, out_diag);
+  if (result != CURAG_OK) {
+    return result;
+  }
+  if (node_persistence_record_validate(node_persistence_backend(), log_kind,
+                                       out_record->record, length) !=
+      NODE_PERSISTENCE_RECORD_VALID) {
+    return CURAG_ECORRUPT_RECORD;
+  }
+  out_record->found = true;
+  out_record->start = end - length;
+  out_record->length = length;
+  return CURAG_OK;
+}
+
+static err_curag_t
+pending_binding_matches_preceding_reading(const tail_record_t *binding,
+                                          bool *out_matches,
+                                          diagn_context_t *out_diag) {
+  *out_matches = false;
+  tail_record_t reading_record;
+  err_curag_t result = read_record_ending_at(
+      NODE_PERSISTENCE_LOG_PENDING, binding->start, &reading_record, out_diag);
+  if (result != CURAG_OK) {
+    return result;
+  }
+
+  uint32_t binding_sample_id = 0U;
+  uint32_t message_id = 0U;
+  uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE];
+  uint8_t body[CURA_LORA_V2_READING_BODY_SIZE];
+  cura_lora_v2_reading_t reading;
+  if (!node_persistence_record_decode_backlog_binding(
+          binding->record, binding->length, &binding_sample_id, &message_id,
+          frame) ||
+      !node_persistence_record_decode_reading(reading_record.record,
+                                              reading_record.length, body) ||
+      cura_lora_v2_decode_reading(&reading, body, sizeof(body)) !=
+          CURA_LORA_V2_CODEC_OK) {
+    return CURAG_OK;
+  }
+  *out_matches = binding_sample_id == reading.sample_id;
+  return CURAG_OK;
+}
+
 static err_curag_t recover_tail(node_persistence_log_kind_t log_kind,
                                 tail_record_t *out_tail,
                                 diagn_context_t *out_diag) {
@@ -338,6 +403,20 @@ static err_curag_t recover_tail(node_persistence_log_kind_t log_kind,
           out_tail->found = true;
           out_tail->start = file_size - total_length;
           out_tail->length = total_length;
+          if (log_kind == NODE_PERSISTENCE_LOG_PENDING &&
+              out_tail->record[PERSISTENCE_RECORD_TYPE_OFFSET] ==
+                  NODE_PERSISTENCE_RECORD_TYPE_PENDING_BACKLOG_BINDING) {
+            bool matches = false;
+            result = pending_binding_matches_preceding_reading(
+                out_tail, &matches, out_diag);
+            if (result != CURAG_OK && result != CURAG_ECORRUPT_RECORD) {
+              return result;
+            }
+            if (result != CURAG_OK || !matches) {
+              return recover_truncate(log_kind, out_tail->start,
+                                      CURAG_ECORRUPT_RECORD, out_diag);
+            }
+          }
           return CURAG_OK;
         }
         const err_curag_t semantic_error =
@@ -410,6 +489,8 @@ static err_curag_t validate_file_forward(node_persistence_log_kind_t log_kind,
   const node_persistence_backend_t *backend = node_persistence_backend();
   uint64_t offset = 0U;
   uint8_t record[NODE_PERSISTENCE_RECORD_MAX_SIZE];
+  bool previous_pending_is_unbound = false;
+  uint32_t previous_pending_sample_id = 0U;
   while (offset < file_size) {
     if (file_size - offset < NODE_PERSISTENCE_RECORD_HEADER_SIZE) {
       return fail(CURAG_ECORRUPT_RECORD, out_diag, operation,
@@ -452,6 +533,38 @@ static err_curag_t validate_file_forward(node_persistence_log_kind_t log_kind,
       return fail(error, out_diag, operation, LOG_RESOURCES[log_kind],
                   NODE_PERSISTENCE_STAGE_TAIL_SCAN,
                   NODE_PERSISTENCE_BACKEND_NO_ERROR, 0);
+    }
+    if (log_kind == NODE_PERSISTENCE_LOG_PENDING) {
+      const uint8_t record_type = record[PERSISTENCE_RECORD_TYPE_OFFSET];
+      if (record_type == NODE_PERSISTENCE_RECORD_TYPE_PENDING_READING) {
+        uint8_t body[CURA_LORA_V2_READING_BODY_SIZE];
+        cura_lora_v2_reading_t reading;
+        if (!node_persistence_record_decode_reading(record, total_length,
+                                                    body) ||
+            cura_lora_v2_decode_reading(&reading, body, sizeof(body)) !=
+                CURA_LORA_V2_CODEC_OK) {
+          return fail(CURAG_ECORRUPT_RECORD, out_diag, operation,
+                      NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
+                      NODE_PERSISTENCE_STAGE_DECODE,
+                      NODE_PERSISTENCE_BACKEND_NO_ERROR, 0);
+        }
+        previous_pending_is_unbound = true;
+        previous_pending_sample_id = reading.sample_id;
+      } else {
+        uint32_t sample_id = 0U;
+        uint32_t message_id = 0U;
+        uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE];
+        if (!previous_pending_is_unbound ||
+            !node_persistence_record_decode_backlog_binding(
+                record, total_length, &sample_id, &message_id, frame) ||
+            sample_id != previous_pending_sample_id) {
+          return fail(CURAG_ECORRUPT_RECORD, out_diag, operation,
+                      NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
+                      NODE_PERSISTENCE_STAGE_DECODE,
+                      NODE_PERSISTENCE_BACKEND_NO_ERROR, 0);
+        }
+        previous_pending_is_unbound = false;
+      }
     }
     offset += total_length;
   }
@@ -539,30 +652,39 @@ static err_curag_t compact_pending(diagn_context_t *out_diag) {
 
   uint64_t retained_size = 0U;
   uint64_t retained_start = file_size;
-  uint8_t footer[NODE_PERSISTENCE_RECORD_FOOTER_SIZE];
   while (retained_start > 0U) {
-    result =
-        read_log_exact(NODE_PERSISTENCE_LOG_PENDING,
-                       retained_start - NODE_PERSISTENCE_RECORD_FOOTER_SIZE,
-                       footer, sizeof(footer), CURAG_OP_COMPACT, out_diag);
+    tail_record_t item_tail;
+    result = read_record_ending_at(NODE_PERSISTENCE_LOG_PENDING, retained_start,
+                                   &item_tail, out_diag);
     if (result != CURAG_OK) {
       return result;
     }
-    const uint16_t record_length = node_persistence_load_le16(footer);
-    if (record_length < NODE_PERSISTENCE_RECORD_OVERHEAD ||
-        record_length > NODE_PERSISTENCE_RECORD_MAX_SIZE ||
-        (uint64_t)record_length > retained_start) {
-      return fail(CURAG_ECORRUPT_RECORD, out_diag, CURAG_OP_COMPACT,
-                  NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
-                  NODE_PERSISTENCE_STAGE_DECODE,
-                  NODE_PERSISTENCE_BACKEND_NO_ERROR, 0);
+    uint64_t item_start = item_tail.start;
+    uint64_t item_size = item_tail.length;
+    if (item_tail.record[PERSISTENCE_RECORD_TYPE_OFFSET] ==
+        NODE_PERSISTENCE_RECORD_TYPE_PENDING_BACKLOG_BINDING) {
+      tail_record_t reading_record;
+      result =
+          read_record_ending_at(NODE_PERSISTENCE_LOG_PENDING, item_tail.start,
+                                &reading_record, out_diag);
+      if (result != CURAG_OK ||
+          reading_record.record[PERSISTENCE_RECORD_TYPE_OFFSET] !=
+              NODE_PERSISTENCE_RECORD_TYPE_PENDING_READING) {
+        return fail(CURAG_ECORRUPT_RECORD, out_diag, CURAG_OP_COMPACT,
+                    NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
+                    NODE_PERSISTENCE_STAGE_DECODE,
+                    NODE_PERSISTENCE_BACKEND_NO_ERROR, 0);
+      }
+      item_start = reading_record.start;
+      item_size += reading_record.length;
     }
-    if (retained_size + record_length >
-        NODE_PERSISTENCE_PENDING_COMPACT_RETAIN_LIMIT) {
+    if (retained_size > NODE_PERSISTENCE_PENDING_COMPACT_RETAIN_LIMIT ||
+        item_size >
+            NODE_PERSISTENCE_PENDING_COMPACT_RETAIN_LIMIT - retained_size) {
       break;
     }
-    retained_start -= record_length;
-    retained_size += record_length;
+    retained_start = item_start;
+    retained_size += item_size;
   }
 
   node_persistence_file_handle_t temporary =
@@ -732,12 +854,10 @@ static err_curag_t append_record(node_persistence_log_kind_t log_kind,
   return CURAG_OK;
 }
 
-static err_curag_t
-encode_reading_record(uint8_t record_type, uint32_t sample_id,
-                      const cura_lora_v2_reading_t *reading,
-                      uint8_t output[NODE_PERSISTENCE_RECORD_MAX_SIZE],
-                      size_t *out_length, node_persistence_resource_t resource,
-                      diagn_context_t *out_diag) {
+static err_curag_t encode_reading_record(
+    uint8_t record_type, const cura_lora_v2_reading_t *reading,
+    uint8_t output[NODE_PERSISTENCE_RECORD_MAX_SIZE], size_t *out_length,
+    node_persistence_resource_t resource, diagn_context_t *out_diag) {
   if (reading == NULL ||
       cura_lora_v2_validate_reading(reading) != CURA_LORA_V2_CODEC_OK) {
     return fail(CURAG_EINVALID_ARGUMENT, out_diag, CURAG_OP_VALIDATE, resource,
@@ -746,9 +866,7 @@ encode_reading_record(uint8_t record_type, uint32_t sample_id,
   }
 
   uint8_t payload[NODE_PERSISTENCE_READING_PAYLOAD_SIZE];
-  node_persistence_store_le32(payload, sample_id);
-  if (cura_lora_v2_encode_reading(payload + sizeof(uint32_t),
-                                  CURA_LORA_V2_READING_BODY_SIZE,
+  if (cura_lora_v2_encode_reading(payload, CURA_LORA_V2_READING_BODY_SIZE,
                                   reading) != CURA_LORA_V2_CODEC_OK ||
       !node_persistence_record_encode(node_persistence_backend(), record_type,
                                       payload, sizeof(payload), output,
@@ -760,69 +878,79 @@ encode_reading_record(uint8_t record_type, uint32_t sample_id,
   return CURAG_OK;
 }
 
-err_curag_t node_persistence_claim_sample_id(uint32_t *out_sample_id,
-                                             diagn_context_t *out_diag) {
+static err_curag_t claim_counter(uint32_t *out_id,
+                                 node_persistence_nvs_counter_t counter,
+                                 node_persistence_resource_t resource,
+                                 err_curag_t exhausted_error,
+                                 diagn_context_t *out_diag) {
   curag_diagnostic_context_clear(out_diag);
-  if (out_sample_id == NULL) {
-    return fail(CURAG_EINVALID_ARGUMENT, out_diag, CURAG_OP_VALIDATE,
-                NODE_PERSISTENCE_RESOURCE_NVS_SAMPLE_COUNTER,
+  if (out_id == NULL) {
+    return fail(CURAG_EINVALID_ARGUMENT, out_diag, CURAG_OP_VALIDATE, resource,
                 NODE_PERSISTENCE_STAGE_NONE, NODE_PERSISTENCE_BACKEND_NO_ERROR,
                 0);
   }
 
-  err_curag_t result = ensure_nvs(out_diag);
+  err_curag_t result = ensure_nvs(resource, out_diag);
   if (result != CURAG_OK) {
     return result;
   }
   const node_persistence_backend_t *backend = node_persistence_backend();
-  uint32_t next_sample_id = 0U;
+  uint32_t next_id = 0U;
   bool found = false;
-  int32_t status = backend->nvs_get_next_sample_id(s_state.nvs_handle,
-                                                   &next_sample_id, &found);
+  int32_t status =
+      backend->nvs_get_counter(s_state.nvs_handle, counter, &next_id, &found);
   if (status != 0) {
-    return fail(CURAG_ENVS_ACCESS, out_diag, CURAG_OP_READ,
-                NODE_PERSISTENCE_RESOURCE_NVS_SAMPLE_COUNTER,
+    return fail(CURAG_ENVS_ACCESS, out_diag, CURAG_OP_READ, resource,
                 NODE_PERSISTENCE_STAGE_GET, NODE_PERSISTENCE_BACKEND_ESP_ERR,
                 status);
   }
   if (!found) {
-    next_sample_id = 0U;
+    next_id = 0U;
   }
-  if (next_sample_id == UINT32_MAX) {
-    return fail(CURAG_ESAMPLE_ID_EXHAUSTED, out_diag, CURAG_OP_VALIDATE,
-                NODE_PERSISTENCE_RESOURCE_NVS_SAMPLE_COUNTER,
+  if (next_id == UINT32_MAX) {
+    return fail(exhausted_error, out_diag, CURAG_OP_VALIDATE, resource,
                 NODE_PERSISTENCE_STAGE_NONE, NODE_PERSISTENCE_BACKEND_NO_ERROR,
                 0);
   }
 
-  status =
-      backend->nvs_set_next_sample_id(s_state.nvs_handle, next_sample_id + 1U);
+  status = backend->nvs_set_counter(s_state.nvs_handle, counter, next_id + 1U);
   if (status != 0) {
-    return fail(CURAG_ENVS_ACCESS, out_diag, CURAG_OP_WRITE,
-                NODE_PERSISTENCE_RESOURCE_NVS_SAMPLE_COUNTER,
+    return fail(CURAG_ENVS_ACCESS, out_diag, CURAG_OP_WRITE, resource,
                 NODE_PERSISTENCE_STAGE_SET, NODE_PERSISTENCE_BACKEND_ESP_ERR,
                 status);
   }
   status = backend->nvs_commit(s_state.nvs_handle);
   if (status != 0) {
-    return fail(CURAG_ENVS_ACCESS, out_diag, CURAG_OP_SYNC,
-                NODE_PERSISTENCE_RESOURCE_NVS_SAMPLE_COUNTER,
+    return fail(CURAG_ENVS_ACCESS, out_diag, CURAG_OP_SYNC, resource,
                 NODE_PERSISTENCE_STAGE_COMMIT, NODE_PERSISTENCE_BACKEND_ESP_ERR,
                 status);
   }
-  *out_sample_id = next_sample_id;
+  *out_id = next_id;
   return CURAG_OK;
 }
 
+err_curag_t node_persistence_claim_sample_id(uint32_t *out_sample_id,
+                                             diagn_context_t *out_diag) {
+  return claim_counter(out_sample_id, NODE_PERSISTENCE_NVS_COUNTER_SAMPLE,
+                       NODE_PERSISTENCE_RESOURCE_NVS_SAMPLE_COUNTER,
+                       CURAG_ESAMPLE_ID_EXHAUSTED, out_diag);
+}
+
+err_curag_t node_persistence_claim_message_id(uint32_t *out_message_id,
+                                              diagn_context_t *out_diag) {
+  return claim_counter(out_message_id, NODE_PERSISTENCE_NVS_COUNTER_MESSAGE,
+                       NODE_PERSISTENCE_RESOURCE_NVS_MESSAGE_COUNTER,
+                       CURAG_EMESSAGE_ID_EXHAUSTED, out_diag);
+}
+
 err_curag_t
-node_persistence_append_pending_reading(uint32_t sample_id,
-                                        const cura_lora_v2_reading_t *reading,
+node_persistence_append_pending_reading(const cura_lora_v2_reading_t *reading,
                                         diagn_context_t *out_diag) {
   curag_diagnostic_context_clear(out_diag);
   uint8_t record[NODE_PERSISTENCE_RECORD_MAX_SIZE];
   size_t record_length = 0U;
   err_curag_t result = encode_reading_record(
-      NODE_PERSISTENCE_RECORD_TYPE_PENDING_READING, sample_id, reading, record,
+      NODE_PERSISTENCE_RECORD_TYPE_PENDING_READING, reading, record,
       &record_length, NODE_PERSISTENCE_RESOURCE_PENDING_LOG, out_diag);
   if (result != CURAG_OK) {
     return result;
@@ -831,16 +959,84 @@ node_persistence_append_pending_reading(uint32_t sample_id,
                        true, out_diag);
 }
 
-err_curag_t node_persistence_peek_most_recent_pending(
-    uint32_t *out_sample_id, cura_lora_v2_reading_t *out_reading,
-    bool *out_found, diagn_context_t *out_diag) {
+err_curag_t node_persistence_bind_newest_backlog_frame(
+    uint32_t expected_sample_id, uint32_t message_id,
+    const uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE],
+    diagn_context_t *out_diag) {
   curag_diagnostic_context_clear(out_diag);
-  if (out_sample_id == NULL || out_reading == NULL || out_found == NULL) {
+  if (frame == NULL ||
+      frame[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] != CURA_LORA_V2_CONTROL ||
+      frame[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] !=
+          CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK ||
+      node_persistence_load_le32(
+          frame + CURA_LORA_V2_CLEAR_HEADER_MESSAGE_ID_OFFSET) != message_id) {
     return fail(CURAG_EINVALID_ARGUMENT, out_diag, CURAG_OP_VALIDATE,
                 NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
                 NODE_PERSISTENCE_STAGE_NONE, NODE_PERSISTENCE_BACKEND_NO_ERROR,
                 0);
   }
+
+  err_curag_t result = ensure_littlefs(out_diag);
+  if (result != CURAG_OK) {
+    return result;
+  }
+  result = cleanup_stale_pending_compact(out_diag);
+  if (result != CURAG_OK) {
+    return result;
+  }
+  tail_record_t tail;
+  result = recover_tail(NODE_PERSISTENCE_LOG_PENDING, &tail, out_diag);
+  if (result != CURAG_OK) {
+    return result;
+  }
+  uint8_t reading_body[CURA_LORA_V2_READING_BODY_SIZE];
+  cura_lora_v2_reading_t reading;
+  if (!tail.found ||
+      tail.record[PERSISTENCE_RECORD_TYPE_OFFSET] !=
+          NODE_PERSISTENCE_RECORD_TYPE_PENDING_READING ||
+      !node_persistence_record_decode_reading(tail.record, tail.length,
+                                              reading_body) ||
+      cura_lora_v2_decode_reading(&reading, reading_body,
+                                  sizeof(reading_body)) !=
+          CURA_LORA_V2_CODEC_OK ||
+      reading.sample_id != expected_sample_id) {
+    return fail(CURAG_ERECORD_MISMATCH, out_diag, CURAG_OP_VALIDATE,
+                NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
+                NODE_PERSISTENCE_STAGE_TAIL_SCAN,
+                NODE_PERSISTENCE_BACKEND_NO_ERROR, 0);
+  }
+
+  uint8_t payload[NODE_PERSISTENCE_BACKLOG_BINDING_PAYLOAD_SIZE];
+  node_persistence_store_le32(payload, expected_sample_id);
+  node_persistence_store_le32(payload + 4U, message_id);
+  memcpy(payload + 8U, frame, CURA_LORA_V2_READING_FRAME_SIZE);
+  uint8_t record[NODE_PERSISTENCE_RECORD_MAX_SIZE];
+  size_t record_length = 0U;
+  if (!node_persistence_record_encode(
+          node_persistence_backend(),
+          NODE_PERSISTENCE_RECORD_TYPE_PENDING_BACKLOG_BINDING, payload,
+          sizeof(payload), record, &record_length)) {
+    return fail(CURAG_EINVALID_ARGUMENT, out_diag, CURAG_OP_ENCODE,
+                NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
+                NODE_PERSISTENCE_STAGE_ENCODE,
+                NODE_PERSISTENCE_BACKEND_NO_ERROR, 0);
+  }
+  return append_record(NODE_PERSISTENCE_LOG_PENDING, record, record_length,
+                       true, out_diag);
+}
+
+err_curag_t
+node_persistence_peek_most_recent_pending(node_pending_reading_t *out_pending,
+                                          bool *out_found,
+                                          diagn_context_t *out_diag) {
+  curag_diagnostic_context_clear(out_diag);
+  if (out_pending == NULL || out_found == NULL) {
+    return fail(CURAG_EINVALID_ARGUMENT, out_diag, CURAG_OP_VALIDATE,
+                NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
+                NODE_PERSISTENCE_STAGE_NONE, NODE_PERSISTENCE_BACKEND_NO_ERROR,
+                0);
+  }
+  memset(out_pending, 0, sizeof(*out_pending));
   *out_found = false;
 
   err_curag_t result = ensure_littlefs(out_diag);
@@ -857,16 +1053,53 @@ err_curag_t node_persistence_peek_most_recent_pending(
     return result;
   }
 
+  tail_record_t reading_record = tail;
+  if (tail.record[PERSISTENCE_RECORD_TYPE_OFFSET] ==
+      NODE_PERSISTENCE_RECORD_TYPE_PENDING_BACKLOG_BINDING) {
+    uint32_t binding_sample_id = 0U;
+    if (!node_persistence_record_decode_backlog_binding(
+            tail.record, tail.length, &binding_sample_id,
+            &out_pending->message_id, out_pending->frame)) {
+      return fail(CURAG_ECORRUPT_RECORD, out_diag, CURAG_OP_DECODE,
+                  NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
+                  NODE_PERSISTENCE_STAGE_DECODE,
+                  NODE_PERSISTENCE_BACKEND_NO_ERROR, 0);
+    }
+    result = read_record_ending_at(NODE_PERSISTENCE_LOG_PENDING, tail.start,
+                                   &reading_record, out_diag);
+    if (result != CURAG_OK) {
+      return fail(CURAG_ECORRUPT_RECORD, out_diag, CURAG_OP_DECODE,
+                  NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
+                  NODE_PERSISTENCE_STAGE_DECODE,
+                  NODE_PERSISTENCE_BACKEND_NO_ERROR, 0);
+    }
+    out_pending->backlog_bound = true;
+  }
+
   uint8_t reading_body[CURA_LORA_V2_READING_BODY_SIZE];
-  if (!node_persistence_record_decode_reading(tail.record, tail.length,
-                                              out_sample_id, reading_body) ||
-      cura_lora_v2_decode_reading(out_reading, reading_body,
+  if (!node_persistence_record_decode_reading(
+          reading_record.record, reading_record.length, reading_body) ||
+      cura_lora_v2_decode_reading(&out_pending->reading, reading_body,
                                   sizeof(reading_body)) !=
           CURA_LORA_V2_CODEC_OK) {
     return fail(CURAG_ECORRUPT_RECORD, out_diag, CURAG_OP_DECODE,
                 NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
                 NODE_PERSISTENCE_STAGE_DECODE,
                 NODE_PERSISTENCE_BACKEND_NO_ERROR, 0);
+  }
+  if (out_pending->backlog_bound) {
+    uint32_t binding_sample_id = 0U;
+    uint32_t ignored_message_id = 0U;
+    uint8_t ignored_frame[CURA_LORA_V2_READING_FRAME_SIZE];
+    (void)node_persistence_record_decode_backlog_binding(
+        tail.record, tail.length, &binding_sample_id, &ignored_message_id,
+        ignored_frame);
+    if (binding_sample_id != out_pending->reading.sample_id) {
+      return fail(CURAG_ECORRUPT_RECORD, out_diag, CURAG_OP_DECODE,
+                  NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
+                  NODE_PERSISTENCE_STAGE_DECODE,
+                  NODE_PERSISTENCE_BACKEND_NO_ERROR, 0);
+    }
   }
   *out_found = true;
   return CURAG_OK;
@@ -895,16 +1128,34 @@ err_curag_t node_persistence_remove_newest_reading(uint32_t expected_sample_id,
                 NODE_PERSISTENCE_BACKEND_NO_ERROR, 0);
   }
 
-  uint32_t stored_sample_id = 0U;
+  tail_record_t reading_record = tail;
+  uint64_t truncate_at = tail.start;
+  if (tail.record[PERSISTENCE_RECORD_TYPE_OFFSET] ==
+      NODE_PERSISTENCE_RECORD_TYPE_PENDING_BACKLOG_BINDING) {
+    result = read_record_ending_at(NODE_PERSISTENCE_LOG_PENDING, tail.start,
+                                   &reading_record, out_diag);
+    if (result != CURAG_OK) {
+      return fail(CURAG_ECORRUPT_RECORD, out_diag, CURAG_OP_DECODE,
+                  NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
+                  NODE_PERSISTENCE_STAGE_DECODE,
+                  NODE_PERSISTENCE_BACKEND_NO_ERROR, 0);
+    }
+    truncate_at = reading_record.start;
+  }
+
   uint8_t reading_body[CURA_LORA_V2_READING_BODY_SIZE];
+  cura_lora_v2_reading_t reading;
   if (!node_persistence_record_decode_reading(
-          tail.record, tail.length, &stored_sample_id, reading_body)) {
+          reading_record.record, reading_record.length, reading_body) ||
+      cura_lora_v2_decode_reading(&reading, reading_body,
+                                  sizeof(reading_body)) !=
+          CURA_LORA_V2_CODEC_OK) {
     return fail(CURAG_ECORRUPT_RECORD, out_diag, CURAG_OP_DECODE,
                 NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
                 NODE_PERSISTENCE_STAGE_DECODE,
                 NODE_PERSISTENCE_BACKEND_NO_ERROR, 0);
   }
-  if (stored_sample_id != expected_sample_id) {
+  if (reading.sample_id != expected_sample_id) {
     return fail(CURAG_ERECORD_MISMATCH, out_diag, CURAG_OP_VALIDATE,
                 NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
                 NODE_PERSISTENCE_STAGE_TAIL_SCAN,
@@ -913,7 +1164,7 @@ err_curag_t node_persistence_remove_newest_reading(uint32_t expected_sample_id,
 
   const node_persistence_backend_t *backend = node_persistence_backend();
   int32_t status = backend->file_truncate(
-      s_state.logs[NODE_PERSISTENCE_LOG_PENDING].handle, tail.start);
+      s_state.logs[NODE_PERSISTENCE_LOG_PENDING].handle, truncate_at);
   if (status != 0) {
     return fail(CURAG_EIO, out_diag, CURAG_OP_REMOVE,
                 NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
@@ -932,16 +1183,14 @@ err_curag_t node_persistence_remove_newest_reading(uint32_t expected_sample_id,
 }
 
 err_curag_t
-node_persistence_quarantine_reading(uint32_t sample_id,
-                                    const cura_lora_v2_reading_t *reading,
+node_persistence_quarantine_reading(const cura_lora_v2_reading_t *reading,
                                     diagn_context_t *out_diag) {
   curag_diagnostic_context_clear(out_diag);
   uint8_t record[NODE_PERSISTENCE_RECORD_MAX_SIZE];
   size_t record_length = 0U;
-  err_curag_t result =
-      encode_reading_record(NODE_PERSISTENCE_RECORD_TYPE_QUARANTINED_READING,
-                            sample_id, reading, record, &record_length,
-                            NODE_PERSISTENCE_RESOURCE_QUARANTINE_LOG, out_diag);
+  err_curag_t result = encode_reading_record(
+      NODE_PERSISTENCE_RECORD_TYPE_QUARANTINED_READING, reading, record,
+      &record_length, NODE_PERSISTENCE_RESOURCE_QUARANTINE_LOG, out_diag);
   if (result != CURAG_OK) {
     return result;
   }
@@ -957,7 +1206,9 @@ static bool validate_diagnostic_event(const node_diagnostic_event_t *event) {
       ((event->flags & NODE_DIAGNOSTIC_APPLICATION_OFFSET_VALID) == 0U &&
        event->application_offset_ms != 0U) ||
       ((event->flags & NODE_DIAGNOSTIC_CYCLE_SAMPLE_ID_VALID) == 0U &&
-       event->cycle_sample_id != 0U)) {
+       event->cycle_sample_id != 0U) ||
+      ((event->flags & NODE_DIAGNOSTIC_MESSAGE_ID_VALID) == 0U &&
+       event->message_id != 0U)) {
     return false;
   }
   if (event->context == NULL) {
@@ -1006,10 +1257,11 @@ node_persistence_append_diagnostic_event(const node_diagnostic_event_t *event,
   node_persistence_store_le16(payload + 4U, event->flags);
   node_persistence_store_le32(payload + 6U, event->application_offset_ms);
   node_persistence_store_le32(payload + 10U, event->cycle_sample_id);
+  node_persistence_store_le32(payload + 14U, event->message_id);
   if (context != NULL) {
-    node_persistence_store_le16(payload + 14U, context->operation);
-    payload[16U] = context->context_length;
-    payload[17U] = context->context_schema;
+    node_persistence_store_le16(payload + 18U, context->operation);
+    payload[20U] = context->context_length;
+    payload[21U] = context->context_schema;
     if (context_length != 0U) {
       memcpy(payload + NODE_PERSISTENCE_DIAGNOSTIC_PREFIX_SIZE,
              context->context, context_length);
@@ -1065,17 +1317,18 @@ node_persistence_append_delivery_event(const node_delivery_event_t *event,
   uint8_t payload[NODE_PERSISTENCE_DELIVERY_STARTED_PAYLOAD_SIZE] = {0};
   node_persistence_store_le32(payload, event->cycle_sample_id);
   node_persistence_store_le32(payload + 4U, event->sample_id);
-  payload[8U] = event->domain;
+  node_persistence_store_le32(payload + 8U, event->message_id);
+  payload[12U] = event->domain;
   uint8_t record_type = NODE_PERSISTENCE_RECORD_TYPE_DELIVERY_STARTED;
   size_t payload_length = NODE_PERSISTENCE_DELIVERY_STARTED_PAYLOAD_SIZE;
   if (event->type == NODE_DELIVERY_EVENT_STARTED) {
-    node_persistence_store_le32(payload + 9U,
+    node_persistence_store_le32(payload + 13U,
                                 event->detail.started.start_offset_ms);
   } else {
     record_type = NODE_PERSISTENCE_RECORD_TYPE_DELIVERY_FINISHED;
     payload_length = NODE_PERSISTENCE_DELIVERY_FINISHED_PAYLOAD_SIZE;
-    payload[9U] = event->detail.finished.attempt_count;
-    payload[10U] = event->detail.finished.final_result;
+    payload[13U] = event->detail.finished.attempt_count;
+    payload[14U] = event->detail.finished.final_result;
   }
 
   uint8_t record[NODE_PERSISTENCE_RECORD_MAX_SIZE];

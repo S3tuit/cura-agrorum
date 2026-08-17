@@ -71,6 +71,7 @@ set(
   sensor_validity_maps_independently
   run_time_and_sampling_deadline_boundaries
   pending_failure_allows_ram_only_delivery
+  message_claim_failure_retains_reading_without_construction
   invalid_composition_returns_without_side_effects
   retries_reuse_identical_frame
   invalid_acks_share_one_receive_interval
@@ -89,6 +90,8 @@ set(
   accepted_backlog_removal_failure_stops
   airtime_budget_is_shared_across_backlog
   backlog_silence_retries_the_same_frame
+  bound_backlog_reuses_persisted_frame_without_new_id
+  backlog_binding_failure_prevents_first_transmission
   delivery_events_bracket_retries_and_failures_are_best_effort
   diagnostic_failure_is_not_logged_recursively
   current_and_backlog_metrics_accumulate_in_correct_domains

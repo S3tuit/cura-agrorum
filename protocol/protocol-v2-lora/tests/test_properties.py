@@ -29,7 +29,7 @@ def headers(draw: st.DrawFn) -> dict[str, Any]:
         "control": draw(U8),
         "domain": draw(U8),
         "node_id_hex": draw(st.binary(min_size=8, max_size=8)).hex(),
-        "sample_id": draw(U32),
+        "message_id": draw(U32),
     }
 
 
@@ -103,6 +103,7 @@ def valid_readings(draw: st.DrawFn) -> dict[str, int]:
         previous_cycle_accepted_readings = 0
 
     return {
+        "sample_id": draw(U32),
         "run_ms": draw(U16),
         "soil_0_mv": soil_0_mv,
         "soil_1_mv": soil_1_mv,
@@ -158,13 +159,13 @@ def test_valid_reading_implementations_agree_and_round_trip(
     c_encoded = c_codec.encode_reading(reading)
 
     assert python_encoded == c_encoded
-    assert len(python_encoded) == 28
+    assert len(python_encoded) == 32
     assert python_codec.decode_reading(python_encoded) == reading
     assert c_codec.decode_reading(c_encoded) == reading
 
 
 @settings(max_examples=1000, deadline=None)
-@given(body=st.binary(min_size=28, max_size=28))
+@given(body=st.binary(min_size=32, max_size=32))
 def test_arbitrary_reading_body_acceptance_agrees(
     codec_pair: tuple[Any, Any],
     body: bytes,
@@ -201,7 +202,7 @@ def test_arbitrary_reading_body_acceptance_agrees(
 @given(
     node_key=st.binary(min_size=16, max_size=16),
     header=headers(),
-    plaintext_body=st.binary(min_size=1, max_size=28),
+    plaintext_body=st.binary(min_size=1, max_size=32),
 )
 def test_frame_crypto_implementations_agree_and_round_trip(
     frame_crypto_pair: tuple[Any, Any],

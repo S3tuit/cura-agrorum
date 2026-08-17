@@ -92,7 +92,7 @@ def test_rejects_every_tampered_reading_frame_byte(
             frame_crypto.open_frame(key, bytes(tampered))
 
 
-@pytest.mark.parametrize("body_size", (0, 29))
+@pytest.mark.parametrize("body_size", (0, 33))
 def test_rejects_invalid_plaintext_body_size(
     frame_crypto: Any,
     golden_vectors: dict[str, Any],
@@ -107,7 +107,7 @@ def test_rejects_invalid_plaintext_body_size(
         )
 
 
-@pytest.mark.parametrize("frame_size", (0, 22, 51))
+@pytest.mark.parametrize("frame_size", (0, 22, 55))
 def test_rejects_invalid_frame_size(
     frame_crypto: Any,
     golden_vectors: dict[str, Any],

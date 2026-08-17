@@ -124,7 +124,7 @@ class PythonCodec:
             control=fields["control"],
             domain=fields["domain"],
             node_id=bytes.fromhex(fields["node_id_hex"]),
-            sample_id=fields["sample_id"],
+            message_id=fields["message_id"],
         )
 
     def encode_header(self, fields: Mapping[str, Any]) -> bytes:
@@ -142,7 +142,7 @@ class PythonCodec:
             "control": header.control,
             "domain": header.domain,
             "node_id_hex": header.node_id.hex(),
-            "sample_id": header.sample_id,
+            "message_id": header.message_id,
         }
 
     def build_nonce(self, fields: Mapping[str, Any]) -> bytes:
@@ -196,7 +196,7 @@ class PythonFrameCrypto:
             control=fields["control"],
             domain=fields["domain"],
             node_id=bytes.fromhex(fields["node_id_hex"]),
-            sample_id=fields["sample_id"],
+            message_id=fields["message_id"],
         )
 
     def seal_frame(
@@ -234,7 +234,7 @@ class PythonFrameCrypto:
                 "control": header.control,
                 "domain": header.domain,
                 "node_id_hex": header.node_id.hex(),
-                "sample_id": header.sample_id,
+                "message_id": header.message_id,
             },
             authenticated.plaintext_body,
         )
@@ -245,12 +245,13 @@ class CHeader(ctypes.Structure):
         ("control", ctypes.c_uint8),
         ("domain", ctypes.c_uint8),
         ("node_id", ctypes.c_uint8 * 8),
-        ("sample_id", ctypes.c_uint32),
+        ("message_id", ctypes.c_uint32),
     ]
 
 
 class CReading(ctypes.Structure):
     _fields_ = [
+        ("sample_id", ctypes.c_uint32),
         ("run_ms", ctypes.c_uint16),
         ("soil_0_mv", ctypes.c_uint16),
         ("soil_1_mv", ctypes.c_uint16),
@@ -301,7 +302,7 @@ class CCodec:
             fields["control"],
             fields["domain"],
             (ctypes.c_uint8 * 8)(*node_id),
-            fields["sample_id"],
+            fields["message_id"],
         )
 
     @classmethod
@@ -344,7 +345,7 @@ class CCodec:
             "control": header.control,
             "domain": header.domain,
             "node_id_hex": bytes(header.node_id).hex(),
-            "sample_id": header.sample_id,
+            "message_id": header.message_id,
         }
 
     def build_nonce(self, fields: Mapping[str, Any]) -> bytes:
@@ -361,7 +362,7 @@ class CCodec:
         )
         return self._encode(
             self.library.cura_lora_v2_encode_reading,
-            28,
+            32,
             reading,
         )
 
@@ -428,7 +429,7 @@ class CFrameCrypto:
     ) -> bytes:
         if len(node_key) != 16:
             raise CryptoRejected("node_key must be 16 bytes")
-        output = (ctypes.c_uint8 * 50)()
+        output = (ctypes.c_uint8 * 54)()
         output_length = ctypes.c_size_t()
         key = self._bytes(node_key)
         body = self._bytes(plaintext_body)
@@ -454,7 +455,7 @@ class CFrameCrypto:
         if len(node_key) != 16:
             raise CryptoRejected("node_key must be 16 bytes")
         decoded_header = CHeader()
-        plaintext = (ctypes.c_uint8 * 28)()
+        plaintext = (ctypes.c_uint8 * 32)()
         plaintext_length = ctypes.c_size_t()
         key = self._bytes(node_key)
         encoded_frame = self._bytes(frame)
@@ -474,7 +475,7 @@ class CFrameCrypto:
                 "control": decoded_header.control,
                 "domain": decoded_header.domain,
                 "node_id_hex": bytes(decoded_header.node_id).hex(),
-                "sample_id": decoded_header.sample_id,
+                "message_id": decoded_header.message_id,
             },
             bytes(plaintext[: plaintext_length.value]),
         )

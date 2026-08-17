@@ -32,6 +32,8 @@ void hwtest_assert_reading_equal(const cura_lora_v2_reading_t *expected,
 
 void hwtest_seed_next_sample_id(uint32_t value);
 uint32_t hwtest_read_next_sample_id(void);
+void hwtest_seed_next_message_id(uint32_t value);
+uint32_t hwtest_read_next_message_id(void);
 
 void hwtest_snapshot(const char *path, hwtest_snapshot_t *out_snapshot);
 void hwtest_assert_snapshot_equal(const hwtest_snapshot_t *expected,

@@ -27,6 +27,8 @@ typedef struct {
   uint64_t radio_deadline_us;
   uint32_t cycle_sample_id;
   bool cycle_sample_id_valid;
+  uint32_t active_message_id;
+  bool active_message_id_valid;
   node_wake_metrics_t metrics;
 } node_cycle_context_t;
 
@@ -281,6 +283,7 @@ static void append_diagnostic(node_cycle_context_t *cycle, err_curag_t error,
       .flags = 0U,
       .application_offset_ms = offset_ms,
       .cycle_sample_id = 0U,
+      .message_id = 0U,
       .context = context,
   };
   if (offset_valid) {
@@ -290,11 +293,16 @@ static void append_diagnostic(node_cycle_context_t *cycle, err_curag_t error,
     event.flags |= NODE_DIAGNOSTIC_CYCLE_SAMPLE_ID_VALID;
     event.cycle_sample_id = cycle->cycle_sample_id;
   }
+  if (cycle->active_message_id_valid) {
+    event.flags |= NODE_DIAGNOSTIC_MESSAGE_ID_VALID;
+    event.message_id = cycle->active_message_id;
+  }
   (void)node_persistence_append_diagnostic_event(&event, NULL);
 }
 
 static err_curag_t build_frame(const node_identity_t *identity,
-                               uint32_t sample_id, cura_lora_v2_domain_t domain,
+                               uint32_t message_id,
+                               cura_lora_v2_domain_t domain,
                                const cura_lora_v2_reading_t *reading,
                                uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE],
                                diagn_context_t *out_diag) {
@@ -308,7 +316,7 @@ static err_curag_t build_frame(const node_identity_t *identity,
   cura_lora_v2_clear_header_t header = {
       .control = CURA_LORA_V2_CONTROL,
       .domain = domain,
-      .sample_id = sample_id,
+      .message_id = message_id,
   };
   memcpy(header.node_id, identity->node_id, sizeof(header.node_id));
   size_t frame_length = 0U;
@@ -334,7 +342,7 @@ static ack_validation_result_t invalid_ack(curag_error_code_t code,
 }
 
 static ack_validation_result_t
-validate_ack(const node_identity_t *identity, uint32_t sample_id,
+validate_ack(const node_identity_t *identity, uint32_t message_id,
              const sx1262_radio_rx_result_t *received) {
   if (received->payload_length != CURA_LORA_V2_ACK_FRAME_SIZE) {
     return invalid_ack(CURAG_ECORE_EACK_LENGTH, CURAG_OP_DECODE);
@@ -363,8 +371,8 @@ validate_ack(const node_identity_t *identity, uint32_t sample_id,
   if (memcmp(header.node_id, identity->node_id, sizeof(header.node_id)) != 0) {
     return invalid_ack(CURAG_ECORE_EACK_NODE_ID, CURAG_OP_VALIDATE);
   }
-  if (header.sample_id != sample_id) {
-    return invalid_ack(CURAG_ECORE_EACK_SAMPLE_ID, CURAG_OP_VALIDATE);
+  if (header.message_id != message_id) {
+    return invalid_ack(CURAG_ECORE_EACK_MESSAGE_ID, CURAG_OP_VALIDATE);
   }
   if (!cura_lora_v2_domain_is_ack(header.domain)) {
     return invalid_ack(CURAG_ECORE_EACK_DOMAIN, CURAG_OP_VALIDATE);
@@ -438,9 +446,10 @@ static void append_delivery_boundary(node_cycle_context_t *cycle,
 }
 
 static node_delivery_result_t
-deliver_reading(node_cycle_context_t *cycle, uint32_t sample_id,
-                const cura_lora_v2_reading_t *reading,
-                cura_lora_v2_domain_t domain, bool is_current) {
+deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
+              uint32_t message_id, cura_lora_v2_domain_t domain,
+              const uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE],
+              bool is_current) {
   const uint64_t delivery_start_us =
       cycle->platform->clock.monotonic_us(cycle->platform->clock.context);
   diagn_context_t diagnostic;
@@ -456,33 +465,11 @@ deliver_reading(node_cycle_context_t *cycle, uint32_t sample_id,
       .type = NODE_DELIVERY_EVENT_STARTED,
       .cycle_sample_id = cycle->cycle_sample_id,
       .sample_id = sample_id,
+      .message_id = message_id,
       .domain = domain,
       .detail.started = {.start_offset_ms = start_offset_ms},
   };
   append_delivery_boundary(cycle, &started);
-
-  uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE];
-  const err_curag_t frame_result = build_frame(
-      cycle->identity, sample_id, domain, reading, frame, &diagnostic);
-  if (frame_result != CURAG_OK) {
-    append_diagnostic(cycle, frame_result, &diagnostic);
-    node_delivery_event_t failed = {
-        .type = NODE_DELIVERY_EVENT_FINISHED,
-        .cycle_sample_id = cycle->cycle_sample_id,
-        .sample_id = sample_id,
-        .domain = domain,
-        .detail.finished =
-            {
-                .attempt_count = 0U,
-                .final_result = NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR,
-            },
-    };
-    append_delivery_boundary(cycle, &failed);
-    return (node_delivery_result_t){
-        .result = NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR,
-        .attempt_count = 0U,
-    };
-  }
 
   node_delivery_final_result_t final_result = NODE_DELIVERY_RESULT_INVALID;
   uint32_t attempt_count = 0U;
@@ -502,8 +489,8 @@ deliver_reading(node_cycle_context_t *cycle, uint32_t sample_id,
 
     sx1262_radio_tx_result_t tx_result;
     const err_curag_t tx_error = sx1262_radio_transmit_uplink(
-        frame, sizeof(frame), cycle->radio_deadline_us, &tx_result,
-        &diagnostic);
+        frame, CURA_LORA_V2_READING_FRAME_SIZE, cycle->radio_deadline_us,
+        &tx_result, &diagnostic);
     if (tx_result.tx_started) {
       attempt_count++;
       cycle->metrics.cycle_tx_attempts++;
@@ -569,7 +556,7 @@ deliver_reading(node_cycle_context_t *cycle, uint32_t sample_id,
           continue;
         }
         const ack_validation_result_t validation =
-            validate_ack(cycle->identity, sample_id, &rx_result);
+            validate_ack(cycle->identity, message_id, &rx_result);
         if (validation.kind == ACK_VALIDATION_VALID) {
           final_result = validation.result;
           accepted_at_us = rx_result.rx_done_at_us;
@@ -605,6 +592,7 @@ deliver_reading(node_cycle_context_t *cycle, uint32_t sample_id,
       .type = NODE_DELIVERY_EVENT_FINISHED,
       .cycle_sample_id = cycle->cycle_sample_id,
       .sample_id = sample_id,
+      .message_id = message_id,
       .domain = domain,
       .detail.finished =
           {
@@ -642,7 +630,7 @@ static bool quarantine_and_remove(node_cycle_context_t *cycle,
                                   bool remove_persisted_copy) {
   diagn_context_t diagnostic;
   const err_curag_t quarantine_result =
-      node_persistence_quarantine_reading(sample_id, reading, &diagnostic);
+      node_persistence_quarantine_reading(reading, &diagnostic);
   if (quarantine_result != CURAG_OK) {
     append_diagnostic(cycle, quarantine_result, &diagnostic);
   }
@@ -662,12 +650,11 @@ static void drain_backlog(node_cycle_context_t *cycle) {
       return;
     }
 
-    uint32_t sample_id = 0U;
-    cura_lora_v2_reading_t reading;
+    node_pending_reading_t pending;
     bool found = false;
     diagn_context_t diagnostic;
     const err_curag_t peek_result = node_persistence_peek_most_recent_pending(
-        &sample_id, &reading, &found, &diagnostic);
+        &pending, &found, &diagnostic);
     if (peek_result != CURAG_OK) {
       append_diagnostic(cycle, peek_result, &diagnostic);
       return;
@@ -676,21 +663,60 @@ static void drain_backlog(node_cycle_context_t *cycle) {
       return;
     }
 
-    const node_delivery_result_t delivery =
-        deliver_reading(cycle, sample_id, &reading,
-                        CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK, false);
-    if (delivery.result == NODE_DELIVERY_RESULT_ACCEPTED) {
-      if (!remove_pending(cycle, sample_id)) {
+    if (!pending.backlog_bound) {
+      const err_curag_t claim_result =
+          node_persistence_claim_message_id(&pending.message_id, &diagnostic);
+      if (claim_result != CURAG_OK) {
+        append_diagnostic(cycle, claim_result, &diagnostic);
         return;
       }
+      cycle->active_message_id = pending.message_id;
+      cycle->active_message_id_valid = true;
+      const err_curag_t frame_result =
+          build_frame(cycle->identity, pending.message_id,
+                      CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK,
+                      &pending.reading, pending.frame, &diagnostic);
+      if (frame_result != CURAG_OK) {
+        append_diagnostic(cycle, frame_result, &diagnostic);
+        cycle->active_message_id_valid = false;
+        return;
+      }
+      const err_curag_t bind_result =
+          node_persistence_bind_newest_backlog_frame(
+              pending.reading.sample_id, pending.message_id, pending.frame,
+              &diagnostic);
+      if (bind_result != CURAG_OK) {
+        append_diagnostic(cycle, bind_result, &diagnostic);
+        cycle->active_message_id_valid = false;
+        return;
+      }
+      pending.backlog_bound = true;
+    } else {
+      cycle->active_message_id = pending.message_id;
+      cycle->active_message_id_valid = true;
+    }
+
+    const node_delivery_result_t delivery = deliver_frame(
+        cycle, pending.reading.sample_id, pending.message_id,
+        CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK, pending.frame, false);
+    if (delivery.result == NODE_DELIVERY_RESULT_ACCEPTED) {
+      if (!remove_pending(cycle, pending.reading.sample_id)) {
+        cycle->active_message_id_valid = false;
+        return;
+      }
+      cycle->active_message_id_valid = false;
       continue;
     }
     if (result_is_permanent_rejection(delivery.result)) {
-      if (!quarantine_and_remove(cycle, sample_id, &reading, true)) {
+      if (!quarantine_and_remove(cycle, pending.reading.sample_id,
+                                 &pending.reading, true)) {
+        cycle->active_message_id_valid = false;
         return;
       }
+      cycle->active_message_id_valid = false;
       continue;
     }
+    cycle->active_message_id_valid = false;
     return;
   }
 }
@@ -730,10 +756,11 @@ static void run_claimed_cycle(node_cycle_context_t *cycle,
     append_diagnostic(cycle, core_error(CURAG_ECORE_ECODEC), &diagnostic);
     return;
   }
+  current_reading.sample_id = cycle->cycle_sample_id;
 
   bool current_persisted = false;
-  const err_curag_t append_result = node_persistence_append_pending_reading(
-      cycle->cycle_sample_id, &current_reading, &diagnostic);
+  const err_curag_t append_result =
+      node_persistence_append_pending_reading(&current_reading, &diagnostic);
   if (append_result == CURAG_OK) {
     current_persisted = true;
   } else {
@@ -745,13 +772,35 @@ static void run_claimed_cycle(node_cycle_context_t *cycle,
     append_diagnostic(cycle, core_error(CURAG_ECORE_ETIME_RANGE), &diagnostic);
   }
 
-  const node_delivery_result_t current_delivery =
-      deliver_reading(cycle, cycle->cycle_sample_id, &current_reading,
-                      CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK, true);
+  uint32_t message_id = 0U;
+  const err_curag_t claim_result =
+      node_persistence_claim_message_id(&message_id, &diagnostic);
+  if (claim_result != CURAG_OK) {
+    append_diagnostic(cycle, claim_result, &diagnostic);
+    return;
+  }
+  cycle->active_message_id = message_id;
+  cycle->active_message_id_valid = true;
+
+  uint8_t current_frame[CURA_LORA_V2_READING_FRAME_SIZE];
+  const err_curag_t frame_result = build_frame(
+      cycle->identity, message_id, CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK,
+      &current_reading, current_frame, &diagnostic);
+  if (frame_result != CURAG_OK) {
+    append_diagnostic(cycle, frame_result, &diagnostic);
+    cycle->active_message_id_valid = false;
+    return;
+  }
+
+  const node_delivery_result_t current_delivery = deliver_frame(
+      cycle, cycle->cycle_sample_id, message_id,
+      CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK, current_frame, true);
   if (current_delivery.result == NODE_DELIVERY_RESULT_ACCEPTED) {
     if (current_persisted && !remove_pending(cycle, cycle->cycle_sample_id)) {
+      cycle->active_message_id_valid = false;
       return;
     }
+    cycle->active_message_id_valid = false;
     if (current_persisted) {
       drain_backlog(cycle);
     }
@@ -761,6 +810,7 @@ static void run_claimed_cycle(node_cycle_context_t *cycle,
     (void)quarantine_and_remove(cycle, cycle->cycle_sample_id, &current_reading,
                                 current_persisted);
   }
+  cycle->active_message_id_valid = false;
 }
 
 static void finalize_cycle(node_cycle_context_t *cycle,

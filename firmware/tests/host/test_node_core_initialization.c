@@ -7,6 +7,7 @@
 
 static bool script_current_ack(uint32_t sample_id,
                                cura_lora_v2_ack_status_t status) {
+  (void)sample_id;
   const uint64_t set_tx = fake_node_core.now_us + UINT64_C(1000);
   const uint64_t tx_done = set_tx + core_test_reading_airtime_us();
   const uint64_t ack_at = tx_done + UINT64_C(20000);
@@ -18,8 +19,8 @@ static bool script_current_ack(uint32_t sample_id,
   } else if (status == CURA_LORA_V2_ACK_STATUS_REJECTED_MALFORMED) {
     domain = CURA_LORA_V2_DOMAIN_ACK_REJECTED_MALFORMED_DOWNLINK;
   }
-  return core_test_script_ack(sample_id, domain, status, set_tx, tx_done,
-                              ack_at);
+  return core_test_script_ack(CORE_TEST_FIRST_MESSAGE_ID, domain, status,
+                              set_tx, tx_done, ack_at);
 }
 
 static bool first_attempt_success(void) {
@@ -32,8 +33,10 @@ static bool first_attempt_success(void) {
   core_test_run(&rtc, &platform);
 
   CORE_TEST_ASSERT_EQ_SIZE(1U, fake_node_core.appended_count);
-  CORE_TEST_ASSERT_EQ_U32(7U, fake_node_core.appended[0].sample_id);
-  const cura_lora_v2_reading_t *reading = &fake_node_core.appended[0].reading;
+  CORE_TEST_ASSERT_EQ_U32(7U,
+                          fake_node_core.appended[0].value.reading.sample_id);
+  const cura_lora_v2_reading_t *reading =
+      &fake_node_core.appended[0].value.reading;
   CORE_TEST_ASSERT_EQ_U32(101U, reading->soil_0_mv);
   CORE_TEST_ASSERT_EQ_U32(202U, reading->soil_1_mv);
   CORE_TEST_ASSERT_EQ_U32(0U, reading->run_ms);
@@ -93,7 +96,8 @@ static bool valid_rtc_reaches_next_reading(void) {
 
   core_test_run(&rtc, &platform);
 
-  const cura_lora_v2_reading_t *reading = &fake_node_core.appended[0].reading;
+  const cura_lora_v2_reading_t *reading =
+      &fake_node_core.appended[0].value.reading;
   CORE_TEST_ASSERT_EQ_U32(2U, reading->previous_current_tx_attempts);
   CORE_TEST_ASSERT_EQ_U32(345U, reading->previous_awake_ms);
   CORE_TEST_ASSERT_EQ_U32(67U, reading->previous_current_delivery_ms);
@@ -134,7 +138,8 @@ static bool rejected_rtc_is_zeroed(void) {
     }
     CORE_TEST_ASSERT(script_current_ack(9U, CURA_LORA_V2_ACK_STATUS_ACCEPTED));
     core_test_run(&rtc, &platform);
-    const cura_lora_v2_reading_t *reading = &fake_node_core.appended[0].reading;
+    const cura_lora_v2_reading_t *reading =
+        &fake_node_core.appended[0].value.reading;
     CORE_TEST_ASSERT_EQ_U32(0U, reading->previous_current_tx_attempts);
     CORE_TEST_ASSERT_EQ_U32(0U, reading->previous_awake_ms);
     CORE_TEST_ASSERT_EQ_U32(
@@ -161,7 +166,8 @@ static bool sensor_validity_maps_independently(void) {
                                 : CURAG_ESENSORS_EPARTIAL_SAMPLE);
     CORE_TEST_ASSERT(script_current_ack(0U, CURA_LORA_V2_ACK_STATUS_ACCEPTED));
     core_test_run(&rtc, &platform);
-    const cura_lora_v2_reading_t *reading = &fake_node_core.appended[0].reading;
+    const cura_lora_v2_reading_t *reading =
+        &fake_node_core.appended[0].value.reading;
     const bool soil_0 = (validities[index] & NODE_SENSOR_SOIL_0_VALID) != 0U;
     const bool soil_1 = (validities[index] & NODE_SENSOR_SOIL_1_VALID) != 0U;
     const bool soil_temp_0 =
@@ -212,13 +218,14 @@ static bool run_time_and_sampling_deadline_boundaries(void) {
   fake_node_core.sensor_advance_us = UINT64_C(123999);
   CORE_TEST_ASSERT(script_current_ack(0U, CURA_LORA_V2_ACK_STATUS_ACCEPTED));
   core_test_run(&rtc, &platform);
-  CORE_TEST_ASSERT_EQ_U32(123U, fake_node_core.appended[0].reading.run_ms);
+  CORE_TEST_ASSERT_EQ_U32(123U,
+                          fake_node_core.appended[0].value.reading.run_ms);
 
   core_test_setup(&rtc, &platform);
   fake_node_core.sensor_advance_us = UINT64_C(65536000);
   core_test_run(&rtc, &platform);
   CORE_TEST_ASSERT_EQ_U32(UINT16_MAX,
-                          fake_node_core.appended[0].reading.run_ms);
+                          fake_node_core.appended[0].value.reading.run_ms);
   CORE_TEST_ASSERT_EQ_SIZE(0U, fake_node_core.transmission_count);
   CORE_TEST_ASSERT(
       core_test_has_diagnostic(CURAG_EDOM_CORE, CURAG_ECORE_ETIME_RANGE));
@@ -251,6 +258,30 @@ static bool pending_failure_allows_ram_only_delivery(void) {
   CORE_TEST_ASSERT(core_test_has_diagnostic(CURAG_EDOM_PERSISTENCE,
                                             curag_error_code(CURAG_EIO)));
   CORE_TEST_ASSERT(rtc.metrics.current_accepted);
+  return true;
+}
+
+static bool message_claim_failure_retains_reading_without_construction(void) {
+  node_rtc_record_t rtc;
+  node_platform_ports_t platform;
+  core_test_setup(&rtc, &platform);
+  fake_node_core.claimed_sample_id = 44U;
+  fake_node_core.message_claim_errors[0] = CURAG_ENVS_ACCESS;
+  fake_node_core.message_claim_error_count = 1U;
+
+  core_test_run(&rtc, &platform);
+
+  CORE_TEST_ASSERT_EQ_SIZE(1U, fake_node_core.appended_count);
+  CORE_TEST_ASSERT_EQ_U32(44U,
+                          fake_node_core.appended[0].value.reading.sample_id);
+  CORE_TEST_ASSERT_EQ_SIZE(1U, fake_node_core.pending_count);
+  CORE_TEST_ASSERT_EQ_SIZE(1U, fake_node_core.message_claim_call_count);
+  CORE_TEST_ASSERT_EQ_SIZE(0U, fake_node_core.transmission_count);
+  CORE_TEST_ASSERT_EQ_SIZE(0U, fake_node_core.delivery_event_count);
+  CORE_TEST_ASSERT_EQ_SIZE(1U, fake_node_core.diagnostic_event_count);
+  CORE_TEST_ASSERT((fake_node_core.diagnostic_events[0].event.flags &
+                    NODE_DIAGNOSTIC_MESSAGE_ID_VALID) == 0U);
+  CORE_TEST_ASSERT(core_test_cleanup_is_complete());
   return true;
 }
 
@@ -289,6 +320,11 @@ bool node_core_test_initialization(const char *name) {
   }
   if (strcmp(name, "pending_failure_allows_ram_only_delivery") == 0) {
     return pending_failure_allows_ram_only_delivery();
+  }
+  if (strcmp(name,
+             "message_claim_failure_retains_reading_without_construction") ==
+      0) {
+    return message_claim_failure_retains_reading_without_construction();
   }
   if (strcmp(name, "invalid_composition_returns_without_side_effects") == 0) {
     return invalid_composition_returns_without_side_effects();

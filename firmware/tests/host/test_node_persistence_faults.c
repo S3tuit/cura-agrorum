@@ -48,8 +48,8 @@ static bool basic_file_failures_have_exact_error_and_context(void) {
   node_persistence_test_reset_all();
   fake_backend_fail_on(FAKE_BACKEND_OP_PATH_STAT, FAKE_BACKEND_RESOURCE_COMPACT,
                        1U, EACCES);
-  TEST_ASSERT_EQ_U32(
-      CURAG_EIO, node_persistence_append_pending_reading(1U, &reading, &diag));
+  TEST_ASSERT_EQ_U32(CURAG_EIO,
+                     node_persistence_append_pending_reading(&reading, &diag));
   TEST_ASSERT(node_persistence_test_assert_diag(
       &diag, CURAG_OP_RECOVER, NODE_PERSISTENCE_RESOURCE_PENDING_COMPACT,
       NODE_PERSISTENCE_STAGE_STAT, NODE_PERSISTENCE_BACKEND_ERRNO, EACCES));
@@ -57,8 +57,8 @@ static bool basic_file_failures_have_exact_error_and_context(void) {
   node_persistence_test_reset_all();
   fake_backend_fail_on(FAKE_BACKEND_OP_FILE_OPEN, FAKE_BACKEND_RESOURCE_PENDING,
                        1U, EMFILE);
-  TEST_ASSERT_EQ_U32(
-      CURAG_EIO, node_persistence_append_pending_reading(1U, &reading, &diag));
+  TEST_ASSERT_EQ_U32(CURAG_EIO,
+                     node_persistence_append_pending_reading(&reading, &diag));
   TEST_ASSERT(node_persistence_test_assert_diag(
       &diag, CURAG_OP_APPEND, NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
       NODE_PERSISTENCE_STAGE_OPEN, NODE_PERSISTENCE_BACKEND_ERRNO, EMFILE));
@@ -66,8 +66,8 @@ static bool basic_file_failures_have_exact_error_and_context(void) {
   node_persistence_test_reset_all();
   fake_backend_fail_on(FAKE_BACKEND_OP_FILE_WRITE,
                        FAKE_BACKEND_RESOURCE_PENDING, 1U, ENOSPC);
-  TEST_ASSERT_EQ_U32(
-      CURAG_EIO, node_persistence_append_pending_reading(1U, &reading, &diag));
+  TEST_ASSERT_EQ_U32(CURAG_EIO,
+                     node_persistence_append_pending_reading(&reading, &diag));
   TEST_ASSERT(node_persistence_test_assert_diag(
       &diag, CURAG_OP_APPEND, NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
       NODE_PERSISTENCE_STAGE_WRITE, NODE_PERSISTENCE_BACKEND_ERRNO, ENOSPC));
@@ -75,22 +75,21 @@ static bool basic_file_failures_have_exact_error_and_context(void) {
   node_persistence_test_reset_all();
   fake_backend_fail_on(FAKE_BACKEND_OP_FILE_SYNC, FAKE_BACKEND_RESOURCE_PENDING,
                        1U, EIO);
-  TEST_ASSERT_EQ_U32(
-      CURAG_EIO, node_persistence_append_pending_reading(1U, &reading, &diag));
+  TEST_ASSERT_EQ_U32(CURAG_EIO,
+                     node_persistence_append_pending_reading(&reading, &diag));
   TEST_ASSERT(node_persistence_test_assert_diag(
       &diag, CURAG_OP_SYNC, NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
       NODE_PERSISTENCE_STAGE_SYNC, NODE_PERSISTENCE_BACKEND_ERRNO, EIO));
 
   node_persistence_test_reset_all();
-  TEST_ASSERT_EQ_U32(
-      CURAG_OK, node_persistence_append_pending_reading(1U, &reading, &diag));
+  TEST_ASSERT_EQ_U32(CURAG_OK,
+                     node_persistence_append_pending_reading(&reading, &diag));
   fake_backend_fail_on(FAKE_BACKEND_OP_FILE_SIZE, FAKE_BACKEND_RESOURCE_PENDING,
                        1U, EOVERFLOW);
-  uint32_t id = 0U;
-  cura_lora_v2_reading_t actual;
+  node_pending_reading_t pending;
   bool found = false;
   TEST_ASSERT_EQ_U32(CURAG_EIO, node_persistence_peek_most_recent_pending(
-                                    &id, &actual, &found, &diag));
+                                    &pending, &found, &diag));
   TEST_ASSERT(node_persistence_test_assert_diag(
       &diag, CURAG_OP_RECOVER, NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
       NODE_PERSISTENCE_STAGE_STAT, NODE_PERSISTENCE_BACKEND_ERRNO, EOVERFLOW));
@@ -99,7 +98,7 @@ static bool basic_file_failures_have_exact_error_and_context(void) {
   fake_backend_fail_on(FAKE_BACKEND_OP_FILE_READ, FAKE_BACKEND_RESOURCE_PENDING,
                        1U, EIO);
   TEST_ASSERT_EQ_U32(CURAG_EIO, node_persistence_peek_most_recent_pending(
-                                    &id, &actual, &found, &diag));
+                                    &pending, &found, &diag));
   TEST_ASSERT(node_persistence_test_assert_diag(
       &diag, CURAG_OP_RECOVER, NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
       NODE_PERSISTENCE_STAGE_READ, NODE_PERSISTENCE_BACKEND_ERRNO, EIO));
@@ -115,7 +114,7 @@ static bool basic_file_failures_have_exact_error_and_context(void) {
 
   node_persistence_test_restart();
   TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_peek_most_recent_pending(
-                                   &id, &actual, &found, &diag));
+                                   &pending, &found, &diag));
   TEST_ASSERT(found);
   fake_backend_fail_on(FAKE_BACKEND_OP_FILE_CLOSE,
                        FAKE_BACKEND_RESOURCE_PENDING, 1U, EIO);
@@ -130,19 +129,18 @@ static bool stale_compact_remove_failure_has_exact_context(void) {
   node_persistence_test_reset_all();
   const cura_lora_v2_reading_t reading = node_persistence_test_make_reading(1U);
   diagn_context_t diag;
-  TEST_ASSERT_EQ_U32(
-      CURAG_OK, node_persistence_append_pending_reading(1U, &reading, &diag));
+  TEST_ASSERT_EQ_U32(CURAG_OK,
+                     node_persistence_append_pending_reading(&reading, &diag));
   TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_sync_all(&diag));
   const uint8_t stale[] = {1U, 2U, 3U};
   TEST_ASSERT(fake_backend_write_file(TEST_COMPACT_PATH, stale, sizeof(stale)));
   node_persistence_test_restart();
   fake_backend_fail_on(FAKE_BACKEND_OP_PATH_REMOVE,
                        FAKE_BACKEND_RESOURCE_COMPACT, 1U, EACCES);
-  uint32_t id = 0U;
-  cura_lora_v2_reading_t actual;
+  node_pending_reading_t pending;
   bool found = false;
   TEST_ASSERT_EQ_U32(CURAG_EIO, node_persistence_peek_most_recent_pending(
-                                    &id, &actual, &found, &diag));
+                                    &pending, &found, &diag));
   TEST_ASSERT(node_persistence_test_assert_diag(
       &diag, CURAG_OP_RECOVER, NODE_PERSISTENCE_RESOURCE_PENDING_COMPACT,
       NODE_PERSISTENCE_STAGE_REMOVE, NODE_PERSISTENCE_BACKEND_ERRNO, EACCES));
@@ -162,8 +160,7 @@ static bool prepare_pending_for_compaction(diagn_context_t *diag) {
   for (uint32_t id = 0U; id < 5U; ++id) {
     const cura_lora_v2_reading_t reading =
         node_persistence_test_make_reading((uint16_t)id);
-    if (node_persistence_append_pending_reading(id, &reading, diag) !=
-        CURAG_OK) {
+    if (node_persistence_append_pending_reading(&reading, diag) != CURAG_OK) {
       return false;
     }
   }
@@ -196,8 +193,8 @@ static bool every_compaction_backend_failure_has_exact_context(void) {
                          EIO);
     const cura_lora_v2_reading_t reading =
         node_persistence_test_make_reading(5U);
-    TEST_ASSERT_EQ_U32(CURAG_EIO, node_persistence_append_pending_reading(
-                                      5U, &reading, &diag));
+    TEST_ASSERT_EQ_U32(
+        CURAG_EIO, node_persistence_append_pending_reading(&reading, &diag));
     TEST_ASSERT(node_persistence_test_assert_diag(
         &diag, CURAG_OP_COMPACT, cases[index].diagnostic_resource,
         cases[index].stage, NODE_PERSISTENCE_BACKEND_ERRNO, EIO));
@@ -221,11 +218,10 @@ static bool recovery_primitive_failures_are_not_hidden(void) {
   fake_backend_fail_on(FAKE_BACKEND_OP_FILE_TRUNCATE,
                        FAKE_BACKEND_RESOURCE_PENDING, 1U, EIO);
   diagn_context_t diag;
-  uint32_t id = 0U;
-  cura_lora_v2_reading_t actual;
+  node_pending_reading_t pending;
   bool found = false;
   TEST_ASSERT_EQ_U32(CURAG_EIO, node_persistence_peek_most_recent_pending(
-                                    &id, &actual, &found, &diag));
+                                    &pending, &found, &diag));
   TEST_ASSERT(node_persistence_test_assert_diag(
       &diag, CURAG_OP_RECOVER, NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
       NODE_PERSISTENCE_STAGE_TRUNCATE, NODE_PERSISTENCE_BACKEND_ERRNO, EIO));
@@ -237,7 +233,7 @@ static bool recovery_primitive_failures_are_not_hidden(void) {
   fake_backend_fail_on(FAKE_BACKEND_OP_FILE_SYNC, FAKE_BACKEND_RESOURCE_PENDING,
                        1U, EIO);
   TEST_ASSERT_EQ_U32(CURAG_EIO, node_persistence_peek_most_recent_pending(
-                                    &id, &actual, &found, &diag));
+                                    &pending, &found, &diag));
   TEST_ASSERT(node_persistence_test_assert_diag(
       &diag, CURAG_OP_RECOVER, NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
       NODE_PERSISTENCE_STAGE_SYNC, NODE_PERSISTENCE_BACKEND_ERRNO, EIO));
@@ -253,7 +249,7 @@ static bool record_family_failures_name_the_correct_resource(void) {
   fake_backend_fail_on(FAKE_BACKEND_OP_FILE_WRITE,
                        FAKE_BACKEND_RESOURCE_QUARANTINE, 1U, EIO);
   TEST_ASSERT_EQ_U32(CURAG_EIO,
-                     node_persistence_quarantine_reading(1U, &reading, &diag));
+                     node_persistence_quarantine_reading(&reading, &diag));
   TEST_ASSERT(node_persistence_test_assert_diag(
       &diag, CURAG_OP_APPEND, NODE_PERSISTENCE_RESOURCE_QUARANTINE_LOG,
       NODE_PERSISTENCE_STAGE_WRITE, NODE_PERSISTENCE_BACKEND_ERRNO, EIO));
@@ -300,9 +296,8 @@ static bool sync_all_skips_unused_and_cached_failed_backends(void) {
   const cura_lora_v2_reading_t reading = node_persistence_test_make_reading(1U);
   fake_backend_fail_on(FAKE_BACKEND_OP_LITTLEFS_MOUNT,
                        FAKE_BACKEND_RESOURCE_LITTLEFS, 1U, -2);
-  TEST_ASSERT_EQ_U32(
-      CURAG_ELITTLEFS_INIT,
-      node_persistence_append_pending_reading(1U, &reading, &diag));
+  TEST_ASSERT_EQ_U32(CURAG_ELITTLEFS_INIT,
+                     node_persistence_append_pending_reading(&reading, &diag));
   const size_t nvs_initializations =
       fake_backend_count(FAKE_BACKEND_OP_NVS_INIT, FAKE_BACKEND_RESOURCE_NVS);
   const size_t mounts = fake_backend_count(FAKE_BACKEND_OP_LITTLEFS_MOUNT,
@@ -324,13 +319,13 @@ static bool null_diagnostic_output_does_not_change_failure(void) {
                        FAKE_BACKEND_RESOURCE_PENDING, 1U, EIO);
   diagn_context_t diag;
   const err_curag_t with_diag =
-      node_persistence_append_pending_reading(1U, &reading, &diag);
+      node_persistence_append_pending_reading(&reading, &diag);
 
   node_persistence_test_reset_all();
   fake_backend_fail_on(FAKE_BACKEND_OP_FILE_WRITE,
                        FAKE_BACKEND_RESOURCE_PENDING, 1U, EIO);
   const err_curag_t without_diag =
-      node_persistence_append_pending_reading(1U, &reading, NULL);
+      node_persistence_append_pending_reading(&reading, NULL);
   TEST_ASSERT_EQ_U32(CURAG_EIO, with_diag);
   TEST_ASSERT_EQ_U32(with_diag, without_diag);
   return true;
@@ -338,12 +333,11 @@ static bool null_diagnostic_output_does_not_change_failure(void) {
 
 static bool empty_backlog_is_distinct_from_backend_failure(void) {
   node_persistence_test_reset_all();
-  uint32_t id = 0U;
-  cura_lora_v2_reading_t reading;
+  node_pending_reading_t pending;
   bool found = true;
   diagn_context_t diag;
   TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_peek_most_recent_pending(
-                                   &id, &reading, &found, &diag));
+                                   &pending, &found, &diag));
   TEST_ASSERT(!found);
 
   node_persistence_test_reset_all();
@@ -351,7 +345,7 @@ static bool empty_backlog_is_distinct_from_backend_failure(void) {
                        FAKE_BACKEND_RESOURCE_LITTLEFS, 1U, -9);
   TEST_ASSERT_EQ_U32(
       CURAG_ELITTLEFS_INIT,
-      node_persistence_peek_most_recent_pending(&id, &reading, &found, &diag));
+      node_persistence_peek_most_recent_pending(&pending, &found, &diag));
   return true;
 }
 

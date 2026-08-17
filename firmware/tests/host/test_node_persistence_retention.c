@@ -2,6 +2,17 @@
 
 #include <string.h>
 
+static void
+make_binding_frame(uint32_t message_id,
+                   uint8_t output[CURA_LORA_V2_READING_FRAME_SIZE]) {
+  memset(output, 0xa5, CURA_LORA_V2_READING_FRAME_SIZE);
+  output[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] = CURA_LORA_V2_CONTROL;
+  output[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] =
+      CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK;
+  node_persistence_store_le32(
+      output + CURA_LORA_V2_CLEAR_HEADER_MESSAGE_ID_OFFSET, message_id);
+}
+
 static bool pending_compaction_retains_newest_half_across_restart(void) {
   node_persistence_test_reset_all();
   diagn_context_t diag;
@@ -9,7 +20,7 @@ static bool pending_compaction_retains_newest_half_across_restart(void) {
     const cura_lora_v2_reading_t reading =
         node_persistence_test_make_reading((uint16_t)id);
     TEST_ASSERT_EQ_U32(
-        CURAG_OK, node_persistence_append_pending_reading(id, &reading, &diag));
+        CURAG_OK, node_persistence_append_pending_reading(&reading, &diag));
   }
   TEST_ASSERT_EQ_SIZE(138U, fake_backend_file_size(TEST_PENDING_PATH));
   TEST_ASSERT(!fake_backend_file_exists(TEST_COMPACT_PATH));
@@ -24,37 +35,35 @@ static bool pending_compaction_retains_newest_half_across_restart(void) {
   TEST_ASSERT_EQ_U32(5U, ids[2]);
 
   for (uint32_t expected = 6U; expected > 3U; --expected) {
-    uint32_t id = 0U;
-    cura_lora_v2_reading_t reading;
+    node_pending_reading_t pending;
     bool found = false;
     TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_peek_most_recent_pending(
-                                     &id, &reading, &found, &diag));
+                                     &pending, &found, &diag));
     TEST_ASSERT(found);
-    TEST_ASSERT_EQ_U32(expected - 1U, id);
-    TEST_ASSERT_EQ_U32(CURAG_OK,
-                       node_persistence_remove_newest_reading(id, &diag));
+    TEST_ASSERT_EQ_U32(expected - 1U, pending.reading.sample_id);
+    TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_remove_newest_reading(
+                                     pending.reading.sample_id, &diag));
   }
   return true;
 }
 
 static bool interrupted_compact_is_never_promoted(void) {
   const uint8_t compact_bytes[] = {0x11U, 0x22U, 0x33U, 0x44U};
-  const cura_lora_v2_reading_t reading = node_persistence_test_make_reading(1U);
+  cura_lora_v2_reading_t reading = node_persistence_test_make_reading(1U);
   diagn_context_t diag;
-  uint32_t id = 0U;
-  cura_lora_v2_reading_t actual;
+  node_pending_reading_t pending;
   bool found = false;
 
   node_persistence_test_reset_all();
-  TEST_ASSERT_EQ_U32(
-      CURAG_OK, node_persistence_append_pending_reading(1U, &reading, &diag));
+  TEST_ASSERT_EQ_U32(CURAG_OK,
+                     node_persistence_append_pending_reading(&reading, &diag));
   TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_sync_all(&diag));
   TEST_ASSERT(fake_backend_write_file(TEST_COMPACT_PATH, compact_bytes,
                                       sizeof(compact_bytes)));
   node_persistence_test_restart();
   TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_peek_most_recent_pending(
-                                   &id, &actual, &found, &diag));
-  TEST_ASSERT(found && id == 1U);
+                                   &pending, &found, &diag));
+  TEST_ASSERT(found && pending.reading.sample_id == 1U);
   TEST_ASSERT(!fake_backend_file_exists(TEST_COMPACT_PATH));
 
   node_persistence_test_reset_all();
@@ -62,7 +71,7 @@ static bool interrupted_compact_is_never_promoted(void) {
                                       sizeof(compact_bytes)));
   TEST_ASSERT_EQ_U32(
       CURAG_ECORRUPT_RECORD,
-      node_persistence_peek_most_recent_pending(&id, &actual, &found, &diag));
+      node_persistence_peek_most_recent_pending(&pending, &found, &diag));
   TEST_ASSERT(!fake_backend_file_exists(TEST_PENDING_PATH));
   TEST_ASSERT(fake_backend_file_exists(TEST_COMPACT_PATH));
 
@@ -75,27 +84,70 @@ static bool interrupted_compact_is_never_promoted(void) {
                                       sizeof(compact_bytes)));
   TEST_ASSERT_EQ_U32(
       CURAG_ECORRUPT_RECORD,
-      node_persistence_peek_most_recent_pending(&id, &actual, &found, &diag));
+      node_persistence_peek_most_recent_pending(&pending, &found, &diag));
   TEST_ASSERT_EQ_SIZE(sizeof(garbage),
                       fake_backend_file_size(TEST_PENDING_PATH));
   TEST_ASSERT(fake_backend_file_exists(TEST_COMPACT_PATH));
   return true;
 }
 
+static bool pending_compaction_never_splits_a_bound_item(void) {
+  node_persistence_test_reset_all();
+  diagn_context_t diag;
+  for (uint32_t sample_id = 1U; sample_id <= 2U; ++sample_id) {
+    const cura_lora_v2_reading_t reading =
+        node_persistence_test_make_reading((uint16_t)sample_id);
+    const uint32_t message_id = UINT32_C(100) + sample_id;
+    uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE];
+    make_binding_frame(message_id, frame);
+    TEST_ASSERT_EQ_U32(
+        CURAG_OK, node_persistence_append_pending_reading(&reading, &diag));
+    TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_bind_newest_backlog_frame(
+                                     sample_id, message_id, frame, &diag));
+  }
+  const cura_lora_v2_reading_t newest = node_persistence_test_make_reading(3U);
+  TEST_ASSERT_EQ_U32(CURAG_OK,
+                     node_persistence_append_pending_reading(&newest, &diag));
+  node_persistence_test_restart();
+
+  node_pending_reading_t pending;
+  bool found = false;
+  TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_peek_most_recent_pending(
+                                   &pending, &found, &diag));
+  TEST_ASSERT(found);
+  TEST_ASSERT(!pending.backlog_bound);
+  TEST_ASSERT_EQ_U32(3U, pending.reading.sample_id);
+  TEST_ASSERT_EQ_U32(CURAG_OK,
+                     node_persistence_remove_newest_reading(3U, &diag));
+
+  TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_peek_most_recent_pending(
+                                   &pending, &found, &diag));
+  TEST_ASSERT(found);
+  TEST_ASSERT(pending.backlog_bound);
+  TEST_ASSERT_EQ_U32(2U, pending.reading.sample_id);
+  TEST_ASSERT_EQ_U32(102U, pending.message_id);
+  uint8_t expected[CURA_LORA_V2_READING_FRAME_SIZE];
+  make_binding_frame(102U, expected);
+  TEST_ASSERT(memcmp(expected, pending.frame, sizeof(expected)) == 0);
+  return true;
+}
+
 static bool full_nonpending_logs_reject_without_modifying_existing_bytes(void) {
   diagn_context_t diag;
-  const cura_lora_v2_reading_t reading = node_persistence_test_make_reading(1U);
+  cura_lora_v2_reading_t reading = node_persistence_test_make_reading(1U);
 
   node_persistence_test_reset_all();
   for (uint32_t id = 0U; id < 11U; ++id) {
-    TEST_ASSERT_EQ_U32(
-        CURAG_OK, node_persistence_quarantine_reading(id, &reading, &diag));
+    reading.sample_id = id;
+    TEST_ASSERT_EQ_U32(CURAG_OK,
+                       node_persistence_quarantine_reading(&reading, &diag));
   }
   node_persistence_test_snapshot_t before;
   node_persistence_test_snapshot_t after;
   TEST_ASSERT(node_persistence_test_snapshot(TEST_QUARANTINE_PATH, &before));
+  reading.sample_id = 11U;
   TEST_ASSERT_EQ_U32(CURAG_ELOG_FULL,
-                     node_persistence_quarantine_reading(11U, &reading, &diag));
+                     node_persistence_quarantine_reading(&reading, &diag));
   TEST_ASSERT(node_persistence_test_assert_diag(
       &diag, CURAG_OP_APPEND, NODE_PERSISTENCE_RESOURCE_QUARANTINE_LOG,
       NODE_PERSISTENCE_STAGE_QUOTA_CHECK, NODE_PERSISTENCE_BACKEND_NO_ERROR,
@@ -105,7 +157,7 @@ static bool full_nonpending_logs_reject_without_modifying_existing_bytes(void) {
 
   node_persistence_test_reset_all();
   const node_diagnostic_event_t diagnostic = {.error = CURAG_EIO};
-  for (size_t index = 0U; index < 16U; ++index) {
+  for (size_t index = 0U; index < 14U; ++index) {
     TEST_ASSERT_EQ_U32(
         CURAG_OK, node_persistence_append_diagnostic_event(&diagnostic, &diag));
   }
@@ -124,7 +176,7 @@ static bool full_nonpending_logs_reject_without_modifying_existing_bytes(void) {
       .type = NODE_DELIVERY_EVENT_STARTED,
       .domain = CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK,
   };
-  for (size_t index = 0U; index < 18U; ++index) {
+  for (size_t index = 0U; index < 16U; ++index) {
     TEST_ASSERT_EQ_U32(
         CURAG_OK, node_persistence_append_delivery_event(&delivery, &diag));
   }
@@ -147,6 +199,7 @@ static bool delivery_log_preserves_matched_and_unmatched_episodes(void) {
       .type = NODE_DELIVERY_EVENT_STARTED,
       .cycle_sample_id = 1U,
       .sample_id = 9U,
+      .message_id = 19U,
       .domain = CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK,
       .detail.started = {.start_offset_ms = 10U},
   };
@@ -160,6 +213,7 @@ static bool delivery_log_preserves_matched_and_unmatched_episodes(void) {
 
   event.type = NODE_DELIVERY_EVENT_STARTED;
   event.cycle_sample_id = 2U;
+  event.message_id = 20U;
   event.detail.started.start_offset_ms = 20U;
   TEST_ASSERT_EQ_U32(CURAG_OK,
                      node_persistence_append_delivery_event(&event, &diag));
@@ -167,6 +221,7 @@ static bool delivery_log_preserves_matched_and_unmatched_episodes(void) {
   event.type = NODE_DELIVERY_EVENT_FINISHED;
   event.cycle_sample_id = 3U;
   event.sample_id = 10U;
+  event.message_id = 21U;
   event.detail.finished.attempt_count = 1U;
   event.detail.finished.final_result = NODE_DELIVERY_RESULT_MALFORMED;
   TEST_ASSERT_EQ_U32(CURAG_OK,
@@ -175,7 +230,7 @@ static bool delivery_log_preserves_matched_and_unmatched_episodes(void) {
 
   node_persistence_test_snapshot_t snapshot;
   TEST_ASSERT(node_persistence_test_snapshot(TEST_DELIVERY_PATH, &snapshot));
-  const size_t lengths[] = {27U, 25U, 27U, 25U};
+  const size_t lengths[] = {31U, 29U, 31U, 29U};
   const uint8_t types[] = {
       NODE_PERSISTENCE_RECORD_TYPE_DELIVERY_STARTED,
       NODE_PERSISTENCE_RECORD_TYPE_DELIVERY_FINISHED,
@@ -184,6 +239,7 @@ static bool delivery_log_preserves_matched_and_unmatched_episodes(void) {
   };
   const uint32_t cycles[] = {1U, 1U, 2U, 3U};
   const uint32_t samples[] = {9U, 9U, 9U, 10U};
+  const uint32_t messages[] = {19U, 19U, 20U, 21U};
   size_t offset = 0U;
   for (size_t index = 0U; index < 4U; ++index) {
     TEST_ASSERT_EQ_U32(types[index], snapshot.bytes[offset + 5U]);
@@ -191,6 +247,8 @@ static bool delivery_log_preserves_matched_and_unmatched_episodes(void) {
                                           snapshot.bytes + offset + 8U));
     TEST_ASSERT_EQ_U32(samples[index], node_persistence_load_le32(
                                            snapshot.bytes + offset + 12U));
+    TEST_ASSERT_EQ_U32(messages[index], node_persistence_load_le32(
+                                            snapshot.bytes + offset + 16U));
     TEST_ASSERT_EQ_U32(NODE_PERSISTENCE_RECORD_VALID,
                        node_persistence_record_validate(
                            node_persistence_backend(),
@@ -218,19 +276,18 @@ static bool deterministic_churn_matches_reference_model(void) {
     if (append) {
       const cura_lora_v2_reading_t reading =
           node_persistence_test_make_reading((uint16_t)next_id);
-      TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_append_pending_reading(
-                                       next_id, &reading, &diag));
+      TEST_ASSERT_EQ_U32(
+          CURAG_OK, node_persistence_append_pending_reading(&reading, &diag));
       model[model_count++] = next_id++;
     } else {
-      uint32_t actual_id = 0U;
-      cura_lora_v2_reading_t reading;
+      node_pending_reading_t pending;
       bool found = false;
       TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_peek_most_recent_pending(
-                                       &actual_id, &reading, &found, &diag));
+                                       &pending, &found, &diag));
       TEST_ASSERT(found);
-      TEST_ASSERT_EQ_U32(model[model_count - 1U], actual_id);
-      TEST_ASSERT_EQ_U32(
-          CURAG_OK, node_persistence_remove_newest_reading(actual_id, &diag));
+      TEST_ASSERT_EQ_U32(model[model_count - 1U], pending.reading.sample_id);
+      TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_remove_newest_reading(
+                                       pending.reading.sample_id, &diag));
       --model_count;
     }
 
@@ -254,6 +311,8 @@ static const node_persistence_test_case_t CASES[] = {
      pending_compaction_retains_newest_half_across_restart},
     {"interrupted_compact_is_never_promoted",
      interrupted_compact_is_never_promoted},
+    {"pending_compaction_never_splits_a_bound_item",
+     pending_compaction_never_splits_a_bound_item},
     {"full_nonpending_logs_reject_without_modifying_existing_bytes",
      full_nonpending_logs_reject_without_modifying_existing_bytes},
     {"delivery_log_preserves_matched_and_unmatched_episodes",

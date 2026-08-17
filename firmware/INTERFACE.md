@@ -32,6 +32,7 @@ Zero means success. The persistence domain is
 | `8` | `CURAG_ECORRUPT_RECORD` | Record framing or CRC could not be recovered safely |
 | `9` | `CURAG_EUNSUPPORTED_RECORD` | A structurally valid record has an unsupported version or type |
 | `10` | `CURAG_ERECORD_MISMATCH` | The newest pending record is not the expected semantic record |
+| `11` | `CURAG_EMESSAGE_ID_EXHAUSTED` | No further `u32` transport-message ID can be committed without reuse |
 
 Every ordinary persistence method returns only `err_curag_t` and accepts an
 optional caller-owned `diagn_context_t *out_diag`. The public method clears a
@@ -93,6 +94,7 @@ Assigned resource values are:
 | `5` | `QUARANTINE_LOG` |
 | `6` | `DIAGNOSTIC_LOG` |
 | `7` | `DELIVERY_LOG` |
+| `8` | `NVS_MESSAGE_COUNTER` |
 
 Assigned stage values are:
 
@@ -153,10 +155,11 @@ returning and never retains pointers. Outputs are valid only on success or the
 explicitly documented empty result. Calls are single-threaded during one wake;
 thread safety is not required.
 
-Interfaces pass `sample_id` and `cura_lora_v2_reading_t` separately rather than
-introducing a persistence-specific aggregate type. Persistence serializes the
-reading through the generated protocol codec and never dumps its native
-structure.
+The canonical `cura_lora_v2_reading_t` contains `sample_id` as its first wire
+field. Persistence serializes readings through the generated protocol codec
+and never dumps their native structure. `node_pending_reading_t` is the
+persistence-specific result used to return a reading plus its optional durable
+backlog-frame binding.
 
 There is no public initialization method. NVS and LittleFS initialize
 independently on first use and cache initialization failure for the remainder
@@ -219,13 +222,34 @@ Persist one best-effort diagnostic with no valid cycle sample ID, skip sensor
 and radio activation, run normal cleanup and final synchronization, leave the
 outgoing RTC record invalid, and enter deep sleep.
 
+### `claim_message_id`
+
+Implemented shape:
+
+```text
+err_curag_t node_persistence_claim_message_id(
+    u32 *out_message_id,
+    diagn_context_t *out_diag)
+```
+
+Atomically claims the next transport-message ID and commits its successor to
+the independent `next_message_id` NVS key before returning success. Fresh
+storage claims `0`. IDs may skip after reset or ambiguous commit failure, but
+must never wrap or be reused while the same node identity/key is active. A
+missing counter is valid only for a newly provisioned identity; operational
+loss or exhaustion requires replacing both identity and key.
+
+Its argument, lazy-NVS, read, set and commit behavior mirrors
+`claim_sample_id`, but diagnostics identify `NVS_MESSAGE_COUNTER` and exhaustion
+returns `CURAG_EMESSAGE_ID_EXHAUSTED`. On failure `node_core` constructs no
+logical uplink, performs no TX and retains any already persisted reading.
+
 ### `append_pending_reading`
 
 Implemented shape:
 
 ```text
 err_curag_t node_persistence_append_pending_reading(
-    u32 sample_id,
     const cura_lora_v2_reading_t *reading,
     diagn_context_t *out_diag)
 ```
@@ -236,8 +260,8 @@ Durably append the input reading.
 
 **Inputs and ownership**
 
-`sample_id` is the ID claimed for the current wake. `reading` is non-null,
-caller-owned and borrowed only for the call. `out_diag` is optional.
+`reading` is non-null, caller-owned and borrowed only for the call. Its first
+wire field is the current wake's committed `sample_id`. `out_diag` is optional.
 
 **Outputs**
 
@@ -284,14 +308,32 @@ current reading. For the pilot, do not access backlog storage again in that
 wake: failed append durability may be uncertain, and a peek could immediately
 select the same current reading. Final `sync_all` is still called.
 
+### `bind_newest_backlog_frame`
+
+Implemented shape:
+
+```text
+err_curag_t node_persistence_bind_newest_backlog_frame(
+    u32 expected_sample_id,
+    u32 message_id,
+    const u8 frame[CURA_LORA_V2_READING_FRAME_SIZE],
+    diagn_context_t *out_diag)
+```
+
+Durably appends a 62-byte binding payload after the newest unbound pending
+reading. It verifies the expected sample ID, backlog domain, clear-header
+message ID and exact 54-byte frame length before the append. Success makes the
+frame authoritative for all backlog retries, including later wakes. Failure
+does not authorize TX; recovery determines whether an ambiguously synchronized
+binding became durable.
+
 ### `peek_most_recent_pending`
 
 Implemented shape:
 
 ```text
 err_curag_t node_persistence_peek_most_recent_pending(
-    u32 *out_sample_id,
-    cura_lora_v2_reading_t *out_reading,
+    node_pending_reading_t *out_pending,
     bool *out_found,
     diagn_context_t *out_diag)
 ```
@@ -303,15 +345,15 @@ removing it.
 
 **Inputs and ownership**
 
-`out_sample_id`, `out_reading` and `out_found` are non-null writable caller
+`out_pending` and `out_found` are non-null writable caller
 memory. `out_diag` is optional. No pointer is retained.
 
 **Outputs**
 
-On success, `out_found = true`, `out_sample_id` contains the stored ID and
-`out_reading` contains the decoded newest reading, or `out_found = false` when
-the log is empty. Empty backlog is normal, not an error. The other outputs have
-no meaning when empty or on failure.
+On success, `out_found = true` and `out_pending.reading` contains the decoded
+newest reading. `out_pending.backlog_bound` says whether a following binding
+was present; when true, `message_id` and all 54 `frame` bytes are returned and
+must be reused verbatim. `out_found = false` means the log is empty.
 
 **Side effects**
 
@@ -360,13 +402,14 @@ after a permanent rejection has triggered a quarantine attempt.
 
 **Outputs**
 
-Success means the newest supported `PENDING_READING` had the expected ID and
-was removed with its truncation synchronized.
+Success means the newest pending item had the expected reading-body sample ID
+and was removed with its truncation synchronized. A bound item removes both its
+binding and immediately preceding reading record in one truncation.
 
 **Side effects**
 
-Lazily initializes LittleFS, establishes a trustworthy tail, validates its
-record type and decoded sample ID, truncates exactly that record and
+Lazily initializes LittleFS, establishes a trustworthy tail, validates the
+item grammar and decoded sample ID, truncates exactly that item and
 synchronizes the truncation. Private recovery may instead remove one unusable
 tail and return an error without removing the caller's expected reading.
 
@@ -399,7 +442,6 @@ Implemented shape:
 
 ```text
 err_curag_t node_persistence_quarantine_reading(
-    u32 sample_id,
     const cura_lora_v2_reading_t *reading,
     diagn_context_t *out_diag)
 ```
@@ -411,9 +453,9 @@ reads or modifies `pending.log`.
 
 **Inputs and ownership**
 
-`sample_id` and `reading` identify the rejected reading already held in RAM.
-`reading` is non-null, caller-owned and borrowed only for the call. `out_diag`
-is optional. No pointer is retained.
+`reading` identifies the rejected reading already held in RAM and carries its
+application `sample_id`. It is non-null, caller-owned and borrowed only for the
+call. `out_diag` is optional. No pointer is retained.
 
 **Outputs**
 
@@ -461,10 +503,10 @@ err_curag_t node_persistence_append_diagnostic_event(
     diagn_context_t *out_diag)
 ```
 
-`node_diagnostic_event` contains the originating `err_curag_t`, the two
-validity flags, application offset, cycle ID, and a borrowed pointer to the
-originating `diagn_context_t`. A null originating context encodes operation
-`NONE`, context schema `NONE` and zero context length.
+`node_diagnostic_event` contains the originating `err_curag_t`, three validity
+flags, application offset, cycle ID, optional active message ID, and a borrowed
+pointer to the originating `diagn_context_t`. A null originating context
+encodes operation `NONE`, context schema `NONE` and zero context length.
 
 **Purpose**
 
@@ -590,10 +632,10 @@ required synchronization and all persistence-owned handles were closed.
 
 Synchronizes only backends initialized during the wake. It does not initialize
 merely to finalize and does not retry an initialization failure cached earlier.
-Sample-ID commits, pending transitions and delivery events are already durable
-before this call. It closes persistence-owned LittleFS file handles and the NVS
-handle, but does not unregister or unmount LittleFS; deep sleep discards the
-remaining in-memory mount state.
+Sample- and message-ID commits, pending transitions and delivery events are
+already durable before this call. It closes persistence-owned LittleFS file
+handles and the shared NVS namespace handle, but does not unregister or unmount
+LittleFS; deep sleep discards the remaining in-memory mount state.
 
 **Failure results and diagnostic context**
 
@@ -680,7 +722,7 @@ The controller's stable error domain is `CURAG_EDOM_CORE = 4`:
 | `7` | `CURAG_ECORE_EACK_AUTHENTICATION` | ACK authentication failed |
 | `8` | `CURAG_ECORE_EACK_CONTROL` | Authenticated ACK control is unsupported |
 | `9` | `CURAG_ECORE_EACK_NODE_ID` | Authenticated ACK is for another node |
-| `10` | `CURAG_ECORE_EACK_SAMPLE_ID` | Authenticated ACK is for another sample |
+| `10` | `CURAG_ECORE_EACK_MESSAGE_ID` | Authenticated ACK is for another logical uplink message |
 | `11` | `CURAG_ECORE_EACK_DOMAIN` | Authenticated packet is not in an ACK domain |
 | `12` | `CURAG_ECORE_EACK_BODY` | Authenticated ACK body is malformed |
 | `13` | `CURAG_ECORE_EACK_STATUS` | ACK status is unknown or mismatched with its domain |
@@ -1019,17 +1061,17 @@ airtime = ceil(packet_symbols * symbol_time)
 explicit/implicit header mode, payload length and payload CRC. Frequency does
 not enter the calculation because it does not affect symbol duration. The
 current SF7, BW125, CR4/5, preamble-8, explicit-header, CRC-enabled profile
-returns 25,856 us for 1 byte, 97,536 us for 50 bytes and 399,616 us for 255
-bytes.
+returns 25,856 us for 1 byte, 97,536 us for 50 bytes, 102,656 us for the
+54-byte reading frame and 399,616 us for 255 bytes.
 
 `sx1262_radio_min_tx_window_us` returns a conservative wall-clock admission
 estimate for the controller. It adds TX ramp, the five-millisecond watchdog
 margin, 64 kHz watchdog quantization and a five-millisecond routine packet-setup
 allowance. Lazy initialization and unusually long BUSY waits are not predicted;
 the mandatory post-setup radio check remains the correctness boundary. The
-corresponding 1-, 50- and 255-byte windows are 35,907 us, 107,579 us and 409,657
-us. Both functions return `UINT64_MAX` for a zero or oversized payload, causing
-budget callers to fail closed.
+corresponding 1-, 50-, 54- and 255-byte windows are 35,907 us, 107,579 us,
+112,704 us and 409,657 us. Both functions return `UINT64_MAX` for a zero or
+oversized payload, causing budget callers to fail closed.
 
 These queries report radio mechanism. `node_core` owns policy: it adds a
 separate 10% allowance to modeled airtime for the eight-second charged-TX

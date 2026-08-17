@@ -29,10 +29,10 @@ independent eight-byte `node_id` from `secrets.token_bytes(8)`. Zero, an active
 collision and a previously retired ID are rejected and regenerated. `node_id`
 is public; the master key and derived node keys are secret.
 
-An identity lifetime is the period during which a node uses one `node_id`,
-its corresponding `node_key` and one monotonic `sample_id` sequence. There is
-no explicit epoch field or counter. Replacing both `node_id` and `node_key`
-starts a new identity lifetime.
+An identity lifetime is the period during which a node uses one `node_id`, its
+corresponding `node_key`, one monotonic transport `message_id` sequence and one
+monotonic application `sample_id` sequence. There is no explicit epoch field.
+Replacing both `node_id` and `node_key` starts a new identity lifetime.
 
 The node key is derived exactly as follows:
 
@@ -114,16 +114,21 @@ changing only their public node IDs is insufficient.
 control       1 byte
 domain        1 byte
 node_id       8 bytes
-sample_id     4 bytes
+message_id    4 bytes
 ciphertext    N bytes
 CCM tag       8 bytes
 ```
+
+The fixed clear-header offsets are `control` 0, `domain` 1, `node_id` 2-9 and
+little-endian `message_id` 10-13. In a reading frame the 32-byte ciphertext is
+at offsets 14-45 and the tag is at 46-53. In an ACK frame the encrypted
+one-byte status is at offset 14 and the tag is at 15-22.
 
 - AES-CCM-128 provides encryption and authentication.
 - The clear header is authenticated as associated data:
 
   ```text
-  AAD = control || domain || node_id || sample_id
+  AAD = control || domain || node_id || message_id
   ```
 
 ### Control byte
@@ -138,11 +143,11 @@ bits 3–0   protocol flags
   `control = 0x20`.
 - A version-2 packet with nonzero protocol flags is unsupported.
 - `control` is authenticated as AAD and must not change between repeated uses of
-  the same `(node_id, sample_id, domain)` nonce.
+  the same `(node_id, message_id, domain)` nonce.
 
 ### Byte order and serialization
 
-- All multi-byte integers, including `sample_id` and reading fields, use
+- All multi-byte integers, including `message_id`, `sample_id` and reading fields, use
   little-endian byte order.
 - Signed integers use two's-complement representation.
 - `node_id` is an opaque sequence of eight bytes, not a numeric field requiring
@@ -152,25 +157,26 @@ bits 3–0   protocol flags
 
 ## Reading payload
 
-The encrypted application body for a reading is 28 bytes:
+The encrypted application body for a reading is 32 bytes:
 
 | Offset | Field | Type | Meaning |
 |---:|---|---|---|
-| 0 | `run_ms` | `u16` | Milliseconds from application start until the current reading body is finalized, immediately before persistence and frame construction. |
-| 2 | `soil_0_mv` | `u16` | Soil-sensor channel 0 output in millivolts. |
-| 4 | `soil_1_mv` | `u16` | Soil-sensor channel 1 output in millivolts. |
-| 6 | `soil_temp_0_centi_c` | `i16` | Soil-temperature channel 0 in 0.01 degrees Celsius. |
-| 8 | `soil_temp_1_centi_c` | `i16` | Soil-temperature channel 1 in 0.01 degrees Celsius. |
-| 10 | `enclosure_centi_c` | `i16` | Enclosure temperature in 0.01 degrees Celsius. |
-| 12 | `enclosure_pressure_pa` | `u32` | Enclosure pressure in pascals. |
-| 16 | `enclosure_humidity_centi_pct` | `u16` | Enclosure relative humidity in 0.01 percent. |
-| 18 | `reset_reason` | `u8` | Reason for the current boot, using the pilot mapping below. |
-| 19 | `previous_current_tx_attempts` | `u8` | All transmission attempts for the previous cycle's current reading, including the first. |
-| 20 | `previous_awake_ms` | `u16` | Previous cycle's total awake time, including transmission and ACK waiting. |
-| 22 | `previous_current_delivery_ms` | `u16` | Time immediately before the previous current reading's first `SetTx` until its authenticated `ACCEPTED`. |
-| 24 | `previous_cycle_tx_attempts` | `u8` | All current and backlog reading transmissions in the previous wake. |
-| 25 | `previous_cycle_accepted_readings` | `u8` | Distinct readings for which the node received authenticated `ACCEPTED` in the previous wake. |
-| 26 | `flags` | `u16` | Validity and diagnostic bitmap. |
+| 0 | `sample_id` | `u32` | Persistent application-reading ID used for reading/wake continuity and timestamp reconstruction. |
+| 4 | `run_ms` | `u16` | Milliseconds from application start until the current reading body is finalized, immediately before persistence and frame construction. |
+| 6 | `soil_0_mv` | `u16` | Soil-sensor channel 0 output in millivolts. |
+| 8 | `soil_1_mv` | `u16` | Soil-sensor channel 1 output in millivolts. |
+| 10 | `soil_temp_0_centi_c` | `i16` | Soil-temperature channel 0 in 0.01 degrees Celsius. |
+| 12 | `soil_temp_1_centi_c` | `i16` | Soil-temperature channel 1 in 0.01 degrees Celsius. |
+| 14 | `enclosure_centi_c` | `i16` | Enclosure temperature in 0.01 degrees Celsius. |
+| 16 | `enclosure_pressure_pa` | `u32` | Enclosure pressure in pascals. |
+| 20 | `enclosure_humidity_centi_pct` | `u16` | Enclosure relative humidity in 0.01 percent. |
+| 22 | `reset_reason` | `u8` | Reason for the current boot, using the pilot mapping below. |
+| 23 | `previous_current_tx_attempts` | `u8` | All transmission attempts for the previous cycle's current reading, including the first. |
+| 24 | `previous_awake_ms` | `u16` | Previous cycle's total awake time, including transmission and ACK waiting. |
+| 26 | `previous_current_delivery_ms` | `u16` | Time immediately before the previous current reading's first `SetTx` until its authenticated `ACCEPTED`. |
+| 28 | `previous_cycle_tx_attempts` | `u8` | All current and backlog reading transmissions in the previous wake. |
+| 29 | `previous_cycle_accepted_readings` | `u8` | Distinct readings for which the node received authenticated `ACCEPTED` in the previous wake. |
+| 30 | `flags` | `u16` | Validity and diagnostic bitmap. |
 
 Channel numbers identify stable node connectors or configured sensor identities;
 they do not encode depth. The receiver stores each channel's depth, calibration,
@@ -232,7 +238,7 @@ representable by `u16`.
 The wire encoding has no alignment requirement and contains no implicit C
 padding.
 
-This reading makes the SX1262 payload `14 + 28 + 8 = 50` bytes, excluding the
+This reading makes the SX1262 payload `14 + 32 + 8 = 54` bytes, excluding the
 modem-generated payload CRC.
 
 ## LoRa PHY framing
@@ -294,7 +300,7 @@ IQ polarity must likewise match the direction at both ends. Direction-specific
 polarity prevents a node waiting for a downlink from normally demodulating
 another node's uplink. It does not identify the destination: a node can still
 receive a downlink for another node and must reject it using the authenticated
-`node_id`, `sample_id` and ACK semantics. Opposite-IQ transmissions still
+`node_id`, `message_id` and ACK semantics. Opposite-IQ transmissions still
 occupy the same RF channel and can interfere when they overlap. IQ polarity
 adds no packet bytes and does not change airtime.
 
@@ -306,7 +312,7 @@ budget are:
 
 | Packet | SX1262 payload | On-air symbols | Airtime | Charged airtime |
 |---|---:|---:|---:|---:|
-| Reading | 50 bytes | 95.25 | 97.536 ms | 107.290 ms |
+| Reading | 54 bytes | 100.25 | 102.656 ms | 112.922 ms |
 | ACK | 23 bytes | 60.25 | 61.696 ms | 67.866 ms |
 
 Charged airtime is `ceil(actual_airtime_us * 1.10)` and is maintained in integer
@@ -318,14 +324,14 @@ irrespective of reception or authentication outcome.
 
 ```text
 node_id       8 bytes
-sample_id     4 bytes
+message_id    4 bytes
 domain        1 byte
              --------
              13 bytes
 ```
 
 `domain` separates directions and logical packet types. Under one node key,
-each `(node_id, sample_id, domain)` combination identifies at most one logical
+each `(node_id, message_id, domain)` combination identifies at most one logical
 packet.
 
 `control` is separate from `domain` to leave room for protocol versioning,
@@ -343,22 +349,32 @@ is reserved. Pilot values are permanent and must not be reassigned:
 | `0x05` | `ACK_REJECTED_UNSUPPORTED_DOWNLINK` |
 | `0x06` | `ACK_REJECTED_MALFORMED_DOWNLINK` |
 
-A reading starts in `CURRENT_READING_UPLINK`. If it is not accepted and is
-stored locally, a later wake sends it using `BACKLOG_READING_UPLINK`. The
-different domain produces a different nonce. Repeated attempts within one
-domain use identical AAD, ciphertext and tag.
+A reading starts in a newly constructed `CURRENT_READING_UPLINK` logical
+message. If it remains stored locally and is later converted to backlog, the
+node allocates a new `message_id`, persists the exact authenticated
+`BACKLOG_READING_UPLINK` frame and only then transmits it. Repeated RF attempts
+for either logical message reuse its exact `message_id`, domain, AAD,
+ciphertext, tag and complete frame bytes. Later-wake backlog retries load those
+persisted bytes rather than reconstructing the frame.
 
 ## Counters
 
-- `sample_id` is an unsigned persistent 32-bit monotonic counter.
-- It must never restart while the same node key remains in use. Losing the
-  counter requires provisioning a new identity/key or another specified
-  rekeying procedure.
+- `message_id` is an unsigned persistent monotonic `u32` counter scoped to one
+  node identity/key. It is claimed and durably advanced before every newly
+  constructed logical uplink message, not before each RF attempt.
+- A `message_id` may skip but must never be reused while the same node key is
+  active. Losing or exhausting the counter requires a new node identity/key.
+  Failure to claim and commit it prevents frame construction and transmission.
+- `sample_id` remains the persistent application-reading and wake-continuity
+  counter. It does not identify RF retry episodes and is not part of the nonce.
 
 ## ACK behaviour
 
-- ACKs use the `sample_id` of the reading being acknowledged and the domain that
-  corresponds to their status.
+- ACKs echo the pending uplink's `message_id`; they do not carry `sample_id`.
+  Their nonce uses that message ID and the domain corresponding to the status.
+- Repeating an ACK with the same outcome reuses identical frame bytes. Different
+  outcomes use their existing distinct ACK domains and therefore distinct
+  nonces under the same node key and `message_id`.
 - The ACK encrypted application body is a one-byte `status` value:
 
   | Domain | Status | Meaning |
@@ -414,23 +430,30 @@ Reading-value rules are:
 The receiver processes a packet in this order:
 
 1. Let the SX1262 discard invalid PHY headers and payload CRCs; send no response.
-2. Parse only the fixed clear header, enforce the protocol maximum length and
-   look up `node_id`. An unknown, revoked or unprovisioned node receives no
-   response.
-3. Authenticate and decrypt with AES-CCM using the received `control` and
-   `domain` as AAD. Authentication failure receives no response.
+2. Parse only the fixed clear header, expose its `node_id`, `message_id` and
+   `domain` as untrusted claims, enforce the protocol maximum length and look
+   up `node_id`. An unknown, revoked or unprovisioned node receives no response.
+3. Authenticate and decrypt with AES-CCM using the exact received 14-byte clear
+   header as AAD and `node_id || message_id || domain` as the nonce.
+   Authentication failure receives no response; `sample_id` is not available
+   at this stage.
 4. Require authenticated `control = 0x20`; otherwise select
    `REJECTED_UNSUPPORTED`.
 5. Accept the two uplink reading domains for parsing. An authenticated unknown
    domain selects `REJECTED_UNSUPPORTED`. A downlink ACK domain received by the
    receiver is logged as reflected or replayed traffic and receives no response.
-6. Require the exact 28-byte reading body and the structural encoding rules
-   above; otherwise select `REJECTED_MALFORMED`.
-7. Atomically reserve space in the bounded in-memory queue. If unavailable,
+6. Require the exact 32-byte reading body, decode authenticated `sample_id`, and
+   enforce the structural encoding rules above; otherwise select
+   `REJECTED_MALFORMED`.
+7. Classify authenticated transport retransmissions by `(node_id, message_id)`
+   separately from duplicate readings by `(node_id, sample_id)`. Reuse of one
+   message ID with different authenticated frame bytes is malformed.
+8. Atomically reserve space in the bounded in-memory queue. If unavailable,
    select `RETRY_LATER`.
-8. Enqueue the reading, then select `ACCEPTED`.
-9. Send the selected authenticated ACK only if the receiver TX-airtime budget
-   permits it. Lack of ACK budget does not undo validation or queue insertion.
+9. Enqueue the reading, then select `ACCEPTED`.
+10. Construct an authenticated ACK that echoes the uplink `message_id`, and send
+    it only if the receiver TX-airtime budget permits it. Lack of ACK budget
+    does not undo validation or queue insertion.
 
 An in-memory map from `(node_id, sample_id)` to accepted or queued contents is a
 proposed optimization, not a pilot protocol requirement. When present, a
@@ -519,9 +542,10 @@ records contain no node key or group master key.
 ### Node delivery log
 
 The node represents every entered delivery episode with two append-only events.
-They are keyed by the wake's current `cycle_sample_id`, the delivered packet's
-`sample_id` and its domain. The cycle ID distinguishes separate wakes that
-retry the same backlog packet without requiring another persistent counter.
+They carry the wake's current `cycle_sample_id`, the delivered reading's
+`sample_id`, its transport `message_id` and its domain. Transport identity is
+`(node_id, message_id)`; the cycle and sample IDs preserve wake and reading
+context without changing that identity.
 
 Before the first call to the radio's `transmit_uplink`, `node_core` appends:
 
@@ -529,6 +553,7 @@ Before the first call to the radio's `transmit_uplink`, `node_core` appends:
 event_type                       DELIVERY_STARTED
 cycle_sample_id
 sample_id
+message_id
 domain
 start_offset_ms                relative to application start
 ```
@@ -540,6 +565,7 @@ When the episode reaches a terminal ACK result, exhausted limit or local error,
 event_type                       DELIVERY_FINISHED
 cycle_sample_id
 sample_id
+message_id
 domain
 attempt_count                  relative to this wake cycle
 final_result
@@ -583,20 +609,24 @@ received_at_monotonic_us
 received_frame_length
 received_frame
 claimed_node_id
-claimed_sample_id
+claimed_message_id
 claimed_domain
 header_authenticated
+decoded_sample_id
 rssi
 snr
 processing_result
-duplicate_status
+transport_duplicate_status
+reading_duplicate_status
 ack_selected
 ack_tx_result
 ack_frame
 ```
 
 The clear-header identity fields are untrusted claims unless
-`header_authenticated` is true. `processing_result` is one of:
+`header_authenticated` is true. `decoded_sample_id` is null unless the frame
+authenticated and the exact reading body decoded successfully.
+`processing_result` is one of:
 
 ```text
 ACCEPTED
@@ -611,7 +641,20 @@ WRONG_DIRECTION
 RADIO_ERROR
 ```
 
-`duplicate_status` is one of:
+`transport_duplicate_status` is one of:
+
+```text
+NOT_CHECKED
+FIRST_SEEN
+RETRANSMISSION_SAME_FRAME
+MESSAGE_ID_CONFLICT
+```
+
+It describes occurrences keyed by `(node_id, message_id)`. A retransmission is
+the same logical transport message and exact authenticated frame; it is not a
+second application reading.
+
+`reading_duplicate_status` is one of:
 
 ```text
 NOT_CHECKED
@@ -620,8 +663,9 @@ DUPLICATE_SAME_CONTENT
 DUPLICATE_CONFLICT
 ```
 
-Duplicate status is trusted only for an authenticated packet. A receiver
-without the proposed in-memory accepted/queued map uses `NOT_CHECKED`; duplicate
+Transport duplicate status is trusted only after authentication. Reading
+duplicate status additionally requires successful reading-body decoding. A
+receiver without the corresponding in-memory maps uses `NOT_CHECKED`; both
 relationships can then be reconstructed from the append-only log.
 
 `ack_selected` is either none or one of the four ACK domains.
@@ -654,8 +698,8 @@ protocol decisions.
 
 - Put at most five readings in one encrypted packet to share the PHY framing,
   AAD, CCM tag and ACK overhead.
-- Keep `sample_id` in each reading and add a persistent `packet_id` to the outer
-  header and CCM nonce. Retain distinct uplink and ACK domains.
+- Keep `sample_id` in each reading and use the existing persistent `message_id`
+  in the outer header and CCM nonce. Retain distinct uplink and ACK domains.
 - The receiver authenticates and validates the entire batch, deduplicates its
   readings and reserves queue space for every new reading before inserting any.
 - Return the existing one-byte `ACCEPTED` only when the complete batch is
@@ -689,7 +733,7 @@ direct receiver-time anchor, whether or not the node received its ACK. Let:
 
 ```text
 R     = receiver UTC timestamp captured at RX_DONE
-Tair  = reading airtime, 97.536 ms
+Tair  = reading airtime, 102.656 ms
 A     = node application-start time
 ```
 

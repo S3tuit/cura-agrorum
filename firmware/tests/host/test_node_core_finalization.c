@@ -5,13 +5,13 @@
 #include <stdint.h>
 #include <string.h>
 
-static bool script_status(uint32_t sample_id, cura_lora_v2_ack_status_t status,
+static bool script_status(uint32_t message_id, cura_lora_v2_ack_status_t status,
                           uint64_t set_tx, uint64_t tx_done, uint64_t ack_at) {
   cura_lora_v2_domain_t domain = CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK;
   if (status == CURA_LORA_V2_ACK_STATUS_RETRY_LATER) {
     domain = CURA_LORA_V2_DOMAIN_ACK_RETRY_LATER_DOWNLINK;
   }
-  return core_test_script_ack(sample_id, domain, status, set_tx, tx_done,
+  return core_test_script_ack(message_id, domain, status, set_tx, tx_done,
                               ack_at);
 }
 
@@ -26,10 +26,11 @@ static bool delivery_events_bracket_retries_and_failures_are_best_effort(void) {
       first_done + NODE_CORE_ACK_WAIT_US + NODE_CORE_RETRY_JITTER_MIN_US;
   fake_node_core_script_tx_done(first_set, first_done);
   fake_node_core_script_rx_deadline(retry_at);
-  CORE_TEST_ASSERT(script_status(
-      22U, CURA_LORA_V2_ACK_STATUS_ACCEPTED, retry_at + UINT64_C(1000),
-      retry_at + UINT64_C(1000) + core_test_reading_airtime_us(),
-      retry_at + UINT64_C(110000)));
+  CORE_TEST_ASSERT(
+      script_status(CORE_TEST_FIRST_MESSAGE_ID,
+                    CURA_LORA_V2_ACK_STATUS_ACCEPTED, retry_at + UINT64_C(1000),
+                    retry_at + UINT64_C(1000) + core_test_reading_airtime_us(),
+                    retry_at + UINT64_C(110000)));
   core_test_run(&rtc, &platform);
   CORE_TEST_ASSERT_EQ_SIZE(2U, fake_node_core.delivery_event_count);
   const node_delivery_event_t *start = &fake_node_core.delivery_events[0];
@@ -46,9 +47,9 @@ static bool delivery_events_bracket_retries_and_failures_are_best_effort(void) {
   fake_node_core.delivery_event_errors[0] = CURAG_EIO;
   fake_node_core.delivery_event_errors[1] = CURAG_EIO;
   fake_node_core.delivery_event_error_count = 2U;
-  CORE_TEST_ASSERT(script_status(0U, CURA_LORA_V2_ACK_STATUS_ACCEPTED,
-                                 UINT64_C(1001000), UINT64_C(1098536),
-                                 UINT64_C(1110000)));
+  CORE_TEST_ASSERT(script_status(
+      CORE_TEST_FIRST_MESSAGE_ID, CURA_LORA_V2_ACK_STATUS_ACCEPTED,
+      UINT64_C(1001000), UINT64_C(1103656), UINT64_C(1110000)));
   core_test_run(&rtc, &platform);
   CORE_TEST_ASSERT(rtc.metrics.current_accepted);
   CORE_TEST_ASSERT_EQ_SIZE(1U, fake_node_core.removed_count);
@@ -64,9 +65,9 @@ static bool diagnostic_failure_is_not_logged_recursively(void) {
   fake_node_core.append_pending_error = CURAG_EIO;
   fake_node_core.diagnostic_event_errors[0] = CURAG_EIO;
   fake_node_core.diagnostic_event_error_count = 1U;
-  CORE_TEST_ASSERT(script_status(0U, CURA_LORA_V2_ACK_STATUS_ACCEPTED,
-                                 UINT64_C(1001000), UINT64_C(1098536),
-                                 UINT64_C(1110000)));
+  CORE_TEST_ASSERT(script_status(
+      CORE_TEST_FIRST_MESSAGE_ID, CURA_LORA_V2_ACK_STATUS_ACCEPTED,
+      UINT64_C(1001000), UINT64_C(1103656), UINT64_C(1110000)));
   core_test_run(&rtc, &platform);
   CORE_TEST_ASSERT_EQ_SIZE(1U, fake_node_core.diagnostic_event_count);
   CORE_TEST_ASSERT(rtc.metrics.current_accepted);
@@ -92,14 +93,14 @@ static bool current_and_backlog_metrics_accumulate_in_correct_domains(void) {
   const uint64_t current_second_done =
       current_second_set + core_test_reading_airtime_us();
   const uint64_t current_ack = current_second_done + UINT64_C(2000);
-  CORE_TEST_ASSERT(script_status(5U, CURA_LORA_V2_ACK_STATUS_ACCEPTED,
-                                 current_second_set, current_second_done,
-                                 current_ack));
+  CORE_TEST_ASSERT(script_status(
+      CORE_TEST_FIRST_MESSAGE_ID, CURA_LORA_V2_ACK_STATUS_ACCEPTED,
+      current_second_set, current_second_done, current_ack));
   const uint64_t backlog_set = current_ack + UINT64_C(1000);
   const uint64_t backlog_done = backlog_set + core_test_reading_airtime_us();
-  CORE_TEST_ASSERT(script_status(4U, CURA_LORA_V2_ACK_STATUS_ACCEPTED,
-                                 backlog_set, backlog_done,
-                                 backlog_done + UINT64_C(2000)));
+  CORE_TEST_ASSERT(script_status(CORE_TEST_FIRST_MESSAGE_ID + 1U,
+                                 CURA_LORA_V2_ACK_STATUS_ACCEPTED, backlog_set,
+                                 backlog_done, backlog_done + UINT64_C(2000)));
 
   core_test_run(&rtc, &platform);
 
@@ -117,9 +118,9 @@ static bool unaccepted_current_has_zero_delivery_metric(void) {
   node_rtc_record_t rtc;
   node_platform_ports_t platform;
   core_test_setup(&rtc, &platform);
-  CORE_TEST_ASSERT(script_status(0U, CURA_LORA_V2_ACK_STATUS_RETRY_LATER,
-                                 UINT64_C(1001000), UINT64_C(1098536),
-                                 UINT64_C(1110000)));
+  CORE_TEST_ASSERT(script_status(
+      CORE_TEST_FIRST_MESSAGE_ID, CURA_LORA_V2_ACK_STATUS_RETRY_LATER,
+      UINT64_C(1001000), UINT64_C(1103656), UINT64_C(1110000)));
   core_test_run(&rtc, &platform);
   CORE_TEST_ASSERT_EQ_U32(NODE_RTC_COMMITTED_V1, rtc.commit_marker);
   CORE_TEST_ASSERT(!rtc.metrics.current_accepted);
@@ -134,8 +135,9 @@ static bool awake_time_includes_cleanup_and_sync_and_sleep_is_terminal(void) {
   node_platform_ports_t platform;
   core_test_setup(&rtc, &platform);
   const uint64_t ack_at = UINT64_C(1110000);
-  CORE_TEST_ASSERT(script_status(0U, CURA_LORA_V2_ACK_STATUS_RETRY_LATER,
-                                 UINT64_C(1001000), UINT64_C(1098536), ack_at));
+  CORE_TEST_ASSERT(script_status(CORE_TEST_FIRST_MESSAGE_ID,
+                                 CURA_LORA_V2_ACK_STATUS_RETRY_LATER,
+                                 UINT64_C(1001000), UINT64_C(1103656), ack_at));
   fake_node_core.force_power_off_advance_us = UINT64_C(5000);
   fake_node_core.radio_sleep_advance_us = UINT64_C(7000);
   fake_node_core.sync_advance_us = UINT64_C(11000);
@@ -228,9 +230,9 @@ static bool component_diagnostics_are_copied_opaquely(void) {
       curag_error_make(CURAG_EDOM_SENSORS, CURAG_ESENSORS_ECLEANUP);
   fake_node_core.sensor_diagnostic.operation = CURAG_OP_CLEANUP;
   fake_node_core.sensor_diagnostic.context[0] = UINT8_C(0xa5);
-  CORE_TEST_ASSERT(script_status(0U, CURA_LORA_V2_ACK_STATUS_ACCEPTED,
-                                 UINT64_C(1001000), UINT64_C(1098536),
-                                 UINT64_C(1110000)));
+  CORE_TEST_ASSERT(script_status(
+      CORE_TEST_FIRST_MESSAGE_ID, CURA_LORA_V2_ACK_STATUS_ACCEPTED,
+      UINT64_C(1001000), UINT64_C(1103656), UINT64_C(1110000)));
   core_test_run(&rtc, &platform);
   CORE_TEST_ASSERT(fake_node_core.diagnostic_event_count >= 1U);
   const fake_node_core_captured_diagnostic_t *captured =
@@ -256,9 +258,9 @@ static bool cleanup_failures_do_not_prevent_sync_or_sleep(void) {
   fake_node_core.radio_sleep_error =
       curag_error_make(CURAG_EDOM_RADIO, CURAG_ERADIO_EIO);
   fake_node_core.sync_error = CURAG_EIO;
-  CORE_TEST_ASSERT(script_status(0U, CURA_LORA_V2_ACK_STATUS_RETRY_LATER,
-                                 UINT64_C(1001000), UINT64_C(1098536),
-                                 UINT64_C(1110000)));
+  CORE_TEST_ASSERT(script_status(
+      CORE_TEST_FIRST_MESSAGE_ID, CURA_LORA_V2_ACK_STATUS_RETRY_LATER,
+      UINT64_C(1001000), UINT64_C(1103656), UINT64_C(1110000)));
 
   core_test_run(&rtc, &platform);
 

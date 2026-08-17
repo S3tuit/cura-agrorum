@@ -17,32 +17,29 @@ static void append_pending(uint32_t sample_id) {
   const cura_lora_v2_reading_t reading =
       hwtest_make_reading((uint16_t)sample_id);
   diagn_context_t diag;
-  TEST_ASSERT_EQUAL_HEX32(CURAG_OK, node_persistence_append_pending_reading(
-                                        sample_id, &reading, &diag));
+  TEST_ASSERT_EQUAL_HEX32(
+      CURAG_OK, node_persistence_append_pending_reading(&reading, &diag));
 }
 
 static void assert_pending(uint32_t expected_id) {
-  uint32_t actual_id = 0U;
-  cura_lora_v2_reading_t actual_reading;
+  node_pending_reading_t pending;
   bool found = false;
   diagn_context_t diag;
-  TEST_ASSERT_EQUAL_HEX32(CURAG_OK,
-                          node_persistence_peek_most_recent_pending(
-                              &actual_id, &actual_reading, &found, &diag));
+  TEST_ASSERT_EQUAL_HEX32(CURAG_OK, node_persistence_peek_most_recent_pending(
+                                        &pending, &found, &diag));
   TEST_ASSERT_TRUE(found);
-  TEST_ASSERT_EQUAL_UINT32(expected_id, actual_id);
+  TEST_ASSERT_EQUAL_UINT32(expected_id, pending.reading.sample_id);
   const cura_lora_v2_reading_t expected_reading =
       hwtest_make_reading((uint16_t)expected_id);
-  hwtest_assert_reading_equal(&expected_reading, &actual_reading);
+  hwtest_assert_reading_equal(&expected_reading, &pending.reading);
 }
 
 static void assert_pending_empty(void) {
-  uint32_t sample_id = 0U;
-  cura_lora_v2_reading_t reading;
+  node_pending_reading_t pending;
   bool found = true;
   diagn_context_t diag;
   TEST_ASSERT_EQUAL_HEX32(CURAG_OK, node_persistence_peek_most_recent_pending(
-                                        &sample_id, &reading, &found, &diag));
+                                        &pending, &found, &diag));
   TEST_ASSERT_FALSE(found);
 }
 
@@ -138,6 +135,107 @@ TEST_CASE_MULTIPLE_STAGES("persistence sample ID exhaustion survives restart",
                           restart_exhaustion_stage_1,
                           restart_exhaustion_stage_2);
 
+static void restart_message_monotonic_stage_1(void) {
+  hwtest_erase_state();
+  uint32_t message_id = UINT32_MAX;
+  diagn_context_t diag;
+  TEST_ASSERT_EQUAL_HEX32(
+      CURAG_OK, node_persistence_claim_message_id(&message_id, &diag));
+  TEST_ASSERT_EQUAL_UINT32(0U, message_id);
+  esp_restart();
+}
+
+static void restart_message_monotonic_stage_2(void) {
+  uint32_t message_id = UINT32_MAX;
+  diagn_context_t diag;
+  TEST_ASSERT_EQUAL_HEX32(
+      CURAG_OK, node_persistence_claim_message_id(&message_id, &diag));
+  TEST_ASSERT_EQUAL_UINT32(1U, message_id);
+  esp_restart();
+}
+
+static void restart_message_monotonic_stage_3(void) {
+  uint32_t message_id = UINT32_MAX;
+  diagn_context_t diag;
+  TEST_ASSERT_EQUAL_HEX32(
+      CURAG_OK, node_persistence_claim_message_id(&message_id, &diag));
+  TEST_ASSERT_EQUAL_UINT32(2U, message_id);
+  hwtest_finish_case();
+}
+
+TEST_CASE_MULTIPLE_STAGES(
+    "persistence message IDs are monotonic across software restarts",
+    "[node_persistence][reset=SW_CPU_RESET,SW_CPU_RESET]",
+    restart_message_monotonic_stage_1, restart_message_monotonic_stage_2,
+    restart_message_monotonic_stage_3);
+
+static void restart_message_committed_stage_1(void) {
+  hwtest_erase_state();
+  uint32_t message_id = UINT32_MAX;
+  diagn_context_t diag;
+  TEST_ASSERT_EQUAL_HEX32(
+      CURAG_OK, node_persistence_claim_message_id(&message_id, &diag));
+  TEST_ASSERT_EQUAL_UINT32(0U, message_id);
+  esp_restart();
+}
+
+static void restart_message_committed_stage_2(void) {
+  TEST_ASSERT_EQUAL_UINT32(1U, hwtest_read_next_message_id());
+  hwtest_finish_case();
+}
+
+TEST_CASE_MULTIPLE_STAGES(
+    "a successful message claim is committed before return",
+    "[node_persistence][reset=SW_CPU_RESET]", restart_message_committed_stage_1,
+    restart_message_committed_stage_2);
+
+static void restart_message_exhaustion_stage_1(void) {
+  hwtest_erase_state();
+  hwtest_seed_next_message_id(UINT32_MAX);
+  uint32_t message_id = 7U;
+  diagn_context_t diag;
+  TEST_ASSERT_EQUAL_HEX32(
+      CURAG_EMESSAGE_ID_EXHAUSTED,
+      node_persistence_claim_message_id(&message_id, &diag));
+  TEST_ASSERT_EQUAL_UINT32(7U, message_id);
+  esp_restart();
+}
+
+static void restart_message_exhaustion_stage_2(void) {
+  uint32_t message_id = 9U;
+  diagn_context_t diag;
+  TEST_ASSERT_EQUAL_HEX32(
+      CURAG_EMESSAGE_ID_EXHAUSTED,
+      node_persistence_claim_message_id(&message_id, &diag));
+  TEST_ASSERT_EQUAL_UINT32(9U, message_id);
+  TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, hwtest_read_next_message_id());
+  hwtest_finish_case();
+}
+
+TEST_CASE_MULTIPLE_STAGES("persistence message ID exhaustion survives restart",
+                          "[node_persistence][reset=SW_CPU_RESET]",
+                          restart_message_exhaustion_stage_1,
+                          restart_message_exhaustion_stage_2);
+
+TEST_CASE("sample and message counters advance independently",
+          "[node_persistence]") {
+  hwtest_erase_state();
+  diagn_context_t diag;
+  uint32_t sample_id = UINT32_MAX;
+  uint32_t message_id = UINT32_MAX;
+  TEST_ASSERT_EQUAL_HEX32(CURAG_OK,
+                          node_persistence_claim_sample_id(&sample_id, &diag));
+  TEST_ASSERT_EQUAL_HEX32(
+      CURAG_OK, node_persistence_claim_message_id(&message_id, &diag));
+  TEST_ASSERT_EQUAL_UINT32(0U, sample_id);
+  TEST_ASSERT_EQUAL_UINT32(0U, message_id);
+  TEST_ASSERT_EQUAL_HEX32(CURAG_OK, node_persistence_sync_all(&diag));
+  node_persistence_test_reset();
+  TEST_ASSERT_EQUAL_UINT32(1U, hwtest_read_next_sample_id());
+  TEST_ASSERT_EQUAL_UINT32(1U, hwtest_read_next_message_id());
+  hwtest_finish_case();
+}
+
 TEST_CASE("persistence initializes NVS and LittleFS independently",
           "[node_persistence]") {
   hwtest_erase_state();
@@ -169,6 +267,53 @@ TEST_CASE_MULTIPLE_STAGES(
     "pending reading round trip survives software restart",
     "[node_persistence][reset=SW_CPU_RESET]",
     restart_pending_round_trip_stage_1, restart_pending_round_trip_stage_2);
+
+static void restart_bound_backlog_stage_1(void) {
+  hwtest_erase_state();
+  append_pending(42U);
+  uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE];
+  memset(frame, 0xa5, sizeof(frame));
+  frame[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] = CURA_LORA_V2_CONTROL;
+  frame[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] =
+      CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK;
+  node_persistence_store_le32(frame +
+                                  CURA_LORA_V2_CLEAR_HEADER_MESSAGE_ID_OFFSET,
+                              UINT32_C(0x11223344));
+  diagn_context_t diag;
+  TEST_ASSERT_EQUAL_HEX32(CURAG_OK,
+                          node_persistence_bind_newest_backlog_frame(
+                              42U, UINT32_C(0x11223344), frame, &diag));
+  esp_restart();
+}
+
+static void restart_bound_backlog_stage_2(void) {
+  node_pending_reading_t pending;
+  bool found = false;
+  diagn_context_t diag;
+  TEST_ASSERT_EQUAL_HEX32(CURAG_OK, node_persistence_peek_most_recent_pending(
+                                        &pending, &found, &diag));
+  TEST_ASSERT_TRUE(found);
+  TEST_ASSERT_TRUE(pending.backlog_bound);
+  TEST_ASSERT_EQUAL_UINT32(42U, pending.reading.sample_id);
+  TEST_ASSERT_EQUAL_HEX32(UINT32_C(0x11223344), pending.message_id);
+  uint8_t expected[CURA_LORA_V2_READING_FRAME_SIZE];
+  memset(expected, 0xa5, sizeof(expected));
+  expected[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] = CURA_LORA_V2_CONTROL;
+  expected[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] =
+      CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK;
+  node_persistence_store_le32(expected +
+                                  CURA_LORA_V2_CLEAR_HEADER_MESSAGE_ID_OFFSET,
+                              UINT32_C(0x11223344));
+  TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, pending.frame, sizeof(expected));
+  remove_pending(42U);
+  assert_pending_empty();
+  hwtest_finish_case();
+}
+
+TEST_CASE_MULTIPLE_STAGES(
+    "bound backlog reuses exact frame across software restart",
+    "[node_persistence][reset=SW_CPU_RESET]", restart_bound_backlog_stage_1,
+    restart_bound_backlog_stage_2);
 
 TEST_CASE("pending selection and removal are newest first",
           "[node_persistence]") {
@@ -221,8 +366,8 @@ static void restart_quarantine_stage_1(void) {
   hwtest_erase_state();
   const cura_lora_v2_reading_t reading = hwtest_make_reading(7U);
   diagn_context_t diag;
-  TEST_ASSERT_EQUAL_HEX32(
-      CURAG_OK, node_persistence_quarantine_reading(7U, &reading, &diag));
+  TEST_ASSERT_EQUAL_HEX32(CURAG_OK,
+                          node_persistence_quarantine_reading(&reading, &diag));
   esp_restart();
 }
 
@@ -329,13 +474,12 @@ prepare_tail_recovery(uint8_t record[static NODE_PERSISTENCE_RECORD_MAX_SIZE],
 }
 
 static void assert_recovered_tail(err_curag_t expected_first_error) {
-  uint32_t sample_id = 0U;
-  cura_lora_v2_reading_t reading;
+  node_pending_reading_t pending;
   bool found = false;
   diagn_context_t diag;
-  TEST_ASSERT_EQUAL_HEX32(expected_first_error,
-                          node_persistence_peek_most_recent_pending(
-                              &sample_id, &reading, &found, &diag));
+  TEST_ASSERT_EQUAL_HEX32(
+      expected_first_error,
+      node_persistence_peek_most_recent_pending(&pending, &found, &diag));
   assert_pending(1U);
   static hwtest_snapshot_t snapshot;
   hwtest_snapshot(HWTEST_PENDING_PATH, &snapshot);
@@ -393,8 +537,8 @@ TEST_CASE("LittleFS removes a semantically invalid pending tail",
   static uint8_t record[NODE_PERSISTENCE_RECORD_MAX_SIZE];
   size_t record_length = 0U;
   prepare_tail_recovery(record, &record_length);
-  const size_t reading_body_offset = 8U + sizeof(uint32_t);
-  const size_t flags_offset = reading_body_offset + 26U;
+  const size_t flags_offset =
+      NODE_PERSISTENCE_RECORD_HEADER_SIZE + CURA_LORA_V2_READING_FLAGS_OFFSET;
   uint16_t flags = node_persistence_load_le16(record + flags_offset);
   flags &= (uint16_t)~CURA_LORA_V2_FLAG_SOIL_0_VALID;
   node_persistence_store_le16(record + flags_offset, flags);
@@ -416,13 +560,12 @@ TEST_CASE("LittleFS preserves an unprovable pending boundary",
   static hwtest_snapshot_t expected;
   hwtest_snapshot(HWTEST_PENDING_PATH, &expected);
   for (size_t attempt = 0U; attempt < 2U; ++attempt) {
-    uint32_t sample_id = 0U;
-    cura_lora_v2_reading_t reading;
+    node_pending_reading_t pending;
     bool found = false;
     diagn_context_t diag;
-    TEST_ASSERT_EQUAL_HEX32(CURAG_ECORRUPT_RECORD,
-                            node_persistence_peek_most_recent_pending(
-                                &sample_id, &reading, &found, &diag));
+    TEST_ASSERT_EQUAL_HEX32(
+        CURAG_ECORRUPT_RECORD,
+        node_persistence_peek_most_recent_pending(&pending, &found, &diag));
     static hwtest_snapshot_t actual;
     hwtest_snapshot(HWTEST_PENDING_PATH, &actual);
     hwtest_assert_snapshot_equal(&expected, &actual);
@@ -442,10 +585,10 @@ TEST_CASE("persistence append repairs corruption before appending",
   diagn_context_t diag;
   TEST_ASSERT_EQUAL_HEX32(
       CURAG_ECORRUPT_RECORD,
-      node_persistence_append_pending_reading(3U, &reading, &diag));
+      node_persistence_append_pending_reading(&reading, &diag));
   assert_pending(1U);
   TEST_ASSERT_EQUAL_HEX32(
-      CURAG_OK, node_persistence_append_pending_reading(3U, &reading, &diag));
+      CURAG_OK, node_persistence_append_pending_reading(&reading, &diag));
   assert_pending(3U);
   hwtest_finish_case();
 }
@@ -493,12 +636,12 @@ TEST_CASE("full non-pending logs reject without changing old data",
   for (uint32_t id = 0U; id < 2U; ++id) {
     const cura_lora_v2_reading_t reading = hwtest_make_reading((uint16_t)id);
     TEST_ASSERT_EQUAL_HEX32(
-        CURAG_OK, node_persistence_quarantine_reading(id, &reading, &diag));
+        CURAG_OK, node_persistence_quarantine_reading(&reading, &diag));
   }
   hwtest_snapshot(HWTEST_QUARANTINE_PATH, &before);
   const cura_lora_v2_reading_t rejected = hwtest_make_reading(3U);
-  TEST_ASSERT_EQUAL_HEX32(CURAG_ELOG_FULL, node_persistence_quarantine_reading(
-                                               3U, &rejected, &diag));
+  TEST_ASSERT_EQUAL_HEX32(
+      CURAG_ELOG_FULL, node_persistence_quarantine_reading(&rejected, &diag));
   hwtest_snapshot(HWTEST_QUARANTINE_PATH, &after);
   hwtest_assert_snapshot_equal(&before, &after);
 

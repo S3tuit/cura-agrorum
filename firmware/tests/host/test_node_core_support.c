@@ -30,6 +30,7 @@ void core_test_run(node_rtc_record_t *rtc,
 
 cura_lora_v2_reading_t core_test_reading(uint16_t marker) {
   return (cura_lora_v2_reading_t){
+      .sample_id = marker,
       .run_ms = marker,
       .soil_0_mv = (uint16_t)(marker + 1U),
       .flags = CURA_LORA_V2_FLAG_SOIL_0_VALID,
@@ -50,13 +51,13 @@ uint64_t core_test_reading_min_tx_window_us(void) {
   return sx1262_radio_min_tx_window_us(CURA_LORA_V2_READING_FRAME_SIZE);
 }
 
-bool core_test_script_ack(uint32_t sample_id, cura_lora_v2_domain_t domain,
+bool core_test_script_ack(uint32_t message_id, cura_lora_v2_domain_t domain,
                           cura_lora_v2_ack_status_t status,
                           uint64_t set_tx_at_us, uint64_t tx_done_at_us,
                           uint64_t ack_at_us) {
   uint8_t ack[CURA_LORA_V2_ACK_FRAME_SIZE];
   if (!fake_node_core_make_ack(ack, CORE_TEST_IDENTITY.node_key,
-                               CORE_TEST_IDENTITY.node_id, sample_id,
+                               CORE_TEST_IDENTITY.node_id, message_id,
                                CURA_LORA_V2_CONTROL, domain, status)) {
     return false;
   }

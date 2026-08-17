@@ -77,6 +77,15 @@ ID. Both secret files are written with mode `0600`; existing secret files
 accessible by group or others are rejected. The tools print public IDs and
 paths but never keys.
 
+The receiver runtime treats `receiver-group.json` as operator-controlled,
+read-only configuration distinct from receiver-owned runtime state. Its sole
+disk-owning thread loads the file before radio operation, enforces the same
+strict schema and secret-file protections as the provisioning tools, and
+publishes an immutable configuration snapshot from which the communication
+thread constructs its in-memory authentication map. Missing or invalid
+configuration prevents normal receiver startup. The pilot applies
+configuration changes by restart rather than hot reload.
+
 The following public, non-production test vector is used by both Python and
 firmware tests to detect HKDF parameter or byte-encoding differences:
 
@@ -387,16 +396,22 @@ persisted bytes rather than reconstructing the frame.
 - The node accepts an ACK only after CCM authentication and only when its domain
   and decrypted status match the table. A mismatch is an invalid ACK.
 
-- A reading is accepted after it has been authenticated, decoded, checked and
-  inserted into the receiver's bounded in-memory queue.
+- A reading is accepted after it has been authenticated, decoded and checked,
+  and after both its application entity and initial packet-occurrence profile
+  have been inserted atomically into the receiver's bounded in-memory queue.
 - An ACK does not guarantee durable disk persistence. The receiver may persist
   an accepted reading asynchronously after sending the ACK.
 - A reading may be timestamped after being persisted to disk.
-- A recognized authenticated duplicate receives `ACCEPTED` again.
-- A full receiver queue produces `RETRY_LATER`.
+- A recognized authenticated duplicate receives `ACCEPTED` again only after
+  the receiver admits the duplicate occurrence's initial profile.
+- Failure to admit either required item for a new reading, or the occurrence
+  profile for a duplicate or other authenticated response, produces
+  `RETRY_LATER`. Partial admission is forbidden.
 - Unsupported and malformed authenticated readings receive their corresponding
-  permanent rejection. The node retains them for diagnosis but does not keep
-  sending them unchanged.
+  permanent rejection after their occurrence profile is admitted. If profiling
+  admission fails, they receive `RETRY_LATER` instead. The node retains a
+  permanent rejection for diagnosis but does not keep sending the rejected
+  message unchanged.
 - Implausible sensor values are accepted and recorded as anomalous when the
   packet is otherwise valid.
 - Invalid authentication or an unusable header receives no response.
@@ -597,15 +612,36 @@ occurs before deep sleep and outside the 30-second radio-cycle deadline.
 
 ### Receiver packet log
 
-The receiver records every packet occurrence delivered by the radio. The
-reception timestamps are captured at `RX_DONE`, rather than when the record is
-written.
+The receiver attempts to record every packet occurrence delivered by the
+radio. Packet-occurrence profiling has the same persistence priority as
+application measurements. The reception timestamps are captured at `RX_DONE`,
+rather than when the record is written.
+
+For a new accepted reading, admission of the application entity and the
+initial packet-occurrence profile is one atomic queue operation: both are
+inserted or neither is inserted. Any authenticated packet eligible for a
+response must have its initial occurrence profile admitted before TX. If the
+required admission fails, the receiver selects
+`ACK_RETRY_LATER_DOWNLINK`; packets that cannot be authenticated remain silent.
+
+Queue exhaustion can therefore prevent the receiver from retaining the very
+profile that reports the exhaustion. This is an explicit pilot exception to
+the per-occurrence recording requirement. Each failed initial-profile or
+TX-completion admission increments the bounded
+`message_profiling_admission_failures` counter, which is reported later through
+a non-recursive persistence or diagnostic path so that gaps remain observable.
 
 Each record contains:
 
 ```text
+receiver_boot_id
+occurrence_sequence
 received_at_utc
 received_at_monotonic_us
+system_time_quality
+rtc_health
+persist_queue_used_bytes_before_admission
+persist_queue_capacity_bytes
 received_frame_length
 received_frame
 claimed_node_id
@@ -621,7 +657,41 @@ reading_duplicate_status
 ack_selected
 ack_tx_result
 ack_frame
+t1_handler_started_monotonic_us
+t2_packet_copied_monotonic_us
+t3_authentication_completed_monotonic_us
+t4_set_tx_attempted_monotonic_us
+t5_tx_done_monotonic_us
+t6_set_rx_issued_monotonic_us
 ```
+
+`receiver_boot_id` and the monotonically increasing per-boot
+`occurrence_sequence` together identify one logical profiling row.
+`received_at_monotonic_us` is the former `T0` kernel-recorded DIO1 timestamp.
+The queue occupancy and capacity use the same byte-accounting rules as the
+bounded persistence queue and are sampled immediately before admission. UTC is
+null while receiver system time is untrusted; the monotonic timestamp, time
+quality and RTC health are still recorded.
+
+`system_time_quality` is one of:
+
+```text
+NETWORK_SYNCED
+RTC_HOLDOVER
+UNTRUSTED
+```
+
+`rtc_health` is recorded independently and is one of:
+
+```text
+PRESENT
+MISSING
+INVALID
+```
+
+`received_at_utc` is present for `NETWORK_SYNCED` and `RTC_HOLDOVER`, and null
+for `UNTRUSTED`. This permits trusted network time to coexist with a missing or
+invalid RTC without discarding the reception timestamp.
 
 The clear-header identity fields are untrusted claims unless
 `header_authenticated` is true. `decoded_sample_id` is null unless the frame
@@ -668,16 +738,37 @@ duplicate status additionally requires successful reading-body decoding. A
 receiver without the corresponding in-memory maps uses `NOT_CHECKED`; both
 relationships can then be reconstructed from the append-only log.
 
-`ack_selected` is either none or one of the four ACK domains.
+`ack_selected` is either none or one of the four ACK domains. The exact ACK
+frame is constructed before initial-profile admission and therefore remains
+known even if later transmission is suppressed or fails.
+
+One logical profiling row is persisted in two stages when an ACK is selected.
+The immutable initial record is queued before TX with `ack_tx_result` set to
+`PENDING` and TX-dependent timestamps absent. After TX, suppression or bounded
+radio recovery reaches a terminal outcome, an immutable completion command for
+the same `(receiver_boot_id, occurrence_sequence)` supplies the final result
+and `T4` through `T6`. The persistence thread applies that command as an update
+to the existing row. A packet that cannot receive an ACK may be returned to RX
+first and then queued once as a complete row with `ack_tx_result` set to
+`NOT_APPLICABLE`.
+
 `ack_tx_result` independently records what happened after selection:
 
 ```text
+PENDING
 NOT_APPLICABLE
 SUPPRESSED_AIRTIME_BUDGET
 SET_TX_FAILED
 TX_TIMEOUT
 TX_DONE
+UNKNOWN_INTERRUPTED
 ```
+
+`PENDING` is a transitional persisted value, not evidence that transmission
+started. A pending row belonging to an earlier receiver boot is interpreted as
+`UNKNOWN_INTERRUPTED`: durable evidence cannot establish whether the ACK was
+transmitted. A completion-admission failure may leave a row pending during the
+current boot and increments `message_profiling_admission_failures`.
 
 When an ACK is constructed, its exact 23-byte frame is stored in `ack_frame`
 whether or not transmission succeeds. Separating `processing_result`,

@@ -4,13 +4,6 @@
 
 This document describes the pilot architecture for the Raspberry Pi LoRa receiver connected to an SX1262.
 
-The intended audience is an AI agent working inside the repository. The agent is expected to have access to:
-
-- the node firmware;
-- the existing LoRa protocol implementation and generated codecs;
-- packet and ACK definitions;
-- repository-specific entity and persistence code.
-
 This document intentionally focuses on receiver architecture rather than protocol details. The repository should be treated as the source of truth for packet formats, authentication rules, counters, nonces, ACK codes, and retry behavior.
 
 ## Pilot goals
@@ -31,7 +24,7 @@ Performance is not the primary goal. The design favors clear ownership, observab
 The receiver uses two Python threads:
 
 1. **Communicator thread**
-   - owns the SX1262, GPIO lines, SPI device, protocol state, duplicate state, and ACK generation;
+   - owns the SX1262, GPIO lines, SPI device, live protocol processing, and ACK generation;
    - owns the in-memory receiver state used for clock provenance and receiver TX-airtime admission;
    - performs only bounded in-memory work on the packet-to-ACK path;
    - never performs disk I/O or accesses SQLite.
@@ -73,13 +66,12 @@ Persistence thread
 These ownership rules should remain strict:
 
 - Only the communicator thread touches the SX1262.
-- Only the communicator thread owns `auth_node_map`, per-node transport-message history and optional reading-duplicate history.
+- Only the communicator thread owns `auth_node_map`; it keeps no transport-message or reading-duplicate history.
 - Only the communicator thread mutates the live clock-provenance and airtime-admission state.
 - Only the persistence thread touches SQLite, the durable receiver-state file, or the receiver configuration file.
 - Objects crossing `PersistQueue` must be complete, immutable enough for persistence, and independent from radio buffers.
 - State snapshots crossing `StateCommitRequest` must be immutable and carry a monotonically increasing generation.
 - Ordinary persistence work must never block the packet-to-ACK path.
-- ACK transmission requires an already committed airtime reservation. If none is available, the communicator suppresses the ACK rather than waiting for disk I/O on the critical path.
 
 These rules avoid locks around radio state and prevent SQLite latency from delaying ACK generation.
 
@@ -118,8 +110,6 @@ The identifiers distinguish the important cases:
 | Pi reboot or power cycle | changes | changes |
 
 The process creates `receiver_instance_id` before normal radio operation and provides it read-only to both threads. The persistence thread reads `linux_boot_id` and adds it to persisted records. Per-instance occurrence sequences, health sequences, radio-recovery counters and other process-local counters reset when `receiver_instance_id` changes.
-
-The protocol packet-log schema currently calls the process-lifetime field `receiver_boot_id`. Until that protocol field is renamed, it maps exactly to `receiver_instance_id` and must never contain `linux_boot_id`.
 
 Linux monotonic timestamps are meaningful only together with `linux_boot_id`. Receiver-local sequences and lifecycle observations additionally require `receiver_instance_id` so a process restart within one Linux boot remains visible.
 
@@ -323,7 +313,7 @@ RX_SINGLE
   -> read packet into Pi-owned RAM
   -> clear RX IRQ
   -> authenticate and validate
-  -> decide duplicate/new/rejected/retry-later
+  -> decide accepted/rejected/retry-later
   -> prepare ACK
   -> require committed airtime reservation
   -> suppress ACK + confirmed SetRx -> RX_SINGLE
@@ -352,8 +342,6 @@ The communicator thread owns:
 - packet copying from SX1262 memory into Pi RAM;
 - authentication and decoding;
 - protocol-level validation;
-- authenticated transport-retransmission and application-reading duplicate detection;
-- per-node in-memory acceptance state;
 - ACK selection, construction, and transmission;
 - live time-quality, RTC-health and clock-correlation state;
 - live rolling-airtime buckets, unresolved reservations and the active reservation;
@@ -384,7 +372,7 @@ Conceptually:
 auth_node_map[node_id] -> NodeState
 ```
 
-Each `NodeState` contains the material needed to authenticate the node, an in-memory recent transport-message map and, when implemented, an application-reading duplicate map.
+Each `NodeState` contains only the provisioned material and immutable metadata needed to authenticate the node. It contains no accepted-message or application-reading history.
 
 Repository protocol code determines the exact key derivation and lookup rules. Retired and unknown node identifiers are not inserted into the map and receive no response. The communicator does not access the configuration file after startup.
 
@@ -400,38 +388,17 @@ node_id || message_id || domain
 
 `sample_id` remains inside the authenticated reading body. It identifies the application reading, supports wake continuity and timestamp reconstruction, and is unavailable until authentication and decoding succeed. It is not part of the CCM nonce and does not identify RF retransmission episodes.
 
-An ACK echoes the authenticated uplink's `message_id`; it does not carry `sample_id`. Its ACK domain selects the downlink nonce domain. Repeating the same ACK outcome reuses its exact authenticated frame, while a different outcome uses the protocol's distinct ACK domain under the same `message_id`.
+An ACK echoes the authenticated uplink's `message_id`; it does not carry `sample_id`. Its ACK domain selects the downlink nonce domain. ACK construction is deterministic: reconstructing an ACK for the same authenticated uplink and outcome produces the same exact frame without consulting receiver history. Different outcomes use distinct ACK domains and therefore distinct nonces under the same node key and `message_id`.
 
-### Transport and reading maps
+### Stateless communicator admission
 
-Each node keeps a bounded recent transport-message map. The initial retention target is approximately one day, but its capacity must be based on logical transport messages rather than only on application samples. At four readings per hour there are 96 new `sample_id` values per day, while current-to-backlog conversion and later protocol domains can create additional `message_id` values.
+The communicator keeps no `transport_messages_map`, `readings_map`, cached ACK or other per-node acceptance history. Every authenticated, structurally valid reading occurrence follows the same bounded admission path, including an exact RF retransmission after a lost ACK and a reading that SQLite has already stored. Duplicate and conflict classification belongs exclusively to the persistence thread.
 
-Conceptually:
-
-```text
-transport_messages_map[message_id] -> AcceptedTransportMessage
-```
-
-An `AcceptedTransportMessage` contains at least:
-
-- the exact authenticated uplink frame, or a representation sufficient for exact frame equality;
-- its decoded `sample_id` and application contents when it is a reading;
-- the ACK previously selected for that transport message; and
-- acceptance metadata needed by the current protocol.
-
-The transport map is an **acceptance cache**, not merely a packet cache. It detects retransmission of an already accepted logical message, prevents repeated measurement enqueue after ACK loss and permits reuse of the exact cached ACK.
-
-An optional application-reading map is separate:
-
-```text
-readings_map[sample_id] -> AcceptedReading
-```
-
-It detects the same application reading arriving in distinct transport messages, such as current and backlog messages with different `message_id` values. Matching contents may be accepted without another measurement enqueue; conflicting contents for the same authenticated `(node_id, sample_id)` are malformed. Without this optional map, the communicator may enqueue the reading again and rely on idempotent persistence keyed by `(node_id, sample_id)`.
+This deliberately permits the communicator to acknowledge a candidate that persistence later classifies as conflicting. Such an ACK means only that the authenticated and structurally valid occurrence entered the bounded persistence pipeline. It does not mean that the candidate became the canonical transport message or measurement.
 
 ### Acceptance invariant
 
-A new transport message whose reading requires persistence may be marked accepted only after its application entity and initial `MessageProfiling` record have been admitted to `PersistQueue` atomically. They have the same persistence priority, and the queue operation must insert both or neither.
+An authenticated, structurally valid reading occurrence may be marked accepted only after its application candidate and initial `MessageProfiling` record have been admitted to `PersistQueue` atomically. They have the same persistence priority, and the queue operation must insert both or neither. The pair remains one logical persistence unit and batch selection must not split it across SQLite transactions.
 
 Required ordering:
 
@@ -440,49 +407,20 @@ validate message
   -> construct measurement entity, initial MessageProfiling and candidate success ACK
   -> atomically enqueue measurement entity and initial MessageProfiling
      -> failure: enqueue neither and select RETRY_LATER
-     -> success: mark message accepted, cache ACK and transmit it when permitted
+     -> success: mark occurrence accepted, construct ACK deterministically and transmit it when permitted
 ```
 
-This guarantees that an ACK transmission failure does not cause the same transport message to be enqueued repeatedly.
-
-If TX fails after acceptance, a later exact transport retransmission reuses the cached ACK and must not enqueue the measurement again.
-
-### Duplicate behavior
-
-For the same authenticated `node_id` and `message_id`:
-
-- exact same authenticated frame:
-  - treat as a legitimate transport retransmission;
-  - do not enqueue the measurement again;
-  - admit an initial `MessageProfiling` record for this packet occurrence;
-  - resend the cached ACK only after that record is admitted;
-  - select `ACK_RETRY_LATER_DOWNLINK` if the profiling record cannot be admitted.
-
-- different authenticated frame bytes or domain:
-  - treat as prohibited `message_id` reuse and a malformed protocol invariant violation;
-  - create a high-priority diagnostic;
-  - reject according to the repository protocol;
-  - do not replace the accepted message silently.
-
-After transport classification, two authenticated reading messages with different `message_id` values may still carry the same `sample_id`. If `readings_map` is present, identical application contents are a reading duplicate and conflicting contents are malformed. If it is absent, SQLite measurement persistence must remain idempotent on `(node_id, sample_id)`.
+If TX fails or its ACK is lost, a later retransmission repeats this complete admission path. This may enqueue another measurement candidate, but persistence retains only canonical data and stores a profile for every admitted radio occurrence.
 
 ### Retry-later behavior
 
-For a first-seen message, `ACK_RETRY_LATER_DOWNLINK` means that the receiver has **not accepted ownership of the message** because the measurement and its initial profiling record could not both be admitted.
-
-A message that receives `RETRY_LATER` must not be inserted into the normal accepted-message cache.
-
-When the node retries later, the message must go through queue admission again.
-
-Caching `RETRY_LATER` as a final ACK would risk rejecting the message forever after the queue recovers.
-
-An already accepted duplicate may also receive `RETRY_LATER` when the receiver cannot admit the duplicate occurrence's profiling record. This does not reverse ownership of the original measurement; it asks the node to retry so that the occurrence can be handled when persistence capacity is available.
+`ACK_RETRY_LATER_DOWNLINK` means that the receiver did not accept ownership of this occurrence because its measurement candidate and initial profiling record could not both be admitted. When the node retries, the occurrence goes through the same queue admission again. The communicator neither remembers nor caches `RETRY_LATER`.
 
 ### ACK semantics in the pilot
 
 A successful ACK means:
 
-> The receiver authenticated and validated the message, then admitted both its application entity and packet-occurrence profile into its in-memory processing pipeline.
+> The receiver authenticated and validated the message, then admitted both its application candidate and packet-occurrence profile into its in-memory processing pipeline.
 
 It does **not** mean:
 
@@ -624,33 +562,16 @@ Decode sample_id only after authentication
   |       -> construct initial MessageProfiling and rejection ACK
   |       -> enqueue profile or select RETRY_LATER
   |
-  +--> authenticated transport retransmission, exact same frame
-  |       -> construct initial MessageProfiling
-  |       -> enqueue it or select RETRY_LATER
-  |       -> otherwise reuse cached ACK
-  |
-  +--> authenticated message_id reuse, different frame/domain
-  |       -> malformed invariant-violation diagnostic
-  |       -> construct initial MessageProfiling and protocol rejection
-  |       -> enqueue profile or select RETRY_LATER
-  |
-  +--> authenticated new transport message
+  +--> authenticated structurally valid reading
           -> validate
-          -> classify reading by authenticated sample_id when readings_map exists
-          -> matching accepted reading: enqueue profile or select RETRY_LATER;
-               on success mark transport accepted and cache/select ACCEPTED
-          -> conflicting reading: enqueue profile or select RETRY_LATER;
-               on success select malformed rejection
-          -> reading requires persistence:
-               construct measurement entity and initial MessageProfiling
-               atomically enqueue both
-               if either is unavailable: enqueue neither, RETRY_LATER, not accepted
-               otherwise:
-                   mark transport message accepted
-                   cache selected ACK
+          -> construct measurement candidate, deterministic candidate ACCEPTED ACK
+               and initial MessageProfiling containing the exact ACK frame
+          -> atomically enqueue both without consulting message history
+          -> if either is unavailable: enqueue neither, RETRY_LATER, not accepted
+          -> otherwise: mark occurrence accepted and select ACCEPTED
   |
   v
-Construct or reuse authenticated ACK
+Use admitted candidate ACK, or construct selected outcome ACK deterministically
 Check committed airtime reservation
   |
   +--> unavailable/exhausted
@@ -754,6 +675,8 @@ It:
 - takes a logical batch of at most approximately 1 MB;
 - writes the batch using one SQLite transaction;
 - removes entries from the queue only after a successful commit;
+- classifies transport retransmissions and identity conflicts against canonical SQLite records;
+- applies idempotent measurement insertion without replacing canonical contents;
 - records persistence timing and batch metadata;
 - inserts initial `MessageProfiling` rows and applies their ordered TX-completion updates;
 - enriches `ReceiverHealthRequest` snapshots with persistence-owned and host-owned observations and inserts complete `ReceiverHealth` rows;
@@ -768,6 +691,29 @@ The five-second interval and one-megabyte batch limit are pilot defaults and sho
 The persistence thread does not independently edit clock or airtime policy. It validates the snapshot envelope and ordering information needed for safe replacement, writes the communicator-owned snapshot and returns the committed generation. This preserves a single policy owner without allowing two threads to write disk.
 
 An ordinary SQLite batch and a receiver-state replacement need not share one transaction because they protect different guarantees. Their I/O ordering must nevertheless ensure that a state request cannot be starved indefinitely by telemetry batches.
+
+### Transport and reading classification
+
+The persistence thread classifies accepted reading occurrences in queue order. SQLite maintains two independent canonical identities:
+
+```text
+transport_messages UNIQUE(node_id, message_id)
+readings           UNIQUE(node_id, sample_id)
+```
+
+The canonical transport row stores the first exact authenticated frame, domain and decoded `sample_id`; the canonical reading row stores the first accepted application contents. These constraints are scoped to the node identity and key lifetime required by the protocol. The configured provisioning rules must not silently reuse a database identity with a reset counter.
+
+For an existing transport key, persistence compares the candidate with the canonical transport row:
+
+- same `message_id`, same `sample_id` and same exact frame is `RETRANSMISSION`;
+- same `message_id`, same `sample_id` and a different frame is `DUPLICATE_CONFLICT`;
+- same `message_id` and a different `sample_id` is `MESSAGE_ID_CONFLICT`.
+
+A conflict does not replace the canonical transport row and its measurement candidate is not inserted into `readings`. The occurrence profile and a structured diagnostic containing sufficient bounded context to investigate the conflict are still persisted.
+
+For a first-seen transport message, persistence next applies the reading key. A first-seen `(node_id, sample_id)` inserts the measurement. Existing identical application contents produce `DUPLICATE_SAME_CONTENT`; existing different contents produce `DUPLICATE_CONFLICT`. Neither case updates the canonical measurement, and the conflict persists a structured diagnostic.
+
+Classification, canonical inserts, the occurrence profile and any conflict diagnostic belong to one SQLite transaction. Conflict handling is successful processing and the corresponding queue pair is removed after commit. A SQLite or transaction failure is not a conflict: the queue retains ownership and retries the original immutable pair. The persistence thread constructs the stored profile with its derived `persistence_classification`; it does not mutate the communicator's queued object.
 
 ### Batch ownership
 
@@ -812,7 +758,7 @@ The exact quarantine mechanism may be simple in the pilot, but infinite retry of
 
 Every admitted record is identified by:
 
-- `receiver_instance_id`, serialized under the protocol's current `receiver_boot_id` field name; and
+- `receiver_instance_id`; and
 - a monotonically increasing per-instance occurrence sequence.
 
 Together these fields identify the SQLite row and associate its later TX-completion update with the correct initial record.
@@ -834,6 +780,8 @@ It also records:
 - the monotonic reception timestamp, with `T0` as its source;
 - `system_time_quality` and `rtc_health` captured for that occurrence; and
 - measurement-queue occupancy and configured capacity immediately before the admission attempt.
+
+When the persistence thread writes the initial row, it adds the protocol-defined `persistence_classification`: `NOT_APPLICABLE`, `FIRST_SEEN`, `RETRANSMISSION`, `DUPLICATE_SAME_CONTENT`, `DUPLICATE_CONFLICT` or `MESSAGE_ID_CONFLICT`. This is derived from the canonical SQLite transport and reading rows and was not known to the communicator when it selected the ACK.
 
 Derived intervals should be computed during analysis or persistence rather than on the radio-critical path when practical:
 
@@ -878,7 +826,7 @@ For each persistence batch, record:
 - queue depth/bytes after the batch;
 - retry or isolation activity.
 
-Also record queue occupancy when admitting a new measurement. This is useful for deciding whether persistence is falling behind.
+Also record queue occupancy when admitting a measurement candidate. This is useful for deciding whether persistence is falling behind.
 
 For each receiver-state commit, record or count when practical:
 
@@ -962,7 +910,7 @@ Unexpected conditions worth diagnosing include:
 - SPI failure;
 - malformed radio response;
 - RxDone plus radio error flags;
-- authenticated `message_id` reuse with different frame bytes or domain;
+- persistence-classified `DUPLICATE_CONFLICT` or `MESSAGE_ID_CONFLICT`;
 - queue admission failure;
 - missing, malformed or unsupported receiver-state file;
 - state-generation mismatch or durable state-commit failure;
@@ -993,12 +941,12 @@ Examples:
   - never continue under an assumed radio state.
 
 - TX failure:
-  - retain accepted-message state;
+  - do not retract the already admitted measurement candidate or occurrence profile;
   - retain the airtime charge when `SetTx` started or its effect is uncertain;
   - reclaim tentative allowance only after a definite pre-`SetTx` failure;
   - return directly to `RX_SINGLE` after a known terminal TX IRQ and confirmed RX re-arm;
   - enter `RECOVERING` when the TX outcome or resulting radio mode is uncertain, or RX re-arming fails;
-  - allow a node retry to receive the cached ACK later.
+  - allow a node retry to repeat normal queue admission and deterministic ACK construction later.
 
 - Receiver-state load or commit failure:
   - keep the preceding durable generation authoritative;
@@ -1012,7 +960,7 @@ Examples:
   - do not use RTC holdover or overwrite RTC provenance;
   - continue RX while timestamp and TX policies follow current system-time quality.
 
-Authentication failure, malformed or unsupported protocol data, duplicate detection, persistence admission failure and airtime-based ACK suppression remain normal packet-processing outcomes. RX header or CRC errors and confirmed radio TX-timeout IRQs may also return directly to `RX_SINGLE` when IRQ clearing and `SetRx` both succeed.
+Authentication failure, malformed or unsupported protocol data, persistence admission failure and airtime-based ACK suppression remain normal packet-processing outcomes. Asynchronously discovered duplicate and identity conflicts are persistence outcomes and do not affect radio state. RX header or CRC errors and confirmed radio TX-timeout IRQs may also return directly to `RX_SINGLE` when IRQ clearing and `SetRx` both succeed.
 
 ### Radio recovery procedure
 
@@ -1068,7 +1016,7 @@ The persistence thread must not mutate communicator-owned node, message, clock-p
 - Only the communicator mutates live protocol, time-policy and airtime-policy state.
 - Only the persistence thread performs disk I/O and loads receiver configuration.
 - `receiver_instance_id` changes on every receiver-process start; `linux_boot_id` changes only with the Pi's Linux boot.
-- Atomic `PersistQueue` admission of a new measurement and its initial `MessageProfiling` record establishes protocol acceptance but not SQLite durability.
+- Atomic `PersistQueue` admission of a measurement candidate and its initial `MessageProfiling` record establishes protocol acceptance of that occurrence but not SQLite durability or conflict-free canonical insertion.
 - A receiver-state generation is usable only after durable acknowledgement or explicit startup reconciliation.
 - Missing, corrupt or unsupported state never becomes an empty airtime ledger or trusted RTC provenance.
 - Current `system_time_quality` and `rtc_health` are observed again on every receiver startup; persisted observations are diagnostic only.
@@ -1078,14 +1026,13 @@ The persistence thread must not mutate communicator-owned node, message, clock-p
 - A reservation from an earlier receiver instance is fully charged, unspendable and retained until conservative expiration.
 - A started or uncertain `SetTx` consumes allowance. Only a definite pre-`SetTx` failure permits reclamation.
 - A pending or unknown reservation-settlement outcome suppresses TX.
-- Airtime suppression never reverses application-message acceptance.
+- Airtime suppression never reverses acceptance of an admitted occurrence.
 - An untrusted receiver UTC never becomes an immutable direct timestamp anchor.
 
 ## Deferred work
 
 The following are explicitly deferred from the first pilot:
 
-- durable duplicate/replay state across Pi reboot;
 - durable queue or write-ahead journal before ACK;
 - systemd service configuration;
 - watchdog and health-management subsystem;
@@ -1098,7 +1045,6 @@ The following are explicitly deferred from the first pilot:
 
 Known consequences:
 
-- any receiver-process restart loses `transport_messages_map` and the optional `readings_map`;
 - any receiver-process restart loses unpersisted queue contents;
 - `linux_boot_id` distinguishes a Pi reboot from a receiver-only restart, while a new `receiver_instance_id` exposes both;
 - a successful ACK does not guarantee durable storage;
@@ -1118,9 +1064,7 @@ The agent modifying this document or implementing the receiver must verify the f
 - Confirmation that `sample_id` remains outside the nonce and unavailable before authentication and reading-body decode.
 - Which invalid packets require silence versus an authenticated rejection ACK.
 - Exact ACK codes and retry semantics.
-- Whether ACK bytes can be cached and retransmitted exactly, including nonce/counter constraints.
-- Duplicate handling required by the protocol.
-- Whether ACK generation changes any per-node protocol state.
+- Deterministic ACK reconstruction for the same authenticated uplink and outcome without receiver-history lookup.
 
 ### SX1262 behavior
 
@@ -1137,8 +1081,7 @@ The agent modifying this document or implementing the receiver must verify the f
 ### Persistence model
 
 - SQLite schema for measurements, diagnostics, `MessageProfiling`, `ReceiverHealth` and lifecycle markers.
-- Measurement idempotency or uniqueness constraints for `(node_id, sample_id)`.
-- Transport-message indexing or diagnostics keyed by `(node_id, message_id)` without conflating it with measurement identity.
+- Concrete schemas for canonical transport messages keyed by `(node_id, message_id)` and canonical measurements keyed by `(node_id, sample_id)`.
 - Entity serialization and size accounting.
 - Transaction boundaries.
 - Poison-entity quarantine policy.
@@ -1156,7 +1099,7 @@ The agent modifying this document or implementing the receiver must verify the f
 - Per-band ledger representation if later RF configurations use more than one regulated sub-band.
 - Time-synchronization service integration and the criterion for `NETWORK_SYNCED`.
 - DS3231 discovery, health validation, UTC write/read-back and uncertainty policy.
-- `receiver_instance_id` generation and the temporary mapping from the protocol's `receiver_boot_id` name.
+- `receiver_instance_id` generation and persistence.
 - `linux_boot_id` acquisition and scoping of Linux monotonic timestamps.
 - Monotonic-to-UTC correlation representation and same-Linux-boot timestamp completion.
 - SQLite representation of nullable reception/logical timestamps, timestamp provenance and immutable completion.
@@ -1166,7 +1109,7 @@ The agent modifying this document or implementing the receiver must verify the f
 - Concrete 50 MB accounting strategy.
 - Queue priority implementation.
 - Telemetry sampling/rate limiting under pressure.
-- Exact admission point at which a transport message becomes accepted.
+- Exact atomic admission primitive by which a reading occurrence becomes accepted.
 - Atomic measurement and initial-`MessageProfiling` admission.
 - `ReceiverHealthRequest` loss, sequence gaps and cumulative enqueue-failure accounting.
 - Shutdown behavior with pending entries.
@@ -1178,10 +1121,12 @@ At minimum, add tests or simulations for:
 - new valid message;
 - identical retry after successful ACK;
 - identical retry after failed ACK transmission;
-- same `message_id` with different authenticated frame bytes or domain;
+- same `message_id`, same `sample_id` and same exact frame classified as `RETRANSMISSION`;
+- same `message_id`, same `sample_id` and different frame classified as `DUPLICATE_CONFLICT`;
+- same `message_id` and different `sample_id` classified as `MESSAGE_ID_CONFLICT`;
 - same `sample_id` in distinct current/backlog transport messages with matching contents;
 - same `sample_id` in distinct transport messages with conflicting contents;
-- ACK echo of authenticated uplink `message_id` and exact retransmission for the same outcome;
+- deterministic ACK reconstruction from the same uplink and outcome without cached receiver history;
 - nonce construction from `node_id || message_id || domain`, never `sample_id`;
 - unauthenticated packet;
 - authenticated malformed packet;

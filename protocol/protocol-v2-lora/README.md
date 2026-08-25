@@ -381,9 +381,10 @@ persisted bytes rather than reconstructing the frame.
 
 - ACKs echo the pending uplink's `message_id`; they do not carry `sample_id`.
   Their nonce uses that message ID and the domain corresponding to the status.
-- Repeating an ACK with the same outcome reuses identical frame bytes. Different
-  outcomes use their existing distinct ACK domains and therefore distinct
-  nonces under the same node key and `message_id`.
+- ACK construction is deterministic. Reconstructing an ACK for the same
+  authenticated uplink and outcome produces the same frame without consulting
+  receiver history. Different outcomes remain safe because `ACCEPTED` and
+  `RETRY_LATER` use different ACK domains and therefore different nonces.
 - The ACK encrypted application body is a one-byte `status` value:
 
   | Domain | Status | Meaning |
@@ -396,17 +397,18 @@ persisted bytes rather than reconstructing the frame.
 - The node accepts an ACK only after CCM authentication and only when its domain
   and decrypted status match the table. A mismatch is an invalid ACK.
 
-- A reading is accepted after it has been authenticated, decoded and checked,
-  and after both its application entity and initial packet-occurrence profile
-  have been inserted atomically into the receiver's bounded in-memory queue.
+- A reading occurrence is accepted after it has been authenticated, decoded
+  and checked, and after both its application candidate and initial
+  packet-occurrence profile have been inserted atomically into the receiver's
+  bounded in-memory queue. The communicator does not consult transport-message
+  or reading-duplicate history before admission.
 - An ACK does not guarantee durable disk persistence. The receiver may persist
   an accepted reading asynchronously after sending the ACK.
 - A reading may be timestamped after being persisted to disk.
-- A recognized authenticated duplicate receives `ACCEPTED` again only after
-  the receiver admits the duplicate occurrence's initial profile.
-- Failure to admit either required item for a new reading, or the occurrence
-  profile for a duplicate or other authenticated response, produces
-  `RETRY_LATER`. Partial admission is forbidden.
+- Every authenticated, structurally valid reading occurrence, including an RF
+  retransmission or application duplicate not yet known to the communicator,
+  requires atomic admission of both items. Failure to admit either produces
+  `RETRY_LATER`; partial admission is forbidden.
 - Unsupported and malformed authenticated readings receive their corresponding
   permanent rejection after their occurrence profile is admitted. If profiling
   admission fails, they receive `RETRY_LATER` instead. The node retains a
@@ -460,22 +462,62 @@ The receiver processes a packet in this order:
 6. Require the exact 32-byte reading body, decode authenticated `sample_id`, and
    enforce the structural encoding rules above; otherwise select
    `REJECTED_MALFORMED`.
-7. Classify authenticated transport retransmissions by `(node_id, message_id)`
-   separately from duplicate readings by `(node_id, sample_id)`. Reuse of one
-   message ID with different authenticated frame bytes is malformed.
-8. Atomically reserve space in the bounded in-memory queue. If unavailable,
-   select `RETRY_LATER`.
-9. Enqueue the reading, then select `ACCEPTED`.
-10. Construct an authenticated ACK that echoes the uplink `message_id`, and send
-    it only if the receiver TX-airtime budget permits it. Lack of ACK budget
-    does not undo validation or queue insertion.
+7. Construct an immutable application candidate, deterministic candidate
+   `ACCEPTED` ACK and initial packet-occurrence profile containing that exact
+   ACK frame, without consulting receiver message history.
+8. Atomically reserve queue space for and enqueue both items. If either cannot
+   be admitted, enqueue neither and select `RETRY_LATER`. The pair remains one
+   logical persistence unit and is not split across SQLite transactions.
+9. After successful admission, select `ACCEPTED`.
+10. Send the selected deterministic ACK, which echoes the uplink `message_id`,
+    only if the receiver TX-airtime budget permits it. If admission failed, the
+    selected `RETRY_LATER` ACK is constructed after the pair was rejected. Lack
+    of ACK budget does not undo validation or queue insertion.
 
-An in-memory map from `(node_id, sample_id)` to accepted or queued contents is a
-proposed optimization, not a pilot protocol requirement. When present, a
-matching authenticated duplicate selects `ACCEPTED` without another queue
-insertion, while conflicting contents select `REJECTED_MALFORMED`. Without the
-map, the receiver may enqueue a duplicate and rely on idempotent asynchronous
-storage keyed by `(node_id, sample_id)`.
+The communicator keeps no transport-message or reading-duplicate cache. The
+same authenticated occurrence therefore goes through bounded queue admission
+again after a lost ACK or receiver-process restart. Its deterministic ACK is
+reconstructed from the current uplink and selected outcome.
+
+### Asynchronous identity classification
+
+The persistence thread classifies accepted reading occurrences in queue order
+inside the SQLite transaction that stores them. It maintains two independent
+canonical identities:
+
+- a transport-message table with a unique key on `(node_id, message_id)`,
+  storing the first exact authenticated frame, domain and decoded `sample_id`;
+- a reading table with a unique key on `(node_id, sample_id)`, storing the
+  first accepted application contents.
+
+For an existing `(node_id, message_id)`, persistence compares the newly received
+frame and decoded sample with the canonical transport record:
+
+- same `message_id`, same `sample_id` and same exact frame is a
+  `RETRANSMISSION`;
+- same `message_id`, same `sample_id` and a different frame is a
+  `DUPLICATE_CONFLICT`;
+- same `message_id` and a different `sample_id` is a `MESSAGE_ID_CONFLICT`.
+
+A transport conflict never replaces the canonical transport record and its
+application candidate is not inserted into the canonical reading table. The
+packet-occurrence profile and a structured conflict diagnostic are still
+stored.
+
+For a first-seen transport message, persistence then applies the reading-table
+constraint. A first-seen `(node_id, sample_id)` inserts the measurement. An
+existing sample with identical application contents is
+`DUPLICATE_SAME_CONTENT`; an existing sample with different contents is
+`DUPLICATE_CONFLICT`. Neither case updates the canonical measurement, and a
+conflict also stores a structured diagnostic.
+
+Conflict handling is a successful persistence outcome, not a SQLite failure.
+The application candidate, occurrence, classification and any diagnostic
+commit atomically before the queue items are removed. A transaction failure
+leaves the complete pair queued for retry.
+Because classification occurs after ACK selection, `ACCEPTED` means that the
+validated occurrence entered the bounded persistence pipeline; it does not
+assert that the occurrence was first-seen or conflict-free.
 
 ### Receiver TX-airtime budget
 
@@ -617,11 +659,12 @@ radio. Packet-occurrence profiling has the same persistence priority as
 application measurements. The reception timestamps are captured at `RX_DONE`,
 rather than when the record is written.
 
-For a new accepted reading, admission of the application entity and the
-initial packet-occurrence profile is one atomic queue operation: both are
-inserted or neither is inserted. Any authenticated packet eligible for a
-response must have its initial occurrence profile admitted before TX. If the
-required admission fails, the receiver selects
+For every accepted reading occurrence, admission of the application candidate
+and the initial packet-occurrence profile is one atomic queue operation: both
+are inserted or neither is inserted, and persistence does not split the pair
+across transactions. Any authenticated packet eligible for a response must
+have its initial occurrence profile admitted before TX. If the required
+admission fails, the receiver selects
 `ACK_RETRY_LATER_DOWNLINK`; packets that cannot be authenticated remain silent.
 
 Queue exhaustion can therefore prevent the receiver from retaining the very
@@ -634,7 +677,7 @@ a non-recursive persistence or diagnostic path so that gaps remain observable.
 Each record contains:
 
 ```text
-receiver_boot_id
+receiver_instance_id
 occurrence_sequence
 received_at_utc
 received_at_monotonic_us
@@ -652,8 +695,7 @@ decoded_sample_id
 rssi
 snr
 processing_result
-transport_duplicate_status
-reading_duplicate_status
+persistence_classification
 ack_selected
 ack_tx_result
 ack_frame
@@ -665,7 +707,7 @@ t5_tx_done_monotonic_us
 t6_set_rx_issued_monotonic_us
 ```
 
-`receiver_boot_id` and the monotonically increasing per-boot
+`receiver_instance_id` and the monotonically increasing per-instance
 `occurrence_sequence` together identify one logical profiling row.
 `received_at_monotonic_us` is the former `T0` kernel-recorded DIO1 timestamp.
 The queue occupancy and capacity use the same byte-accounting rules as the
@@ -711,32 +753,23 @@ WRONG_DIRECTION
 RADIO_ERROR
 ```
 
-`transport_duplicate_status` is one of:
+`persistence_classification` is one of:
 
 ```text
-NOT_CHECKED
+NOT_APPLICABLE
 FIRST_SEEN
-RETRANSMISSION_SAME_FRAME
+RETRANSMISSION
+DUPLICATE_SAME_CONTENT
+DUPLICATE_CONFLICT
 MESSAGE_ID_CONFLICT
 ```
 
-It describes occurrences keyed by `(node_id, message_id)`. A retransmission is
-the same logical transport message and exact authenticated frame; it is not a
-second application reading.
-
-`reading_duplicate_status` is one of:
-
-```text
-NOT_CHECKED
-FIRST_SEEN
-DUPLICATE_SAME_CONTENT
-DUPLICATE_CONFLICT
-```
-
-Transport duplicate status is trusted only after authentication. Reading
-duplicate status additionally requires successful reading-body decoding. A
-receiver without the corresponding in-memory maps uses `NOT_CHECKED`; both
-relationships can then be reconstructed from the append-only log.
+The persistence thread derives this value while applying the transport and
+reading uniqueness constraints. `NOT_APPLICABLE` is used when authentication
+or valid reading-body decoding did not complete. `processing_result` remains
+the communicator's pre-ACK decision: an `ACCEPTED` occurrence may later be
+classified as either conflict because acceptance means bounded queue admission,
+not canonical SQLite insertion.
 
 `ack_selected` is either none or one of the four ACK domains. The exact ACK
 frame is constructed before initial-profile admission and therefore remains
@@ -746,10 +779,10 @@ One logical profiling row is persisted in two stages when an ACK is selected.
 The immutable initial record is queued before TX with `ack_tx_result` set to
 `PENDING` and TX-dependent timestamps absent. After TX, suppression or bounded
 radio recovery reaches a terminal outcome, an immutable completion command for
-the same `(receiver_boot_id, occurrence_sequence)` supplies the final result
-and `T4` through `T6`. The persistence thread applies that command as an update
-to the existing row. A packet that cannot receive an ACK may be returned to RX
-first and then queued once as a complete row with `ack_tx_result` set to
+the same `(receiver_instance_id, occurrence_sequence)` supplies the final
+result and `T4` through `T6`. The persistence thread applies that command as an
+update to the existing row. A packet that cannot receive an ACK may be returned
+to RX first and then queued once as a complete row with `ack_tx_result` set to
 `NOT_APPLICABLE`.
 
 `ack_tx_result` independently records what happened after selection:
@@ -765,10 +798,11 @@ UNKNOWN_INTERRUPTED
 ```
 
 `PENDING` is a transitional persisted value, not evidence that transmission
-started. A pending row belonging to an earlier receiver boot is interpreted as
-`UNKNOWN_INTERRUPTED`: durable evidence cannot establish whether the ACK was
+started. A pending row belonging to an earlier receiver instance is interpreted
+as `UNKNOWN_INTERRUPTED`: durable evidence cannot establish whether the ACK was
 transmitted. A completion-admission failure may leave a row pending during the
-current boot and increments `message_profiling_admission_failures`.
+current receiver instance and increments
+`message_profiling_admission_failures`.
 
 When an ACK is constructed, its exact 23-byte frame is stored in `ack_frame`
 whether or not transmission succeeds. Separating `processing_result`,

@@ -2,8 +2,10 @@
 
 This directory contains the immutable, forward-only SQLite schema history for
 the receiver. [`../INTERFACE.md`](../INTERFACE.md) defines the logical schemas,
-identities, enum values and persistence semantics; migrations are their applied
-database representation.
+identities, general enum values and persistence semantics, while
+[`../INTERFACE_DIAGNOSTIC.md`](../INTERFACE_DIAGNOSTIC.md) defines the diagnostic
+enum catalogues and context encodings. Migrations are their applied database
+representation.
 
 ## Layout
 
@@ -50,15 +52,17 @@ explicit maintenance procedure rather than an unbounded startup migration.
 
 ## Enum catalogues
 
-Receiver-local persisted enum assignments will come from the checked-in
-`receiver/schemas/receiver_interface.json` required by the interface before the
-initial migration is implemented. Generation emits static Python enums,
-migration insert blocks and the expected startup catalogue. SQLite is not used
-to define Python enums at runtime.
+Receiver-local persisted enum assignments, including the diagnostic catalogues,
+will come from the checked-in `receiver/schemas/receiver_interface.json`
+required by the interfaces before the initial migration is implemented.
+Generation emits static Python enums, migration insert blocks and the expected
+startup catalogue. SQLite is not used to define Python enums at runtime.
 
 Each persisted enum has a strict reference table with numeric `id` and unique
-uppercase `code`. Rows and assignments are append-only after introduction;
-startup validation treats a changed or incomplete catalogue as incompatible.
+uppercase `code`. Before the first deployable migration, provisional receiver
+assignments may be revised through the interface-review process. Once an
+assignment appears in a deployed migration it is append-only; startup
+validation treats a changed or incomplete catalogue as incompatible.
 Protocol-owned enum assignments continue to come from the protocol schema.
 
 ## Durability and compatibility

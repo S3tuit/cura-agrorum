@@ -118,7 +118,9 @@ The persistence thread inserts the current `receiver_instances` row after
 SQLite startup validation and before ordinary persistence admission becomes
 available. A database-local monotonic `instance_ordinal` supplies lifecycle
 order; `receiver_instance_id` remains the public identity referenced by other
-tables. Start fields are immutable. During controlled shutdown, the
+tables. Start identity and monotonic time are immutable; optional start UTC may
+be derived during analysis from the clock-observation timeline without
+mutating the lifecycle row. During controlled shutdown, the
 communicator calls `commit_receiver_clean_stop()` after its radio, queue and
 airtime preconditions hold; the persistence thread is the only component that
 updates the lifecycle row. A new instance without a durable clean-stop marker
@@ -167,8 +169,10 @@ database-corruption policy.
 
 Unknown airtime history becomes a known-empty ledger only after the running
 instance has suppressed every TX for the complete rolling window plus the
-configured bucket and expiration guards, measured on Linux monotonic time, and
-trusted UTC is available for the new durable snapshot. A process restart
+configured bucket and expiration guards. The physical duration is converted
+to a conservative minimum-wait monotonic duration under the active
+elapsed-rate bound, and trusted UTC must be available for the new durable
+snapshot. A process restart
 restarts that interval. This supplies automatic conservative recovery without
 assuming that a missing row means a new installation.
 
@@ -188,8 +192,14 @@ The persistence thread services communicator-state control commands before begin
 
 The receiver uses the Pi system clocks and the battery-backed DS3231 for different purposes:
 
-- Linux monotonic time drives GPIO-event timing, deadlines, latency metrics and the live airtime ledger.
-- Linux system UTC supplies receiver reception time and protocol timestamp anchors when its quality is trusted.
+- Linux `CLOCK_MONOTONIC` supplies every receiver event timestamp and drives
+  GPIO-event timing, deadlines, latency metrics and the live airtime ledger.
+  It never steps backwards, but Linux applies chrony's incremental frequency
+  corrections to it, so its rate is not assumed to equal physical elapsed
+  time exactly.
+- Linux system UTC is sampled only while constructing a bounded
+  monotonic/UTC `ClockObservationV1`; analysis uses those observations to
+  derive UTC for events from the same Linux boot without mutating event rows.
 - The DS3231 preserves UTC while the Pi is unpowered and seeds the system clock through the deployment's one-per-Linux-boot RTC-bootstrap stage. It is not read for each packet and is not used for elapsed-time measurements.
 
 The DS3231 stores UTC, never local civil time.
@@ -217,46 +227,203 @@ This permits states such as `NETWORK_SYNCED` with a missing RTC. `NETWORK_SYNCED
 - an RTC value consistent with the last verified synchronization and the configured uncertainty policy; and
 - current Linux system UTC consistent with that RTC value after the boot-time bootstrap episode.
 
-The last observed quality and health may be recorded for diagnosis, but they are not restored as authoritative current-instance observations. On every receiver startup the receiver probes the RTC and independently establishes current time quality.
+The last observed quality and health may be recorded for diagnosis, but they are not restored as authoritative current-instance observations. On every receiver startup the receiver probes the RTC and independently establishes current time quality. The communicator owns both live values and a `clock_state_generation` that increments on every quality or RTC-health transition and before every intentional clock step. Periodic observations may share one generation.
 
 ### Boot and synchronization lifecycle
 
 On an offline Pi boot, the deployment RTC-bootstrap stage may provisionally copy a hardware-valid DS3231 value into Linux system UTC. The receiver enters `RTC_HOLDOVER` only after it independently validates durable RTC provenance, current RTC health and agreement between RTC and system UTC. With no valid provenance, system UTC remains `UNTRUSTED` even if the bootstrap stage copied a provisional RTC value. A missing or invalid RTC is recorded independently in `rtc_health`.
 
-When the time-synchronization service confirms network synchronization, the trust transition is ordered:
+When the time-synchronization service confirms network synchronization, the
+trust transition is ordered:
 
-1. Mark current Linux system UTC as `NETWORK_SYNCED` in memory.
-2. Write UTC to the DS3231.
-3. Read back and verify the RTC update.
-4. Durably commit the new RTC provenance through `commit_communicator_state()`.
-5. Only after acknowledgement may a later Pi boot use that update for `RTC_HOLDOVER`.
+1. Establish that the chrony status and the kernel clock state meet the
+   configured network-synchronization bounds.
+2. Transition the live quality to `NETWORK_SYNCED`, advance
+   `clock_state_generation`, and publish the corresponding trusted
+   `ClockObservationV1`.
+3. Write the observation's correlated UTC, advanced by monotonic elapsed time,
+   to the DS3231.
+4. Read back and verify the RTC update.
+5. Durably commit the new RTC provenance through
+   `commit_communicator_state()`.
+6. Only after acknowledgement may a later Pi boot use that update for
+   `RTC_HOLDOVER`.
 
-A reset between the RTC update and the durable provenance commit leaves a good RTC conservatively classified as untrusted. The reverse ordering is forbidden because it could make a later Pi boot trust an RTC that was never updated. The synchronized system time may be copied to the RTC periodically while network synchronization remains confirmed. Clean shutdown has no special clock-persistence role, and an unsynchronized Pi must never overwrite a credible RTC.
+A reset between the RTC update and the durable provenance commit leaves a good RTC conservatively classified as untrusted. The reverse ordering is forbidden because it could make a later Pi boot trust an RTC that was never updated. The synchronized system time may be copied to the RTC periodically while network synchronization remains confirmed. Each copy uses a fresh trusted clock observation rather than an unrelated direct `CLOCK_REALTIME` read. Clean shutdown has no special clock-persistence role, and an unsynchronized Pi must never overwrite a credible RTC.
 
-### Reception timestamps
+### Clock observations and event timestamps
 
-The kernel-recorded DIO1 `RX_DONE` edge uses monotonic time. The communicator also captures or obtains a close correlation between monotonic time and system UTC, together with:
+All receiver entities record events only with `CLOCK_MONOTONIC`. A monotonic
+value is meaningful only together with `linux_boot_id`; it remains comparable
+across receiver-process restarts in one Linux boot and is never compared across
+different boots. The host must not suspend while the receiver service is
+active because `CLOCK_MONOTONIC` excludes suspended time.
 
-- `receiver_instance_id`;
-- `linux_boot_id`;
-- `system_time_quality`;
-- `rtc_health`.
+The communicator periodically creates a fixed-size `ClockObservationV1` that
+contains:
 
-Live monotonic timestamps must not be persisted and reused as an absolute time base after receiver restart or Pi reboot. NTP adjustment of system UTC must not advance or expire monotonic deadlines or airtime buckets.
+- the source `receiver_instance_id` and current `linux_boot_id`;
+- a per-instance `observation_sequence` and `clock_state_generation`;
+- one bounded monotonic/UTC correlation;
+- the current `system_time_quality`; and
+- the current `rtc_health`.
 
-When UTC is untrusted, the receiver still records the frame, both identity fields and monotonic reception time. Canonical UTC and the logical reading timestamp remain absent until a trustworthy same-Linux-boot correlation or a protocol-permitted timestamp anchor becomes available.
+The communicator creates an observation after initial time and RTC state have
+been established, on every quality or RTC-health transition, immediately
+before every intentional clock step, and at a configurable periodic interval
+while running. The pilot initial periodic interval is three hours.
+`UNTRUSTED` observations intentionally contain no UTC. A trusted observation
+contains UTC only when quality is `RTC_HOLDOVER` or `NETWORK_SYNCED`.
+
+The three-hour interval limits the distance to a persisted correlation for
+recovery and later analysis; it is not the proof that UTC is accurate. The
+accuracy proof is the applicable absolute-error bound. A
+`NETWORK_SYNCED` observation is accepted under the chrony total-error and
+source-quality rules below. `RTC_HOLDOVER` instead uses the verified RTC's
+age, configured drift bound and read/bootstrap uncertainty, and is trusted
+only while their conservative sum remains within the configured holdover
+error budget. For the pilot timestamp contract, that holdover budget must not
+exceed the same 40-second receiver-UTC error ceiling. The protocol's direct
+anchor midpoint contributes less than 15 additional seconds under its
+30-second radio-cycle bound, leaving approximately five seconds inside the
+one-minute target for other direct-anchor error. Extrapolation across many
+sleep cycles remains explicitly best-effort and is not justified by this
+direct-anchor budget.
+
+A trusted observation is sampled without a receiver/daemon lock:
+
+```text
+generation_before = clock_state_generation
+M_before = CLOCK_MONOTONIC
+timex = adjtimex(modes = 0)
+M_after = CLOCK_MONOTONIC
+generation_after = clock_state_generation
+```
+
+The sample is accepted only if both generation reads are equal, the monotonic
+bracket is within a configured small bound and `adjtimex()` reports no
+unexpected clock-interference condition. A `NETWORK_SYNCED` observation also
+requires a fresh acceptable `ChronyTrackingResult` obtained by the communicator
+before this bracket. The observation monotonic value is the bracket midpoint
+and its UTC is the system time returned by the read-only `adjtimex()` call. A
+bounded number of failed sampling attempts leaves the observation pending; it
+never guesses a correlation.
+
+This generation check prevents an in-process time-quality ABA race, while the
+single `adjtimex()` result supplies system time and kernel clock metadata from
+one syscall. It cannot lock chronyd and does not try to: the deployment
+prohibits automatic clock steps, and chronyd may continue bounded slewing while
+the receiver samples. Linux applies that slew to `CLOCK_REALTIME` and
+`CLOCK_MONOTONIC` together. Their offset therefore remains stable through a
+slew, so the same-boot correlation remains valid; only a clock step changes
+the offset and requires the ordered observation boundary described here. The
+pilot deliberately does not introduce `CLOCK_MONOTONIC_RAW`, because it would
+require an additional continuously estimated correlation to system UTC.
+
+Linux `adjtimex()` synchronization status is deliberately not the authority
+for `NETWORK_SYNCED`. Chronyd clears the kernel `STA_UNSYNC` flag only when its
+`rtcsync` mode is enabled, and that mode would also let the kernel copy system
+time to the RTC every 11 minutes. Because the receiver must remain the sole
+DS3231 writer, `rtcsync` stays disabled and `adjtimex()` may report
+`TIME_ERROR` even while chrony tracking is synchronized. The communicator uses
+fresh chrony tracking for network quality and treats the expected
+`STA_UNSYNC`/`TIME_ERROR` pair as compatible with this deployment.
+
+`ClockObservationV1` has the same FIFO importance as every other queue entity.
+If a quality transition must be recorded while its queue admission is
+temporarily impossible, the communicator changes unsafe live quality to
+`UNTRUSTED` immediately, retains the transition boundary in RAM and attempts
+that observation before any later ordinary queue admission. An intentional
+clock step is stricter: an `UNTRUSTED` observation carrying
+`STEP_DISCONTINUITY_BOUNDARY` must already be durably committed and its exact
+identity published through persistence's clock-observation commit snapshot
+before the step command is submitted. Queue FIFO order prevents a later
+occurrence from becoming durable ahead of its boundary, while the commit
+snapshot distinguishes queue publication from SQLite durability. If the
+process dies after commit, the durable boundary still conservatively marks the
+following analysis interval as discontinuous; if it dies before commit, no
+step was authorized.
+
+Analysis derives an event's UTC from immutable trusted observations in the
+same `linux_boot_id`:
+
+```text
+event_utc_us = observation.sampled_at_utc_us
+             + event_monotonic_us
+             - observation.sampled_at_monotonic_us
+```
+
+This correlation is valid through bounded chrony slew. It does not claim that
+monotonic microseconds always equal physical elapsed microseconds. Every
+safety-sensitive physical duration is converted centrally using the
+configured conservative monotonic elapsed-rate bound. Minimum waits, including
+rolling-airtime retention and retry backoff, are lengthened; maximum lifetimes,
+including radio/time-service deadlines and the spendable life of an airtime
+reservation, are shortened. Profiling and periodic-observation intervals are
+observational and need no such conversion unless their individual contract
+says otherwise. The exact conversion and pilot defaults are normative in
+[`INTERFACE.md`](INTERFACE.md#elapsed-duration-policy).
+
+Observations are ordered by monotonic value, receiver-instance ordinal and
+observation sequence. An ordinary `UNTRUSTED` observation closes the preceding
+trusted segment. For an event in an open trusted segment, analysis selects the
+latest preceding trusted observation. For an event before the first trusted
+observation or after an ordinary `UNTRUSTED` boundary, it may select the first
+later trusted observation in that boot only when no step-discontinuity boundary
+lies between the event and that observation.
+
+A `STEP_DISCONTINUITY_BOUNDARY` is different. Events in the half-open interval
+from that boundary through, but excluding, the first later trusted observation
+are permanently ineligible for derived UTC. The later trusted observation
+starts the new correlation segment; it never extrapolates backward across the
+boundary, including to a pre-boundary event that lacks an eligible preceding
+trusted observation. A boundary at the same monotonic microsecond is treated
+as preceding the event. If the step was never submitted or its outcome is
+unknown, retaining the gap is the deliberately conservative result. Stored
+receiver-event rows remain monotonic-only and immutable; UTC and
+source-observation identities are analysis results, not persistence enrichment.
+
+The source `receiver_instance_id` identifies who created an observation; it is
+not a correlation boundary. A later receiver process may correlate an earlier
+same-boot event because Linux monotonic time continues across process restart.
+No observation can correlate an event from another `linux_boot_id`.
+
+The kernel-recorded DIO1 `RX_DONE` edge is therefore the only reception-time
+input carried by `MessageProfilingV1`. Occurrence quality and RTC health are
+not copied into each profile; they remain represented by the clock-observation
+timeline and periodic receiver health. The same model applies to diagnostics
+and receiver lifecycle events during analysis. Durable airtime state still contains UTC
+expirations because it must survive Linux reboot, but the communicator derives
+those values from its latest live trusted correlation rather than reading
+`CLOCK_REALTIME` for the state entity.
+
+An explicit realtime step cannot jump a monotonic deadline or bucket. Bounded
+slew can change how quickly monotonic time advances relative to physical time,
+so the conservative duration conversions prevent it from expiring a minimum
+wait early or extending a maximum lifetime too long. When UTC is untrusted,
+the receiver still records the frame, both identity fields and monotonic
+reception time. Analysis produces UTC only when a trustworthy same-Linux-boot
+observation segment permits it.
 
 ### Logical reading timestamps
 
-The persistence thread owns logical reading-timestamp reconstruction because it exclusively accesses SQLite history. It applies the direct-anchor and extrapolation rules in the protocol, including:
+Analysis owns logical reading-timestamp reconstruction from immutable SQLite
+history. It applies the direct-anchor and extrapolation rules in the protocol,
+including:
 
-- using the earliest authenticated current-reading reception as a direct anchor;
+- using the earliest anchor-eligible accepted current-reading occurrence with
+  analysis-derived UTC as a direct anchor;
+- requiring `run_ms + Tair <= 30,000 ms` and a non-conflict persistence
+  classification for direct-anchor eligibility;
 - preserving reception time at `RX_DONE`, not database-write time;
 - crossing between consecutive samples only when the required deep-sleep, previous-cycle-metrics and identity-lifetime conditions hold;
-- storing `timestamp_source` and `anchor_sample_id`; and
-- never replacing an estimated timestamp after it has been durably assigned.
+- storing `timestamp_source`, `anchor_sample_id` and the trusted clock
+  observation behind the direct anchor when analysis materializes output; and
+- never replacing an estimated timestamp after it has been written to that
+  output.
 
-Reception records and measurements may therefore be committed before their canonical UTC or logical reading timestamp is known.
+The receiver database therefore stores reception records and measurements
+without materialized UTC or logical reading timestamps.
 
 ## Deployment lifecycle
 
@@ -278,6 +445,7 @@ receiver service starts
   -> persistence thread inserts receiver_instances start row
   -> probe RTC and local time-synchronization status
   -> establish NETWORK_SYNCED, RTC_HOLDOVER or UNTRUSTED
+  -> publish the initial ClockObservationV1 before later ordinary queue work
   -> reconcile durable airtime state and obtain usable allowance when possible
   -> initialize the SX1262
   -> enter RX_SINGLE
@@ -302,15 +470,156 @@ The bootstrap episode runs once per Linux boot, not once per receiver process. A
 
 The RTC bootstrap must complete before network time discipline is allowed to establish synchronization; alternatively, the bootstrap must detect already-synchronized system time and skip the RTC-to-system copy. This prevents a late RTC bootstrap from overwriting NTP-disciplined time. The receiver service itself must not depend on a network-online target. The local time-synchronization service may establish `NETWORK_SYNCED` asynchronously after the local bootstrap prerequisite, and the receiver does not wait for it. Offline startup therefore produces either validated `RTC_HOLDOVER` or `UNTRUSTED`, never a wait for NTP.
 
+### Chrony integration
+
+The pilot uses chronyd as the sole normal writer of Linux system UTC. Its
+deployment configuration must:
+
+- omit `makestep` and `initstepslew` directives so chronyd never steps the
+  clock autonomously;
+- use `leapsecmode slew` and, for the pilot, configure
+  `maxslewrate 3500`, limiting chrony's phase-correction contribution to
+  3,500 ppm;
+- omit `rtcsync` and `rtcfile`, leaving DS3231 reads, writes, verification and
+  provenance entirely to the receiver lifecycle;
+- set `cmdport 0` and use only the local Unix command socket; and
+- disable or mask `systemd-timesyncd` and every other competing system-clock or
+  RTC writer.
+
+`chronyc tracking` does not expose the configured `maxslewrate`. The receiver
+therefore validates the relationship between its declared expected chrony
+ceiling and its 3,700 ppm elapsed-rate bound, while installation/deployment
+verification checks that the effective chronyd configuration actually contains
+the declared `maxslewrate 3500`, `leapsecmode slew` and no automatic-step
+directive. A mismatch fails deployment validation; the runtime adapter must not
+pretend it discovered that daemon setting from tracking output.
+
+The receiver has no `CAP_SYS_TIME` and never invokes `clock_settime()`. For the
+pilot, its service account receives narrowly scoped filesystem permission to
+chronyd's local Unix command socket, normally through membership in the
+socket-directory group. The receiver invokes chronyc with the explicit socket
+path so failure cannot fall back to its localhost UDP command port. It accesses
+that socket in normal code only through the fixed `ChronyControl` adapter in
+[`INTERFACE.md`](INTERFACE.md#chrony-control-interface). The adapter exposes a
+read-only tracking operation and one privileged operation equivalent to
+`chronyc makestep`; it accepts no arbitrary chronyc command, server, UTC value
+or offset. A future separately privileged local coordinator can implement the
+same adapter without changing communicator policy.
+
+This is modularity, not a complete OS privilege boundary: chronyd intentionally
+grants broad control to a client that can access its Unix command socket. A
+compromised pilot receiver process could bypass the adapter and send another
+chrony command. The pilot accepts that local risk to avoid another service. A
+future coordinator must run under a separate identity, own the chrony-socket
+permission and expose only tracking plus one policy-checked step operation if
+command-level least privilege becomes a requirement.
+
+Chronyd does not announce that it wants to step. With automatic stepping
+disabled it normally slews every correction, so the communicator alone decides
+whether an explicit step is necessary. A fresh successful tracking result is
+usable for this decision only when chrony reports a selected, synchronized,
+reliable source and the response passes the interface freshness, value and
+configured skew bounds. The communicator computes the conservative total
+network error:
+
+```text
+network_error_bound_us =
+    abs(remaining_correction_us)
+    + root_distance_us
+    + observation_sampling_margin_us
+```
+
+All arithmetic is checked and rounded conservatively. The pilot defaults use
+a 35-second network-trust threshold and a 40-second step threshold:
+
+- at or below 35 seconds, a qualifying result may establish or retain
+  `NETWORK_SYNCED`;
+- above 40 seconds, quality first becomes `UNTRUSTED`, its boundary
+  observation is published and confirmed durable, and the explicit step
+  procedure may run; and
+- between those thresholds, including exactly 40 seconds, current quality is
+  retained. In particular, an `UNTRUSTED` or `RTC_HOLDOVER` clock does not
+  enter `NETWORK_SYNCED` in this hysteresis band, while an already
+  `NETWORK_SYNCED` clock is not made to flap.
+
+An unavailable, stale, unsynchronized or otherwise invalid chrony result can
+neither establish `NETWORK_SYNCED` nor authorize a step. Loss of the current
+source also removes `NETWORK_SYNCED` according to the bounded status-poll
+policy; the receiver does not continue claiming network trust from a stale
+sample. The 40-second decision applies to the total bound above, not merely to
+chrony's remaining correction.
+
+Subject to those rules:
+
+- from `RTC_HOLDOVER`, a plausible correction is slewed and quality becomes
+  `NETWORK_SYNCED` only after the configured synchronization bounds hold;
+- from `UNTRUSTED`, a large pending correction may be applied by one explicit
+  step while quality remains untrusted; and
+- an implausible correction observed while `RTC_HOLDOVER` or
+  `NETWORK_SYNCED` first causes an `UNTRUSTED` transition and published clock
+  boundary; it may be stepped only after persistence confirms that exact
+  boundary durable.
+
+The communicator drives the step without blocking radio reception through this
+small runtime-only state machine:
+
+```text
+IDLE
+  -> STEP_COMMAND_PENDING
+  -> WAITING_FOR_STABLE_TIME
+  -> IDLE
+       or RETRY_BACKOFF -> STEP_COMMAND_PENDING
+```
+
+It keeps an operation generation, step start and deadline, next status-poll
+time and retry-not-before time. Before leaving `IDLE` it sets quality to
+`UNTRUSTED`, advances `clock_state_generation` and publishes a boundary
+observation carrying `STEP_DISCONTINUITY_BOUNDARY`. It keeps later ordinary
+queue admission blocked and polls the persistence-owned clock-observation
+commit snapshot until it names that exact boundary. If publication or durable
+confirmation cannot be established, it stays untrusted, submits no chrony
+command and retries or reconciles the pending boundary. A definite command
+rejection enters bounded backoff; the already durable analysis gap remains
+conservatively valid even though no step occurred. Confirmed
+submission and an unknown command outcome both enter
+`WAITING_FOR_STABLE_TIME`; an unknown result is never retried blindly because
+the step may already have happened. The communicator polls status with short
+deadlines outside the RX-to-ACK critical path. Once chrony and the kernel meet
+the network-entry bounds, including total error at or below 35 seconds, it
+publishes the first post-boundary trusted observation, which ends the
+analysis-only discontinuity gap, and enters `NETWORK_SYNCED`. Failure or total
+deadline expiry retains `UNTRUSTED` and enters bounded backoff.
+
+The receiver uses 3,700 ppm as its conservative bound on the possible rate
+difference between `CLOCK_MONOTONIC` and physical elapsed time. This exceeds
+chrony's configured 3,500 ppm ceiling to cover integer rounding and residual
+frequency behavior. At the receiver bound, three physical hours can differ by
+at most 39.96 seconds in monotonic elapsed time; chrony's configured slew
+contribution is at most 37.8 seconds over the same interval. These are pilot
+defaults, not protocol constants. They may be changed after pilot evidence is
+reviewed, but the deployment configuration, receiver validation and duration
+conversion policy must be changed together.
+
+This step state is not durable. After a receiver-process restart the
+communicator reconstructs policy from current chrony/kernel status, RTC
+provenance and fresh observations and does not assume whether a prior
+in-process command ran. It never trusts an unfinished operation merely because
+the Linux boot did not change.
+
 The supervisor restarts crashes, uncaught-failure exits and terminal initialization or recovery failures with a nonzero restart delay and rate limiting so a permanent hardware fault cannot create a tight restart loop. A restarted process follows the normal receiver-instance and unresolved-airtime-reservation rules. Controlled service stop uses a bounded graceful-shutdown interval, but correctness never depends on a clean-stop marker or shutdown-time RTC write.
 
 For systemd, the unit-level contract is:
 
 - enable the receiver service for normal boot;
 - order it after the required mounts and the boot-scoped RTC-bootstrap unit, while treating RTC-bootstrap completion rather than success as the prerequisite;
+- order chronyd after that same bootstrap completion so network discipline
+  cannot race a late RTC-to-system copy;
 - give the RTC-bootstrap unit a finite operation timeout and ensure it runs no more than once in one Linux boot;
 - do not add a `network-online.target` ordering requirement;
-- run the receiver as the configured service user with access only to its data directories and required GPIO, SPI and RTC devices; and
+- run the receiver as the configured service user with access only to its data
+  directories, required GPIO, SPI and RTC devices, and the single local chrony
+  command socket;
+- prevent host suspend while the receiver service is active; and
 - use restart-on-failure with a nonzero restart delay, rate limiting and a bounded graceful-stop timeout.
 
 Exact unit names, paths, retry counts and timeouts are deployment configuration, but these semantics are not optional or deferred from the pilot.
@@ -609,10 +918,15 @@ The ring contains:
 
 `total_used` is derived state: it is recomputed and validated when a ledger is loaded, then updated incrementally on insertion, expiration and definite reclamation. The communicator does not sum the complete ring on the receive-to-ACK path.
 
-A bucket is discarded only after its complete interval lies outside the rolling window:
+A bucket is discarded only after its complete interval lies outside the
+physical rolling window. `minimum_wait_monotonic_us()` is the normative
+conservative conversion in `INTERFACE.md`:
 
 ```text
-while oldest_bucket_end <= now_monotonic - rolling_window:
+rolling_retention_monotonic_us =
+    minimum_wait_monotonic_us(rolling_window_us)
+
+while now_monotonic - oldest_bucket_end >= rolling_retention_monotonic_us:
     total_used -= oldest_bucket_charge
     clear oldest bucket
     advance starting index
@@ -634,7 +948,14 @@ spend deadline
 conservative expiration time
 ```
 
-`X` is the maximum lifetime during which the reservation may be spent, and `Y` is the maximum charged airtime covered by the reservation. Their initial values are implementation and deployment parameters. The current receiver instance enforces the spend deadline with monotonic time. Its durable form carries a conservative UTC deadline and expires no earlier than that deadline plus the continuous one-hour window, bucket-rounding allowance and clock-uncertainty guard.
+`X` is the maximum physical lifetime during which the reservation may be
+spent, and `Y` is the maximum charged airtime covered by the reservation.
+Their initial values are implementation and deployment parameters. The current
+receiver instance enforces the spend deadline with a shortened
+maximum-lifetime monotonic duration under the active elapsed-rate bound. Its
+durable form carries a conservative UTC deadline and expires no earlier than
+that deadline plus the continuous one-hour window, bucket-rounding allowance
+and clock-uncertainty guard.
 
 Admission counts all of the following against the receiver budget:
 
@@ -765,20 +1086,21 @@ Check committed airtime reservation
 Finalize ack_tx_result and T4 through T6
 If a pre-TX reservation exists, publish one complete immutable
 profile-only or measurement/profile unit without another capacity check;
-otherwise record the profiling-admission failure counter only
+otherwise retain the already-recorded reservation result only
 Return to DIO1 wait
 ```
 
 The communicator reserves the exact fixed-size unit before an ACK transmission but publishes no partial profile. It retains the preallocated unit locally while TX, suppression and any bounded recovery complete, fills only the fixed-width terminal TX result and timestamp slots, then freezes and publishes it. Publication cannot fail because of queue pressure, allocation or serialization.
 
-If persistence admission is unavailable or profile reservation fails, the detailed packet-occurrence record cannot be retained. The pilot explicitly permits this exception, selects `ACK_RETRY_LATER_DOWNLINK` for an authenticated packet that is eligible for a response, and increments `message_profiling_admission_failures` plus the bounded counter for the observed admission-failure reason. Packets that cannot be authenticated remain silent. The counters are reported later through the existing non-recursive persistence or diagnostic path so that gaps in the occurrence log are observable.
+If persistence admission is unavailable or profile reservation fails, the detailed packet-occurrence record cannot be retained. The pilot explicitly permits this exception and selects `ACK_RETRY_LATER_DOWNLINK` for an authenticated packet that is eligible for a response. The reservation attempt has already incremented exactly one `persist_queue_admission_counts` cell for the selected profile-unit kind and returned `AdmissionResult`; no overlapping profiling-failure counter is maintained. Packets that cannot be authenticated remain silent. The communicator offers the cumulative matrix in a later `ReceiverHealthRequest`; a crash before successful admission may lose the increments under the documented persistence-unavailable observability limitation.
 
 If the communicator regains control after an exception but cannot determine the attempted ACK's terminal radio outcome, it finalizes the reserved profile as `UNKNOWN_INTERRUPTED` before entering a terminal receiver state. A hard process crash or power loss drops the volatile reservation and leaves no partial SQLite row. This deliberately gives up persistence of pre-TX partial records and does not weaken the pilot's existing non-durable ACK guarantee.
 
-Every failure path must either:
-
-- intentionally transition the radio to a known next state; or
-- enter a bounded recovery path and create a diagnostic.
+Every radio failure path must either intentionally establish a known safe next
+state or enter bounded recovery. An exceptional path constructs the one direct
+or episode-level radio diagnostic required by
+[`INTERFACE_DIAGNOSTIC.md`](INTERFACE_DIAGNOSTIC.md), but inability to admit
+that best-effort diagnostic never changes radio-state or airtime safety.
 
 ## PersistQueue
 
@@ -808,7 +1130,7 @@ The queue may contain:
 
 ### Pilot queue policy
 
-The pilot implements no `PersistQueue` priority policy. Every object published to the queue has the same importance regardless of whether it contains a measurement/profile pair, a profile-only occurrence, a diagnostic or a `ReceiverHealthRequest`.
+The pilot implements no `PersistQueue` priority policy. Every object published to the queue has the same importance regardless of whether it contains a measurement/profile unit, a profile-only occurrence, a diagnostic, a clock observation or a `ReceiverHealthRequest`.
 
 The queue admits and processes published units in FIFO publication order. It does not reorder, evict, sample or drop an admitted unit based on entity type. New admission requires current `PersistenceAdmissionState = AVAILABLE`, sufficient exact byte capacity and space under the configured entity-count limit; any failure rejects the new object or complete atomic pair without removing existing entries. For an authenticated packet eligible for a response, either admission failure selects `ACK_RETRY_LATER_DOWNLINK`.
 
@@ -830,7 +1152,8 @@ Fallback policy:
 normal structured diagnostic -> PersistQueue
 
 if that fails:
-    increment in-memory counters and/or write a bounded message to stderr
+    retain the DIAGNOSTIC admission-result matrix increment
+    and optionally write a bounded message to stderr
 ```
 
 Do not generate a diagnostic about failure to enqueue a diagnostic.
@@ -850,6 +1173,8 @@ It:
 - loads and validates durable communicator state during startup;
 - opens and validates SQLite with the required WAL and synchronization settings;
 - exclusively publishes `PersistenceAdmissionState` and closes ordinary admission on storage failure;
+- publishes the latest acknowledged durable clock-observation identity after
+  confirmed commit or exact reconciliation;
 - services high-priority state and clean-stop control operations and acknowledges only confirmed durable outcomes;
 - wakes approximately every five seconds, or when a configurable queue threshold is reached;
 - checks whether the queue contains data;
@@ -936,7 +1261,12 @@ transport_messages UNIQUE(node_id, message_id)
 readings           UNIQUE(node_id, sample_id)
 ```
 
-The canonical transport row stores the first exact authenticated frame, domain and decoded `sample_id`; the canonical reading row stores the first accepted application contents. These constraints are scoped to the node identity and key lifetime required by the protocol. The configured provisioning rules must not silently reuse a database identity with a reset counter.
+The canonical transport row stores the first exact authenticated frame, domain,
+decoded `sample_id` and first occurrence identity. The canonical reading row
+stores the first accepted application contents, decoded columns and first
+occurrence identity. These constraints are scoped to the node identity and key
+lifetime required by the protocol. The configured provisioning rules must not
+silently reuse a database identity with a reset counter.
 
 For an existing transport key, persistence compares the candidate with the canonical transport row:
 
@@ -946,7 +1276,13 @@ For an existing transport key, persistence compares the candidate with the canon
 
 A conflict does not replace the canonical transport row and its measurement candidate is not inserted into `readings`. The occurrence profile records the derived classification; together with the immutable canonical transport and reading rows, it is the durable conflict evidence. Persistence creates no conflict `DiagnosticV1`.
 
-For a first-seen transport message, persistence next applies the reading key. A first-seen `(node_id, sample_id)` inserts the measurement. Existing identical application contents produce `DUPLICATE_SAME_CONTENT`; existing different contents produce `DUPLICATE_CONFLICT`. Neither case updates the canonical measurement.
+`RETRANSMISSION` identifies a later occurrence of the same logical transport
+message without claiming why it repeated. For a first-seen transport message,
+persistence next applies the reading key. A first-seen `(node_id, sample_id)`
+inserts the measurement. Existing byte-identical reading contents produce
+`DUPLICATE_SAME_CONTENT`; this includes an expected current-to-backlog
+conversion with a new message ID. Existing different contents produce
+`DUPLICATE_CONFLICT`. Neither case updates the canonical measurement.
 
 Classification, canonical effects and the occurrence profile belong to one SQLite transaction. Conflict handling is successful processing and the corresponding queue pair is removed after commit. A SQLite or transaction failure is not a conflict: the queue retains ownership and retries the original immutable pair. The persistence thread constructs the stored profile with its derived `persistence_classification`; it does not mutate the communicator's queued object.
 
@@ -964,13 +1300,92 @@ copy/reference batch
   -> only then acknowledge/remove queue entries
 ```
 
-If the transaction fails, the entries remain pending.
+An ordinary batch attempt has one internal outcome:
+
+```text
+COMMITTED
+NOT_COMMITTED
+OUTCOME_UNKNOWN
+```
+
+`COMMITTED` permits the final per-entry durable disposition.
+`NOT_COMMITTED` is used only when failure is known to precede durable commit;
+the entries remain pending for retry. Once `COMMIT` may have executed without
+confirmation, the outcome is `OUTCOME_UNKNOWN`: the persistence thread retains
+the lease and every frozen persistence-derived value and reconciles before
+acknowledging or reconstructing work.
+
+Every queue entity has one primary durable identity:
+
+```text
+ClockObservationV1       (receiver_instance_id, observation_sequence)
+ProfileOnlyUnitV1        (receiver_instance_id, occurrence_sequence)
+MeasurementProfileUnitV1 (receiver_instance_id, occurrence_sequence)
+ReceiverHealthRequestV1  (receiver_instance_id, health_sequence)
+DiagnosticV1             (receiver_instance_id, diagnostic_sequence)
+```
+
+Reconciliation applies the same rule to every identity. If its row is absent,
+the normal insertion path may run. If it is present, every stored column must
+exactly equal the frozen intended value, using byte equality for BLOBs and
+null-safe equality for optional values; exact equality is already-committed
+success and the row is kept unchanged. A differing row is a correctness-critical
+identity collision: it is not overwritten, updated, classified as poison or
+acknowledged. Persistence retains the batch and publishes
+`UNAVAILABLE_INCOMPATIBLE_SCHEMA` pending operator or implementation recovery.
+
+Queue-backed rows have no UTC-enrichment exception. Profiles and diagnostics
+store only their monotonic timestamps; analysis derives UTC without modifying
+them. `ClockObservationV1` stores its own sampled UTC when trusted, and that
+complete observation row is also immutable.
+
+For `ProfileOnlyUnitV1`, exact equality covers every stored profiling field and
+`persistence_classification = NOT_APPLICABLE`. For
+`ReceiverHealthRequestV1`, the persistence thread freezes one complete
+`ReceiverHealthV1` before the first commit attempt; replay compares every
+communicator, persistence and optional host-observation column and never
+resamples it. For `DiagnosticV1`, exact equality includes the persistence-added
+`linux_boot_id`.
+
+For a `MeasurementProfileUnitV1`, exact replay additionally validates the
+immutable canonical side effects against the stored profile classification:
+
+- `FIRST_SEEN`: the current occurrence owns matching transport and reading
+  rows;
+- `RETRANSMISSION`: an earlier occurrence owns an exactly matching transport
+  row;
+- `DUPLICATE_SAME_CONTENT`: the current occurrence owns its new transport row
+  while an earlier occurrence owns a byte-identical reading row;
+- `DUPLICATE_CONFLICT`: either an earlier transport row has the same sample and
+  a different frame, or the current occurrence owns transport while an earlier
+  reading row has different contents; and
+- `MESSAGE_ID_CONFLICT`: an earlier transport row has the same message ID and a
+  different sample ID.
+
+The existing profile's stored classification is authoritative during replay;
+persistence validates it and never reclassifies the occurrence from the now
+populated canonical tables. A canonical transport or reading row that claims
+the current occurrence as its first owner while the corresponding profile row
+is absent is an impossible partial effect of the required atomic transaction
+and therefore the same global invariant failure.
+
+One retry transaction may treat matching rows as no-ops and insert identities
+that are still absent. Only confirmed commit, or later reconciliation showing
+every unit exact and complete, permits queue acknowledgement.
 
 An atomic measurement/profile pair is one batch unit. A configured batch-size target may not split it; when a single pair exceeds that target but fits the queue's validated entity-size limit, persistence processes the complete pair in one transaction.
 
 ### Poisoned entities
 
 All queue units have already passed fixed-layout construction and representation validation before admission. A poisoned unit is an admitted, representation-valid immutable unit that reproducibly fails while isolated because of an entity-specific decoder, binding, derivation, range or unexpected schema-constraint defect. Malformed radio input, duplicate classification, expected uniqueness conflicts, disk full, locking, database corruption and transient or global I/O failures are not poison.
+
+`ClockObservationV1` is deliberately excluded from item quarantine. Losing a
+time-state boundary while allowing later entities to commit could make
+persistence correlate them across an undocumented clock step. If a clock
+observation reproducibly fails in isolation, persistence retains it and the
+complete claimed batch, publishes `UNAVAILABLE_INCOMPATIBLE_SCHEMA` and admits
+no later ordinary work. Recovery requires a compatible implementation or
+schema; it never converts the observation into a gap and continues.
 
 The persistence thread needs a bounded failure-isolation strategy:
 
@@ -983,11 +1398,17 @@ batch fails
   -> continue with later entities
 ```
 
-An admitted unit is never silently dropped, regardless of whether an ACK was transmitted for it. A `MeasurementProfileUnitV1` remains one indivisible 516-byte unit during isolation and quarantine. The generic append-only SQLite `quarantined_entities` table preserves the complete original canonical bytes, redundant kind/version/length metadata, receiver and Linux identities, quarantine monotonic time, database schema version, stable failure reason and operation, available SQLite/OS codes and isolation-attempt count. Its primary key is SHA-256 of the exact bytes; an identical existing row makes retry idempotent only after every stored value is verified.
+An admitted unit is never silently dropped, regardless of whether an ACK was transmitted for it. A `MeasurementProfileUnitV1` remains one indivisible 506-byte unit during isolation and quarantine. The generic append-only SQLite `quarantined_entities` table preserves the complete original canonical bytes, redundant kind/version/length metadata, receiver and Linux identities, quarantine monotonic time, database schema version, stable failure reason and operation, available SQLite/OS codes and isolation-attempt count. Its primary key is SHA-256 of the exact bytes; an identical existing row makes retry idempotent only after every stored value is verified.
 
 After the normal batch transaction rolls back, quarantine uses a separate WAL/`FULL` transaction. Only a confirmed or reconciled quarantine commit permits the batch to acknowledge that unit as `QUARANTINED`. If quarantine cannot be durably committed, the complete batch remains queue-owned, persistence publishes `UNAVAILABLE_IO` and all new ordinary `PersistQueue` admission closes. Infinite retry of the same failing batch is not acceptable, but neither is removing an already-ACKed unit without a durable copy. Quarantining is successful failure isolation, not successful canonical measurement persistence; the retained bytes exist for diagnosis and later recovery.
 
-Persistence does not invent a `DiagnosticV1` for an asynchronous poison. Only the communicator owns diagnostic identity. Poison remains observable through the quarantine row, bounded service logging and cumulative `ReceiverHealthV1` counters. The exact schema and allowed failure reasons are defined in [`INTERFACE.md`](INTERFACE.md).
+Persistence does not invent a `DiagnosticV1` for an asynchronous poison. Only
+the communicator owns diagnostic identity. A successfully committed quarantine
+row preserves exact poison evidence. Bounded service logging and a later
+`ReceiverHealthV1` may add aggregate evidence, but neither is a guaranteed
+durable record while persistence remains unavailable. The exact quarantine
+schema and allowed failure reasons are defined in
+[`INTERFACE.md`](INTERFACE.md).
 
 ## Telemetry
 
@@ -1015,10 +1436,13 @@ The record carries the protocol-defined packet-occurrence fields and, when avail
 It also records:
 
 - `linux_boot_id`, which scopes its Linux monotonic timestamps;
-- canonical reception UTC, which remains absent when system time is untrusted;
 - the monotonic reception timestamp, with `T0` as its source;
-- `system_time_quality` and `rtc_health` captured for that occurrence; and
 - measurement-queue occupancy and configured capacity immediately before the admission attempt.
+
+The stored profile remains monotonic-only. Analysis may derive reception UTC
+and the applicable trusted `ClockObservationV1` identity without updating the
+row. Per-occurrence `system_time_quality` and `rtc_health` are deliberately
+absent from `MessageProfilingV1`.
 
 When the persistence thread writes the row, it adds the protocol-defined `persistence_classification`: `NOT_APPLICABLE`, `FIRST_SEEN`, `RETRANSMISSION`, `DUPLICATE_SAME_CONTENT`, `DUPLICATE_CONFLICT` or `MESSAGE_ID_CONFLICT`. This is derived from the canonical SQLite transport and reading rows and was not known to the communicator when it selected the ACK.
 
@@ -1035,7 +1459,8 @@ T6 - T5 : TX completion handling and RX restart
 
 A missing timestamp must be representable explicitly. Error paths will not always produce all seven timestamps.
 
-`T0` and `T5` are monotonic kernel-event timestamps. UTC fields remain explicitly absent while time is untrusted.
+`T0` and `T5` are monotonic kernel-event timestamps. Neither the queued profile
+nor its stored row has UTC timestamp slots.
 
 For a packet that may receive an ACK, capacity for the complete profile is reserved before TX with the selected ACK and exact ACK frame already fixed. After the radio has been returned to RX or bounded recovery has been attempted, the communicator fills `ack_tx_result` and `T4` through `T6`, freezes the profile and publishes it against the reservation. Persistence therefore inserts one complete row. A packet that cannot receive an ACK may instead be returned to RX first and then admitted once as a complete profile.
 
@@ -1069,7 +1494,7 @@ enough to determine whether persistence is falling behind without adding
 
 `ReceiverHealth` is a periodic application-aware snapshot. It is not sampled per packet and is not part of ACK acceptance. The initial pilot interval is one minute and remains configurable.
 
-The communicator drives the interval because only that thread can take a coherent snapshot of its live state. Once per interval, and once immediately after successful communicator initialization, it creates an immutable `ReceiverHealthRequest` and attempts a nonblocking enqueue to `PersistQueue`. If the health deadline coincides with DIO1 or another radio deadline, the communicator completes the deadline-bound radio work before sampling health. This event-loop scheduling rule does not give the resulting queue object different FIFO importance after publication.
+The communicator drives the interval because only that thread can take a coherent snapshot of its live state. Once per interval, and once immediately after successful communicator initialization, it advances `health_sequence` and attempts a nonblocking `ReceiverHealthRequest` reservation. It increments the returned admission-matrix cell and, on `RESERVED`, fills the reserved request with the updated matrix and its other coherent observations before publishing it. If the health deadline coincides with DIO1 or another radio deadline, the communicator completes the deadline-bound radio work before starting the health attempt. This event-loop scheduling rule does not give the resulting queue object different FIFO importance after publication.
 
 The request contains only communicator-owned observations:
 
@@ -1081,10 +1506,19 @@ The request contains only communicator-owned observations:
 - bounded recovery counts by reason when practical;
 - current `system_time_quality` and `rtc_health`;
 - cumulative time-quality and RTC-health transition counts and their last transition times;
-- cumulative ordinary-admission rejections by observed `PersistenceAdmissionState` value; and
-- cumulative failed `ReceiverHealthRequest` enqueue attempts.
+- a cumulative matrix containing exactly one result for every queue reservation
+  attempt, indexed by `PersistQueueEntityKind` and `AdmissionResult`.
 
-The request sequence and communicator sampling time are the communicator heartbeat: they prove that the communicator event loop reached the periodic health task. No separate high-frequency heartbeat is required. `health_sequence` advances before every enqueue attempt, so a gap in persisted sequence values exposes a missed or failed sample. The cumulative enqueue-failure count distinguishes known queue-pressure loss once a later request succeeds.
+The request sequence and communicator sampling time are the communicator heartbeat: they prove that the communicator event loop reached the periodic health task. No separate high-frequency heartbeat is required. `health_sequence` advances before every reservation attempt, so a gap in persisted sequence values exposes a missed or failed sample. The `RECEIVER_HEALTH_REQUEST` failure cells distinguish known queue-full and persistence-unavailable losses once a later request succeeds. A successfully admitted request includes its own `RESERVED` attempt because the communicator updates the matrix before filling the reserved builder.
+
+The matrix counts reservation calls, not packets, SQL rows, bytes or durable
+entities. `RESERVED` means capacity was obtained even if the process later
+dies or the communicator legally cancels before publication. Aggregate totals
+are derived by summing cells; overlapping stored counters are forbidden. The
+matrix deliberately collapses every unavailable reason into
+`PERSISTENCE_UNAVAILABLE`. Persistence-owned current-state and transition
+counters provide bounded cause evidence, but the pilot does not promise the
+exact unavailable reason for each rejected attempt.
 
 Radio recovery means an exceptional transition into `RECOVERING` after conditions such as a BUSY timeout, SPI failure, unexpected IRQ, missing or uncertain TX completion, or failed attempt to restore RX. A confirmed radio TX-timeout IRQ followed by successful RX re-arming, and the normal `SetRx` operation after packet handling or ACK transmission, are not counted as recovery. Recovery counters are cumulative within one `receiver_instance_id`; interval counts are derived during analysis.
 
@@ -1115,31 +1549,45 @@ Unavailable host or time-service observations are represented explicitly as abse
 
 `communicator_sampled_at_monotonic_us` and `persistence_sampled_at_monotonic_us` intentionally describe different moments. Communicator-owned fields belong to the former; persistence and Pi fields belong to the latter. Their difference measures how long the health request waited before enrichment and prevents a delayed request from appearing to be one simultaneous snapshot.
 
-`ReceiverHealthRequest` has the same FIFO queue importance as every other published object. Its nonblocking admission may fail when persistence admission or queue capacity is unavailable, and an admitted health request consumes capacity that may cause a later measurement/profile reservation to fail and select `ACK_RETRY_LATER_DOWNLINK`. The pilot accepts this consequence instead of implementing prioritization or eviction. Once admitted, the request remains queue-owned until commit under the normal batch-ownership rule. The health sequence and cumulative enqueue-failure count make admission gaps visible. The existence of a committed health row proves that the persistence thread reached that request; an in-process health record cannot prove liveness while the persistence thread itself is stalled.
+`ReceiverHealthRequest` has the same FIFO queue importance as every other published object. Its nonblocking admission may fail when persistence admission or queue capacity is unavailable, and an admitted health request consumes capacity that may cause a later measurement/profile reservation to fail and select `ACK_RETRY_LATER_DOWNLINK`. The pilot accepts this consequence instead of implementing prioritization or eviction. Once admitted, the request remains queue-owned until commit under the normal batch-ownership rule. The health sequence and the `RECEIVER_HEALTH_REQUEST` admission-result row make known admission gaps visible. The existence of a committed health row proves that the persistence thread reached that request; an in-process health record cannot prove liveness while the persistence thread itself is stalled.
 
 ## Diagnostics
 
-Diagnostics should be structured and include enough context to reconstruct failures.
-
-Useful fields include:
-
-- timestamp;
-- subsystem;
-- current receiver state;
-- event or command being handled;
-- IRQ status;
-- exception/error category;
-- fixed-layout bounded context fields appropriate to the diagnostic category.
-
-The queued diagnostic representation has a fixed size; it contains no arbitrary exception text, dictionary or payload dump. Sensitive material, keys, nonces, and plaintext should follow repository logging rules.
+[`INTERFACE_DIAGNOSTIC.md`](INTERFACE_DIAGNOSTIC.md) is normative for the
+fixed-size `DiagnosticV1`, common diagnostic enums, allowed domain/operation/
+error combinations and every domain-local context encoding. An undefined
+domain, error code or context schema must never be emitted. The stored row
+remains monotonic-only; analysis may derive UTC from the clock-observation
+timeline without updating it. Diagnostics contain no arbitrary exception text,
+dictionary or payload dump. Sensitive material, keys, nonces and plaintext
+follow repository logging rules.
 
 Only the communicator allocates `diagnostic_sequence`, constructs
-`DiagnosticV1` and admits it to `PersistQueue`. A synchronous persistence-control
-failure can be returned to the communicator and converted into a diagnostic.
+`DiagnosticV1` and admits it to `PersistQueue`. A synchronous
+persistence-control failure can be returned to the communicator and converted
+only after its persistence diagnostic catalogue is defined; it must never be
+encoded using an improvised radio or opaque context.
 The persistence thread never creates a diagnostic identity or inserts a
 persistence-created diagnostic row; its asynchronous failures remain visible
-through admission state, `ReceiverHealthV1`, quarantine provenance and bounded
-service logging.
+only to the extent that admission-state transitions, a later
+`ReceiverHealthV1`, quarantine provenance or bounded service logging can be
+retained.
+
+One transition into `RECOVERING` defines exactly one logical radio diagnostic
+and at most one queue-admission attempt. The communicator creates a bounded
+in-RAM episode builder when recovery starts, updates it as soft and hard
+recovery progress, and finalizes the one immutable value only when the episode
+returns to confirmed `RX_SINGLE` or reaches a terminal radio state. Individual
+recovery-stage failures do not create more diagnostics. The original operation
+and error code remain the episode's root cause; the context separately records
+command-effect certainty, recovery results and the last recovery-stage failure.
+The exact radio catalogue, context and scenario policy are defined in
+[`INTERFACE_DIAGNOSTIC.md`](INTERFACE_DIAGNOSTIC.md#radio-diagnostic-catalogue).
+During implementation, either the human implementer/reviewer or an AI agent may
+propose a correction under that document's
+[implementation-feedback contract](INTERFACE_DIAGNOSTIC.md#implementation-feedback-and-revision),
+but implementation must not silently diverge from the currently agreed
+encoding or recovery semantics.
 
 Unexpected conditions worth diagnosing include:
 
@@ -1160,6 +1608,23 @@ Unexpected conditions worth diagnosing include:
 - persistence admission becoming unavailable because of an incompatible schema;
 - failed telemetry admission due to queue capacity.
 
+### Persistence-unavailable observability limitation
+
+For the pilot there is no second durable diagnostic store outside the normal
+SQLite path. Low space, disk full, an incompatible schema, database corruption,
+failed quarantine and asynchronous SQLite failures may therefore leave no
+durable structured record when persistence cannot write its normal rows.
+Admission state, in-memory counters and the service log can help while the
+process and host remain available; a later `ReceiverHealthV1` can preserve
+aggregate evidence if persistence recovers. None is guaranteed to survive a
+process crash or power loss during the outage.
+
+This is an accepted observability limitation, not permission to continue
+ordinary admission or discard queue ownership. The normal fail-closed
+persistence, quarantine and recovery rules still apply. A future durable
+fallback must define its own bounded format, ownership and failure policy; the
+pilot does not add an append-only side file or a second disk writer.
+
 ## Error recovery
 
 Pilot recovery should be bounded and explicit.
@@ -1175,8 +1640,9 @@ Examples:
   - enter `RECOVERING` only if the IRQ cannot be cleared or RX cannot be confirmed.
 
 - BUSY timeout or SPI failure:
-  - create diagnostic;
+  - start one bounded radio-diagnostic episode builder;
   - enter `RECOVERING`;
+  - finalize the one diagnostic after bounded recovery succeeds or reaches a terminal state;
   - never continue under an assumed radio state.
 
 - TX failure:
@@ -1205,7 +1671,13 @@ Authentication failure, malformed or unsupported protocol data, persistence admi
 
 ### Radio recovery procedure
 
-On entry to `RECOVERING`, the communicator must suppress new transmissions and record the preceding state, failed operation, command-outcome classification, known IRQ and device-error state, and selected recovery action. If a transmission may have started, its airtime charge remains reserved even when the final radio outcome is unknown.
+On entry to `RECOVERING`, the communicator must suppress new transmissions and
+create the single in-RAM radio-diagnostic episode builder defined by
+[`INTERFACE_DIAGNOSTIC.md`](INTERFACE_DIAGNOSTIC.md#radio-diagnostic-emission-contract).
+It records the preceding state, failed operation, command-outcome
+classification, known IRQ and device-error state, and selected recovery action.
+If a transmission may have started, its airtime charge remains reserved even
+when the final radio outcome is unknown.
 
 The first bounded level is soft resynchronization:
 
@@ -1227,6 +1699,11 @@ If soft resynchronization fails, perform bounded hard recovery:
 
 The pilot should attempt one soft resynchronization followed by one hardware reset and full reinitialization. These counts may become configuration values, but must remain finite. If required hardware becomes unavailable, enter `HARDWARE_MISSING`. If hard recovery completes without confirming `RX_SINGLE`, enter `RECOVERY_EXHAUSTED`. Recovery must never become an unbounded reset loop.
 
+Returning to confirmed `RX_SINGLE`, entering `HARDWARE_MISSING` or entering
+`RECOVERY_EXHAUSTED` finalizes exactly one diagnostic for the complete recovery
+episode. Recovery-stage failures update the builder and health counters rather
+than emitting separate diagnostics.
+
 ## Concurrency model
 
 The initial implementation should use one communicator thread and one persistence thread.
@@ -1246,8 +1723,9 @@ Shared state should be minimized to:
 - the high-priority synchronous persistence control channel and its immutable completion results;
 - shutdown signaling;
 - generation-numbered read-only publication of `PersistenceAdmissionState`;
-- the immutable `linux_boot_id` returned during startup;
-- read-only publication of current time quality for observation where required.
+- read-only publication of the latest acknowledged durable
+  `ClockObservationV1` identity; and
+- the immutable `linux_boot_id` returned during startup.
 
 Receiver-health counters remain communicator-owned and cross the existing `PersistQueue` only inside immutable `ReceiverHealthRequest` snapshots; they do not create another shared mutable state path.
 
@@ -1268,20 +1746,38 @@ The persistence thread must not mutate communicator-owned node, message, clock-p
 - An atomic exact-size `PersistQueue` reservation for a prevalidated fixed-layout measurement/`MessageProfiling` unit while persistence admission is available establishes protocol acceptance of that occurrence but not SQLite durability or conflict-free canonical insertion.
 - A successful pre-TX reservation must publish exactly one complete immutable pair after the terminal radio outcome; persistence accepts only complete profiling rows.
 - No admitted queue unit is silently dropped; an item-specific poison is removed only after its exact fixed-size representation and minimal failure provenance are durably committed to `quarantined_entities`.
-- Only the communicator creates `DiagnosticV1`; persistence-derived conflicts use profile classification and canonical rows, while asynchronous persistence failures use health counters, admission state, quarantine provenance and bounded service logs.
+- Only the communicator creates `DiagnosticV1`; persistence-derived conflicts use profile classification and canonical rows, while asynchronous persistence failures may be exposed through health counters, admission state, quarantine provenance and bounded service logs but are not guaranteed to leave durable evidence while SQLite is unavailable.
 - The pilot database uses WAL with `synchronous=FULL`, retains all pilot records automatically, and closes all new ordinary `PersistQueue` admission on low space, disk full, corruption or persistence I/O failure.
 - A communicator-state generation is usable only after durable acknowledgement or explicit startup reconciliation.
 - `communicator_state` has at most one generation-bearing row; generation zero is conservative runtime state and is never stored.
 - Missing, corrupt or unsupported state never becomes an empty airtime ledger or trusted RTC provenance.
-- Current `system_time_quality` and `rtc_health` are observed again on every receiver startup; persisted observations are diagnostic only.
-- Monotonic time controls live deadlines, event intervals and airtime aging. Wall-clock adjustment never expires live airtime early.
+- Current `system_time_quality` and `rtc_health` are observed again on every
+  receiver startup. The last-observed copies in `CommunicatorStateV1` are
+  diagnostic only; immutable `ClockObservationV1` rows remain authoritative
+  provenance for UTC values derived during analysis.
+- Receiver event entities carry Linux monotonic time, never directly sampled
+  wall-clock time; analysis derives UTC from a trusted `ClockObservationV1`
+  with the same `linux_boot_id` without updating the event row.
+- A pending time-state boundary is offered to `PersistQueue` before later
+  ordinary admissions, and no intentional clock step is requested before its
+  exact `UNTRUSTED` boundary observation is durably committed, acknowledged
+  and named by the persistence commit snapshot.
+- `CLOCK_MONOTONIC` controls live deadlines, event intervals and airtime
+  aging. Safety-sensitive physical durations use the configured conservative
+  elapsed-rate conversions, so bounded slew cannot expire a minimum retention
+  early or extend a maximum lifetime too long; a realtime step does not jump
+  the clock.
 - Known bucket charges, unresolved reservations and the complete active reservation must fit the configured continuous-window budget before a new reservation is committed.
 - No TX occurs without an acknowledged active reservation owned by the current receiver instance.
 - A reservation from an earlier receiver instance is fully charged, unspendable and retained until conservative expiration.
 - A started or uncertain `SetTx` consumes allowance. Only a definite pre-`SetTx` failure permits reclamation.
 - A pending or unknown reservation-settlement outcome suppresses TX.
 - Airtime suppression never reverses acceptance of an admitted occurrence.
-- An untrusted receiver UTC never becomes an immutable direct timestamp anchor.
+- The earliest anchor-eligible accepted current-reading occurrence becomes the
+  immutable direct timestamp anchor only when analysis can derive its
+  `RX_DONE` UTC from a trusted same-Linux-boot clock observation, its
+  `run_ms + Tair` is at most 30 seconds and its persistence classification is
+  not a conflict.
 
 ## Deferred work
 
@@ -1294,13 +1790,17 @@ The following are explicitly deferred from the first pilot:
 - a kernel SX1262 driver;
 - optimization from Python to C;
 - complex BUSY edge handling;
-- durable configuration management.
+- durable configuration management;
+- a durable structured diagnostic fallback for intervals in which normal SQLite
+  persistence is unavailable.
 
 Known consequences:
 
 - any receiver-process restart loses unpersisted queue contents;
 - `linux_boot_id` distinguishes a Pi reboot from a receiver-only restart, while a new `receiver_instance_id` exposes both;
-- a successful ACK does not guarantee durable storage.
+- a successful ACK does not guarantee durable storage;
+- a persistence outage may leave no durable structured account of the outage's
+  own low-space, disk-full, corruption, schema, quarantine or SQLite failure.
 
 ## Testing
 
@@ -1313,8 +1813,10 @@ At minimum, add tests or simulations for:
 - same `message_id`, same `sample_id` and different frame classified as `DUPLICATE_CONFLICT`;
 - same `message_id` and different `sample_id` classified as `MESSAGE_ID_CONFLICT`;
 - conflict classifications retain canonical rows and profile evidence without creating a persistence-owned diagnostic;
-- same `sample_id` in distinct current/backlog transport messages with matching contents;
-- same `sample_id` in distinct transport messages with conflicting contents;
+- same `sample_id` in distinct current/backlog transport messages with matching
+  contents classified as `DUPLICATE_SAME_CONTENT`;
+- same `sample_id` in distinct transport messages with conflicting contents
+  classified as `DUPLICATE_CONFLICT`;
 - deterministic ACK reconstruction from the same uplink and outcome without cached receiver history;
 - nonce construction from `node_id || message_id || domain`, never `sample_id`;
 - unauthenticated packet;
@@ -1331,6 +1833,15 @@ At minimum, add tests or simulations for:
 - BUSY timeout;
 - unexpected IRQ combination;
 - TxDone missing or delayed;
+- radio diagnostics reject undefined domain/code/context combinations and use
+  the exact fixed context encoding in `INTERFACE_DIAGNOSTIC.md`;
+- a radio anomaly handled without `RECOVERING` constructs exactly one direct
+  diagnostic and attempts admission at most once;
+- soft-recovery success, soft-failure/hard-success and recovery exhaustion each
+  finalize exactly one diagnostic, retain the original operation/error code and
+  record the last recovery-stage failure without per-stage diagnostic rows;
+- a packet/profile publication remains successful when the subsequent
+  best-effort radio-diagnostic admission fails;
 - SQLite startup enforces WAL and `synchronous=FULL`, including failure to establish either setting;
 - migration filename/digest history, `application_id`, `user_version` and generated enum catalogues are validated before admission;
 - a newer, gapped or otherwise incompatible schema publishes `UNAVAILABLE_INCOMPATIBLE_SCHEMA` without modifying the database;
@@ -1341,9 +1852,18 @@ At minimum, add tests or simulations for:
 - low-space and disk-full failures roll back, retain queue ownership, close admission and recover with bounded backoff;
 - detected database corruption preserves the database, WAL and shared-memory files, closes admission and requires explicit recovery;
 - an item-specific failure must reproduce in isolation before the exact complete unit is durably inserted into `quarantined_entities` and later valid units proceed;
+- an isolated `ClockObservationV1` failure is never quarantined or bypassed,
+  retains the queue head and closes admission as incompatible;
 - `MeasurementProfileUnitV1` is never split during poison isolation or quarantine;
 - an ambiguous quarantine commit is reconciled by matching the complete frozen quarantine row;
 - quarantine failure retains the poisoned entity, publishes persistence unavailability and closes new admission;
+- an ambiguous ordinary batch commit reconciles an exact complete row as a
+  no-op success without resampling health fields or reclassifying a measurement;
+- an absent ordinary durable identity is inserted on retry, while a differing
+  row under the same identity retains the lease and closes admission as
+  incompatible without update or quarantine;
+- every measurement classification is replay-validated against its exact
+  canonical transport/reading effects, including impossible partial ownership;
 - no automatic retention deletion during active pilot collection and low-water admission closure before exhaustion;
 - receiver-process restart within one Linux boot and documented state loss;
 - automatic receiver-process restart within one Linux boot creates a new `receiver_instance_id` without repeating RTC-to-system-clock bootstrap;
@@ -1356,9 +1876,11 @@ At minimum, add tests or simulations for:
 - an unknown clean-stop commit outcome is reconciled by repeating the exact request;
 - controlled-shutdown queue-drain, airtime-state or marker-commit failure exits without a clean-stop marker and leaves conservative recovery state;
 - periodic `ReceiverHealthRequest` enrichment with distinct communicator and persistence sampling times;
-- equal FIFO treatment of health, diagnostic, profiling and measurement units;
+- equal FIFO treatment of clock observations, health, diagnostic, profiling
+  and measurement units;
 - health-request capacity consumption causing a later measurement/profile reservation to fail without eviction or reordering;
-- timestamp fields missing on partial/error paths;
+- monotonic timestamp fields missing on partial/error paths and analysis
+  returning no UTC without a qualifying clock observation;
 - unknown airtime history becomes known-empty only after a complete guarded no-TX aging interval, and a process restart restarts that interval;
 - missing and corrupt communicator-state rows produce conservative generation zero;
 - every observed invalid communicator-state row is preserved and generation-one replacement commits atomically;
@@ -1370,7 +1892,49 @@ At minimum, add tests or simulations for:
 - current `NETWORK_SYNCED` time with a missing RTC;
 - valid offline `RTC_HOLDOVER` without waiting for network availability, and rejected stale, invalid or unproven RTC values;
 - network-to-RTC write, read-back and durable-provenance crash boundaries;
-- NTP forward and backward corrections do not expire monotonic airtime early;
+- chronyd has no automatic step path, no competing RTC writer and no competing
+  system time service;
+- deployment verification confirms the 3,500 ppm chrony slew ceiling, and the
+  receiver rejects inconsistent declared-ceiling/rate-bound constants;
+- target-Pi testing compares disciplined `CLOCK_MONOTONIC` with an independent
+  elapsed-time reference during maximum positive and negative slew and
+  validates the 3,700 ppm receiver bound;
+- network error at and below 35 seconds can enter trust, the 35-to-40-second
+  hysteresis band retains current quality, and total error above 40 seconds
+  follows the ordered untrusted-step path;
+- RTC holdover becomes or remains trusted only while its conservative
+  age/drift/bootstrap uncertainty stays within the 40-second pilot ceiling;
+- remaining correction, root distance and sampling margin use checked,
+  conservative arithmetic, and an invalid, stale or unreliable chrony source
+  cannot establish trust or authorize a step;
+- explicit chrony-step success, definite rejection, unknown outcome, stability
+  polling, bounded backoff and receiver restart during every state;
+- no explicit step before the exact `UNTRUSTED` clock-boundary observation is
+  durably committed and exposed by the persistence commit snapshot, and no
+  ordinary post-boundary queue admission overtakes a pending boundary;
+- trusted `adjtimex()` observation sampling accepts only a stable generation,
+  bounded monotonic bracket and acceptable kernel metadata, while the expected
+  no-`rtcsync` `STA_UNSYNC`/`TIME_ERROR` pair does not reject a chrony-confirmed
+  network sample;
+- quality ABA during observation sampling is rejected;
+- periodic and transition `ClockObservationV1` persistence, including a
+  receiver-process restart in the same Linux boot;
+- deterministic preceding- and later-observation UTC correlation, absence when
+  no trusted observation exists, rejection across Linux boots, no event-row
+  mutation and permanent non-assignment inside a step-discontinuity gap;
+- a pre-boundary untrusted event is never correlated from a post-step trusted
+  observation across the discontinuity;
+- step success, rejection, unknown outcome and process restart all keep the
+  half-open interval from the durable step boundary to the first later trusted
+  observation permanently without derived UTC;
+- the 3,700 ppm elapsed-rate conversions lengthen minimum waits and shorten
+  maximum lifetimes with checked integer rounding, including 3,613.32 seconds
+  of monotonic retention for a one-hour physical rolling window and 29.889
+  seconds for a 30-second maximum lifetime;
+- bounded chrony slewing preserves same-boot UTC correlation; an explicit
+  forward or backward step creates the required gap and correlation resumes
+  only at the first later trusted observation; neither expires rolling airtime
+  early;
 - rolling-window bucket boundaries, long idle intervals and cached-total reconstruction;
 - active reservation opening, spending, exact settlement and unused reclamation;
 - definite pre-`SetTx` failure versus started or uncertain `SetTx` charging;
@@ -1378,5 +1942,13 @@ At minimum, add tests or simulations for:
 - repeated crashes accumulate unresolved reservations;
 - expired old reservations and inability to open a new reservation;
 - persistence failure or unknown settlement outcome suppresses TX without undoing acceptance;
-- untrusted UTC delays canonical and logical timestamps;
-- direct and extrapolated timestamp reconstruction, chain breaks and immutability.
+- untrusted time causes analysis to return no UTC until a later eligible
+  same-boot observation permits backward correlation, except across a step gap;
+- direct anchoring rejects authenticated-but-unadmitted current occurrences,
+  chooses the earliest anchor-eligible accepted occurrence and ignores a later
+  eligible retransmission for that sample;
+- direct anchoring accepts the largest representable `run_ms` for which
+  `run_ms + Tair <= 30,000 ms` and rejects the next `run_ms` value without
+  changing the stored occurrence;
+- direct and extrapolated timestamp reconstruction, chain breaks, immutable
+  analysis output and no mutation of receiver event rows.

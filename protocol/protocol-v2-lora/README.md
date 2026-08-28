@@ -672,8 +672,17 @@ occurs before deep sleep and outside the 30-second radio-cycle deadline.
 The receiver attempts to record every packet occurrence delivered by the
 radio. The pilot persistence queue has no priority classes: packet-occurrence
 profiles, application candidates and all other published queue objects have
-equal importance and FIFO treatment. The reception timestamps are captured at
-`RX_DONE`, rather than when the record is written.
+equal importance and FIFO treatment. The reception event is captured as Linux
+monotonic time at `RX_DONE`, rather than when the record is written. Canonical
+UTC is derived later from the receiver's same-Linux-boot clock-observation
+timeline. The receiver's bounded slew disciplines system UTC and its monotonic
+source together, so a slew does not invalidate that correlation; intentional
+steps require the exact `STEP_DISCONTINUITY_BOUNDARY` observation to be durably
+stored before the chrony step command. Analysis assigns no UTC to events from
+that boundary through, but excluding, the first later trusted observation, and
+never uses that later observation to extrapolate backward across the boundary.
+See
+[`receiver/INTERFACE.md`](../../receiver/INTERFACE.md#clock-observations-and-utc-assignment).
 
 Every queued entity kind has a fixed serialized size. Variable-length protocol
 values use fixed-capacity storage plus an explicit length, and diagnostics use
@@ -701,10 +710,8 @@ Each record contains:
 ```text
 receiver_instance_id
 occurrence_sequence
-received_at_utc
+linux_boot_id
 received_at_monotonic_us
-system_time_quality
-rtc_health
 persist_queue_used_bytes_before_admission
 persist_queue_capacity_bytes
 received_frame_length
@@ -733,29 +740,14 @@ t6_set_rx_issued_monotonic_us
 `occurrence_sequence` together identify one logical profiling row.
 `received_at_monotonic_us` is the former `T0` kernel-recorded DIO1 timestamp.
 The queue occupancy and capacity use the same byte-accounting rules as the
-bounded persistence queue and are sampled immediately before admission. UTC is
-null while receiver system time is untrusted; the monotonic timestamp, time
-quality and RTC health are still recorded.
-
-`system_time_quality` is one of:
-
-```text
-NETWORK_SYNCED
-RTC_HOLDOVER
-UNTRUSTED
-```
-
-`rtc_health` is recorded independently and is one of:
-
-```text
-PRESENT
-MISSING
-INVALID
-```
-
-`received_at_utc` is present for `NETWORK_SYNCED` and `RTC_HOLDOVER`, and null
-for `UNTRUSTED`. This permits trusted network time to coexist with a missing or
-invalid RTC without discarding the reception timestamp.
+bounded persistence queue and are sampled immediately before admission.
+`MessageProfilingV1` queues only the Linux-boot-scoped monotonic reception
+time. The stored profiling row remains monotonic-only; analysis derives UTC by
+joining it to the immutable same-boot clock-observation timeline. No UTC or
+source-observation columns are added to or updated in the profiling row.
+Per-occurrence system-time quality and RTC health are not duplicated into this
+record; they remain available from the clock-observation and receiver-health
+timelines.
 
 The clear-header identity fields are untrusted claims unless
 `header_authenticated` is true. `decoded_sample_id` is null unless the frame
@@ -792,21 +784,26 @@ reading uniqueness constraints. `NOT_APPLICABLE` is used when authentication
 or valid reading-body decoding did not complete. `processing_result` remains
 the communicator's pre-ACK decision: an `ACCEPTED` occurrence may later be
 classified as either conflict because acceptance means bounded queue admission,
-not canonical SQLite insertion.
+not canonical SQLite insertion. `RETRANSMISSION` means a later occurrence with
+the same `node_id`, `message_id`, decoded `sample_id` and exact authenticated
+frame. It identifies repetition of one logical transport message without
+claiming why it was repeated. A new `message_id` carrying the same `sample_id`
+and identical reading body is instead `DUPLICATE_SAME_CONTENT`; this includes
+the expected current-to-backlog conversion.
 
 `ack_selected` is either none or one of the four ACK domains. The exact ACK
 frame is constructed before capacity reservation and remains locally owned by
 the communicator until the complete profile is published.
 
-One logical profiling row is inserted once. For a packet that may receive an
-ACK, the communicator constructs the fixed-layout profile and reserves its
-exact size before TX, then fills the preallocated `ack_tx_result` and `T4`
-through `T6` slots after TX, suppression or bounded radio recovery reaches a
-terminal outcome. It freezes and publishes the complete immutable profile
-against that reservation without further allocation or serialization. A packet
-that cannot receive an ACK may instead be returned to RX first and then
-admitted once as a complete profile with `ack_tx_result` set to
-`NOT_APPLICABLE`.
+One logical profiling row is inserted once. Every stored field, including its
+persistence classification, is immutable. For a packet that may receive an ACK, the
+communicator constructs the fixed-layout profile and reserves its exact size
+before TX, then fills the preallocated `ack_tx_result` and `T4` through `T6`
+slots after TX, suppression or bounded radio recovery reaches a terminal
+outcome. It freezes and publishes the complete immutable profile against that
+reservation without further allocation or serialization. A packet that cannot
+receive an ACK may instead be returned to RX first and then admitted once as a
+complete profile with `ack_tx_result` set to `NOT_APPLICABLE`.
 
 `ack_tx_result` independently records what happened after selection:
 
@@ -830,9 +827,10 @@ whether or not transmission succeeds. Separating `processing_result`,
 whose ACK was suppressed by the receiver airtime budget.
 
 A PHY-header, payload-CRC or radio failure may not expose a usable frame or
-identity. The receiver stores it as a separate radio-event record containing
-the UTC and monotonic timestamps, IRQ/error state, and RSSI/SNR when available;
-identity and frame fields are absent.
+identity. The receiver stores it as a profile-only occurrence with monotonic
+time, IRQ/error state and RSSI/SNR when available; identity and frame fields
+are absent. Analysis derives any UTC from the same clock-observation timeline
+without updating the stored profile.
 
 ## Deferred delivery approaches
 
@@ -873,11 +871,35 @@ because the pilot requires only minute-level precision.
 
 ### Direct anchors
 
-The earliest authenticated `CURRENT_READING_UPLINK` reception for a sample is a
-direct receiver-time anchor, whether or not the node received its ACK. Let:
+The earliest anchor-eligible accepted `CURRENT_READING_UPLINK` occurrence for
+a sample supplies its direct receiver-time anchor, whether or not the node
+received its ACK. Accepted means `processing_result = ACCEPTED`: the complete
+measurement/profile unit entered the bounded persistence queue. Authentication
+without queue admission is insufficient. Analysis derives the occurrence UTC
+from its `RX_DONE` monotonic time and the stored same-boot clock-observation
+timeline.
+
+An occurrence is anchor-eligible only when:
+
+- its persistence classification is `FIRST_SEEN`, `RETRANSMISSION` or
+  `DUPLICATE_SAME_CONTENT`, never either conflict;
+- analysis can derive trusted UTC for its `RX_DONE` event without crossing a
+  step-discontinuity gap; and
+- `run_ms + Tair <= 30,000 ms`.
+
+An accepted occurrence that fails the last condition remains durably recorded
+but supplies no direct anchor. Its reading body preserves `run_ms`, so analysis
+can identify the reason without another persistence classification.
+Observation spacing alone does not make it trusted: a network observation
+must meet the receiver's total network-error policy, while RTC holdover must
+meet its separate age-and-drift uncertainty policy. Both pilot policies cap
+trusted receiver-UTC error at 40 seconds. The midpoint estimator below adds
+less than 15 seconds under the 30-second radio-cycle bound, preserving a small
+margin inside the minute-level direct-anchor target. Long extrapolation chains
+remain best-effort as described below. Let:
 
 ```text
-R     = receiver UTC timestamp captured at RX_DONE
+R     = canonical receiver UTC derived for RX_DONE
 Tair  = reading airtime, 102.656 ms
 A     = node application-start time
 ```
@@ -891,9 +913,10 @@ A_max = R - Tair - run_ms
 A_est = midpoint(A_min, A_max)
 ```
 
-The receiver persists `A_est` at second precision and rounds only for
-minute-level presentation. Each authenticated current reading creates an
-independent direct anchor; it is not extrapolated from the previous anchor.
+Analysis may materialize `A_est` at second precision and rounds only for
+minute-level presentation. Each sample uses only its earliest anchor-eligible
+accepted current occurrence; that direct anchor is independent of the previous
+sample's anchor and is not extrapolated from it.
 
 ### Extrapolation
 
@@ -941,14 +964,18 @@ Otherwise the chain stops. A reading with `DEEP_SLEEP_BOOT = 0` may itself be
 timestamped from a newer anchor, but the receiver must not cross from it to its
 predecessor because the intervening reset or power-off duration is unknown.
 
-Once an estimated timestamp is written to non-volatile storage, it is
-immutable. The receiver also stores:
+Once analysis writes an estimated timestamp to non-volatile output, it is
+immutable. The analysis output also stores:
 
 ```text
 timestamp_source    DIRECT or EXTRAPOLATED
 anchor_sample_id    sample that supplied the direct anchor
+clock_observation_receiver_instance_id
+clock_observation_sequence
 ```
 
+The clock-observation identity is the trusted receiver correlation behind the
+direct anchor and is retained by every timestamp extrapolated from that anchor.
 An extrapolation-hop count is not stored. It can be reconstructed from ordered
 sample IDs, packet domains, continuity flags and receiver packet logs.
 `PREVIOUS_CURRENT_ACCEPTED` is node-side evidence that the preceding current

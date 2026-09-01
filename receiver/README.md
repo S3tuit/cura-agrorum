@@ -11,6 +11,9 @@ interfaces, Python package, schema sources, generators, and tests.
   persistence-control interfaces, and the SQLite contract.
 - [`INTERFACE_DIAGNOSTIC.md`](INTERFACE_DIAGNOSTIC.md) defines diagnostic
   catalogues and fixed diagnostic contexts.
+- [`TESTING.md`](TESTING.md) defines the pilot host and Raspberry Pi test
+  suites, their framework, fixtures, safety boundaries, and deferred
+  end-to-end RF coverage.
 
 The protocol contract remains under
 [`../protocol/protocol-v2-lora/`](../protocol/protocol-v2-lora/).

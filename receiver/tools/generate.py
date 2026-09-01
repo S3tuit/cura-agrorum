@@ -8,8 +8,8 @@ multi-table transaction targets, plus canonical binary encodings. This tool
 validates both manifests, appends their generated SQL to the handwritten schema
 source, fingerprints the exact generated ``schema.sql`` bytes, and emits
 ordinary Python ``Enum`` classes, immutable entity or persistence-row classes,
-canonical codecs, row-specific column tuples, pure SQLite parameter binders,
-and the expected database identity constants.
+canonical codecs, row-specific table-name strings and column tuples, pure
+SQLite parameter binders, and the expected database identity constants.
 
 The generated SQL deliberately contains no transaction, ``application_id``
 assignment, or ``database_metadata`` row. Database initialization owns those
@@ -45,7 +45,7 @@ DEFAULT_PYTHON_OUTPUT = (
     RECEIVER_ROOT
     / "cura_receiver"
     / "generated"
-    / "receiver_interface_generated.py"
+    / "receiver_enums_generated.py"
 )
 DEFAULT_ENTITY_PYTHON_OUTPUT = (
     RECEIVER_ROOT
@@ -82,9 +82,6 @@ ENTITY_MODES = {
 }
 FIELD_TYPE_RE = re.compile(r"^bytes(?:\[([1-9][0-9]*)\])?$")
 ENCODING_REFERENCE_RE = re.compile(r"^(struct|array):([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*)$")
-SOURCE_PATH_RE = re.compile(
-    r"^(?:\$derived\.)?[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$"
-)
 PERSISTENCE_MODES = {
     "scalar_foreign_key",
     "scoped_foreign_key",
@@ -885,7 +882,7 @@ def validate_entity_manifest(
         "entity manifest",
     )
     schema_format_version = require_int(
-        data, "schema_format_version", "entity manifest", 3, 3
+        data, "schema_format_version", "entity manifest", 4, 4
     )
     enum_source = data.get("enum_source")
     if enum_source != enum_manifest_filename:
@@ -1024,7 +1021,6 @@ def validate_entity_manifest(
                 enum_by_name,
                 provisional,
                 table_names,
-                allow_sources=mode == "canonical_blob",
             )
             if mode == "canonical_blob":
                 validate_canonical_mapping(
@@ -1115,7 +1111,6 @@ def validate_transaction_mapping(
             enum_by_name,
             entity_manifest,
             table_names,
-            allow_sources=True,
         )
 
 
@@ -1127,8 +1122,6 @@ def validate_row_layout(
     enum_by_name: dict[str, EnumSpec],
     entity_manifest: EntityManifest,
     table_names: set[str],
-    *,
-    allow_sources: bool,
 ) -> None:
     if mode != "transaction_target":
         require_exact_keys(
@@ -1164,7 +1157,6 @@ def validate_row_layout(
             mode,
             enum_by_name,
             entity_manifest,
-            allow_sources=allow_sources,
         )
         assert isinstance(field, dict)
         name = field["name"]
@@ -1291,8 +1283,6 @@ def validate_entity_field(
     mode: str,
     enum_by_name: dict[str, EnumSpec],
     entity_manifest: EntityManifest,
-    *,
-    allow_sources: bool,
 ) -> None:
     if not isinstance(field, dict):
         raise ManifestError(f"{context} must be an object")
@@ -1307,14 +1297,11 @@ def validate_entity_field(
         "maximum_length",
         "array_axes",
         "column_pattern",
-        "source",
         "constant",
         "derived",
         "encoding",
     }
     required = {"name", "type"}
-    if mode == "transaction_target":
-        required.add("source")
     require_allowed_keys(field, allowed, required, context)
     require_sql_identifier(field, "name", context)
     type_name = field.get("type")
@@ -1383,10 +1370,10 @@ def validate_entity_field(
             f"{context} canonical mapping keys require canonical_blob mode"
         )
     if mode == "canonical_blob":
-        strategies = {"source", "constant", "derived", "encoding"} & set(field)
-        if len(strategies) != 1:
+        strategies = {"constant", "derived", "encoding"} & set(field)
+        if len(strategies) > 1:
             raise ManifestError(
-                f"{context} must have exactly one canonical mapping strategy"
+                f"{context} has multiple canonical mapping strategies"
             )
         if "constant" in field:
             value = field["constant"]
@@ -1437,15 +1424,6 @@ def validate_entity_field(
                     f"{context}.column_pattern must contain {{{axis_name}}}"
                 )
 
-    if "source" in field:
-        if not allow_sources:
-            raise ManifestError(
-                f"{context}.source is valid only on transaction targets or canonical blobs"
-            )
-        source = field["source"]
-        if not isinstance(source, str) or SOURCE_PATH_RE.fullmatch(source) is None:
-            raise ManifestError(f"{context}.source is not a supported source path")
-
 
 def validate_canonical_mapping(
     entity: dict[str, Any],
@@ -1467,18 +1445,19 @@ def validate_canonical_mapping(
 
     hash_fields: list[dict[str, Any]] = []
     for field in fields:
-        if "source" in field:
-            source = field["source"]
-            if source not in logical_names:
+        strategies = {"constant", "derived", "encoding"} & set(field)
+        if not strategies:
+            name = field["name"]
+            if name not in logical_names:
                 raise ManifestError(
-                    f"{context} source {source} is not a logical field of "
+                    f"{context} SQL field {name} is not a logical field of "
                     f"{encoding['name']}"
                 )
-            encoding_field = encoding_fields[source]
+            encoding_field = encoding_fields[name]
             if field["type"] != encoding_field["type"]:
                 raise ManifestError(
-                    f"{context} SQL field {field['name']} and encoding source "
-                    f"{source} must have the same type"
+                    f"{context} SQL field {name} and its encoding field must "
+                    "have the same type"
                 )
         if "constant" in field:
             encoded_constant = encoding_fields.get(field["name"])
@@ -1980,7 +1959,11 @@ def generate_entity_python(
         + struct_class_names
         + [entity["python_name"] for entity in canonical_entities]
     )
-    column_constant_names = [row["name"] + "_COLUMNS" for row in rows]
+    layout_constant_names = [
+        name
+        for row in rows
+        for name in (row["name"] + "_TABLE", row["name"] + "_COLUMNS")
+    ]
     binder_names = [snake_case(row["python_name"]) + "_parameters" for row in rows]
     codec_names = [
         name
@@ -2006,7 +1989,7 @@ def generate_entity_python(
         ]
     )
     if imported_python_enums:
-        lines.append("from .receiver_interface_generated import (")
+        lines.append("from .receiver_enums_generated import (")
         lines.extend(f"    {name}," for name in imported_python_enums)
         lines.extend([")", ""])
     lines.extend(
@@ -2017,7 +2000,7 @@ def generate_entity_python(
             '    "RECEIVER_ENTITY_MANIFEST_SHA256",',
         ]
     )
-    lines.extend(f'    "{name}",' for name in column_constant_names)
+    lines.extend(f'    "{name}",' for name in layout_constant_names)
     lines.extend(f'    "{name}",' for name in class_names)
     lines.extend(f'    "{name}",' for name in codec_names)
     lines.extend(f'    "{name}",' for name in binder_names)
@@ -2025,8 +2008,11 @@ def generate_entity_python(
 
     for row in rows:
         emitted_fields = sqlite_bound_fields(row, entity_manifest)
+        table_constant_name = row["name"] + "_TABLE"
         column_constant_name = row["name"] + "_COLUMNS"
         columns = tuple(column for _, column, _ in emitted_fields)
+        lines.append(f"{table_constant_name} = {row['table']!r}")
+        lines.append("")
         lines.append(f"{column_constant_name} = (")
         lines.extend(f"    {column!r}," for column in columns)
         lines.extend([")", ""])
@@ -2624,14 +2610,14 @@ def render_canonical_binder(entity: dict[str, Any]) -> list[str]:
     for field in entity["fields"]:
         if "constant" in field:
             expression = repr(field["constant"])
-        elif "source" in field:
-            expression = f"entity.{field['source']}"
-            expression = sqlite_binding_expression(expression, field)
         elif "encoding" in field:
             expression = field["name"]
-        else:
+        elif "derived" in field:
             source_name = field["derived"]["sha256"]
             expression = f"hashlib.sha256({source_name}).digest()"
+        else:
+            expression = f"entity.{field['name']}"
+            expression = sqlite_binding_expression(expression, field)
         lines.append(f"        {expression},")
     lines.extend(["    )", ""])
     return lines

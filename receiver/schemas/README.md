@@ -61,8 +61,9 @@ not become Python constructor arguments. The supported derived operations are
 `{"length": "<array_field>"}`. A nullable fixed structure identifies both its
 mask and bit through `presence_bit`; an absent structure occupies its fixed
 all-zero representation. The communicator-state SQL fields additionally use
-`constant`, `encoding`, `source`, and `derived.sha256` to produce the singleton
-row without duplicating the binary layout.
+`constant`, `encoding`, and `derived.sha256` to produce the singleton row
+without duplicating the binary layout. A field without one of those strategies
+maps to the same-named logical encoding field.
 
 Generated binders perform projection only. They preserve `None` as SQL `NULL`,
 extract `.value` only for fields declared as enums, and expand arrays in the
@@ -94,11 +95,9 @@ For a field, omitted `column` means that the SQL column has the field's name,
 and omitted `nullable` means `false`. `enum:<NAME>` refers to an assignment in
 `receiver_enums.json`; optional `minimum`, `maximum`, `minimum_length`, and
 `maximum_length` values are structural bounds. Primary- and foreign-key lists
-use SQL column names.
-
-`source` paths beginning with `$derived` name values that handwritten code must
-provide after validated protocol decoding or persistence classification. They
-are declarative provenance, not executable policy.
+use SQL column names. Persistence-row field names identify the values that
+handwritten code must provide after validated protocol decoding or persistence
+classification.
 
 Receiver lifecycle completion and preservation of malformed communicator state
 remain outside this manifest revision.

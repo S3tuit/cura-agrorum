@@ -2718,7 +2718,7 @@ exact schema.sql bytes
 binding, schema-assembly and fingerprint generation and supports `--check` for
 freshness validation. `schema_source.sql` and both JSON manifests are
 handwritten; `schema.sql`,
-`cura_receiver/generated/receiver_interface_generated.py`, and
+`cura_receiver/generated/receiver_enums_generated.py`, and
 `cura_receiver/generated/receiver_entities_generated.py` are generated and
 must not be edited. Resources are resolved relative to the installed receiver
 package, never the process working directory.
@@ -2819,9 +2819,10 @@ transaction target layouts. It has four current modes:
   encoding into a controlled SQLite row containing the exact blob and its
   SHA-256 digest.
 
-For every generated entity or persistence row, the Python module exposes a
-`<ENTITY_NAME>_COLUMNS` tuple in the exact order consumed by its generated
-`*_parameters()` binder. `ClockObservationV1`, `DiagnosticV1` and
+For every generated entity or persistence row, the Python module exposes an
+`<ENTITY_NAME>_TABLE` string and an `<ENTITY_NAME>_COLUMNS` tuple in the exact
+order consumed by its generated `*_parameters()` binder. `ClockObservationV1`,
+`DiagnosticV1` and
 `ReceiverHealthV1` are the logical objects consumed directly by their binders;
 there is no intermediate SQLite `Row` object. `ReceiverHealthV1` keeps its
 arrays in Python, while binding consumes their exact declared shapes and emits
@@ -2831,9 +2832,9 @@ entity and frozen failure provenance.
 
 The packet transaction uses `MessageProfileRowV1` and `ReadingMessageRowV1`
 targets because their values come from multiple inputs or handwritten derived
-decisions. `$derived` source paths document those inputs but do not execute
-classification. The generator does not declare variants or target-selection
-effects and does not execute a transaction.
+decisions. The generated row fields name the values that handwritten code must
+provide; the generator does not declare variants or target-selection effects
+and does not execute a transaction.
 
 `CommunicatorStateV1`, `RtcProvenanceV1` and `TxAirtimeBucketV1` are generated
 from the named communicator-state

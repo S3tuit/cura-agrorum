@@ -25,7 +25,7 @@ from receiver.cura_receiver.generated import (  # noqa: E402
     receiver_entities_generated as generated_entities,
 )
 from receiver.cura_receiver.generated import (  # noqa: E402
-    receiver_interface_generated as generated,
+    receiver_enums_generated as generated,
 )
 
 
@@ -107,14 +107,25 @@ def test_schema_contains_declared_catalogues_and_entity_tables() -> None:
         if enum_spec["persistence"]["mode"] != "encoded_only"
     }
     expected_entity_tables: set[str] = set()
+    expected_table_constants: dict[str, str] = {}
     for entity in entity_manifest["entities"]:
         persistence = entity["persistence"]
         if persistence["mode"] == "multi_table_transaction":
             expected_entity_tables.update(
                 target["table"] for target in persistence["targets"]
             )
+            expected_table_constants.update(
+                {
+                    target["name"]: target["table"]
+                    for target in persistence["targets"]
+                }
+            )
         else:
             expected_entity_tables.add(persistence["table"])
+            expected_table_constants[entity["name"]] = persistence["table"]
+    for entity_name, table in expected_table_constants.items():
+        assert getattr(generated_entities, entity_name + "_TABLE") == table
+
     connection = open_schema()
     actual_tables = {
         row[0]

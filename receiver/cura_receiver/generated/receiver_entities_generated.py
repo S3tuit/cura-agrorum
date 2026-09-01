@@ -7,7 +7,7 @@ import struct
 
 from dataclasses import dataclass
 
-from .receiver_interface_generated import (
+from .receiver_enums_generated import (
     AckSelection,
     AckTxResult,
     DiagnosticErrorDomain,
@@ -23,16 +23,23 @@ from .receiver_interface_generated import (
     SystemTimeQuality,
 )
 
-RECEIVER_ENTITY_MANIFEST_SHA256 = 'bdb565be616d01384f853e927146a4d131097f52772442727d3c7c1cacdb71ce'
+RECEIVER_ENTITY_MANIFEST_SHA256 = '66a0507e495fab9ef737fadffa39e18ae059a07492d5a3dde9809423fdb64189'
 
 __all__ = [
     "RECEIVER_ENTITY_MANIFEST_SHA256",
+    "CLOCK_OBSERVATION_V1_TABLE",
     "CLOCK_OBSERVATION_V1_COLUMNS",
+    "DIAGNOSTIC_V1_TABLE",
     "DIAGNOSTIC_V1_COLUMNS",
+    "QUARANTINED_ENTITY_ROW_V1_TABLE",
     "QUARANTINED_ENTITY_ROW_V1_COLUMNS",
+    "RECEIVER_HEALTH_V1_TABLE",
     "RECEIVER_HEALTH_V1_COLUMNS",
+    "MESSAGE_PROFILE_ROW_V1_TABLE",
     "MESSAGE_PROFILE_ROW_V1_COLUMNS",
+    "READING_MESSAGE_ROW_V1_TABLE",
     "READING_MESSAGE_ROW_V1_COLUMNS",
+    "COMMUNICATOR_STATE_V1_TABLE",
     "COMMUNICATOR_STATE_V1_COLUMNS",
     "ClockObservationV1",
     "DiagnosticV1",
@@ -54,6 +61,8 @@ __all__ = [
     "communicator_state_v1_parameters",
 ]
 
+CLOCK_OBSERVATION_V1_TABLE = 'clock_observations'
+
 CLOCK_OBSERVATION_V1_COLUMNS = (
     'receiver_instance_id',
     'observation_sequence',
@@ -64,6 +73,8 @@ CLOCK_OBSERVATION_V1_COLUMNS = (
     'system_time_quality_id',
     'rtc_health_id',
 )
+
+DIAGNOSTIC_V1_TABLE = 'diagnostics'
 
 DIAGNOSTIC_V1_COLUMNS = (
     'receiver_instance_id',
@@ -77,6 +88,8 @@ DIAGNOSTIC_V1_COLUMNS = (
     'context_length',
     'context',
 )
+
+QUARANTINED_ENTITY_ROW_V1_TABLE = 'quarantined_entities'
 
 QUARANTINED_ENTITY_ROW_V1_COLUMNS = (
     'quarantine_id',
@@ -94,6 +107,8 @@ QUARANTINED_ENTITY_ROW_V1_COLUMNS = (
     'os_errno',
     'isolation_attempt_count',
 )
+
+RECEIVER_HEALTH_V1_TABLE = 'receiver_health'
 
 RECEIVER_HEALTH_V1_COLUMNS = (
     'receiver_instance_id',
@@ -172,6 +187,8 @@ RECEIVER_HEALTH_V1_COLUMNS = (
     'ntp_offset_us',
 )
 
+MESSAGE_PROFILE_ROW_V1_TABLE = 'message_profiles'
+
 MESSAGE_PROFILE_ROW_V1_COLUMNS = (
     'receiver_instance_id',
     'occurrence_sequence',
@@ -208,6 +225,8 @@ MESSAGE_PROFILE_ROW_V1_COLUMNS = (
     'persistence_classification_id',
 )
 
+READING_MESSAGE_ROW_V1_TABLE = 'reading_messages'
+
 READING_MESSAGE_ROW_V1_COLUMNS = (
     'node_id',
     'message_id',
@@ -232,6 +251,8 @@ READING_MESSAGE_ROW_V1_COLUMNS = (
     'first_receiver_instance_id',
     'first_occurrence_sequence',
 )
+
+COMMUNICATOR_STATE_V1_TABLE = 'communicator_state'
 
 COMMUNICATOR_STATE_V1_COLUMNS = (
     'singleton_id',

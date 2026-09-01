@@ -1,5 +1,5 @@
 {
-  "schema_format_version": 3,
+  "schema_format_version": 4,
   "enum_source": "receiver_enums.json",
   "array_axes": [
     {
@@ -742,191 +742,158 @@
             "fields": [
               {
                 "name": "receiver_instance_id",
-                "type": "bytes[16]",
-                "source": "profile.receiver_instance_id"
+                "type": "bytes[16]"
               },
               {
                 "name": "occurrence_sequence",
-                "type": "u64",
-                "source": "profile.occurrence_sequence"
+                "type": "u64"
               },
               {
                 "name": "received_at_monotonic_us",
-                "type": "u64",
-                "source": "profile.received_at_monotonic_us"
+                "type": "u64"
               },
               {
                 "name": "persist_queue_used_bytes_before_admission",
-                "type": "u64",
-                "source": "profile.persist_queue_used_bytes_before_admission"
+                "type": "u64"
               },
               {
                 "name": "persist_queue_capacity_bytes",
-                "type": "u64",
-                "source": "profile.persist_queue_capacity_bytes"
+                "type": "u64"
               },
               {
                 "name": "received_frame_length",
                 "type": "u16",
                 "maximum": 255,
-                "nullable": true,
-                "source": "profile.received_frame_length"
+                "nullable": true
               },
               {
                 "name": "received_frame",
                 "type": "bytes[255]",
-                "nullable": true,
-                "source": "profile.received_frame"
+                "nullable": true
               },
               {
                 "name": "claimed_control",
                 "type": "u8",
-                "nullable": true,
-                "source": "profile.claimed_control"
+                "nullable": true
               },
               {
                 "name": "claimed_domain",
                 "type": "u8",
-                "nullable": true,
-                "source": "profile.claimed_domain"
+                "nullable": true
               },
               {
                 "name": "claimed_node_id",
                 "type": "bytes[8]",
-                "nullable": true,
-                "source": "profile.claimed_node_id"
+                "nullable": true
               },
               {
                 "name": "claimed_message_id",
                 "type": "u32",
-                "nullable": true,
-                "source": "profile.claimed_message_id"
+                "nullable": true
               },
               {
                 "name": "header_authenticated",
-                "type": "bool8",
-                "source": "profile.header_authenticated"
+                "type": "bool8"
               },
               {
                 "name": "decoded_sample_id",
                 "type": "u32",
-                "nullable": true,
-                "source": "profile.decoded_sample_id"
+                "nullable": true
               },
               {
                 "name": "rssi_dbm_x2",
                 "type": "i16",
-                "nullable": true,
-                "source": "profile.rssi_dbm_x2"
+                "nullable": true
               },
               {
                 "name": "snr_db_x4",
                 "type": "i16",
-                "nullable": true,
-                "source": "profile.snr_db_x4"
+                "nullable": true
               },
               {
                 "name": "irq_status",
                 "type": "u16",
-                "nullable": true,
-                "source": "profile.irq_status"
+                "nullable": true
               },
               {
                 "name": "device_errors",
                 "type": "u16",
-                "nullable": true,
-                "source": "profile.device_errors"
+                "nullable": true
               },
               {
                 "name": "processing_result",
                 "type": "enum:PROCESSING_RESULT",
-                "column": "processing_result_id",
-                "source": "profile.processing_result"
+                "column": "processing_result_id"
               },
               {
                 "name": "ack_selected",
                 "type": "enum:ACK_SELECTION",
-                "column": "ack_selected_id",
-                "source": "profile.ack_selected"
+                "column": "ack_selected_id"
               },
               {
                 "name": "ack_tx_result",
                 "type": "enum:ACK_TX_RESULT",
-                "column": "ack_tx_result_id",
-                "source": "profile.ack_tx_result"
+                "column": "ack_tx_result_id"
               },
               {
                 "name": "ack_frame",
                 "type": "bytes[23]",
-                "nullable": true,
-                "source": "profile.ack_frame"
+                "nullable": true
               },
               {
                 "name": "busy_wait_total_us",
-                "type": "u64",
-                "source": "profile.busy_wait_total_us"
+                "type": "u64"
               },
               {
                 "name": "busy_wait_max_us",
-                "type": "u64",
-                "source": "profile.busy_wait_max_us"
+                "type": "u64"
               },
               {
                 "name": "busy_wait_count",
-                "type": "u32",
-                "source": "profile.busy_wait_count"
+                "type": "u32"
               },
               {
                 "name": "busy_timeout_count",
-                "type": "u32",
-                "source": "profile.busy_timeout_count"
+                "type": "u32"
               },
               {
                 "name": "last_busy_timeout_opcode",
                 "type": "u8",
-                "nullable": true,
-                "source": "profile.last_busy_timeout_opcode"
+                "nullable": true
               },
               {
                 "name": "t1_handler_started_monotonic_us",
-                "type": "u64",
-                "source": "profile.t1_handler_started_monotonic_us"
+                "type": "u64"
               },
               {
                 "name": "t2_packet_copied_monotonic_us",
                 "type": "u64",
-                "nullable": true,
-                "source": "profile.t2_packet_copied_monotonic_us"
+                "nullable": true
               },
               {
                 "name": "t3_authentication_completed_monotonic_us",
                 "type": "u64",
-                "nullable": true,
-                "source": "profile.t3_authentication_completed_monotonic_us"
+                "nullable": true
               },
               {
                 "name": "t4_set_tx_attempted_monotonic_us",
                 "type": "u64",
-                "nullable": true,
-                "source": "profile.t4_set_tx_attempted_monotonic_us"
+                "nullable": true
               },
               {
                 "name": "t5_tx_done_monotonic_us",
                 "type": "u64",
-                "nullable": true,
-                "source": "profile.t5_tx_done_monotonic_us"
+                "nullable": true
               },
               {
                 "name": "t6_set_rx_issued_monotonic_us",
                 "type": "u64",
-                "nullable": true,
-                "source": "profile.t6_set_rx_issued_monotonic_us"
+                "nullable": true
               },
               {
                 "name": "persistence_classification",
                 "type": "enum:PERSISTENCE_CLASSIFICATION",
-                "column": "persistence_classification_id",
-                "source": "$derived.persistence_classification"
+                "column": "persistence_classification_id"
               }
             ],
             "foreign_keys": [
@@ -975,87 +942,72 @@
             "primary_key": ["node_id", "message_id"],
             "without_rowid": true,
             "fields": [
-              {"name": "node_id", "type": "bytes[8]", "source": "candidate.node_id"},
-              {"name": "message_id", "type": "u32", "source": "candidate.message_id"},
-              {"name": "sample_id", "type": "u32", "source": "candidate.sample_id"},
+              {"name": "node_id", "type": "bytes[8]"},
+              {"name": "message_id", "type": "u32"},
+              {"name": "sample_id", "type": "u32"},
               {
                 "name": "reading_body",
-                "type": "bytes[32]",
-                "source": "candidate.reading_body"
+                "type": "bytes[32]"
               },
               {
                 "name": "is_canonical_for_sample",
-                "type": "bool8",
-                "source": "$derived.is_canonical_for_sample"
+                "type": "bool8"
               },
-              {"name": "run_ms", "type": "u16", "source": "$derived.reading.run_ms"},
-              {"name": "soil_0_mv", "type": "u16", "source": "$derived.reading.soil_0_mv"},
-              {"name": "soil_1_mv", "type": "u16", "source": "$derived.reading.soil_1_mv"},
+              {"name": "run_ms", "type": "u16"},
+              {"name": "soil_0_mv", "type": "u16"},
+              {"name": "soil_1_mv", "type": "u16"},
               {
                 "name": "soil_temp_0_centi_c",
-                "type": "i16",
-                "source": "$derived.reading.soil_temp_0_centi_c"
+                "type": "i16"
               },
               {
                 "name": "soil_temp_1_centi_c",
-                "type": "i16",
-                "source": "$derived.reading.soil_temp_1_centi_c"
+                "type": "i16"
               },
               {
                 "name": "enclosure_centi_c",
-                "type": "i16",
-                "source": "$derived.reading.enclosure_centi_c"
+                "type": "i16"
               },
               {
                 "name": "enclosure_pressure_pa",
-                "type": "u32",
-                "source": "$derived.reading.enclosure_pressure_pa"
+                "type": "u32"
               },
               {
                 "name": "enclosure_humidity_centi_pct",
-                "type": "u16",
-                "source": "$derived.reading.enclosure_humidity_centi_pct"
+                "type": "u16"
               },
               {
                 "name": "reset_reason",
-                "type": "u8",
-                "source": "$derived.reading.reset_reason"
+                "type": "u8"
               },
               {
                 "name": "previous_current_tx_attempts",
-                "type": "u8",
-                "source": "$derived.reading.previous_current_tx_attempts"
+                "type": "u8"
               },
               {
                 "name": "previous_awake_ms",
-                "type": "u16",
-                "source": "$derived.reading.previous_awake_ms"
+                "type": "u16"
               },
               {
                 "name": "previous_current_delivery_ms",
-                "type": "u16",
-                "source": "$derived.reading.previous_current_delivery_ms"
+                "type": "u16"
               },
               {
                 "name": "previous_cycle_tx_attempts",
-                "type": "u8",
-                "source": "$derived.reading.previous_cycle_tx_attempts"
+                "type": "u8"
               },
               {
                 "name": "previous_cycle_accepted_readings",
-                "type": "u8",
-                "source": "$derived.reading.previous_cycle_accepted_readings"
+                "type": "u8"
               },
-              {"name": "flags", "type": "u16", "source": "$derived.reading.flags"},
+              {"name": "flags", "type": "u16"},
               {
                 "name": "first_receiver_instance_id",
-                "type": "bytes[16]",
-                "source": "profile.receiver_instance_id"
+                "type": "bytes[16]"
               },
               {
                 "name": "first_occurrence_sequence",
-                "type": "u64",
-                "source": "profile.occurrence_sequence"
+                "type": "u64"
               }
             ],
             "indexes": [
@@ -1114,8 +1066,7 @@
         {
           "name": "generation",
           "type": "u64",
-          "minimum": 1,
-          "source": "generation"
+          "minimum": 1
         },
         {
           "name": "state_blob",

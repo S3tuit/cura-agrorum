@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import stat
 import subprocess
 import sys
@@ -58,7 +59,7 @@ def _run_tool(
 def _initialize(
     repo_root: Path, recv_dir: Path
 ) -> subprocess.CompletedProcess[str]:
-    recv_dir.mkdir()
+    recv_dir.mkdir(mode=0o700)
     result = _run_tool(
         repo_root,
         "init_receiver_group.py",
@@ -353,6 +354,115 @@ def test_unsafe_receiver_group_permissions_are_rejected(
     assert "accessible by group or others" in result.stderr
     assert state_path.read_bytes() == original
     assert not (node_dir / "protocol_v2_lora_identity.h").exists()
+
+
+def test_receiver_group_symlink_is_rejected(
+    repo_root: Path, tmp_path: Path
+) -> None:
+    recv_dir = tmp_path / "receiver"
+    node_dir = tmp_path / "node"
+    node_dir.mkdir()
+    _initialize(repo_root, recv_dir)
+    state_path = recv_dir / "receiver-group.json"
+    target_path = recv_dir / "receiver-group-target.json"
+    state_path.rename(target_path)
+    state_path.symlink_to(target_path.name)
+
+    result = _provision(repo_root, recv_dir, node_dir)
+
+    assert result.returncode == 2
+    assert "not a regular, non-symlink file" in result.stderr
+    assert not (node_dir / "protocol_v2_lora_identity.h").exists()
+
+
+def test_receiver_group_parent_symlink_is_rejected(
+    repo_root: Path,
+    tmp_path: Path,
+    provisioning: ModuleType,
+) -> None:
+    recv_dir = tmp_path / "receiver"
+    _initialize(repo_root, recv_dir)
+    linked_dir = tmp_path / "linked-receiver"
+    linked_dir.symlink_to(recv_dir, target_is_directory=True)
+
+    with pytest.raises(
+        provisioning.ProvisioningError,
+        match="parent is unavailable, not a directory, or a symlink",
+    ):
+        provisioning.load_receiver_group(
+            linked_dir / "receiver-group.json"
+        )
+
+
+def test_receiver_group_wrong_owner_is_rejected(
+    repo_root: Path,
+    tmp_path: Path,
+    provisioning: ModuleType,
+) -> None:
+    recv_dir = tmp_path / "receiver"
+    _initialize(repo_root, recv_dir)
+    unexpected_uid = os.geteuid() + 1
+
+    with pytest.raises(
+        provisioning.ProvisioningError,
+        match=f"owner does not match expected UID {unexpected_uid}",
+    ):
+        provisioning.load_receiver_group(
+            recv_dir / "receiver-group.json",
+            expected_owner_uid=unexpected_uid,
+        )
+
+
+def test_receiver_group_unsafe_parent_permissions_are_rejected(
+    repo_root: Path,
+    tmp_path: Path,
+    provisioning: ModuleType,
+) -> None:
+    recv_dir = tmp_path / "receiver"
+    _initialize(repo_root, recv_dir)
+    recv_dir.chmod(0o777)
+
+    with pytest.raises(
+        provisioning.ProvisioningError,
+        match="parent is writable by an untrusted user",
+    ):
+        provisioning.load_receiver_group(
+            recv_dir / "receiver-group.json"
+        )
+
+
+def test_receiver_group_is_read_from_validated_descriptor(
+    repo_root: Path,
+    tmp_path: Path,
+    provisioning: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recv_dir = tmp_path / "receiver"
+    _initialize(repo_root, recv_dir)
+    state_path = recv_dir / "receiver-group.json"
+    original_state = provisioning.load_receiver_group(state_path)
+    replacement_state = provisioning.generate_receiver_group()
+    replacement_path = recv_dir / "replacement.json"
+    replacement_path.write_text(
+        provisioning.render_receiver_group(replacement_state),
+        encoding="utf-8",
+    )
+    replacement_path.chmod(0o600)
+
+    real_fdopen = os.fdopen
+
+    def replace_path_before_read(
+        descriptor: int, *args: object, **kwargs: object
+    ) -> object:
+        os.replace(replacement_path, state_path)
+        return real_fdopen(descriptor, *args, **kwargs)
+
+    monkeypatch.setattr(provisioning.os, "fdopen", replace_path_before_read)
+
+    loaded_state = provisioning.load_receiver_group(state_path)
+
+    assert loaded_state == original_state
+    assert loaded_state != replacement_state
 
 
 def test_unsafe_existing_node_identity_permissions_are_rejected(

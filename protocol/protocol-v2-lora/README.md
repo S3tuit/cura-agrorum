@@ -77,6 +77,19 @@ ID. Both secret files are written with mode `0600`; existing secret files
 accessible by group or others are rejected. The tools print public IDs and
 paths but never keys.
 
+The receiver-group loader also requires the state file to be owned by the
+expected receiver service UID (the effective UID by default). It walks every
+path component without following symlinks, rejects a non-directory or symlink
+parent, and rejects a parent not owned by root, the service account or the
+trusted calling account. A non-sticky parent writable by other users or by a
+group containing any untrusted account is unsafe; group membership that cannot
+be enumerated also fails closed. A trusted-owner sticky directory such as
+`/tmp` retains its normal per-entry replacement protection. The final file is
+opened without following symlinks, then its type, owner and permissions are
+validated and its JSON is read through that same open descriptor. This
+prevents a path replacement between validation and reading from selecting
+different key material.
+
 The receiver runtime treats `receiver-group.json` as operator-controlled,
 read-only configuration distinct from receiver-owned runtime state. Its sole
 disk-owning thread loads the file before radio operation, enforces the same
@@ -710,7 +723,6 @@ Each record contains:
 ```text
 receiver_instance_id
 occurrence_sequence
-linux_boot_id
 received_at_monotonic_us
 persist_queue_used_bytes_before_admission
 persist_queue_capacity_bytes
@@ -741,9 +753,11 @@ t6_set_rx_issued_monotonic_us
 `received_at_monotonic_us` is the former `T0` kernel-recorded DIO1 timestamp.
 The queue occupancy and capacity use the same byte-accounting rules as the
 bounded persistence queue and are sampled immediately before admission.
-`MessageProfilingV1` queues only the Linux-boot-scoped monotonic reception
-time. The stored profiling row remains monotonic-only; analysis derives UTC by
-joining it to the immutable same-boot clock-observation timeline. No UTC or
+`MessageProfilingV1` queues only the receiver-instance-scoped monotonic
+reception time. `receiver_instances` is the sole persisted mapping from
+`receiver_instance_id` to `linux_boot_id`; the stored profiling row does not
+duplicate the boot ID. Analysis resolves that mapping and joins the occurrence
+to the immutable same-boot clock-observation timeline. No UTC or
 source-observation columns are added to or updated in the profiling row.
 Per-occurrence system-time quality and RTC health are not duplicated into this
 record; they remain available from the clock-observation and receiver-health

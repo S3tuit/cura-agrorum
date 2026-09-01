@@ -26,9 +26,10 @@ file freshness, C memory safety, and broader input spaces.
 - `test_generation.py`: runs the generator in `--check` mode and fails when
   committed generated files are stale.
 - `test_provisioning_tools.py`: checks the public HKDF vector, secret-file
-  creation and permissions, malformed state, random-ID collisions, overwrite
-  guards, staged identity replacement, node rotation, and destructive receiver
-  master-key rotation.
+  creation and permissions, no-follow receiver-group loading, owner and parent
+  safety, descriptor-bound validation and reading, malformed state, random-ID
+  collisions, overwrite guards, staged identity replacement, node rotation,
+  and destructive receiver master-key rotation.
 - `test_golden.py`: checks the reviewed header, nonce, reading, and ACK vectors
   against both codecs. The vectors deliberately use different `message_id` and
   `sample_id` values and assert the 14-byte header, 13-byte nonce, 32-byte

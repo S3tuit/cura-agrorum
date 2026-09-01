@@ -1,0 +1,670 @@
+{
+  "schema_format_version": 1,
+  "application_id": 1129665106,
+  "database_schema_version": 6,
+  "enums": [
+    {
+      "name": "SYSTEM_TIME_QUALITY",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "system_time_quality_codes"
+      },
+      "values": [
+        {"name": "UNTRUSTED", "value": 0},
+        {"name": "RTC_HOLDOVER", "value": 1},
+        {"name": "NETWORK_SYNCED", "value": 2}
+      ]
+    },
+    {
+      "name": "RTC_HEALTH",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "rtc_health_codes"
+      },
+      "values": [
+        {"name": "PRESENT", "value": 1},
+        {"name": "MISSING", "value": 2},
+        {"name": "INVALID", "value": 3}
+      ]
+    },
+    {
+      "name": "RADIO_STATE",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "radio_state_codes"
+      },
+      "values": [
+        {"name": "INITIALIZING", "value": 1},
+        {"name": "RX_SINGLE", "value": 2},
+        {"name": "RX_EVENT_PENDING", "value": 3},
+        {"name": "TX_ACTIVE", "value": 4},
+        {"name": "RECOVERING", "value": 5},
+        {"name": "SHUTDOWN", "value": 6},
+        {"name": "INITIALIZATION_FAILED", "value": 7},
+        {"name": "RECOVERY_EXHAUSTED", "value": 8},
+        {"name": "HARDWARE_MISSING", "value": 9}
+      ]
+    },
+    {
+      "name": "RADIO_RECOVERY_REASON",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "BUSY_TIMEOUT", "value": 1},
+        {"name": "SPI_FAILURE", "value": 2},
+        {"name": "UNEXPECTED_IRQ", "value": 3},
+        {"name": "TX_OUTCOME_UNCERTAIN", "value": 4},
+        {"name": "RX_PROFILE_RESTORE_FAILED", "value": 5},
+        {"name": "SET_RX_FAILED", "value": 6},
+        {"name": "STATUS_UNCONFIRMED", "value": 7},
+        {"name": "HARDWARE_UNREACHABLE", "value": 8}
+      ]
+    },
+    {
+      "name": "PERSISTENCE_ADMISSION_STATE",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "persistence_admission_state_codes"
+      },
+      "values": [
+        {"name": "UNAVAILABLE_STARTING", "value": 0},
+        {"name": "AVAILABLE", "value": 1},
+        {"name": "UNAVAILABLE_LOW_SPACE", "value": 2},
+        {"name": "UNAVAILABLE_DISK_FULL", "value": 3},
+        {"name": "UNAVAILABLE_CORRUPT", "value": 4},
+        {"name": "UNAVAILABLE_IO", "value": 5},
+        {"name": "UNAVAILABLE_INCOMPATIBLE_SCHEMA", "value": 6}
+      ]
+    },
+    {
+      "name": "ADMISSION_RESULT",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "RESERVED", "value": 0},
+        {"name": "PERSISTENCE_UNAVAILABLE", "value": 1},
+        {"name": "QUEUE_FULL", "value": 2}
+      ]
+    },
+    {
+      "name": "PERSIST_QUEUE_ENTITY_KIND",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "persist_queue_entity_kind_codes"
+      },
+      "values": [
+        {"name": "MEASUREMENT_PROFILE", "value": 1},
+        {"name": "PROFILE_ONLY", "value": 2},
+        {"name": "RECEIVER_HEALTH_REQUEST", "value": 3},
+        {"name": "DIAGNOSTIC", "value": 4},
+        {"name": "CLOCK_OBSERVATION", "value": 5}
+      ]
+    },
+    {
+      "name": "PROCESSING_RESULT",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "processing_result_codes"
+      },
+      "values": [
+        {"name": "RADIO_ERROR", "value": 1},
+        {"name": "UNKNOWN_NODE", "value": 2},
+        {"name": "AUTHENTICATION_FAILED", "value": 3},
+        {"name": "WRONG_DIRECTION", "value": 4},
+        {"name": "REJECTED_UNSUPPORTED_CONTROL", "value": 5},
+        {"name": "REJECTED_UNSUPPORTED_DOMAIN", "value": 6},
+        {"name": "REJECTED_MALFORMED_LENGTH", "value": 7},
+        {"name": "REJECTED_MALFORMED_BODY", "value": 8},
+        {"name": "RETRY_LATER_QUEUE_FULL", "value": 9},
+        {"name": "RETRY_LATER_PERSISTENCE_UNAVAILABLE", "value": 10},
+        {"name": "ACCEPTED", "value": 11}
+      ]
+    },
+    {
+      "name": "ACK_SELECTION",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "ack_selection_codes"
+      },
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "ACCEPTED", "value": 3},
+        {"name": "RETRY_LATER", "value": 4},
+        {"name": "REJECTED_UNSUPPORTED", "value": 5},
+        {"name": "REJECTED_MALFORMED", "value": 6}
+      ]
+    },
+    {
+      "name": "ACK_TX_RESULT",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "ack_tx_result_codes"
+      },
+      "values": [
+        {"name": "NOT_APPLICABLE", "value": 1},
+        {"name": "SUPPRESSED_AIRTIME_BUDGET", "value": 2},
+        {"name": "SET_TX_FAILED", "value": 3},
+        {"name": "TX_TIMEOUT", "value": 4},
+        {"name": "TX_DONE", "value": 5},
+        {"name": "UNKNOWN_INTERRUPTED", "value": 6}
+      ]
+    },
+    {
+      "name": "PERSISTENCE_CLASSIFICATION",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "persistence_classification_codes"
+      },
+      "values": [
+        {"name": "NOT_APPLICABLE", "value": 0},
+        {"name": "FIRST_SEEN", "value": 1},
+        {"name": "RETRANSMISSION", "value": 2},
+        {"name": "DUPLICATE_SAME_CONTENT", "value": 3},
+        {"name": "DUPLICATE_CONFLICT", "value": 4},
+        {"name": "MESSAGE_ID_CONFLICT", "value": 5}
+      ]
+    },
+    {
+      "name": "QUARANTINE_FAILURE_REASON",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "quarantine_failure_reason_codes"
+      },
+      "values": [
+        {"name": "UNSUPPORTED_ENTITY_SCHEMA", "value": 1},
+        {"name": "ENTITY_DECODING_INVARIANT", "value": 2},
+        {"name": "SQL_BINDING_INVARIANT", "value": 3},
+        {"name": "SQL_RANGE_VIOLATION", "value": 4},
+        {"name": "UNEXPECTED_SQL_CONSTRAINT", "value": 5},
+        {"name": "PERSISTENCE_DERIVATION_INVARIANT", "value": 6}
+      ]
+    },
+    {
+      "name": "DIAGNOSTIC_SEVERITY",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "diagnostic_severity_codes"
+      },
+      "values": [
+        {"name": "WARN", "value": 1},
+        {"name": "ERROR", "value": 2},
+        {"name": "FATAL", "value": 3}
+      ]
+    },
+    {
+      "name": "DIAGNOSTIC_ERROR_DOMAIN",
+      "storage": "u16",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "diagnostic_error_domain_codes"
+      },
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "RADIO", "value": 1},
+        {"name": "TIME", "value": 2},
+        {"name": "PERSISTENCE_CONTROL", "value": 3},
+        {"name": "CORE", "value": 4}
+      ]
+    },
+    {
+      "name": "DIAGNOSTIC_OPERATION",
+      "storage": "u16",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "diagnostic_operation_codes"
+      },
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "INITIALIZE", "value": 1},
+        {"name": "VALIDATE", "value": 2},
+        {"name": "READ", "value": 3},
+        {"name": "WRITE", "value": 4},
+        {"name": "APPEND", "value": 5},
+        {"name": "SYNC", "value": 6},
+        {"name": "RECOVER", "value": 7},
+        {"name": "ENCODE", "value": 8},
+        {"name": "DECODE", "value": 9},
+        {"name": "TRANSMIT", "value": 10},
+        {"name": "RECEIVE", "value": 11},
+        {"name": "CLEANUP", "value": 12}
+      ]
+    },
+    {
+      "name": "RADIO_DIAGNOSTIC_ERROR_CODE",
+      "storage": "u16",
+      "persistence": {
+        "mode": "scoped_foreign_key",
+        "table": "diagnostic_error_codes",
+        "scope_enum": "DIAGNOSTIC_ERROR_DOMAIN",
+        "scope_member": "RADIO",
+        "scope_column": "error_domain_id"
+      },
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "INVALID_ARGUMENT", "value": 1},
+        {"name": "INVALID_STATE", "value": 2},
+        {"name": "IO", "value": 3},
+        {"name": "BUSY_TIMEOUT", "value": 4},
+        {"name": "COMMAND_STATUS", "value": 5},
+        {"name": "DEADLINE", "value": 6},
+        {"name": "UNEXPECTED_IRQ", "value": 7},
+        {"name": "DEVICE_ERROR", "value": 8},
+        {"name": "MALFORMED_RESPONSE", "value": 9}
+      ]
+    },
+    {
+      "name": "RADIO_DIAGNOSTIC_CONTEXT_SCHEMA",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scoped_foreign_key",
+        "table": "diagnostic_context_schemas",
+        "scope_enum": "DIAGNOSTIC_ERROR_DOMAIN",
+        "scope_member": "RADIO",
+        "scope_column": "error_domain_id"
+      },
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "RECEIVER_RADIO_EPISODE_CONTEXT_V1", "value": 1}
+      ]
+    },
+    {
+      "name": "RADIO_BACKEND_STATUS_KIND",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "ERRNO", "value": 1},
+        {"name": "SX1262_DRIVER_STATUS", "value": 2}
+      ]
+    },
+    {
+      "name": "RADIO_FAILURE_STAGE",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "STATE_CHECK", "value": 1},
+        {"name": "VALIDATE_INPUT", "value": 2},
+        {"name": "CONFIGURE_GPIO", "value": 3},
+        {"name": "CONFIGURE_SPI", "value": 4},
+        {"name": "RESET", "value": 5},
+        {"name": "WAKE", "value": 6},
+        {"name": "WAIT_BUSY", "value": 7},
+        {"name": "WRITE_COMMAND", "value": 8},
+        {"name": "READ_COMMAND", "value": 9},
+        {"name": "CONFIGURE_IRQ", "value": 10},
+        {"name": "WAIT_IRQ", "value": 11},
+        {"name": "READ_IRQ", "value": 12},
+        {"name": "CLEAR_IRQ", "value": 13},
+        {"name": "WRITE_BUFFER", "value": 14},
+        {"name": "READ_BUFFER", "value": 15},
+        {"name": "READ_PACKET_STATUS", "value": 16},
+        {"name": "DETACH_IRQ", "value": 17},
+        {"name": "CAPTURE_TIME", "value": 18}
+      ]
+    },
+    {
+      "name": "RADIO_COMMAND_OUTCOME",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "NOT_APPLICABLE", "value": 0},
+        {"name": "DEFINITELY_NOT_APPLIED", "value": 1},
+        {"name": "CONFIRMED_APPLIED", "value": 2},
+        {"name": "UNCERTAIN", "value": 3}
+      ]
+    },
+    {
+      "name": "RADIO_RECOVERY_LEVEL_RESULT",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "NOT_APPLICABLE", "value": 0},
+        {"name": "NOT_ATTEMPTED", "value": 1},
+        {"name": "SUCCEEDED", "value": 2},
+        {"name": "FAILED", "value": 3}
+      ]
+    },
+    {
+      "name": "TIME_DIAGNOSTIC_ERROR_CODE",
+      "storage": "u16",
+      "persistence": {
+        "mode": "scoped_foreign_key",
+        "table": "diagnostic_error_codes",
+        "scope_enum": "DIAGNOSTIC_ERROR_DOMAIN",
+        "scope_member": "TIME",
+        "scope_column": "error_domain_id"
+      },
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "IO", "value": 1},
+        {"name": "DEADLINE", "value": 2},
+        {"name": "INVALID_RESPONSE", "value": 3},
+        {"name": "COMMAND_REJECTED", "value": 4},
+        {"name": "OUTCOME_UNKNOWN", "value": 5},
+        {"name": "CLOCK_INTERFERENCE", "value": 6},
+        {"name": "RTC_READBACK_MISMATCH", "value": 7},
+        {"name": "CALCULATION_RANGE", "value": 8}
+      ]
+    },
+    {
+      "name": "TIME_DIAGNOSTIC_CONTEXT_SCHEMA",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scoped_foreign_key",
+        "table": "diagnostic_context_schemas",
+        "scope_enum": "DIAGNOSTIC_ERROR_DOMAIN",
+        "scope_member": "TIME",
+        "scope_column": "error_domain_id"
+      },
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "RECEIVER_TIME_EPISODE_CONTEXT_V1", "value": 1}
+      ]
+    },
+    {
+      "name": "TIME_COMPONENT",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "CHRONY", "value": 1},
+        {"name": "KERNEL_CLOCK", "value": 2},
+        {"name": "DS3231", "value": 3},
+        {"name": "RTC_WRITE_HELPER", "value": 4},
+        {"name": "TIME_POLICY", "value": 5}
+      ]
+    },
+    {
+      "name": "TIME_FAILURE_STAGE",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "INITIALIZE_ADAPTER", "value": 1},
+        {"name": "QUERY_TRACKING", "value": 2},
+        {"name": "VALIDATE_TRACKING", "value": 3},
+        {"name": "SAMPLE_SYSTEM_CLOCK", "value": 4},
+        {"name": "CALCULATE_ERROR_BOUND", "value": 5},
+        {"name": "PREPARE_STEP", "value": 6},
+        {"name": "SUBMIT_STEP", "value": 7},
+        {"name": "WAIT_STABLE_TIME", "value": 8},
+        {"name": "READ_RTC", "value": 9},
+        {"name": "DERIVE_RTC_WRITE", "value": 10},
+        {"name": "EXECUTE_RTC_HELPER", "value": 11},
+        {"name": "READ_BACK_RTC", "value": 12},
+        {"name": "VERIFY_RTC_READBACK", "value": 13},
+        {"name": "VALIDATE_RTC_PROVENANCE", "value": 14},
+        {"name": "UPDATE_TIME_STATE", "value": 15},
+        {"name": "SCHEDULE_OBSERVATION", "value": 16}
+      ]
+    },
+    {
+      "name": "TIME_BACKEND_STATUS_KIND",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "CHRONY_QUERY_STATUS", "value": 1},
+        {"name": "CHRONY_STEP_DISPOSITION", "value": 2},
+        {"name": "DS3231_READ_STATUS", "value": 3},
+        {"name": "DS3231_WRITE_DISPOSITION", "value": 4},
+        {"name": "DS3231_FAILURE", "value": 5},
+        {"name": "ADJTIMEX_RETURN", "value": 6}
+      ]
+    },
+    {
+      "name": "PERSISTENCE_CONTROL_DIAGNOSTIC_ERROR_CODE",
+      "storage": "u16",
+      "persistence": {
+        "mode": "scoped_foreign_key",
+        "table": "diagnostic_error_codes",
+        "scope_enum": "DIAGNOSTIC_ERROR_DOMAIN",
+        "scope_member": "PERSISTENCE_CONTROL",
+        "scope_column": "error_domain_id"
+      },
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "CONFIGURATION_REJECTED", "value": 1},
+        {"name": "HOST_IDENTITY_REJECTED", "value": 2},
+        {"name": "STATE_MISSING", "value": 3},
+        {"name": "STATE_CORRUPT", "value": 4},
+        {"name": "UNSUPPORTED_STATE_VERSION", "value": 5},
+        {"name": "STATE_POLICY_MISMATCH", "value": 6},
+        {"name": "IO", "value": 7},
+        {"name": "DATABASE", "value": 8},
+        {"name": "DEADLINE", "value": 9},
+        {"name": "CHANNEL_CLOSED", "value": 10}
+      ]
+    },
+    {
+      "name": "PERSISTENCE_CONTROL_DIAGNOSTIC_CONTEXT_SCHEMA",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scoped_foreign_key",
+        "table": "diagnostic_context_schemas",
+        "scope_enum": "DIAGNOSTIC_ERROR_DOMAIN",
+        "scope_member": "PERSISTENCE_CONTROL",
+        "scope_column": "error_domain_id"
+      },
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "RECEIVER_PERSISTENCE_CONTROL_CONTEXT_V1", "value": 1}
+      ]
+    },
+    {
+      "name": "PERSISTENCE_CONTROL_COMMAND",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "LOAD_RECEIVER_CONFIGURATION", "value": 1},
+        {"name": "LOAD_COMMUNICATOR_STATE", "value": 2},
+        {"name": "COMMIT_COMMUNICATOR_STATE", "value": 3},
+        {"name": "COMMIT_RECEIVER_CLEAN_STOP", "value": 4}
+      ]
+    },
+    {
+      "name": "PERSISTENCE_CONTROL_PURPOSE",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "STARTUP_CONFIGURATION", "value": 1},
+        {"name": "STARTUP_STATE", "value": 2},
+        {"name": "AIRTIME_BUCKET_GRANT", "value": 3},
+        {"name": "AIRTIME_BUCKET_SETTLEMENT", "value": 4},
+        {"name": "RTC_PROVENANCE", "value": 5},
+        {"name": "AIRTIME_HISTORY_RECOVERY", "value": 6},
+        {"name": "CLEAN_STOP", "value": 7},
+        {"name": "RECONCILIATION", "value": 8}
+      ]
+    },
+    {
+      "name": "PERSISTENCE_CONTROL_DISPOSITION_KIND",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "COMMUNICATOR_STATE_COMMIT", "value": 1},
+        {"name": "RECEIVER_CLEAN_STOP_COMMIT", "value": 2}
+      ]
+    },
+    {
+      "name": "PERSISTENCE_CONTROL_DISPOSITION",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "NOT_APPLICABLE", "value": 0},
+        {"name": "COMMITTED", "value": 1},
+        {"name": "ALREADY_COMMITTED", "value": 2},
+        {"name": "DEFINITELY_NOT_COMMITTED", "value": 3},
+        {"name": "OUTCOME_UNKNOWN", "value": 4}
+      ]
+    },
+    {
+      "name": "PERSISTENCE_CONTROL_FAILURE_KIND",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "CONFIGURATION_REJECTED", "value": 1},
+        {"name": "HOST_IDENTITY_REJECTED", "value": 2},
+        {"name": "STATE_UNAVAILABLE", "value": 3},
+        {"name": "IO_ERROR", "value": 4},
+        {"name": "DATABASE_ERROR", "value": 5},
+        {"name": "DEADLINE_EXCEEDED", "value": 6},
+        {"name": "CHANNEL_CLOSED", "value": 7}
+      ]
+    },
+    {
+      "name": "PERSISTENCE_CONTROL_STATE_CONDITION",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "MISSING", "value": 1},
+        {"name": "CORRUPT", "value": 2},
+        {"name": "UNSUPPORTED_VERSION", "value": 3},
+        {"name": "POLICY_MISMATCH", "value": 4}
+      ]
+    },
+    {
+      "name": "CORE_DIAGNOSTIC_ERROR_CODE",
+      "storage": "u16",
+      "persistence": {
+        "mode": "scoped_foreign_key",
+        "table": "diagnostic_error_codes",
+        "scope_enum": "DIAGNOSTIC_ERROR_DOMAIN",
+        "scope_member": "CORE",
+        "scope_column": "error_domain_id"
+      },
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "INVALID_ARGUMENT", "value": 1},
+        {"name": "INVALID_STATE", "value": 2},
+        {"name": "REPRESENTATION_INVARIANT", "value": 3},
+        {"name": "PERSIST_QUEUE_CONTRACT", "value": 4},
+        {"name": "PERSISTENCE_CONTROL_CONTRACT", "value": 5},
+        {"name": "MEMORY_EXHAUSTED", "value": 6},
+        {"name": "CODEC_BACKEND", "value": 7},
+        {"name": "CRYPTO_BACKEND", "value": 8},
+        {"name": "ARITHMETIC_RANGE", "value": 9},
+        {"name": "UNEXPECTED_EXCEPTION", "value": 10}
+      ]
+    },
+    {
+      "name": "CORE_DIAGNOSTIC_CONTEXT_SCHEMA",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scoped_foreign_key",
+        "table": "diagnostic_context_schemas",
+        "scope_enum": "DIAGNOSTIC_ERROR_DOMAIN",
+        "scope_member": "CORE",
+        "scope_column": "error_domain_id"
+      },
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "RECEIVER_CORE_FAILURE_CONTEXT_V1", "value": 1}
+      ]
+    },
+    {
+      "name": "CORE_PHASE",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "STARTUP", "value": 1},
+        {"name": "IDLE", "value": 2},
+        {"name": "PACKET_PROCESSING", "value": 3},
+        {"name": "ACK_PREPARATION", "value": 4},
+        {"name": "POST_RESPONSE_FINALIZATION", "value": 5},
+        {"name": "PERIODIC_HEALTH", "value": 6},
+        {"name": "PERIODIC_TIME", "value": 7},
+        {"name": "AIRTIME_STATE", "value": 8},
+        {"name": "CONTROL_OPERATION", "value": 9},
+        {"name": "SHUTDOWN", "value": 10}
+      ]
+    },
+    {
+      "name": "CORE_FAILURE_STAGE",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "VALIDATE_ARGUMENT", "value": 1},
+        {"name": "TRANSITION_STATE", "value": 2},
+        {"name": "DERIVE_KEY", "value": 3},
+        {"name": "AUTHENTICATE_FRAME", "value": 4},
+        {"name": "DECODE_FRAME", "value": 5},
+        {"name": "VALIDATE_MESSAGE", "value": 6},
+        {"name": "CONSTRUCT_ACK", "value": 7},
+        {"name": "ENCRYPT_ACK", "value": 8},
+        {"name": "CONSTRUCT_ENTITY", "value": 9},
+        {"name": "VALIDATE_ENTITY", "value": 10},
+        {"name": "RESERVE_QUEUE", "value": 11},
+        {"name": "PUBLISH_QUEUE", "value": 12},
+        {"name": "CANCEL_QUEUE", "value": 13},
+        {"name": "LOAD_CONFIGURATION", "value": 14},
+        {"name": "LOAD_STATE", "value": 15},
+        {"name": "COMMIT_STATE", "value": 16},
+        {"name": "COMMIT_CLEAN_STOP", "value": 17},
+        {"name": "FINALIZE_EXCEPTION", "value": 18},
+        {"name": "ALLOCATE_MEMORY", "value": 19},
+        {"name": "INVOKE_ADAPTER", "value": 20}
+      ]
+    },
+    {
+      "name": "CORE_DETAIL_KIND",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "PERSIST_QUEUE_VIOLATION", "value": 1},
+        {"name": "PERSISTENCE_CONTROL_VIOLATION", "value": 2}
+      ]
+    },
+    {
+      "name": "PERSIST_QUEUE_VIOLATION_DETAIL_CODE",
+      "storage": "i32",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "INVALID_SPEC", "value": 1},
+        {"name": "PRODUCER_CLOSED", "value": 2},
+        {"name": "INVALID_TOKEN", "value": 3},
+        {"name": "BUFFER_SPEC_MISMATCH", "value": 4},
+        {"name": "USE_AFTER_TRANSFER", "value": 5},
+        {"name": "DOUBLE_TRANSITION", "value": 6},
+        {"name": "INVALID_PUBLICATION_CONTENT", "value": 7}
+      ]
+    },
+    {
+      "name": "PERSISTENCE_CONTROL_VIOLATION_DETAIL_CODE",
+      "storage": "i32",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "INVALID_ARGUMENT", "value": 1},
+        {"name": "INVALID_DEADLINE", "value": 2},
+        {"name": "WRONG_CALLER", "value": 3},
+        {"name": "INVALID_STATE", "value": 4},
+        {"name": "GENERATION_CONTENT_CONFLICT", "value": 5},
+        {"name": "STALE_GENERATION", "value": 6},
+        {"name": "GENERATION_GAP", "value": 7},
+        {"name": "CLEAN_STOP_PRECONDITION", "value": 8},
+        {"name": "CLEAN_STOP_CONFLICT", "value": 9}
+      ]
+    }
+  ]
+}

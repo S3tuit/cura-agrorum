@@ -1,0 +1,1136 @@
+{
+  "schema_format_version": 3,
+  "enum_source": "receiver_enums.json",
+  "array_axes": [
+    {
+      "name": "radio_recovery_reason",
+      "enum": "RADIO_RECOVERY_REASON",
+      "members": [
+        {"name": "BUSY_TIMEOUT", "source_index": 0},
+        {"name": "SPI_FAILURE", "source_index": 1},
+        {"name": "UNEXPECTED_IRQ", "source_index": 2},
+        {"name": "TX_OUTCOME_UNCERTAIN", "source_index": 3},
+        {"name": "RX_PROFILE_RESTORE_FAILED", "source_index": 4},
+        {"name": "SET_RX_FAILED", "source_index": 5},
+        {"name": "STATUS_UNCONFIRMED", "source_index": 6},
+        {"name": "HARDWARE_UNREACHABLE", "source_index": 7}
+      ]
+    },
+    {
+      "name": "chrony_step_command_result",
+      "members": [
+        {"name": "SUBMITTED", "source_index": 0},
+        {"name": "NOT_SUBMITTED", "source_index": 1},
+        {"name": "OUTCOME_UNKNOWN", "source_index": 2}
+      ]
+    },
+    {
+      "name": "rtc_write_result",
+      "members": [
+        {"name": "COMPLETED", "source_index": 0},
+        {"name": "NOT_APPLIED", "source_index": 1},
+        {"name": "OUTCOME_UNKNOWN", "source_index": 2}
+      ]
+    },
+    {
+      "name": "persist_queue_entity_kind",
+      "enum": "PERSIST_QUEUE_ENTITY_KIND",
+      "members": [
+        {"name": "MEASUREMENT_PROFILE", "source_index": 0},
+        {"name": "PROFILE_ONLY", "source_index": 1},
+        {"name": "RECEIVER_HEALTH_REQUEST", "source_index": 2},
+        {"name": "DIAGNOSTIC", "source_index": 3},
+        {"name": "CLOCK_OBSERVATION", "source_index": 4}
+      ]
+    },
+    {
+      "name": "admission_result",
+      "enum": "ADMISSION_RESULT",
+      "members": [
+        {"name": "RESERVED", "source_index": 0},
+        {"name": "PERSISTENCE_UNAVAILABLE", "source_index": 1},
+        {"name": "QUEUE_FULL", "source_index": 2}
+      ]
+    },
+    {
+      "name": "persistence_admission_state",
+      "enum": "PERSISTENCE_ADMISSION_STATE",
+      "members": [
+        {"name": "UNAVAILABLE_STARTING", "source_index": 0},
+        {"name": "AVAILABLE", "source_index": 1},
+        {"name": "UNAVAILABLE_LOW_SPACE", "source_index": 2},
+        {"name": "UNAVAILABLE_DISK_FULL", "source_index": 3},
+        {"name": "UNAVAILABLE_CORRUPT", "source_index": 4},
+        {"name": "UNAVAILABLE_IO", "source_index": 5},
+        {"name": "UNAVAILABLE_INCOMPATIBLE_SCHEMA", "source_index": 6}
+      ]
+    }
+  ],
+  "encodings": [
+    {
+      "name": "COMMUNICATOR_STATE_ENCODING_V1",
+      "endianness": "little",
+      "fields": [
+        {
+          "name": "state_format_version",
+          "type": "u16",
+          "constant": 1
+        },
+        {
+          "name": "encoded_length",
+          "type": "u32",
+          "derived": {
+            "encoded_length": true
+          }
+        },
+        {
+          "name": "generation",
+          "type": "u64"
+        },
+        {
+          "name": "validity_mask",
+          "type": "u16",
+          "derived": {
+            "presence_mask": true
+          }
+        },
+        {
+          "name": "last_observed_system_time_quality",
+          "type": "enum:SYSTEM_TIME_QUALITY"
+        },
+        {
+          "name": "last_observed_rtc_health",
+          "type": "enum:RTC_HEALTH"
+        },
+        {
+          "name": "reserved_0",
+          "type": "u16",
+          "constant": 0
+        },
+        {
+          "name": "rtc_provenance",
+          "type": "struct:RTC_PROVENANCE_V1",
+          "nullable": true,
+          "presence_bit": {
+            "mask": "validity_mask",
+            "bit": 0
+          }
+        },
+        {
+          "name": "rolling_window_us",
+          "type": "u64"
+        },
+        {
+          "name": "tx_airtime_budget_us",
+          "type": "u64"
+        },
+        {
+          "name": "bucket_width_us",
+          "type": "u64"
+        },
+        {
+          "name": "bucket_charge_limit_us",
+          "type": "u64"
+        },
+        {
+          "name": "bucket_expiration_guard_us",
+          "type": "u64"
+        },
+        {
+          "name": "airtime_snapshot_utc_us",
+          "type": "i64"
+        },
+        {
+          "name": "bucket_count",
+          "type": "u16",
+          "derived": {
+            "length": "buckets"
+          }
+        },
+        {
+          "name": "reserved_2",
+          "type": "u16",
+          "constant": 0
+        },
+        {
+          "name": "reserved_3",
+          "type": "u64",
+          "constant": 0
+        },
+        {
+          "name": "buckets",
+          "type": "array:TX_AIRTIME_BUCKET_V1",
+          "length": 62
+        }
+      ],
+      "structs": [
+        {
+          "name": "RTC_PROVENANCE_V1",
+          "python_name": "RtcProvenanceV1",
+          "fields": [
+            {
+              "name": "verified_by_receiver_instance_id",
+              "type": "bytes[16]"
+            },
+            {
+              "name": "network_utc_at_verification_us",
+              "type": "i64"
+            },
+            {
+              "name": "rtc_readback_utc_us",
+              "type": "i64"
+            },
+            {
+              "name": "verification_uncertainty_us",
+              "type": "u64"
+            },
+            {
+              "name": "drift_bound_ppm",
+              "type": "u32"
+            },
+            {
+              "name": "reserved_1",
+              "type": "u32",
+              "constant": 0
+            }
+          ]
+        },
+        {
+          "name": "TX_AIRTIME_BUCKET_V1",
+          "python_name": "TxAirtimeBucketV1",
+          "fields": [
+            {
+              "name": "charged_airtime_us",
+              "type": "u64"
+            },
+            {
+              "name": "expires_at_utc_us",
+              "type": "i64"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "entities": [
+    {
+      "name": "CLOCK_OBSERVATION_V1",
+      "python_name": "ClockObservationV1",
+      "persistence": {
+        "mode": "direct",
+        "table": "clock_observations",
+        "write_policy": "append_only",
+        "primary_key": [
+          "receiver_instance_id",
+          "observation_sequence"
+        ],
+        "without_rowid": true
+      },
+      "fields": [
+        {
+          "name": "receiver_instance_id",
+          "type": "bytes[16]"
+        },
+        {
+          "name": "observation_sequence",
+          "type": "u64"
+        },
+        {
+          "name": "clock_state_generation",
+          "type": "u64"
+        },
+        {
+          "name": "sampled_at_monotonic_us",
+          "type": "u64"
+        },
+        {
+          "name": "sampled_at_utc_us",
+          "type": "i64",
+          "nullable": true
+        },
+        {
+          "name": "step_discontinuity_boundary",
+          "type": "bool8"
+        },
+        {
+          "name": "system_time_quality",
+          "type": "enum:SYSTEM_TIME_QUALITY",
+          "column": "system_time_quality_id"
+        },
+        {
+          "name": "rtc_health",
+          "type": "enum:RTC_HEALTH",
+          "column": "rtc_health_id"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "receiver_instance_id"
+          ],
+          "references": {
+            "table": "receiver_instances",
+            "columns": [
+              "receiver_instance_id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "system_time_quality_id"
+          ],
+          "references": {
+            "table": "system_time_quality_codes",
+            "columns": [
+              "id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "rtc_health_id"
+          ],
+          "references": {
+            "table": "rtc_health_codes",
+            "columns": [
+              "id"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "DIAGNOSTIC_V1",
+      "python_name": "DiagnosticV1",
+      "persistence": {
+        "mode": "direct",
+        "table": "diagnostics",
+        "write_policy": "append_only",
+        "primary_key": [
+          "receiver_instance_id",
+          "diagnostic_sequence"
+        ],
+        "without_rowid": true
+      },
+      "fields": [
+        {
+          "name": "receiver_instance_id",
+          "type": "bytes[16]"
+        },
+        {
+          "name": "diagnostic_sequence",
+          "type": "u64"
+        },
+        {
+          "name": "sampled_at_monotonic_us",
+          "type": "u64"
+        },
+        {
+          "name": "severity",
+          "type": "enum:DIAGNOSTIC_SEVERITY",
+          "column": "severity_id"
+        },
+        {
+          "name": "error_domain",
+          "type": "enum:DIAGNOSTIC_ERROR_DOMAIN",
+          "column": "error_domain_id"
+        },
+        {
+          "name": "operation",
+          "type": "enum:DIAGNOSTIC_OPERATION",
+          "column": "operation_id"
+        },
+        {
+          "name": "error_code",
+          "type": "u16",
+          "column": "error_code_id"
+        },
+        {
+          "name": "context_schema",
+          "type": "u8",
+          "column": "context_schema_id"
+        },
+        {
+          "name": "context_length",
+          "type": "u8",
+          "maximum": 128
+        },
+        {
+          "name": "context",
+          "type": "bytes[128]"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "receiver_instance_id"
+          ],
+          "references": {
+            "table": "receiver_instances",
+            "columns": [
+              "receiver_instance_id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "severity_id"
+          ],
+          "references": {
+            "table": "diagnostic_severity_codes",
+            "columns": [
+              "id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "error_domain_id"
+          ],
+          "references": {
+            "table": "diagnostic_error_domain_codes",
+            "columns": [
+              "id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "operation_id"
+          ],
+          "references": {
+            "table": "diagnostic_operation_codes",
+            "columns": [
+              "id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "error_domain_id",
+            "error_code_id"
+          ],
+          "references": {
+            "table": "diagnostic_error_codes",
+            "columns": [
+              "error_domain_id",
+              "id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "error_domain_id",
+            "context_schema_id"
+          ],
+          "references": {
+            "table": "diagnostic_context_schemas",
+            "columns": [
+              "error_domain_id",
+              "id"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "QUARANTINED_ENTITY_ROW_V1",
+      "python_name": "QuarantinedEntityRowV1",
+      "persistence": {
+        "mode": "direct",
+        "table": "quarantined_entities",
+        "write_policy": "append_only",
+        "primary_key": [
+          "quarantine_id"
+        ],
+        "without_rowid": true
+      },
+      "fields": [
+        {
+          "name": "quarantine_id",
+          "type": "bytes[32]"
+        },
+        {
+          "name": "entity_kind",
+          "type": "enum:PERSIST_QUEUE_ENTITY_KIND",
+          "column": "entity_kind_id"
+        },
+        {
+          "name": "entity_schema_version",
+          "type": "u8"
+        },
+        {
+          "name": "entity_length",
+          "type": "u32",
+          "minimum": 2,
+          "maximum": 490
+        },
+        {
+          "name": "entity_bytes",
+          "type": "bytes",
+          "minimum_length": 2,
+          "maximum_length": 490
+        },
+        {
+          "name": "receiver_instance_id",
+          "type": "bytes[16]"
+        },
+        {
+          "name": "quarantined_at_monotonic_us",
+          "type": "u64"
+        },
+        {
+          "name": "database_schema_version",
+          "type": "u32",
+          "minimum": 1
+        },
+        {
+          "name": "failure_reason",
+          "type": "enum:QUARANTINE_FAILURE_REASON",
+          "column": "failure_reason_id"
+        },
+        {
+          "name": "failure_operation",
+          "type": "enum:DIAGNOSTIC_OPERATION",
+          "column": "failure_operation_id"
+        },
+        {
+          "name": "sqlite_primary_code",
+          "type": "i32",
+          "nullable": true
+        },
+        {
+          "name": "sqlite_extended_code",
+          "type": "i32",
+          "nullable": true
+        },
+        {
+          "name": "os_errno",
+          "type": "i32",
+          "nullable": true
+        },
+        {
+          "name": "isolation_attempt_count",
+          "type": "u32",
+          "minimum": 1
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "entity_kind_id"
+          ],
+          "references": {
+            "table": "persist_queue_entity_kind_codes",
+            "columns": [
+              "id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "receiver_instance_id"
+          ],
+          "references": {
+            "table": "receiver_instances",
+            "columns": [
+              "receiver_instance_id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "failure_reason_id"
+          ],
+          "references": {
+            "table": "quarantine_failure_reason_codes",
+            "columns": [
+              "id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "failure_operation_id"
+          ],
+          "references": {
+            "table": "diagnostic_operation_codes",
+            "columns": [
+              "id"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "RECEIVER_HEALTH_V1",
+      "python_name": "ReceiverHealthV1",
+      "persistence": {
+        "mode": "array_expansion",
+        "table": "receiver_health",
+        "write_policy": "append_only",
+        "primary_key": [
+          "receiver_instance_id",
+          "health_sequence"
+        ],
+        "without_rowid": true
+      },
+      "fields": [
+        {"name": "receiver_instance_id", "type": "bytes[16]"},
+        {"name": "health_sequence", "type": "u64"},
+        {"name": "communicator_sampled_at_monotonic_us", "type": "u64"},
+        {
+          "name": "radio_state",
+          "type": "enum:RADIO_STATE",
+          "column": "radio_state_id"
+        },
+        {"name": "radio_recovery_attempts", "type": "u64"},
+        {"name": "radio_recovery_successes", "type": "u64"},
+        {"name": "radio_recovery_failures", "type": "u64"},
+        {
+          "name": "radio_recovery_attempts_by_reason",
+          "type": "u64",
+          "array_axes": ["radio_recovery_reason"],
+          "column_pattern": "radio_recovery_attempts_by_reason_{radio_recovery_reason}"
+        },
+        {
+          "name": "system_time_quality",
+          "type": "enum:SYSTEM_TIME_QUALITY",
+          "column": "system_time_quality_id"
+        },
+        {
+          "name": "rtc_health",
+          "type": "enum:RTC_HEALTH",
+          "column": "rtc_health_id"
+        },
+        {"name": "time_quality_transition_count", "type": "u64"},
+        {"name": "rtc_health_transition_count", "type": "u64"},
+        {
+          "name": "last_time_quality_transition_monotonic_us",
+          "type": "u64",
+          "nullable": true
+        },
+        {
+          "name": "last_rtc_health_transition_monotonic_us",
+          "type": "u64",
+          "nullable": true
+        },
+        {
+          "name": "chrony_step_command_results",
+          "type": "u64",
+          "array_axes": ["chrony_step_command_result"],
+          "column_pattern": "chrony_step_command_results_{chrony_step_command_result}"
+        },
+        {
+          "name": "rtc_write_results",
+          "type": "u64",
+          "array_axes": ["rtc_write_result"],
+          "column_pattern": "rtc_write_results_{rtc_write_result}"
+        },
+        {"name": "rtc_write_readback_verified_count", "type": "u64"},
+        {"name": "rtc_write_trust_invalidated_count", "type": "u64"},
+        {
+          "name": "persist_queue_admission_counts",
+          "type": "u64",
+          "array_axes": [
+            "persist_queue_entity_kind",
+            "admission_result"
+          ],
+          "column_pattern": "persist_queue_admission_counts_{persist_queue_entity_kind}_{admission_result}"
+        },
+        {"name": "persistence_sampled_at_monotonic_us", "type": "u64"},
+        {"name": "persistence_admission_generation", "type": "u64"},
+        {
+          "name": "persistence_admission_state",
+          "type": "enum:PERSISTENCE_ADMISSION_STATE",
+          "column": "persistence_admission_state_id"
+        },
+        {
+          "name": "persistence_admission_changed_at_monotonic_us",
+          "type": "u64"
+        },
+        {
+          "name": "persistence_admission_transition_counts",
+          "type": "u64",
+          "array_axes": ["persistence_admission_state"],
+          "column_pattern": "persistence_admission_transition_counts_{persistence_admission_state}"
+        },
+        {"name": "durable_quarantine_successes", "type": "u64"},
+        {"name": "durable_quarantine_failures", "type": "u64"},
+        {"name": "batch_transaction_attempts", "type": "u64"},
+        {"name": "batch_transaction_commits", "type": "u64"},
+        {"name": "batch_transaction_failures", "type": "u64"},
+        {"name": "batch_entities_committed", "type": "u64"},
+        {"name": "batch_encoded_bytes_committed", "type": "u64"},
+        {"name": "batch_commit_duration_total_us", "type": "u64"},
+        {"name": "batch_commit_duration_max_us", "type": "u64"},
+        {"name": "wal_checkpoint_attempts", "type": "u64"},
+        {"name": "wal_checkpoint_successes", "type": "u64"},
+        {"name": "wal_checkpoint_failures", "type": "u64"},
+        {"name": "linux_load_1m_milli", "type": "u32", "nullable": true},
+        {
+          "name": "cpu_temperature_milli_c",
+          "type": "i32",
+          "nullable": true
+        },
+        {"name": "memory_available_bytes", "type": "u64", "nullable": true},
+        {
+          "name": "sqlite_filesystem_available_bytes",
+          "type": "u64",
+          "nullable": true
+        },
+        {
+          "name": "sqlite_database_size_bytes",
+          "type": "u64",
+          "nullable": true
+        },
+        {
+          "name": "sqlite_wal_size_bytes",
+          "type": "u64",
+          "nullable": true
+        },
+        {"name": "ntp_offset_us", "type": "i64", "nullable": true}
+      ],
+      "foreign_keys": [
+        {
+          "columns": ["receiver_instance_id"],
+          "references": {
+            "table": "receiver_instances",
+            "columns": ["receiver_instance_id"]
+          }
+        },
+        {
+          "columns": ["radio_state_id"],
+          "references": {"table": "radio_state_codes", "columns": ["id"]}
+        },
+        {
+          "columns": ["system_time_quality_id"],
+          "references": {
+            "table": "system_time_quality_codes",
+            "columns": ["id"]
+          }
+        },
+        {
+          "columns": ["rtc_health_id"],
+          "references": {"table": "rtc_health_codes", "columns": ["id"]}
+        },
+        {
+          "columns": ["persistence_admission_state_id"],
+          "references": {
+            "table": "persistence_admission_state_codes",
+            "columns": ["id"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "MESSAGE_PERSISTENCE_TRANSACTION_V1",
+      "persistence": {
+        "mode": "multi_table_transaction",
+        "atomic": true,
+        "targets": [
+          {
+            "name": "MESSAGE_PROFILE_ROW_V1",
+            "python_name": "MessageProfileRowV1",
+            "table": "message_profiles",
+            "write_policy": "append_only",
+            "primary_key": [
+              "receiver_instance_id",
+              "occurrence_sequence"
+            ],
+            "without_rowid": true,
+            "fields": [
+              {
+                "name": "receiver_instance_id",
+                "type": "bytes[16]",
+                "source": "profile.receiver_instance_id"
+              },
+              {
+                "name": "occurrence_sequence",
+                "type": "u64",
+                "source": "profile.occurrence_sequence"
+              },
+              {
+                "name": "received_at_monotonic_us",
+                "type": "u64",
+                "source": "profile.received_at_monotonic_us"
+              },
+              {
+                "name": "persist_queue_used_bytes_before_admission",
+                "type": "u64",
+                "source": "profile.persist_queue_used_bytes_before_admission"
+              },
+              {
+                "name": "persist_queue_capacity_bytes",
+                "type": "u64",
+                "source": "profile.persist_queue_capacity_bytes"
+              },
+              {
+                "name": "received_frame_length",
+                "type": "u16",
+                "maximum": 255,
+                "nullable": true,
+                "source": "profile.received_frame_length"
+              },
+              {
+                "name": "received_frame",
+                "type": "bytes[255]",
+                "nullable": true,
+                "source": "profile.received_frame"
+              },
+              {
+                "name": "claimed_control",
+                "type": "u8",
+                "nullable": true,
+                "source": "profile.claimed_control"
+              },
+              {
+                "name": "claimed_domain",
+                "type": "u8",
+                "nullable": true,
+                "source": "profile.claimed_domain"
+              },
+              {
+                "name": "claimed_node_id",
+                "type": "bytes[8]",
+                "nullable": true,
+                "source": "profile.claimed_node_id"
+              },
+              {
+                "name": "claimed_message_id",
+                "type": "u32",
+                "nullable": true,
+                "source": "profile.claimed_message_id"
+              },
+              {
+                "name": "header_authenticated",
+                "type": "bool8",
+                "source": "profile.header_authenticated"
+              },
+              {
+                "name": "decoded_sample_id",
+                "type": "u32",
+                "nullable": true,
+                "source": "profile.decoded_sample_id"
+              },
+              {
+                "name": "rssi_dbm_x2",
+                "type": "i16",
+                "nullable": true,
+                "source": "profile.rssi_dbm_x2"
+              },
+              {
+                "name": "snr_db_x4",
+                "type": "i16",
+                "nullable": true,
+                "source": "profile.snr_db_x4"
+              },
+              {
+                "name": "irq_status",
+                "type": "u16",
+                "nullable": true,
+                "source": "profile.irq_status"
+              },
+              {
+                "name": "device_errors",
+                "type": "u16",
+                "nullable": true,
+                "source": "profile.device_errors"
+              },
+              {
+                "name": "processing_result",
+                "type": "enum:PROCESSING_RESULT",
+                "column": "processing_result_id",
+                "source": "profile.processing_result"
+              },
+              {
+                "name": "ack_selected",
+                "type": "enum:ACK_SELECTION",
+                "column": "ack_selected_id",
+                "source": "profile.ack_selected"
+              },
+              {
+                "name": "ack_tx_result",
+                "type": "enum:ACK_TX_RESULT",
+                "column": "ack_tx_result_id",
+                "source": "profile.ack_tx_result"
+              },
+              {
+                "name": "ack_frame",
+                "type": "bytes[23]",
+                "nullable": true,
+                "source": "profile.ack_frame"
+              },
+              {
+                "name": "busy_wait_total_us",
+                "type": "u64",
+                "source": "profile.busy_wait_total_us"
+              },
+              {
+                "name": "busy_wait_max_us",
+                "type": "u64",
+                "source": "profile.busy_wait_max_us"
+              },
+              {
+                "name": "busy_wait_count",
+                "type": "u32",
+                "source": "profile.busy_wait_count"
+              },
+              {
+                "name": "busy_timeout_count",
+                "type": "u32",
+                "source": "profile.busy_timeout_count"
+              },
+              {
+                "name": "last_busy_timeout_opcode",
+                "type": "u8",
+                "nullable": true,
+                "source": "profile.last_busy_timeout_opcode"
+              },
+              {
+                "name": "t1_handler_started_monotonic_us",
+                "type": "u64",
+                "source": "profile.t1_handler_started_monotonic_us"
+              },
+              {
+                "name": "t2_packet_copied_monotonic_us",
+                "type": "u64",
+                "nullable": true,
+                "source": "profile.t2_packet_copied_monotonic_us"
+              },
+              {
+                "name": "t3_authentication_completed_monotonic_us",
+                "type": "u64",
+                "nullable": true,
+                "source": "profile.t3_authentication_completed_monotonic_us"
+              },
+              {
+                "name": "t4_set_tx_attempted_monotonic_us",
+                "type": "u64",
+                "nullable": true,
+                "source": "profile.t4_set_tx_attempted_monotonic_us"
+              },
+              {
+                "name": "t5_tx_done_monotonic_us",
+                "type": "u64",
+                "nullable": true,
+                "source": "profile.t5_tx_done_monotonic_us"
+              },
+              {
+                "name": "t6_set_rx_issued_monotonic_us",
+                "type": "u64",
+                "nullable": true,
+                "source": "profile.t6_set_rx_issued_monotonic_us"
+              },
+              {
+                "name": "persistence_classification",
+                "type": "enum:PERSISTENCE_CLASSIFICATION",
+                "column": "persistence_classification_id",
+                "source": "$derived.persistence_classification"
+              }
+            ],
+            "foreign_keys": [
+              {
+                "columns": ["receiver_instance_id"],
+                "references": {
+                  "table": "receiver_instances",
+                  "columns": ["receiver_instance_id"]
+                }
+              },
+              {
+                "columns": ["processing_result_id"],
+                "references": {
+                  "table": "processing_result_codes",
+                  "columns": ["id"]
+                }
+              },
+              {
+                "columns": ["ack_selected_id"],
+                "references": {
+                  "table": "ack_selection_codes",
+                  "columns": ["id"]
+                }
+              },
+              {
+                "columns": ["ack_tx_result_id"],
+                "references": {
+                  "table": "ack_tx_result_codes",
+                  "columns": ["id"]
+                }
+              },
+              {
+                "columns": ["persistence_classification_id"],
+                "references": {
+                  "table": "persistence_classification_codes",
+                  "columns": ["id"]
+                }
+              }
+            ]
+          },
+          {
+            "name": "READING_MESSAGE_ROW_V1",
+            "python_name": "ReadingMessageRowV1",
+            "table": "reading_messages",
+            "write_policy": "append_only",
+            "primary_key": ["node_id", "message_id"],
+            "without_rowid": true,
+            "fields": [
+              {"name": "node_id", "type": "bytes[8]", "source": "candidate.node_id"},
+              {"name": "message_id", "type": "u32", "source": "candidate.message_id"},
+              {"name": "sample_id", "type": "u32", "source": "candidate.sample_id"},
+              {
+                "name": "reading_body",
+                "type": "bytes[32]",
+                "source": "candidate.reading_body"
+              },
+              {
+                "name": "is_canonical_for_sample",
+                "type": "bool8",
+                "source": "$derived.is_canonical_for_sample"
+              },
+              {"name": "run_ms", "type": "u16", "source": "$derived.reading.run_ms"},
+              {"name": "soil_0_mv", "type": "u16", "source": "$derived.reading.soil_0_mv"},
+              {"name": "soil_1_mv", "type": "u16", "source": "$derived.reading.soil_1_mv"},
+              {
+                "name": "soil_temp_0_centi_c",
+                "type": "i16",
+                "source": "$derived.reading.soil_temp_0_centi_c"
+              },
+              {
+                "name": "soil_temp_1_centi_c",
+                "type": "i16",
+                "source": "$derived.reading.soil_temp_1_centi_c"
+              },
+              {
+                "name": "enclosure_centi_c",
+                "type": "i16",
+                "source": "$derived.reading.enclosure_centi_c"
+              },
+              {
+                "name": "enclosure_pressure_pa",
+                "type": "u32",
+                "source": "$derived.reading.enclosure_pressure_pa"
+              },
+              {
+                "name": "enclosure_humidity_centi_pct",
+                "type": "u16",
+                "source": "$derived.reading.enclosure_humidity_centi_pct"
+              },
+              {
+                "name": "reset_reason",
+                "type": "u8",
+                "source": "$derived.reading.reset_reason"
+              },
+              {
+                "name": "previous_current_tx_attempts",
+                "type": "u8",
+                "source": "$derived.reading.previous_current_tx_attempts"
+              },
+              {
+                "name": "previous_awake_ms",
+                "type": "u16",
+                "source": "$derived.reading.previous_awake_ms"
+              },
+              {
+                "name": "previous_current_delivery_ms",
+                "type": "u16",
+                "source": "$derived.reading.previous_current_delivery_ms"
+              },
+              {
+                "name": "previous_cycle_tx_attempts",
+                "type": "u8",
+                "source": "$derived.reading.previous_cycle_tx_attempts"
+              },
+              {
+                "name": "previous_cycle_accepted_readings",
+                "type": "u8",
+                "source": "$derived.reading.previous_cycle_accepted_readings"
+              },
+              {"name": "flags", "type": "u16", "source": "$derived.reading.flags"},
+              {
+                "name": "first_receiver_instance_id",
+                "type": "bytes[16]",
+                "source": "profile.receiver_instance_id"
+              },
+              {
+                "name": "first_occurrence_sequence",
+                "type": "u64",
+                "source": "profile.occurrence_sequence"
+              }
+            ],
+            "indexes": [
+              {
+                "name": "reading_messages_one_canonical_sample",
+                "columns": ["node_id", "sample_id"],
+                "unique": true,
+                "where": {
+                  "column": "is_canonical_for_sample",
+                  "equals": 1
+                }
+              }
+            ],
+            "foreign_keys": [
+              {
+                "columns": [
+                  "first_receiver_instance_id",
+                  "first_occurrence_sequence"
+                ],
+                "references": {
+                  "table": "message_profiles",
+                  "columns": [
+                    "receiver_instance_id",
+                    "occurrence_sequence"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "COMMUNICATOR_STATE_V1",
+      "python_name": "CommunicatorStateV1",
+      "persistence": {
+        "mode": "canonical_blob",
+        "table": "communicator_state",
+        "write_policy": "controlled_singleton",
+        "primary_key": [
+          "singleton_id"
+        ],
+        "without_rowid": false
+      },
+      "fields": [
+        {
+          "name": "singleton_id",
+          "type": "u8",
+          "constant": 1
+        },
+        {
+          "name": "state_format_version",
+          "type": "u16",
+          "constant": 1
+        },
+        {
+          "name": "generation",
+          "type": "u64",
+          "minimum": 1,
+          "source": "generation"
+        },
+        {
+          "name": "state_blob",
+          "type": "blob",
+          "encoding": "COMMUNICATOR_STATE_ENCODING_V1"
+        },
+        {
+          "name": "state_sha256",
+          "type": "bytes[32]",
+          "derived": {
+            "sha256": "state_blob"
+          }
+        }
+      ],
+      "foreign_keys": []
+    }
+  ]
+}

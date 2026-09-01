@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import errno
+import grp
 import hashlib
 import hmac
 import json
 import os
+import pwd
 import re
 import secrets
 import stat
@@ -121,34 +124,32 @@ def derive_node_key(group_master_key: bytes, node_id: bytes) -> bytes:
     return first_block[:NODE_KEY_SIZE]
 
 
-def load_receiver_group(path: Path) -> ReceiverGroupState:
-    try:
-        metadata = path.stat()
-    except FileNotFoundError as exc:
+def load_receiver_group(
+    path: Path,
+    *,
+    expected_owner_uid: int | None = None,
+) -> ReceiverGroupState:
+    """Load receiver-group state without trusting path-based metadata."""
+    if expected_owner_uid is None:
+        expected_owner_uid = os.geteuid()
+    if type(expected_owner_uid) is not int or expected_owner_uid < 0:
         raise ProvisioningError(
-            f"receiver group is not initialized: {path}"
-        ) from exc
-    except OSError as exc:
-        raise ProvisioningError(
-            f"cannot inspect receiver group state {path}: {exc}"
-        ) from exc
-
-    if not stat.S_ISREG(metadata.st_mode):
-        raise ProvisioningError(
-            f"receiver group state is not a regular file: {path}"
-        )
-    if stat.S_IMODE(metadata.st_mode) & 0o077:
-        raise ProvisioningError(
-            f"receiver group state is accessible by group or others; "
-            f"run chmod 600 {path}"
+            "receiver group expected owner UID must be a non-negative integer"
         )
 
+    descriptor = _open_receiver_group(path, expected_owner_uid)
     try:
-        document = json.loads(path.read_text(encoding="utf-8"))
+        stream = os.fdopen(descriptor, "r", encoding="utf-8")
+        descriptor = -1
+        with stream:
+            document = json.load(stream)
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise ProvisioningError(
             f"cannot read receiver group state {path}: {exc}"
         ) from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
 
     if not isinstance(document, dict):
         raise ProvisioningError("receiver group state must be a JSON object")
@@ -204,6 +205,175 @@ def load_receiver_group(path: Path) -> ReceiverGroupState:
         active_node_ids=frozenset(active_node_ids),
         retired_node_ids=frozenset(retired_node_ids),
     )
+
+
+def _open_receiver_group(path: Path, expected_owner_uid: int) -> int:
+    expanded = path.expanduser()
+    absolute = expanded if expanded.is_absolute() else Path.cwd() / expanded
+    components = absolute.parts[1:]
+    if not components:
+        raise ProvisioningError(
+            f"receiver group state is not a regular, non-symlink file: {path}"
+        )
+
+    directory_flags = (
+        os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    )
+    file_flags = (
+        os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC
+    )
+    try:
+        directory_descriptor = os.open(absolute.anchor, directory_flags)
+    except OSError as exc:
+        raise ProvisioningError(
+            f"cannot open receiver group path root {absolute.anchor}: {exc}"
+        ) from exc
+
+    try:
+        root_owner_uid = os.fstat(directory_descriptor).st_uid
+    except OSError as exc:
+        os.close(directory_descriptor)
+        raise ProvisioningError(
+            f"cannot inspect receiver group path root {absolute.anchor}: {exc}"
+        ) from exc
+    trusted_owner_uids = frozenset(
+        (0, root_owner_uid, os.geteuid(), expected_owner_uid)
+    )
+    current_parent = Path(absolute.anchor)
+    try:
+        _validate_parent_directory(
+            directory_descriptor,
+            current_parent,
+            trusted_owner_uids,
+        )
+        for component in components[:-1]:
+            current_parent /= component
+            try:
+                next_descriptor = os.open(
+                    component,
+                    directory_flags,
+                    dir_fd=directory_descriptor,
+                )
+            except OSError as exc:
+                raise ProvisioningError(
+                    "receiver group path parent is unavailable, not a "
+                    f"directory, or a symlink: {current_parent}: {exc}"
+                ) from exc
+            previous_descriptor = directory_descriptor
+            directory_descriptor = next_descriptor
+            os.close(previous_descriptor)
+            _validate_parent_directory(
+                directory_descriptor,
+                current_parent,
+                trusted_owner_uids,
+            )
+
+        try:
+            descriptor = os.open(
+                components[-1],
+                file_flags,
+                dir_fd=directory_descriptor,
+            )
+        except FileNotFoundError as exc:
+            raise ProvisioningError(
+                f"receiver group is not initialized: {path}"
+            ) from exc
+        except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                raise ProvisioningError(
+                    "receiver group state is not a regular, non-symlink "
+                    f"file: {path}"
+                ) from exc
+            raise ProvisioningError(
+                f"cannot open receiver group state {path}: {exc}"
+            ) from exc
+    finally:
+        os.close(directory_descriptor)
+
+    try:
+        try:
+            metadata = os.fstat(descriptor)
+        except OSError as exc:
+            raise ProvisioningError(
+                f"cannot inspect opened receiver group state {path}: {exc}"
+            ) from exc
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ProvisioningError(
+                "receiver group state is not a regular, non-symlink file: "
+                f"{path}"
+            )
+        if metadata.st_uid != expected_owner_uid:
+            raise ProvisioningError(
+                "receiver group state owner does not match expected UID "
+                f"{expected_owner_uid}: {path}"
+            )
+        if stat.S_IMODE(metadata.st_mode) & 0o077:
+            raise ProvisioningError(
+                f"receiver group state is accessible by group or others; "
+                f"run chmod 600 {path}"
+            )
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def _validate_parent_directory(
+    descriptor: int,
+    path: Path,
+    trusted_owner_uids: frozenset[int],
+) -> None:
+    try:
+        metadata = os.fstat(descriptor)
+    except OSError as exc:
+        raise ProvisioningError(
+            f"cannot inspect receiver group path parent {path}: {exc}"
+        ) from exc
+    mode = stat.S_IMODE(metadata.st_mode)
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise ProvisioningError(
+            f"receiver group path parent is not a directory: {path}"
+        )
+    if metadata.st_uid not in trusted_owner_uids:
+        raise ProvisioningError(
+            "receiver group path parent is owned by an untrusted user: "
+            f"{path}"
+        )
+
+    untrusted_group_write = (
+        mode & stat.S_IWGRP
+        and not _group_is_exclusively_trusted(
+            metadata.st_gid,
+            trusted_owner_uids,
+        )
+    )
+    untrusted_write = untrusted_group_write or mode & stat.S_IWOTH
+    sticky_directory = mode & stat.S_ISVTX
+    if untrusted_write and not sticky_directory:
+        raise ProvisioningError(
+            "receiver group path parent is writable by an untrusted user: "
+            f"{path}"
+        )
+
+
+def _group_is_exclusively_trusted(
+    group_gid: int,
+    trusted_owner_uids: frozenset[int],
+) -> bool:
+    try:
+        group = grp.getgrgid(group_gid)
+        members = {
+            account.pw_uid
+            for account in pwd.getpwall()
+            if account.pw_gid == group_gid
+        }
+        members.update(
+            pwd.getpwnam(member_name).pw_uid
+            for member_name in group.gr_mem
+        )
+    except (KeyError, OSError):
+        return False
+    return bool(members) and members <= trusted_owner_uids
 
 
 def render_receiver_group(state: ReceiverGroupState) -> str:

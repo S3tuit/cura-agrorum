@@ -1,4 +1,4 @@
-.PHONY: test-host test-hardware test-hardware-all test-hardware-slow \
+.PHONY: test-host test-receiver test-hardware test-hardware-all test-hardware-slow \
 	test-hardware-build
 
 PORT ?= /dev/ttyUSB0
@@ -18,6 +18,9 @@ test-host:
 		-DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER_LAUNCHER=
 	CCACHE_DISABLE=1 cmake --build firmware/build-host
 	ctest --test-dir firmware/build-host --output-on-failure
+
+test-receiver:
+	.venv/bin/python -m pytest receiver/tests
 
 test-hardware-build:
 	idf.py -C $(HARDWARE_TEST_APP) -B $(HARDWARE_TEST_BUILD) build

@@ -157,7 +157,7 @@ typedef struct {
   cura_lora_v2_reading_t reading;
   bool backlog_bound;
   uint32_t message_id;
-  uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE];
+  cura_lora_v2_authenticated_reading_frame_t frame;
 } node_pending_reading_t;
 
 /* Durably appends one current reading to pending.log. */
@@ -168,7 +168,7 @@ node_persistence_append_pending_reading(const cura_lora_v2_reading_t *reading,
 /* Durably binds the newest unbound reading to one exact backlog frame. */
 err_curag_t node_persistence_bind_newest_backlog_frame(
     uint32_t expected_sample_id, uint32_t message_id,
-    const uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE],
+    const cura_lora_v2_authenticated_reading_frame_t *frame,
     diagn_context_t *out_diag);
 
 /*

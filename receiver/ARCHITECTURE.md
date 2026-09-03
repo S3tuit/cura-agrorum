@@ -1037,6 +1037,17 @@ node_id || message_id || domain
 
 `message_id` is the persistent monotonic transport counter scoped to one node identity and key. It identifies a newly constructed logical LoRa message, not an individual RF attempt. Retransmissions of that logical message reuse the same `message_id`, domain, authenticated bytes and complete frame. Converting a current reading into a newly constructed backlog message allocates a new `message_id` even though the encrypted reading retains its original `sample_id`. The receiver must tolerate skipped IDs, but authenticated reuse under the same node identity is invalid; exhaustion or loss of the node counter requires a new node identity and key.
 
+Known pilot limitation: the receiver provides no recovery path for erased or
+rolled-back node counters. Same-credential counter erasure or restoration is
+prohibited, and the identity and key must be rotated before that node resumes
+transmission. A future protocol revision may add a pre-traffic recovery
+handshake in which a fresh challenge authenticates the exchange and the
+receiver durably allocates either a never-reused epoch that scopes both
+transport and application identities or disjoint ranges for both counters; it
+must not resume merely from the greatest received message ID because
+transmissions may have been lost before reception and sample IDs may collide
+with stored readings.
+
 `sample_id` remains inside the authenticated reading body. It identifies the application reading, supports wake continuity and timestamp reconstruction, and is unavailable until authentication and decoding succeed. It is not part of the CCM nonce and does not identify RF retransmission episodes.
 
 An ACK echoes the authenticated uplink's `message_id`; it does not carry `sample_id`. Its ACK domain selects the downlink nonce domain. ACK construction is deterministic: reconstructing an ACK for the same authenticated uplink and outcome produces the same exact frame without consulting receiver history. Different outcomes use distinct ACK domains and therefore distinct nonces under the same node key and `message_id`.
@@ -2201,6 +2212,8 @@ The following are explicitly deferred from the first pilot:
 - optimization from Python to C;
 - complex BUSY edge handling;
 - durable configuration management;
+- authenticated node counter recovery with durable, never-reused receiver
+  allocation for both transport and application identities;
 - a durable structured diagnostic fallback for intervals in which normal SQLite
   persistence is unavailable.
 

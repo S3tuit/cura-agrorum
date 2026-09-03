@@ -390,6 +390,26 @@ persisted bytes rather than reconstructing the frame.
 - `sample_id` remains the persistent application-reading and wake-continuity
   counter. It does not identify RF retry episodes and is not part of the nonce.
 
+### Known pilot limitation and deferred counter recovery
+
+The pilot node treats a missing local counter as fresh provisioning and cannot
+distinguish that state from NVS erasure or rollback. Erasing or restoring a
+counter while retaining the same node identity and key is prohibited because a
+subsequent uplink could reuse a CCM nonce. Recovery in the pilot requires
+rotating both the node identity and key before transmission resumes.
+
+Automatic recovery is deferred to a coordinated protocol, node and receiver
+revision. Before sending ordinary traffic, a node missing trusted counter state
+would perform a separate recovery handshake using a fresh unpredictable
+challenge in its authenticated transcript. The receiver would durably allocate
+a never-reused epoch that scopes both transport and application identities, or
+disjoint `message_id` and `sample_id` ranges, and the node would durably commit
+the grant before constructing an ordinary uplink. The exchange must define
+nonce-safe, idempotent retries and fail closed if the receiver loses its
+allocation state. Returning only the greatest received `message_id` is not
+sufficient: a higher ID may already have been transmitted without reaching the
+receiver, and resetting `sample_id` would still collide with stored readings.
+
 ## ACK behaviour
 
 - ACKs echo the pending uplink's `message_id`; they do not carry `sample_id`.

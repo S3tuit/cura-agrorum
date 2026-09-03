@@ -179,7 +179,7 @@ void fake_node_core_add_pending(uint32_t sample_id,
                                 const cura_lora_v2_reading_t *reading);
 void fake_node_core_add_bound_pending(
     uint32_t message_id, const cura_lora_v2_reading_t *reading,
-    const uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE]);
+    const cura_lora_v2_authenticated_reading_frame_t *frame);
 void fake_node_core_script_tx_done(uint64_t set_tx_at_us,
                                    uint64_t tx_done_at_us);
 void fake_node_core_script_tx_error(err_curag_t error, bool tx_started,

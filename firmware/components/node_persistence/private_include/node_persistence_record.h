@@ -69,7 +69,7 @@ bool node_persistence_record_decode_reading(
 bool node_persistence_record_decode_backlog_binding(
     const uint8_t *record, size_t record_length, uint32_t *out_sample_id,
     uint32_t *out_message_id,
-    uint8_t out_frame[CURA_LORA_V2_READING_FRAME_SIZE]);
+    cura_lora_v2_authenticated_reading_frame_t *out_frame);
 
 #ifdef NODE_PERSISTENCE_TESTING
 void node_persistence_test_reset(void);

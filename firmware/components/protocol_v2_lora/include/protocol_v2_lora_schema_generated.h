@@ -104,6 +104,20 @@ typedef enum {
 } cura_lora_v2_codec_result_t;
 
 typedef struct {
+  uint8_t bytes[CURA_LORA_V2_READING_FRAME_SIZE];
+} cura_lora_v2_authenticated_reading_frame_t;
+
+#if defined(__cplusplus)
+static_assert(sizeof(cura_lora_v2_authenticated_reading_frame_t) ==
+                  CURA_LORA_V2_READING_FRAME_SIZE,
+              "authenticated reading frame size mismatch");
+#else
+_Static_assert(sizeof(cura_lora_v2_authenticated_reading_frame_t) ==
+                   CURA_LORA_V2_READING_FRAME_SIZE,
+               "authenticated reading frame size mismatch");
+#endif
+
+typedef struct {
   uint8_t control;
   uint8_t domain;
   uint8_t node_id[8];

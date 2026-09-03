@@ -178,26 +178,26 @@ static bool backlog_binding_round_trips_exact_frame_across_restart(void) {
   node_persistence_test_reset_all();
   cura_lora_v2_reading_t reading = node_persistence_test_make_reading(17U);
   const uint32_t message_id = UINT32_C(0x11223344);
-  uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE];
-  memset(frame, 0xa5, sizeof(frame));
-  frame[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] = CURA_LORA_V2_CONTROL;
-  frame[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] =
+  cura_lora_v2_authenticated_reading_frame_t frame;
+  memset(frame.bytes, 0xa5, sizeof(frame.bytes));
+  frame.bytes[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] = CURA_LORA_V2_CONTROL;
+  frame.bytes[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] =
       CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK;
   node_persistence_store_le32(
-      frame + CURA_LORA_V2_CLEAR_HEADER_MESSAGE_ID_OFFSET, message_id);
+      frame.bytes + CURA_LORA_V2_CLEAR_HEADER_MESSAGE_ID_OFFSET, message_id);
 
   diagn_context_t diag;
   TEST_ASSERT_EQ_U32(CURAG_OK,
                      node_persistence_append_pending_reading(&reading, &diag));
   TEST_ASSERT_EQ_U32(CURAG_ERECORD_MISMATCH,
                      node_persistence_bind_newest_backlog_frame(
-                         reading.sample_id + 1U, message_id, frame, &diag));
+                         reading.sample_id + 1U, message_id, &frame, &diag));
   TEST_ASSERT_EQ_U32(CURAG_OK,
                      node_persistence_bind_newest_backlog_frame(
-                         reading.sample_id, message_id, frame, &diag));
+                         reading.sample_id, message_id, &frame, &diag));
   TEST_ASSERT_EQ_U32(CURAG_ERECORD_MISMATCH,
                      node_persistence_bind_newest_backlog_frame(
-                         reading.sample_id, message_id, frame, &diag));
+                         reading.sample_id, message_id, &frame, &diag));
 
   node_persistence_test_restart();
   node_pending_reading_t pending;
@@ -208,7 +208,8 @@ static bool backlog_binding_round_trips_exact_frame_across_restart(void) {
   TEST_ASSERT(pending.backlog_bound);
   TEST_ASSERT_EQ_U32(reading.sample_id, pending.reading.sample_id);
   TEST_ASSERT_EQ_U32(message_id, pending.message_id);
-  TEST_ASSERT(memcmp(frame, pending.frame, sizeof(frame)) == 0);
+  TEST_ASSERT(memcmp(frame.bytes, pending.frame.bytes, sizeof(frame.bytes)) ==
+              0);
   TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_remove_newest_reading(
                                    reading.sample_id, &diag));
   TEST_ASSERT_EQ_SIZE(0U, fake_backend_file_size(TEST_PENDING_PATH));

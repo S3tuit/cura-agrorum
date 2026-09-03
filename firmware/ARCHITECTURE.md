@@ -400,6 +400,15 @@ transmitted, but it may be lost after sleep if it is not accepted.
 No storage is automatically erased or reformatted after a failure during the
 pilot.
 
+Known pilot limitation: absence of an NVS counter key is interpreted as fresh
+provisioning, so firmware cannot distinguish first use from counter erasure or
+rollback. Erasing or restoring NVS while retaining the same identity and key is
+therefore prohibited; recovery requires rotating both. The repository
+maintenance application formats only LittleFS and deliberately preserves NVS.
+An automatic counter-recovery handshake is deferred to a coordinated protocol,
+node and receiver revision; the protocol document defines the required safety
+properties of that future work.
+
 ## RTC-state lifecycle
 
 Incoming and outgoing metrics are separate:

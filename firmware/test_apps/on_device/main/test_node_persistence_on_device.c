@@ -271,18 +271,18 @@ TEST_CASE_MULTIPLE_STAGES(
 static void restart_bound_backlog_stage_1(void) {
   hwtest_erase_state();
   append_pending(42U);
-  uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE];
-  memset(frame, 0xa5, sizeof(frame));
-  frame[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] = CURA_LORA_V2_CONTROL;
-  frame[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] =
+  cura_lora_v2_authenticated_reading_frame_t frame;
+  memset(frame.bytes, 0xa5, sizeof(frame.bytes));
+  frame.bytes[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] = CURA_LORA_V2_CONTROL;
+  frame.bytes[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] =
       CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK;
-  node_persistence_store_le32(frame +
+  node_persistence_store_le32(frame.bytes +
                                   CURA_LORA_V2_CLEAR_HEADER_MESSAGE_ID_OFFSET,
                               UINT32_C(0x11223344));
   diagn_context_t diag;
   TEST_ASSERT_EQUAL_HEX32(CURAG_OK,
                           node_persistence_bind_newest_backlog_frame(
-                              42U, UINT32_C(0x11223344), frame, &diag));
+                              42U, UINT32_C(0x11223344), &frame, &diag));
   esp_restart();
 }
 
@@ -296,15 +296,17 @@ static void restart_bound_backlog_stage_2(void) {
   TEST_ASSERT_TRUE(pending.backlog_bound);
   TEST_ASSERT_EQUAL_UINT32(42U, pending.reading.sample_id);
   TEST_ASSERT_EQUAL_HEX32(UINT32_C(0x11223344), pending.message_id);
-  uint8_t expected[CURA_LORA_V2_READING_FRAME_SIZE];
-  memset(expected, 0xa5, sizeof(expected));
-  expected[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] = CURA_LORA_V2_CONTROL;
-  expected[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] =
+  cura_lora_v2_authenticated_reading_frame_t expected;
+  memset(expected.bytes, 0xa5, sizeof(expected.bytes));
+  expected.bytes[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] =
+      CURA_LORA_V2_CONTROL;
+  expected.bytes[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] =
       CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK;
-  node_persistence_store_le32(expected +
+  node_persistence_store_le32(expected.bytes +
                                   CURA_LORA_V2_CLEAR_HEADER_MESSAGE_ID_OFFSET,
                               UINT32_C(0x11223344));
-  TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, pending.frame, sizeof(expected));
+  TEST_ASSERT_EQUAL_HEX8_ARRAY(expected.bytes, pending.frame.bytes,
+                               sizeof(expected.bytes));
   remove_pending(42U);
   assert_pending_empty();
   hwtest_finish_case();

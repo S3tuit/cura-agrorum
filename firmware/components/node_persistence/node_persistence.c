@@ -279,17 +279,19 @@ static err_curag_t recover_truncate(node_persistence_log_kind_t log_kind,
 
 static err_curag_t read_candidate(node_persistence_log_kind_t log_kind,
                                   uint64_t end, uint16_t total_length,
-                                  uint8_t *record, diagn_context_t *out_diag) {
+                                  uint8_t *record, curag_operation_t operation,
+                                  diagn_context_t *out_diag) {
   if ((uint64_t)total_length > end) {
     return CURAG_ECORRUPT_RECORD;
   }
   return read_log_exact(log_kind, end - total_length, record, total_length,
-                        CURAG_OP_RECOVER, out_diag);
+                        operation, out_diag);
 }
 
 static err_curag_t read_record_ending_at(node_persistence_log_kind_t log_kind,
                                          uint64_t end,
                                          tail_record_t *out_record,
+                                         curag_operation_t operation,
                                          diagn_context_t *out_diag) {
   memset(out_record, 0, sizeof(*out_record));
   if (end < NODE_PERSISTENCE_RECORD_FOOTER_SIZE) {
@@ -298,7 +300,7 @@ static err_curag_t read_record_ending_at(node_persistence_log_kind_t log_kind,
   uint8_t footer[NODE_PERSISTENCE_RECORD_FOOTER_SIZE];
   err_curag_t result =
       read_log_exact(log_kind, end - NODE_PERSISTENCE_RECORD_FOOTER_SIZE,
-                     footer, sizeof(footer), CURAG_OP_READ, out_diag);
+                     footer, sizeof(footer), operation, out_diag);
   if (result != CURAG_OK) {
     return result;
   }
@@ -307,7 +309,8 @@ static err_curag_t read_record_ending_at(node_persistence_log_kind_t log_kind,
       length > NODE_PERSISTENCE_RECORD_MAX_SIZE || (uint64_t)length > end) {
     return CURAG_ECORRUPT_RECORD;
   }
-  result = read_candidate(log_kind, end, length, out_record->record, out_diag);
+  result = read_candidate(log_kind, end, length, out_record->record, operation,
+                          out_diag);
   if (result != CURAG_OK) {
     return result;
   }
@@ -328,20 +331,21 @@ pending_binding_matches_preceding_reading(const tail_record_t *binding,
                                           diagn_context_t *out_diag) {
   *out_matches = false;
   tail_record_t reading_record;
-  err_curag_t result = read_record_ending_at(
-      NODE_PERSISTENCE_LOG_PENDING, binding->start, &reading_record, out_diag);
+  err_curag_t result =
+      read_record_ending_at(NODE_PERSISTENCE_LOG_PENDING, binding->start,
+                            &reading_record, CURAG_OP_RECOVER, out_diag);
   if (result != CURAG_OK) {
     return result;
   }
 
   uint32_t binding_sample_id = 0U;
   uint32_t message_id = 0U;
-  uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE];
+  cura_lora_v2_authenticated_reading_frame_t frame;
   uint8_t body[CURA_LORA_V2_READING_BODY_SIZE];
   cura_lora_v2_reading_t reading;
   if (!node_persistence_record_decode_backlog_binding(
           binding->record, binding->length, &binding_sample_id, &message_id,
-          frame) ||
+          &frame) ||
       !node_persistence_record_decode_reading(reading_record.record,
                                               reading_record.length, body) ||
       cura_lora_v2_decode_reading(&reading, body, sizeof(body)) !=
@@ -389,7 +393,7 @@ static err_curag_t recover_tail(node_persistence_log_kind_t log_kind,
         total_length <= NODE_PERSISTENCE_RECORD_MAX_SIZE &&
         (uint64_t)total_length <= file_size) {
       result = read_candidate(log_kind, file_size, total_length,
-                              out_tail->record, out_diag);
+                              out_tail->record, CURAG_OP_RECOVER, out_diag);
       if (result != CURAG_OK && result != CURAG_ECORRUPT_RECORD) {
         return result;
       }
@@ -449,7 +453,7 @@ static err_curag_t recover_tail(node_persistence_log_kind_t log_kind,
             total_length <= NODE_PERSISTENCE_RECORD_MAX_SIZE &&
             (uint64_t)total_length <= candidate_end) {
           result = read_candidate(log_kind, candidate_end, total_length,
-                                  out_tail->record, out_diag);
+                                  out_tail->record, CURAG_OP_RECOVER, out_diag);
           if (result != CURAG_OK && result != CURAG_ECORRUPT_RECORD) {
             return result;
           }
@@ -553,10 +557,10 @@ static err_curag_t validate_file_forward(node_persistence_log_kind_t log_kind,
       } else {
         uint32_t sample_id = 0U;
         uint32_t message_id = 0U;
-        uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE];
+        cura_lora_v2_authenticated_reading_frame_t frame;
         if (!previous_pending_is_unbound ||
             !node_persistence_record_decode_backlog_binding(
-                record, total_length, &sample_id, &message_id, frame) ||
+                record, total_length, &sample_id, &message_id, &frame) ||
             sample_id != previous_pending_sample_id) {
           return fail(CURAG_ECORRUPT_RECORD, out_diag, operation,
                       NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
@@ -655,7 +659,7 @@ static err_curag_t compact_pending(diagn_context_t *out_diag) {
   while (retained_start > 0U) {
     tail_record_t item_tail;
     result = read_record_ending_at(NODE_PERSISTENCE_LOG_PENDING, retained_start,
-                                   &item_tail, out_diag);
+                                   &item_tail, CURAG_OP_COMPACT, out_diag);
     if (result != CURAG_OK) {
       return result;
     }
@@ -666,10 +670,12 @@ static err_curag_t compact_pending(diagn_context_t *out_diag) {
       tail_record_t reading_record;
       result =
           read_record_ending_at(NODE_PERSISTENCE_LOG_PENDING, item_tail.start,
-                                &reading_record, out_diag);
-      if (result != CURAG_OK ||
-          reading_record.record[PERSISTENCE_RECORD_TYPE_OFFSET] !=
-              NODE_PERSISTENCE_RECORD_TYPE_PENDING_READING) {
+                                &reading_record, CURAG_OP_COMPACT, out_diag);
+      if (result != CURAG_OK) {
+        return result;
+      }
+      if (reading_record.record[PERSISTENCE_RECORD_TYPE_OFFSET] !=
+          NODE_PERSISTENCE_RECORD_TYPE_PENDING_READING) {
         return fail(CURAG_ECORRUPT_RECORD, out_diag, CURAG_OP_COMPACT,
                     NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
                     NODE_PERSISTENCE_STAGE_DECODE,
@@ -961,15 +967,17 @@ node_persistence_append_pending_reading(const cura_lora_v2_reading_t *reading,
 
 err_curag_t node_persistence_bind_newest_backlog_frame(
     uint32_t expected_sample_id, uint32_t message_id,
-    const uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE],
+    const cura_lora_v2_authenticated_reading_frame_t *frame,
     diagn_context_t *out_diag) {
   curag_diagnostic_context_clear(out_diag);
   if (frame == NULL ||
-      frame[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] != CURA_LORA_V2_CONTROL ||
-      frame[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] !=
+      frame->bytes[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] !=
+          CURA_LORA_V2_CONTROL ||
+      frame->bytes[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] !=
           CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK ||
-      node_persistence_load_le32(
-          frame + CURA_LORA_V2_CLEAR_HEADER_MESSAGE_ID_OFFSET) != message_id) {
+      node_persistence_load_le32(frame->bytes +
+                                 CURA_LORA_V2_CLEAR_HEADER_MESSAGE_ID_OFFSET) !=
+          message_id) {
     return fail(CURAG_EINVALID_ARGUMENT, out_diag, CURAG_OP_VALIDATE,
                 NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
                 NODE_PERSISTENCE_STAGE_NONE, NODE_PERSISTENCE_BACKEND_NO_ERROR,
@@ -1009,7 +1017,7 @@ err_curag_t node_persistence_bind_newest_backlog_frame(
   uint8_t payload[NODE_PERSISTENCE_BACKLOG_BINDING_PAYLOAD_SIZE];
   node_persistence_store_le32(payload, expected_sample_id);
   node_persistence_store_le32(payload + 4U, message_id);
-  memcpy(payload + 8U, frame, CURA_LORA_V2_READING_FRAME_SIZE);
+  memcpy(payload + 8U, frame->bytes, sizeof(frame->bytes));
   uint8_t record[NODE_PERSISTENCE_RECORD_MAX_SIZE];
   size_t record_length = 0U;
   if (!node_persistence_record_encode(
@@ -1059,19 +1067,16 @@ node_persistence_peek_most_recent_pending(node_pending_reading_t *out_pending,
     uint32_t binding_sample_id = 0U;
     if (!node_persistence_record_decode_backlog_binding(
             tail.record, tail.length, &binding_sample_id,
-            &out_pending->message_id, out_pending->frame)) {
+            &out_pending->message_id, &out_pending->frame)) {
       return fail(CURAG_ECORRUPT_RECORD, out_diag, CURAG_OP_DECODE,
                   NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
                   NODE_PERSISTENCE_STAGE_DECODE,
                   NODE_PERSISTENCE_BACKEND_NO_ERROR, 0);
     }
     result = read_record_ending_at(NODE_PERSISTENCE_LOG_PENDING, tail.start,
-                                   &reading_record, out_diag);
+                                   &reading_record, CURAG_OP_READ, out_diag);
     if (result != CURAG_OK) {
-      return fail(CURAG_ECORRUPT_RECORD, out_diag, CURAG_OP_DECODE,
-                  NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
-                  NODE_PERSISTENCE_STAGE_DECODE,
-                  NODE_PERSISTENCE_BACKEND_NO_ERROR, 0);
+      return result;
     }
     out_pending->backlog_bound = true;
   }
@@ -1090,10 +1095,10 @@ node_persistence_peek_most_recent_pending(node_pending_reading_t *out_pending,
   if (out_pending->backlog_bound) {
     uint32_t binding_sample_id = 0U;
     uint32_t ignored_message_id = 0U;
-    uint8_t ignored_frame[CURA_LORA_V2_READING_FRAME_SIZE];
+    cura_lora_v2_authenticated_reading_frame_t ignored_frame;
     (void)node_persistence_record_decode_backlog_binding(
         tail.record, tail.length, &binding_sample_id, &ignored_message_id,
-        ignored_frame);
+        &ignored_frame);
     if (binding_sample_id != out_pending->reading.sample_id) {
       return fail(CURAG_ECORRUPT_RECORD, out_diag, CURAG_OP_DECODE,
                   NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
@@ -1133,12 +1138,9 @@ err_curag_t node_persistence_remove_newest_reading(uint32_t expected_sample_id,
   if (tail.record[PERSISTENCE_RECORD_TYPE_OFFSET] ==
       NODE_PERSISTENCE_RECORD_TYPE_PENDING_BACKLOG_BINDING) {
     result = read_record_ending_at(NODE_PERSISTENCE_LOG_PENDING, tail.start,
-                                   &reading_record, out_diag);
+                                   &reading_record, CURAG_OP_READ, out_diag);
     if (result != CURAG_OK) {
-      return fail(CURAG_ECORRUPT_RECORD, out_diag, CURAG_OP_DECODE,
-                  NODE_PERSISTENCE_RESOURCE_PENDING_LOG,
-                  NODE_PERSISTENCE_STAGE_DECODE,
-                  NODE_PERSISTENCE_BACKEND_NO_ERROR, 0);
+      return result;
     }
     truncate_at = reading_record.start;
   }

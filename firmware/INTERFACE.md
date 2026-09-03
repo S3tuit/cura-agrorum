@@ -159,7 +159,11 @@ The canonical `cura_lora_v2_reading_t` contains `sample_id` as its first wire
 field. Persistence serializes readings through the generated protocol codec
 and never dumps their native structure. `node_pending_reading_t` is the
 persistence-specific result used to return a reading plus its optional durable
-backlog-frame binding.
+backlog-frame binding. The protocol-owned
+`cura_lora_v2_authenticated_reading_frame_t` contains exactly one
+`CURA_LORA_V2_READING_FRAME_SIZE` byte array and has a generated compile-time
+size assertion; APIs use a pointer to that type whenever a complete
+authenticated reading frame is required.
 
 There is no public initialization method. NVS and LittleFS initialize
 independently on first use and cache initialization failure for the remainder
@@ -239,6 +243,13 @@ must never wrap or be reused while the same node identity/key is active. A
 missing counter is valid only for a newly provisioned identity; operational
 loss or exhaustion requires replacing both identity and key.
 
+The pilot cannot distinguish a genuinely new NVS namespace from erased or
+rolled-back counter state. Operators must not erase or restore NVS while
+retaining the provisioned identity and key. The repository maintenance
+application preserves NVS; if counter state is lost or rolled back, rotate both
+the identity and key before any further transmission. Automatic recovery is
+deferred to a future protocol and receiver handshake.
+
 Its argument, lazy-NVS, read, set and commit behavior mirrors
 `claim_sample_id`, but diagnostics identify `NVS_MESSAGE_COUNTER` and exhaustion
 returns `CURAG_EMESSAGE_ID_EXHAUSTED`. On failure `node_core` constructs no
@@ -316,16 +327,16 @@ Implemented shape:
 err_curag_t node_persistence_bind_newest_backlog_frame(
     u32 expected_sample_id,
     u32 message_id,
-    const u8 frame[CURA_LORA_V2_READING_FRAME_SIZE],
+    const cura_lora_v2_authenticated_reading_frame_t *frame,
     diagn_context_t *out_diag)
 ```
 
 Durably appends a 62-byte binding payload after the newest unbound pending
 reading. It verifies the expected sample ID, backlog domain, clear-header
-message ID and exact 54-byte frame length before the append. Success makes the
-frame authoritative for all backlog retries, including later wakes. Failure
-does not authorize TX; recovery determines whether an ambiguously synchronized
-binding became durable.
+message ID and requires the generated fixed-size authenticated-reading-frame
+type before the append. Success makes the frame authoritative for all backlog
+retries, including later wakes. Failure does not authorize TX; recovery
+determines whether an ambiguously synchronized binding became durable.
 
 ### `peek_most_recent_pending`
 

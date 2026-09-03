@@ -84,13 +84,13 @@ void fake_node_core_add_pending(uint32_t sample_id,
 
 void fake_node_core_add_bound_pending(
     uint32_t message_id, const cura_lora_v2_reading_t *reading,
-    const uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE]) {
+    const cura_lora_v2_authenticated_reading_frame_t *frame) {
   fake_node_core_add_pending(reading->sample_id, reading);
   fake_node_core_pending_t *pending =
       &fake_node_core.pending[fake_node_core.pending_count - 1U];
   pending->value.backlog_bound = true;
   pending->value.message_id = message_id;
-  memcpy(pending->value.frame, frame, sizeof(pending->value.frame));
+  pending->value.frame = *frame;
 }
 
 void fake_node_core_script_tx_done(uint64_t set_tx_at_us,
@@ -341,7 +341,7 @@ node_persistence_append_pending_reading(const cura_lora_v2_reading_t *reading,
 
 err_curag_t node_persistence_bind_newest_backlog_frame(
     uint32_t expected_sample_id, uint32_t message_id,
-    const uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE],
+    const cura_lora_v2_authenticated_reading_frame_t *frame,
     diagn_context_t *out_diag) {
   trace_call(FAKE_CORE_TRACE_BIND_BACKLOG);
   fake_node_core.bind_backlog_call_count++;
@@ -357,7 +357,7 @@ err_curag_t node_persistence_bind_newest_backlog_frame(
     assert(pending->value.reading.sample_id == expected_sample_id);
     pending->value.backlog_bound = true;
     pending->value.message_id = message_id;
-    memcpy(pending->value.frame, frame, sizeof(pending->value.frame));
+    pending->value.frame = *frame;
   }
   return error;
 }

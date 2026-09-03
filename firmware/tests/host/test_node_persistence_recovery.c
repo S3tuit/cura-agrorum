@@ -162,19 +162,19 @@ static bool append_repairs_first_and_never_buries_corruption(void) {
 static bool complete_mismatched_binding_is_removed_before_append(void) {
   node_persistence_test_reset_all();
   const cura_lora_v2_reading_t first = node_persistence_test_make_reading(1U);
-  uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE];
-  memset(frame, 0xa5, sizeof(frame));
-  frame[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] = CURA_LORA_V2_CONTROL;
-  frame[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] =
+  cura_lora_v2_authenticated_reading_frame_t frame;
+  memset(frame.bytes, 0xa5, sizeof(frame.bytes));
+  frame.bytes[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] = CURA_LORA_V2_CONTROL;
+  frame.bytes[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] =
       CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK;
   node_persistence_store_le32(
-      frame + CURA_LORA_V2_CLEAR_HEADER_MESSAGE_ID_OFFSET, 9U);
+      frame.bytes + CURA_LORA_V2_CLEAR_HEADER_MESSAGE_ID_OFFSET, 9U);
 
   diagn_context_t diag;
   TEST_ASSERT_EQ_U32(CURAG_OK,
                      node_persistence_append_pending_reading(&first, &diag));
   TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_bind_newest_backlog_frame(
-                                   first.sample_id, 9U, frame, &diag));
+                                   first.sample_id, 9U, &frame, &diag));
 
   node_persistence_test_snapshot_t snapshot;
   TEST_ASSERT(node_persistence_test_snapshot(TEST_PENDING_PATH, &snapshot));

@@ -4,13 +4,14 @@
 
 static void
 make_binding_frame(uint32_t message_id,
-                   uint8_t output[CURA_LORA_V2_READING_FRAME_SIZE]) {
-  memset(output, 0xa5, CURA_LORA_V2_READING_FRAME_SIZE);
-  output[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] = CURA_LORA_V2_CONTROL;
-  output[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] =
+                   cura_lora_v2_authenticated_reading_frame_t *output) {
+  memset(output->bytes, 0xa5, sizeof(output->bytes));
+  output->bytes[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] =
+      CURA_LORA_V2_CONTROL;
+  output->bytes[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] =
       CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK;
   node_persistence_store_le32(
-      output + CURA_LORA_V2_CLEAR_HEADER_MESSAGE_ID_OFFSET, message_id);
+      output->bytes + CURA_LORA_V2_CLEAR_HEADER_MESSAGE_ID_OFFSET, message_id);
 }
 
 static bool pending_compaction_retains_newest_half_across_restart(void) {
@@ -98,12 +99,12 @@ static bool pending_compaction_never_splits_a_bound_item(void) {
     const cura_lora_v2_reading_t reading =
         node_persistence_test_make_reading((uint16_t)sample_id);
     const uint32_t message_id = UINT32_C(100) + sample_id;
-    uint8_t frame[CURA_LORA_V2_READING_FRAME_SIZE];
-    make_binding_frame(message_id, frame);
+    cura_lora_v2_authenticated_reading_frame_t frame;
+    make_binding_frame(message_id, &frame);
     TEST_ASSERT_EQ_U32(
         CURAG_OK, node_persistence_append_pending_reading(&reading, &diag));
     TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_bind_newest_backlog_frame(
-                                     sample_id, message_id, frame, &diag));
+                                     sample_id, message_id, &frame, &diag));
   }
   const cura_lora_v2_reading_t newest = node_persistence_test_make_reading(3U);
   TEST_ASSERT_EQ_U32(CURAG_OK,
@@ -126,9 +127,10 @@ static bool pending_compaction_never_splits_a_bound_item(void) {
   TEST_ASSERT(pending.backlog_bound);
   TEST_ASSERT_EQ_U32(2U, pending.reading.sample_id);
   TEST_ASSERT_EQ_U32(102U, pending.message_id);
-  uint8_t expected[CURA_LORA_V2_READING_FRAME_SIZE];
-  make_binding_frame(102U, expected);
-  TEST_ASSERT(memcmp(expected, pending.frame, sizeof(expected)) == 0);
+  cura_lora_v2_authenticated_reading_frame_t expected;
+  make_binding_frame(102U, &expected);
+  TEST_ASSERT(
+      memcmp(expected.bytes, pending.frame.bytes, sizeof(expected.bytes)) == 0);
   return true;
 }
 

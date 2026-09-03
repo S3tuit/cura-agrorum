@@ -823,6 +823,20 @@ def generate_c_header(
             f"}} {C_TYPE_PREFIX}_codec_result_t;",
             "",
             "typedef struct {",
+            f"  uint8_t bytes[{C_PREFIX}_READING_FRAME_SIZE];",
+            f"}} {C_TYPE_PREFIX}_authenticated_reading_frame_t;",
+            "",
+            "#if defined(__cplusplus)",
+            f"static_assert(sizeof({C_TYPE_PREFIX}_authenticated_reading_frame_t) ==",
+            f"                  {C_PREFIX}_READING_FRAME_SIZE,",
+            '              "authenticated reading frame size mismatch");',
+            "#else",
+            f"_Static_assert(sizeof({C_TYPE_PREFIX}_authenticated_reading_frame_t) ==",
+            f"                   {C_PREFIX}_READING_FRAME_SIZE,",
+            '               "authenticated reading frame size mismatch");',
+            "#endif",
+            "",
+            "typedef struct {",
         ]
     )
     lines.extend(c_struct_fields(header["fields"]))

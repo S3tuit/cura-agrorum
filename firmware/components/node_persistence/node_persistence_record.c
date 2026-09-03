@@ -295,7 +295,7 @@ bool node_persistence_record_decode_reading(
 bool node_persistence_record_decode_backlog_binding(
     const uint8_t *record, size_t record_length, uint32_t *out_sample_id,
     uint32_t *out_message_id,
-    uint8_t out_frame[CURA_LORA_V2_READING_FRAME_SIZE]) {
+    cura_lora_v2_authenticated_reading_frame_t *out_frame) {
   if (record == NULL || out_sample_id == NULL || out_message_id == NULL ||
       out_frame == NULL ||
       record_length != NODE_PERSISTENCE_BACKLOG_BINDING_PAYLOAD_SIZE +
@@ -307,6 +307,6 @@ bool node_persistence_record_decode_backlog_binding(
   const uint8_t *payload = record + RECORD_PAYLOAD_OFFSET;
   *out_sample_id = node_persistence_load_le32(payload);
   *out_message_id = node_persistence_load_le32(payload + 4U);
-  memcpy(out_frame, payload + 8U, CURA_LORA_V2_READING_FRAME_SIZE);
+  memcpy(out_frame->bytes, payload + 8U, sizeof(out_frame->bytes));
   return true;
 }

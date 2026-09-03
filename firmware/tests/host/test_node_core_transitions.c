@@ -33,7 +33,7 @@ static bool script_ack_after(uint32_t message_id,
 
 static bool
 make_backlog_frame(uint32_t message_id, const cura_lora_v2_reading_t *reading,
-                   uint8_t output[CURA_LORA_V2_READING_FRAME_SIZE]) {
+                   cura_lora_v2_authenticated_reading_frame_t *output) {
   uint8_t body[CURA_LORA_V2_READING_BODY_SIZE];
   if (cura_lora_v2_encode_reading(body, sizeof(body), reading) !=
       CURA_LORA_V2_CODEC_OK) {
@@ -46,7 +46,7 @@ make_backlog_frame(uint32_t message_id, const cura_lora_v2_reading_t *reading,
   };
   memcpy(header.node_id, CORE_TEST_IDENTITY.node_id, sizeof(header.node_id));
   size_t output_length = 0U;
-  return cura_lora_v2_seal_frame(output, CURA_LORA_V2_READING_FRAME_SIZE,
+  return cura_lora_v2_seal_frame(output->bytes, sizeof(output->bytes),
                                  &output_length, CORE_TEST_IDENTITY.node_key,
                                  &header, body,
                                  sizeof(body)) == CURA_LORA_V2_CRYPTO_OK &&
@@ -367,11 +367,11 @@ static bool bound_backlog_reuses_persisted_frame_without_new_id(void) {
   core_test_setup(&rtc, &platform);
   const cura_lora_v2_reading_t backlog = core_test_reading(30U);
   const uint32_t backlog_message_id = UINT32_C(77);
-  uint8_t persisted_frame[CURA_LORA_V2_READING_FRAME_SIZE];
+  cura_lora_v2_authenticated_reading_frame_t persisted_frame;
   CORE_TEST_ASSERT(
-      make_backlog_frame(backlog_message_id, &backlog, persisted_frame));
+      make_backlog_frame(backlog_message_id, &backlog, &persisted_frame));
   fake_node_core_add_bound_pending(backlog_message_id, &backlog,
-                                   persisted_frame);
+                                   &persisted_frame);
   fake_node_core.claimed_sample_id = 31U;
   uint64_t time_us = fake_node_core.now_us;
   CORE_TEST_ASSERT(script_ack_after(
@@ -382,9 +382,9 @@ static bool bound_backlog_reuses_persisted_frame_without_new_id(void) {
   core_test_run(&rtc, &platform);
 
   CORE_TEST_ASSERT_EQ_SIZE(2U, fake_node_core.transmission_count);
-  CORE_TEST_ASSERT(memcmp(persisted_frame,
+  CORE_TEST_ASSERT(memcmp(persisted_frame.bytes,
                           fake_node_core.transmissions[1].payload,
-                          sizeof(persisted_frame)) == 0);
+                          sizeof(persisted_frame.bytes)) == 0);
   CORE_TEST_ASSERT_EQ_SIZE(1U, fake_node_core.message_claim_call_count);
   CORE_TEST_ASSERT_EQ_SIZE(0U, fake_node_core.bind_backlog_call_count);
   CORE_TEST_ASSERT_EQ_U32(backlog_message_id,

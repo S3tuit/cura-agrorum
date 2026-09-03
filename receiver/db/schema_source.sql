@@ -66,6 +66,25 @@ BEGIN
     SELECT RAISE(ABORT, 'receiver_instances must start without a clean-stop marker');
 END;
 
+CREATE TRIGGER receiver_instances_no_replace
+BEFORE INSERT ON receiver_instances
+WHEN EXISTS (
+    SELECT 1
+    FROM receiver_instances
+    WHERE instance_ordinal IS NEW.instance_ordinal
+       OR receiver_instance_id IS NEW.receiver_instance_id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'receiver_instances is append-only');
+END;
+
+CREATE TRIGGER receiver_instances_monotonic_ordinal
+AFTER INSERT ON receiver_instances
+WHEN NEW.instance_ordinal != (SELECT count(*) FROM receiver_instances)
+BEGIN
+    SELECT RAISE(ABORT, 'receiver_instances ordinal must be database ordered');
+END;
+
 CREATE TRIGGER receiver_instances_controlled_update
 BEFORE UPDATE ON receiver_instances
 WHEN NOT (
@@ -108,6 +127,17 @@ CREATE TABLE quarantined_communicator_states (
     database_schema_version INTEGER NOT NULL
         CHECK (database_schema_version > 0)
 ) STRICT;
+
+CREATE TRIGGER quarantined_communicator_states_no_replace
+BEFORE INSERT ON quarantined_communicator_states
+WHEN EXISTS (
+    SELECT 1
+    FROM quarantined_communicator_states
+    WHERE quarantined_state_id IS NEW.quarantined_state_id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'quarantined_communicator_states is append-only');
+END;
 
 CREATE TRIGGER quarantined_communicator_states_no_update
 BEFORE UPDATE ON quarantined_communicator_states

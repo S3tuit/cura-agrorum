@@ -2768,6 +2768,18 @@ destination. It never overwrites an existing database, discovers or sorts SQL
 fragments on the Pi, or computes a new local expected value with which to bless
 arbitrary SQL.
 
+The initializer synchronizes the containing directory immediately after
+creating the absent destination hard link and before removing the validated
+temporary name. Failure before that synchronization completes is an uncertain
+installation: it preserves both names and returns
+`DatabaseInstallationUncertainError`. Deployment must pass that exact error and
+the requested group identity to `reconcile_database_installation()`, which
+verifies both names still identify the original file, revalidates the database,
+and retries the directory synchronization. After the destination is durably
+installed, failure to remove or durably remove the temporary name is reported
+only as `DatabaseInitializationResult.cleanup_pending_path`; it does not turn a
+successful database installation into failure.
+
 Existing-database startup checks `application_id`, the one metadata row, exact
 configured `group_id`, exact generated schema version and exact generated
 fingerprint. It does not issue one validation query per enum table. A mismatch
@@ -2902,12 +2914,10 @@ an explicit evidence or canonical-state requirement.
 
 ### Core tables and identities
 
-After the remaining lifecycle mappings contribute their DDL, the deployable
-pilot database contains the following core tables in addition to the generated
-enum catalogues. The current generated schema contains the direct,
-receiver-health, packet-transaction and communicator-state entity tables, but
-it is not yet operational because the deferred lifecycle and invalid-state
-quarantine tables are still absent.
+The assembled pilot schema contains the following core tables in addition to
+the generated enum catalogues. Completing these Stage 1 tables does not make
+the receiver operational: queue codecs and validators, runtime persistence,
+classification, replay and recovery remain deferred to their owning stages.
 
 | Table | Canonical identity and role |
 |---|---|
@@ -2930,7 +2940,12 @@ secret provisioning material.
 Tables use `STRICT` mode, fixed-length BLOB checks, foreign keys and explicit
 range constraints. Composite canonical tables should use `WITHOUT ROWID`.
 Optional stored values are SQL `NULL`, never numeric sentinels. No canonical
-insert uses `INSERT OR REPLACE`.
+insert uses `INSERT OR REPLACE`. Every append-only table rejects a conflicting
+primary or declared unique identity in a `BEFORE INSERT` trigger, before a
+statement-level conflict algorithm could delete the existing row. This remains
+effective with SQLite's default `recursive_triggers=OFF`; ordinary idempotent
+replay selects and compares the complete existing row instead of suppressing or
+replacing the conflict.
 
 `message_profiles` stores all logical `MessageProfilingV1` fields with absent
 fields mapped to `NULL` and adds the derived `persistence_classification`. It
@@ -3115,9 +3130,13 @@ CREATE TABLE receiver_instances (
 ) STRICT;
 ```
 
-`instance_ordinal` is database-local analysis order and is never reused because
-lifecycle rows are never deleted. `receiver_instance_id` remains the public
-identity referenced by other tables.
+Persistence omits `instance_ordinal` on insertion so SQLite assigns the next
+row identity. A trigger additionally requires every inserted ordinal to equal
+the resulting one-based row count; explicit gaps, backfilling and reordered
+inserts therefore fail even if a caller supplies the column. The ordinal is
+database-local analysis order and is never reused because lifecycle rows are
+never deleted. `receiver_instance_id` remains the public identity referenced by
+other tables.
 
 `receiver_instances` is the sole persisted source of `linux_boot_id`. Queue
 entities, `CommunicatorStateV1` and every other database row store only the

@@ -9,7 +9,9 @@ import pytest
 from receiver.cura_receiver import database_initializer
 from receiver.cura_receiver.database_initializer import (
     DatabaseInitializationError,
+    DatabaseInstallationUncertainError,
     initialize_database,
+    reconcile_database_installation,
 )
 from receiver.cura_receiver.generated.receiver_enums_generated import (
     DATABASE_SCHEMA_FINGERPRINT,
@@ -28,8 +30,11 @@ def test_initializer_installs_exact_packaged_schema_and_metadata(
     database = tmp_path / "receiver.sqlite3"
     group_id = bytes.fromhex("0011223344556677")
 
-    initialize_database(database, group_id)
+    result = initialize_database(database, group_id)
 
+    assert result.database_path == database
+    assert result.cleanup_complete
+    assert result.cleanup_pending_path is None
     assert database.is_file()
     assert not list(tmp_path.glob(".receiver.sqlite3.*.initializing"))
     connection = sqlite3.connect(database)
@@ -135,3 +140,121 @@ def test_initializer_cleans_temporary_artifacts_after_sqlite_failure(
 
     assert not database.exists()
     assert not list(tmp_path.glob(".receiver.sqlite3.*.initializing"))
+
+
+def test_initializer_preserves_and_reconciles_uncertain_installation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = tmp_path / "receiver.sqlite3"
+    group_id = bytes.fromhex("0011223344556677")
+    synchronize_directory = database_initializer._synchronize_directory
+
+    def fail_directory_sync(_directory: Path) -> None:
+        raise OSError("injected directory sync failure")
+
+    monkeypatch.setattr(
+        database_initializer,
+        "_synchronize_directory",
+        fail_directory_sync,
+    )
+    with pytest.raises(DatabaseInstallationUncertainError) as captured:
+        initialize_database(database, group_id)
+
+    uncertain = captured.value
+    assert uncertain.database_path == database
+    assert database.is_file()
+    assert uncertain.temporary_path.is_file()
+    assert database.samefile(uncertain.temporary_path)
+
+    with pytest.raises(DatabaseInitializationError, match="metadata"):
+        reconcile_database_installation(uncertain, bytes([1]) * 8)
+    assert database.samefile(uncertain.temporary_path)
+
+    monkeypatch.setattr(
+        database_initializer,
+        "_synchronize_directory",
+        synchronize_directory,
+    )
+    result = reconcile_database_installation(uncertain, group_id)
+    assert result.database_path == database
+    assert result.cleanup_complete
+    assert database.is_file()
+    assert not uncertain.temporary_path.exists()
+
+
+def test_initializer_reports_temporary_unlink_as_cleanup_pending(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = tmp_path / "receiver.sqlite3"
+    path_unlink = Path.unlink
+
+    def fail_temporary_unlink(path: Path, *args: object, **kwargs: object) -> None:
+        if path.name.endswith(".initializing"):
+            raise OSError("injected temporary unlink failure")
+        path_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_temporary_unlink)
+    result = initialize_database(database, bytes(8))
+
+    assert database.is_file()
+    assert not result.cleanup_complete
+    assert result.cleanup_pending_path is not None
+    assert result.cleanup_pending_path.is_file()
+    assert database.samefile(result.cleanup_pending_path)
+
+
+def test_reconciliation_rejects_a_replaced_temporary_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = tmp_path / "receiver.sqlite3"
+
+    def fail_directory_sync(_directory: Path) -> None:
+        raise OSError("injected directory sync failure")
+
+    monkeypatch.setattr(
+        database_initializer,
+        "_synchronize_directory",
+        fail_directory_sync,
+    )
+    with pytest.raises(DatabaseInstallationUncertainError) as captured:
+        initialize_database(database, bytes(8))
+
+    uncertain = captured.value
+    uncertain.temporary_path.unlink()
+    uncertain.temporary_path.write_bytes(b"replacement")
+    with pytest.raises(DatabaseInitializationError, match="identity changed"):
+        reconcile_database_installation(uncertain, bytes(8))
+
+    assert database.is_file()
+
+
+def test_initializer_reports_cleanup_sync_failure_without_failing_installation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = tmp_path / "receiver.sqlite3"
+    synchronize_directory = database_initializer._synchronize_directory
+    call_count = 0
+
+    def fail_second_directory_sync(directory: Path) -> None:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise OSError("injected cleanup sync failure")
+        synchronize_directory(directory)
+
+    monkeypatch.setattr(
+        database_initializer,
+        "_synchronize_directory",
+        fail_second_directory_sync,
+    )
+    result = initialize_database(database, bytes(8))
+
+    assert call_count == 2
+    assert database.is_file()
+    assert not result.cleanup_complete
+    assert result.cleanup_pending_path is not None
+    assert not result.cleanup_pending_path.exists()

@@ -25,6 +25,7 @@ import argparse
 import hashlib
 import itertools
 import json
+import keyword
 import os
 import re
 import sqlite3
@@ -623,7 +624,7 @@ def validate_encoding_fields(
             {"name", "type"},
             field_context,
         )
-        name = require_sql_identifier(field, "name", field_context)
+        name = require_python_field_name(field, "name", field_context)
         if name in field_by_name:
             raise ManifestError(f"{context} repeats field {name}")
         field_by_name[name] = field
@@ -969,11 +970,19 @@ def validate_entity_manifest(
     if not isinstance(logical_records_data, list):
         raise ManifestError("entity manifest.logical_records must be an array")
     logical_record_names: set[str] = set()
-    python_names = {
+    enum_python_names = {enum.python_name for enum in enum_manifest.enums}
+    encoding_python_names = {
         struct_spec["python_name"]
         for encoding in encodings
         for struct_spec in encoding["structs"]
     }
+    enum_encoding_collisions = enum_python_names & encoding_python_names
+    if enum_encoding_collisions:
+        collision = min(enum_encoding_collisions)
+        raise ManifestError(
+            f"entity manifest Python class {collision} collides with an imported enum"
+        )
+    python_names = enum_python_names | encoding_python_names
     logical_records: list[dict[str, Any]] = []
     record_validation_manifest = EntityManifest(
         schema_format_version,
@@ -1061,6 +1070,7 @@ def validate_entity_manifest(
                 provisional,
                 python_names,
                 table_names,
+                entity_names,
             )
         else:
             require_allowed_keys(
@@ -1114,6 +1124,7 @@ def validate_transaction_mapping(
     entity_manifest: EntityManifest,
     python_names: set[str],
     table_names: set[str],
+    entity_names: set[str],
 ) -> None:
     require_exact_keys(
         persistence,
@@ -1157,12 +1168,15 @@ def validate_transaction_mapping(
             target_context,
         )
         target_name = require_upper_name(target, "name", target_context)
-        if target_name in target_names or any(
+        if target_name in target_names or target_name in entity_names or any(
             record["name"] == target_name
             for record in entity_manifest.logical_records
         ):
-            raise ManifestError(f"{context} repeats target {target_name}")
+            raise ManifestError(
+                f"entity manifest repeats entity or target {target_name}"
+            )
         target_names.add(target_name)
+        entity_names.add(target_name)
         python_name = require_python_class_name(target, "python_name", target_context)
         if python_name in python_names:
             raise ManifestError(f"entity manifest repeats Python class {python_name}")
@@ -1376,7 +1390,7 @@ def validate_entity_field(
     }
     required = {"name", "type"}
     require_allowed_keys(field, allowed, required, context)
-    require_sql_identifier(field, "name", context)
+    require_python_field_name(field, "name", context)
     type_name = field.get("type")
     if not isinstance(type_name, str):
         raise ManifestError(f"{context}.type must be a string")
@@ -1653,6 +1667,15 @@ def require_python_class_name(
     return value
 
 
+def require_python_field_name(
+    data: dict[str, Any], key: str, context: str
+) -> str:
+    value = require_sql_identifier(data, key, context)
+    if keyword.iskeyword(value):
+        raise ManifestError(f"{context}.{key} must not be a Python keyword")
+    return value
+
+
 def require_allowed_keys(
     data: dict[str, Any],
     allowed: set[str],
@@ -1689,11 +1712,6 @@ def validate_schema_source(
         raise ManifestError("schema source must create database_metadata")
 
     forbidden = (
-        (
-            r"(?m)^\s*(?:BEGIN\s+(?:DEFERRED|IMMEDIATE|EXCLUSIVE|TRANSACTION)"
-            r"|COMMIT(?:\s+TRANSACTION)?|ROLLBACK(?:\s+TRANSACTION)?)\s*;",
-            "transaction boundary",
-        ),
         (r"\bPRAGMA\s+(?:application_id|user_version)\b", "identity/version PRAGMA"),
         (r"\bINSERT\s+INTO\s+database_metadata\b", "database_metadata row"),
         (r"\bschema_migrations\b", "schema_migrations reference"),
@@ -1701,6 +1719,7 @@ def validate_schema_source(
     for pattern, description in forbidden:
         if re.search(pattern, executable_lines, flags=re.IGNORECASE):
             raise ManifestError(f"schema source must not contain a {description}")
+    validate_schema_source_transaction_free(source)
 
     generated_tables = {
         enum.table
@@ -1719,6 +1738,36 @@ def validate_schema_source(
             raise ManifestError(
                 f"schema source creates generated catalogue table {table}"
             )
+
+
+def validate_schema_source_transaction_free(source: str) -> None:
+    connection = sqlite3.connect(":memory:")
+    forbidden_operation: list[str] = []
+
+    def authorize(
+        action: int,
+        argument_1: str | None,
+        _argument_2: str | None,
+        _database: str | None,
+        _trigger: str | None,
+    ) -> int:
+        if action in (sqlite3.SQLITE_TRANSACTION, sqlite3.SQLITE_SAVEPOINT):
+            forbidden_operation.append(argument_1 or "transaction")
+            return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+
+    connection.set_authorizer(authorize)
+    try:
+        connection.executescript(source)
+    except sqlite3.Error as exc:
+        if forbidden_operation:
+            raise ManifestError(
+                "schema source must not contain a transaction boundary"
+            ) from exc
+        # The fully assembled validation reports other SQL errors after the
+        # generated tables have been appended.
+    finally:
+        connection.close()
 
 
 def validate_assembled_schema(schema_sql: str) -> None:
@@ -2020,7 +2069,7 @@ def render_entity_table(
     for index in row.get("indexes", []):
         lines.extend([*render_entity_index(row["table"], index), ""])
     if row["write_policy"] == "append_only":
-        lines.extend([*render_append_only_triggers(row["table"]), ""])
+        lines.extend([*render_append_only_triggers(row), ""])
     return lines
 
 
@@ -2107,8 +2156,33 @@ def render_entity_column(field: dict[str, Any], column: str) -> str:
     return " ".join(parts)
 
 
-def render_append_only_triggers(table: str) -> list[str]:
-    lines: list[str] = []
+def render_append_only_triggers(row: dict[str, Any]) -> list[str]:
+    table = row["table"]
+    primary_key_predicate = " AND ".join(
+        f"{column} IS NEW.{column}" for column in row["primary_key"]
+    )
+    conflicts = [
+        f"EXISTS (SELECT 1 FROM {table} WHERE {primary_key_predicate})"
+    ]
+    for index in row.get("indexes", []):
+        where = index["where"]
+        indexed_columns = " AND ".join(
+            f"{column} IS NEW.{column}" for column in index["columns"]
+        )
+        conflicts.append(
+            f"NEW.{where['column']} = {where['equals']} AND EXISTS ("
+            f"SELECT 1 FROM {table} WHERE {indexed_columns} "
+            f"AND {where['column']} = {where['equals']})"
+        )
+    lines = [
+        f"CREATE TRIGGER {table}_no_replace",
+        f"BEFORE INSERT ON {table}",
+        "WHEN " + "\n     OR ".join(conflicts),
+        "BEGIN",
+        f"    SELECT RAISE(ABORT, '{table} is append-only');",
+        "END;",
+        "",
+    ]
     for action in ("UPDATE", "DELETE"):
         action_lower = action.lower()
         lines.extend(
@@ -2121,8 +2195,7 @@ def render_append_only_triggers(table: str) -> list[str]:
                 "",
             ]
         )
-    if lines:
-        lines.pop()
+    lines.pop()
     return lines
 
 

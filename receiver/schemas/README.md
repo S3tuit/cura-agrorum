@@ -69,6 +69,12 @@ therefore emits neither append-only nor immutable triggers for that table;
 handwritten persistence may atomically install or replace its one constant-key
 row under the communicator-state control contract.
 
+Every other generated SQL row uses `write_policy: append_only`. Generation
+emits update/delete rejection plus a pre-insert conflict guard for its primary
+key and every declared partial unique identity. The guard prevents
+statement-level `INSERT OR REPLACE` from deleting immutable evidence even when
+SQLite recursive triggers are disabled.
+
 Encoding fields with `constant` or `derived` are representation details and do
 not become Python constructor arguments. The supported derived operations are
 `{"encoded_length": true}`, `{"presence_mask": true}`, and

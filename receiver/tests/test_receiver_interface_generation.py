@@ -70,6 +70,29 @@ def validate_entity_manifest_fixture(
     )
 
 
+def validate_schema_source_fixture(
+    tmp_path: Path,
+    schema_source: str,
+) -> subprocess.CompletedProcess[str]:
+    fixture_directory = tmp_path / "schema"
+    fixture_directory.mkdir()
+    fixture = fixture_directory / "schema_source.sql"
+    fixture.write_text(schema_source, encoding="utf-8")
+    return subprocess.run(
+        [
+            sys.executable,
+            str(GENERATOR),
+            "--schema-source",
+            str(fixture),
+            "--validate-only",
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
 def open_schema() -> sqlite3.Connection:
     connection = sqlite3.connect(":memory:")
     connection.execute("PRAGMA foreign_keys = ON")
@@ -197,6 +220,7 @@ def test_schema_contains_declared_catalogues_and_entity_tables() -> None:
         if enum_spec["persistence"]["mode"] != "encoded_only"
     }
     expected_entity_tables: set[str] = set()
+    expected_append_only_tables: set[str] = set()
     expected_table_constants: dict[str, str] = {}
     for entity in entity_manifest["entities"]:
         persistence = entity["persistence"]
@@ -210,9 +234,16 @@ def test_schema_contains_declared_catalogues_and_entity_tables() -> None:
                     for target in persistence["targets"]
                 }
             )
+            expected_append_only_tables.update(
+                target["table"]
+                for target in persistence["targets"]
+                if target["write_policy"] == "append_only"
+            )
         else:
             expected_entity_tables.add(persistence["table"])
             expected_table_constants[entity["name"]] = persistence["table"]
+            if persistence["write_policy"] == "append_only":
+                expected_append_only_tables.add(persistence["table"])
     for entity_name, table in expected_table_constants.items():
         assert getattr(generated_entities, entity_name + "_TABLE") == table
 
@@ -232,6 +263,15 @@ def test_schema_contains_declared_catalogues_and_entity_tables() -> None:
         if row[1] in actual_tables
     }
     assert strict_by_table == {table: 1 for table in actual_tables}
+    actual_triggers = {
+        row[0]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_schema WHERE type = 'trigger'"
+        )
+    }
+    assert {
+        table + "_no_replace" for table in expected_append_only_tables
+    } <= actual_triggers
 
 
 def test_generated_entity_binding_is_projection_only() -> None:
@@ -363,6 +403,86 @@ def test_logical_record_manifest_validation(
 @pytest.mark.parametrize(
     ("mutation", "message"),
     (
+        ("enum_class_collision", "repeats Python class"),
+        ("python_keyword", "must not be a Python keyword"),
+        ("global_target_collision", "repeats entity or target"),
+    ),
+)
+def test_generated_python_names_are_globally_valid(
+    tmp_path: Path,
+    mutation: str,
+    message: str,
+) -> None:
+    manifest = copy.deepcopy(load_entity_manifest())
+    if mutation == "enum_class_collision":
+        manifest["logical_records"][0]["python_name"] = "ProcessingResult"  # type: ignore[index]
+    elif mutation == "python_keyword":
+        manifest["logical_records"].append(  # type: ignore[union-attr]
+            {
+                "name": "UNUSED_RECORD_V1",
+                "python_name": "UnusedRecordV1",
+                "fields": [{"name": "class", "type": "u8"}],
+            }
+        )
+    elif mutation == "global_target_collision":
+        transaction = next(
+            entity
+            for entity in manifest["entities"]  # type: ignore[index]
+            if entity["name"] == "MESSAGE_PERSISTENCE_TRANSACTION_V1"
+        )
+        repeated_target = copy.deepcopy(transaction["persistence"]["targets"][0])
+        repeated_target["python_name"] = "OtherMessageProfileRowV1"
+        repeated_target["table"] = "other_message_profiles"
+        manifest["entities"].append(  # type: ignore[union-attr]
+            {
+                "name": "OTHER_TRANSACTION_V1",
+                "persistence": {
+                    "mode": "multi_table_transaction",
+                    "atomic": True,
+                    "targets": [repeated_target],
+                },
+            }
+        )
+    else:  # pragma: no cover - parametrization is closed above.
+        raise AssertionError(mutation)
+
+    result = validate_entity_manifest_fixture(tmp_path, manifest)
+    assert result.returncode == 2
+    assert message in result.stderr
+
+
+@pytest.mark.parametrize(
+    "transaction_statement",
+    (
+        "BEGIN;",
+        "BEGIN TRANSACTION;",
+        "BEGIN DEFERRED TRANSACTION;",
+        "BEGIN IMMEDIATE TRANSACTION;",
+        "BEGIN EXCLUSIVE TRANSACTION;",
+        "COMMIT;",
+        "END TRANSACTION;",
+        "ROLLBACK;",
+        "SAVEPOINT nested;",
+    ),
+)
+def test_schema_source_rejects_every_transaction_boundary(
+    tmp_path: Path,
+    transaction_statement: str,
+) -> None:
+    source = (RECEIVER_ROOT / "db" / "schema_source.sql").read_text(
+        encoding="utf-8"
+    )
+    result = validate_schema_source_fixture(
+        tmp_path,
+        source + "\n" + transaction_statement + "\n",
+    )
+    assert result.returncode == 2
+    assert "transaction boundary" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
         ("unknown", "references unknown field missing_length"),
         ("non_integer", "must reference an integer"),
         ("nullable", "cannot be nullable"),
@@ -429,6 +549,37 @@ def test_quarantined_entity_bytes_must_match_declared_length() -> None:
         insert,
         generated_entities.quarantined_entity_row_v1_parameters(row),
     )
+    replacement = replace(
+        row,
+        entity_schema_version=2,
+        entity_bytes=b"\x03\x01",
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        connection.execute(
+            insert.replace("INSERT", "INSERT OR REPLACE", 1),
+            generated_entities.quarantined_entity_row_v1_parameters(replacement),
+        )
+    assert connection.execute(
+        "SELECT entity_schema_version, entity_bytes FROM quarantined_entities"
+    ).fetchone() == (1, b"\x02\x01")
+    maximum_measurement = replace(
+        row,
+        quarantine_id=bytes([2]) * 32,
+        entity_kind=generated.PersistQueueEntityKind.MEASUREMENT_PROFILE,
+        entity_length=490,
+        entity_bytes=bytes(range(245)) * 2,
+    )
+    connection.execute(
+        insert,
+        generated_entities.quarantined_entity_row_v1_parameters(
+            maximum_measurement
+        ),
+    )
+    assert connection.execute(
+        "SELECT length(entity_bytes) FROM quarantined_entities "
+        "WHERE quarantine_id = ?",
+        (maximum_measurement.quarantine_id,),
+    ).fetchone() == (490,)
     with pytest.raises(sqlite3.IntegrityError):
         connection.execute(
             insert,
@@ -452,12 +603,41 @@ def test_receiver_instance_lifecycle_is_append_only_with_one_clean_stop() -> Non
         "(receiver_instance_id, linux_boot_id, started_at_monotonic_us) "
         "VALUES (?, ?, ?)"
     )
+    with pytest.raises(sqlite3.IntegrityError, match="database ordered"):
+        connection.execute(
+            "INSERT INTO receiver_instances "
+            "(instance_ordinal, receiver_instance_id, linux_boot_id, "
+            "started_at_monotonic_us) VALUES (?, ?, ?, ?)",
+            (100, bytes([3]) * 16, boot_id, 50),
+        )
+    assert connection.execute(
+        "SELECT count(*) FROM receiver_instances"
+    ).fetchone() == (0,)
     connection.execute(insert, (first_id, boot_id, 100))
     connection.execute(insert, (second_id, boot_id, 300))
     assert connection.execute(
         "SELECT instance_ordinal, receiver_instance_id "
         "FROM receiver_instances ORDER BY instance_ordinal"
     ).fetchall() == [(1, first_id), (2, second_id)]
+
+    with pytest.raises(sqlite3.IntegrityError, match="database ordered"):
+        connection.execute(
+            "INSERT INTO receiver_instances "
+            "(instance_ordinal, receiver_instance_id, linux_boot_id, "
+            "started_at_monotonic_us) VALUES (?, ?, ?, ?)",
+            (100, bytes([5]) * 16, boot_id, 400),
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        connection.execute(
+            "INSERT OR REPLACE INTO receiver_instances "
+            "(instance_ordinal, receiver_instance_id, linux_boot_id, "
+            "started_at_monotonic_us) VALUES (?, ?, ?, ?)",
+            (1, bytes([4]) * 16, boot_id, 500),
+        )
+    assert connection.execute(
+        "SELECT receiver_instance_id FROM receiver_instances "
+        "WHERE instance_ordinal = 1"
+    ).fetchone() == (first_id,)
 
     connection.execute(
         "UPDATE receiver_instances "
@@ -540,6 +720,19 @@ def test_quarantined_communicator_state_preserves_storage_classes() -> None:
         "typeof(observed_state_blob), typeof(observed_state_sha256) "
         "FROM quarantined_communicator_states"
     ).fetchone() == ("null", "integer", "real", "text", "blob")
+
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        connection.execute(
+            "INSERT OR REPLACE INTO quarantined_communicator_states "
+            "(quarantined_state_id, observed_generation, "
+            "preserved_by_receiver_instance_id, preserved_at_monotonic_us, "
+            "database_schema_version) VALUES (?, ?, ?, ?, ?)",
+            (1, 99, receiver_instance_id, 20, generated.DATABASE_SCHEMA_VERSION),
+        )
+    assert connection.execute(
+        "SELECT observed_generation FROM quarantined_communicator_states "
+        "WHERE quarantined_state_id = 1"
+    ).fetchone() == (1.25,)
 
     with pytest.raises(sqlite3.IntegrityError):
         connection.execute(
@@ -935,7 +1128,7 @@ def test_reading_messages_allow_one_canonical_row_per_sample() -> None:
     )
     with pytest.raises(sqlite3.IntegrityError):
         connection.execute(
-            insert,
+            insert.replace("INSERT", "INSERT OR REPLACE", 1),
             generated_entities.reading_message_row_v1_parameters(second_canonical),
         )
 

@@ -1057,7 +1057,7 @@ its sample.
 
 ### Acceptance invariant
 
-An authenticated, structurally valid reading occurrence may be marked accepted only after one atomic `PersistQueue` reservation exclusively owns the exact fixed-size application-candidate/`MessageProfiling` unit, including preallocated slots for all post-TX fields. The reservation counts against queue capacity immediately but is not visible to the persistence consumer until the communicator publishes it. The pair remains one logical persistence unit and batch selection must not split it across SQLite transactions.
+An authenticated, structurally valid reading occurrence may be marked accepted only after one atomic `PersistQueue` reservation exclusively owns the exact fixed-size `AuthenticatedReadingCandidateV1`/`MessageProfilingV1` unit, including preallocated slots for all post-TX fields. The reservation counts against queue capacity immediately but is not visible to the persistence consumer until the communicator publishes it. The pair remains one logical persistence unit and batch selection must not split it across SQLite transactions.
 
 Required ordering:
 
@@ -1073,7 +1073,7 @@ validate message
   -> finalize one immutable pair and publish it against the reservation
 ```
 
-Publication uses the existing reservation, performs no new capacity check and cannot fail because of queue pressure. If TX fails or its ACK is lost, a later retransmission repeats this complete admission path. This may publish another measurement candidate, but persistence retains only canonical data and stores a profile for every admitted radio occurrence.
+Publication uses the existing reservation, performs no new capacity check and cannot fail because of queue pressure. If TX fails or its ACK is lost, a later retransmission repeats this complete admission path. This may publish another `MeasurementProfileUnitV1`, but persistence retains only canonical data and stores a profile for every admitted radio occurrence.
 
 ### Retry-later behavior
 
@@ -1083,7 +1083,7 @@ Publication uses the existing reservation, performs no new capacity check and ca
 
 A successful ACK means:
 
-> The receiver authenticated and validated the message while persistence admission was available, then reserved exclusive bounded-pipeline capacity for its fixed-size application-candidate/packet-occurrence unit.
+> The receiver authenticated and validated the message while persistence admission was available, then reserved exclusive bounded-pipeline capacity for its fixed-size `AuthenticatedReadingCandidateV1`/`MessageProfilingV1` unit.
 
 It does **not** mean:
 
@@ -1267,7 +1267,7 @@ Decode sample_id only at the protocol's reading-body validation step
   |       (a downlink ACK domain reaching the direction check is WRONG_DIRECTION)
   |       -> no ACK
   |       -> SetRx, T6 = SetRx issued
-  |       -> construct complete MessageProfiling and try to enqueue it
+  |       -> construct complete MessageProfilingV1 and try to enqueue it
   |       -> if admission fails, increment the profiling-admission counter;
   |          never change the outcome to RETRY_LATER
   |
@@ -1278,8 +1278,8 @@ Decode sample_id only at the protocol's reading-body validation step
   |
   +--> authenticated structurally valid reading
           -> validate
-          -> construct measurement candidate, deterministic candidate ACCEPTED ACK
-               and pre-TX MessageProfiling fields containing the exact ACK frame
+          -> construct AuthenticatedReadingCandidateV1, deterministic candidate ACCEPTED ACK
+               and pre-TX MessageProfilingV1 fields containing the exact ACK frame
           -> require persistence AVAILABLE and atomically reserve the exact
                fixed-size pair without consulting message history
           -> if unavailable: reserve nothing, RETRY_LATER, not accepted
@@ -1349,8 +1349,8 @@ The fixed sizes are implementation constants validated at startup. Byte-capacity
 
 The queue may contain:
 
-- atomic measurement-candidate/complete-`MessageProfiling` units;
-- complete profile-only `MessageProfiling` records for occurrences without an application candidate;
+- atomic `AuthenticatedReadingCandidateV1`/complete-`MessageProfilingV1` units;
+- complete profile-only `MessageProfilingV1` records for occurrences without an authenticated reading candidate;
 - `ReceiverHealthRequest` snapshots;
 - structured diagnostics.
 
@@ -1364,7 +1364,7 @@ Outstanding reservations count against queue capacity but remain invisible to th
 
 The communicator is the only reservation owner and processes one radio event at a time, so it publishes or terminally finalizes the active reservation before accepting another packet. Reserved bytes are released only by successful publication or by cancellation before any response is attempted. Once an occurrence has been accepted, its reservation must be published with the best terminal outcome available rather than cancelled.
 
-A reservation token is unique and single-use. Before reserving capacity and selecting an ACK, the communicator constructs and validates the complete fixed-layout measurement candidate and all stable `MessageProfiling` fields. The profiling layout preallocates fixed-width slots for `ack_tx_result` and `T4` through `T6`; after the terminal radio outcome, the communicator only fills those already validated slots and freezes the unit. No allocation, variable-sized serialization or fallible representation conversion is permitted after ACK selection.
+A reservation token is unique and single-use. Before reserving capacity and selecting an ACK, the communicator constructs and validates the complete fixed-layout `AuthenticatedReadingCandidateV1` and all stable `MessageProfilingV1` fields. The profiling layout preallocates fixed-width slots for `ack_tx_result` and `T4` through `T6`; after the terminal radio outcome, the communicator only fills those already validated slots and freezes the unit. No allocation, variable-sized serialization or fallible representation conversion is permitted after ACK selection.
 
 Publication atomically transfers the complete immutable fixed-size unit against its exact reservation. A size mismatch or inability to fill a prevalidated slot is an implementation invariant violation, not a reason to perform a second admission attempt after an ACK may have been sent.
 
@@ -1420,7 +1420,7 @@ It:
 - applies idempotent measurement insertion without replacing canonical contents;
 - accumulates persistence timing, throughput, failure, quarantine and checkpoint counters for `ReceiverHealthV1`;
 - durably isolates item-specific poisoned units without silently dropping them;
-- inserts each complete `MessageProfiling` row once;
+- inserts each complete `MessageProfileRowV1` once;
 - enriches `ReceiverHealthRequest` snapshots with persistence-owned and host-owned observations and inserts complete `ReceiverHealth` rows;
 - repeats while work remains.
 
@@ -1765,45 +1765,70 @@ failure reasons are defined in
 
 ## Telemetry
 
-### MessageProfiling
+### Packet-occurrence profiling lifecycle
 
-`MessageProfiling` is the single logical packet-occurrence record required by the protocol. It combines timing data with the received frame, authentication and processing decisions, duplicate results, radio metadata, selected ACK and ACK-transmission result. The communicator copies the raw frame and radio metadata into Pi-owned memory before later radio activity can overwrite them.
+One received radio occurrence produces one communicator-owned
+`MessageProfilingV1`. It is evidence about that physical occurrence, not the
+canonical reading and not a persistence decision. Its durable identity is
+`(receiver_instance_id, occurrence_sequence)`. The communicator copies the
+received frame and radio metadata into Pi-owned memory before later radio work
+can overwrite them, then freezes every terminal processing, ACK and recovery
+field before queue publication.
 
-Every admitted record is identified by:
+The profile carries the exact received frame, authentication and processing
+facts, radio metadata, selected ACK and terminal ACK-transmission result. Its
+event timeline contains, when applicable:
 
-- `receiver_instance_id`; and
-- a monotonically increasing per-instance occurrence sequence.
-
-Together these fields identify the single complete SQLite profiling row.
-
-The record carries the protocol-defined packet-occurrence fields and, when available:
-
-- `T0`: kernel-recorded DIO1 edge timestamp;
+- `T0`: kernel-recorded DIO1 edge timestamp and `received_at_monotonic_us`;
 - `T1`: Python handler begins;
-- `T2`: packet copied from SX1262 into Pi RAM;
+- `T2`: the packet is copied from SX1262 into Pi RAM;
 - `T3`: AES-CCM authentication completes;
-- `T4`: `SetTx` command issued or attempted;
-- `T5`: TxDone edge timestamp;
-- `T6`: `SetRx` command issued.
+- `T4`: `SetTx` is issued or attempted;
+- `T5`: the TxDone edge occurs; and
+- `T6`: `SetRx` is issued.
 
-It also records:
+`T0` and `T5` are kernel-event monotonic timestamps. A path that does not
+produce one of the optional events stores that timestamp as absent rather than
+reconstructing it.
 
-- the monotonic reception timestamp, with `T0` as its source and
-  `receiver_instance_id` resolving its Linux boot scope;
-- measurement-queue occupancy and configured capacity immediately before the admission attempt.
+It also records queue occupancy and configured byte capacity immediately before
+admission. It does not contain `PersistenceClassification`, UTC,
+`SystemTimeQuality` or `RtcHealth`.
 
-The stored profile remains monotonic-only. Analysis may derive reception UTC
-and the applicable trusted `ClockObservationV1` identity without updating the
-row. Per-occurrence `system_time_quality` and `rtc_health` are deliberately
-absent from `MessageProfilingV1`.
+The communicator publishes the completed profile in exactly one of two queue
+forms:
 
-When the persistence thread writes the row, it adds the protocol-defined
-`persistence_classification`: `NOT_APPLICABLE`, `FIRST_SEEN`, `RETRANSMISSION`,
-`DUPLICATE_SAME_CONTENT`, `DUPLICATE_CONFLICT` or `MESSAGE_ID_CONFLICT`. This is
-derived from the existing reading-message key and canonical-sample relation and
-was not known to the communicator when it selected the ACK.
+1. `ProfileOnlyUnitV1(profile)` records an occurrence with no accepted
+   application candidate.
+2. `MeasurementProfileUnitV1(candidate, profile)` atomically pairs the profile
+   with one `AuthenticatedReadingCandidateV1`. The candidate contains only the
+   authenticated transport/application identity, domain and exact reading body
+   needed by persistence; it is not a prospective `reading_messages` row.
 
-Derived intervals should be computed during analysis or persistence rather than on the radio-critical path when practical:
+Persistence consumes either queue unit without mutating it. It creates one
+`MessageProfileRowV1(profile, persistence_classification)` for every durable
+occurrence. A profile-only occurrence uses `NOT_APPLICABLE`. For a measurement
+unit, persistence derives the classification from the existing
+`(node_id, message_id)` row and canonical `(node_id, sample_id)` relation.
+
+A measurement unit has one mandatory profile-row effect and one conditional
+reading-message effect. A new transport identity creates an immutable
+`ReadingMessageRowV1`; a retransmission or an existing message-ID conflict does
+not. When a reading row is created, its
+`(first_receiver_instance_id, first_occurrence_sequence)` points to the exact
+profile that first established that transport identity. The applicable profile
+and reading-row effects commit atomically, and ambiguous replay retains the
+already-derived classification rather than reclassifying against newer rows.
+
+Analysis treats the two tables as distinct evidence layers. `message_profiles`
+answers what happened to each physical packet occurrence; `reading_messages`
+answers which authenticated logical messages and canonical samples exist. A
+profile remains monotonic-only. Analysis may resolve its Linux boot through
+`receiver_instances` and derive UTC through a qualifying `ClockObservationV1`
+without updating either table.
+
+Derived intervals should be computed during analysis or persistence rather
+than on the radio-critical path when practical:
 
 ```text
 T1 - T0 : kernel/userspace scheduling delay
@@ -1813,13 +1838,6 @@ T4 - T3 : decision and ACK preparation
 T5 - T4 : TX transition and LoRa airtime
 T6 - T5 : TX completion handling and RX restart
 ```
-
-A missing timestamp must be representable explicitly. Error paths will not always produce all seven timestamps.
-
-`T0` and `T5` are monotonic kernel-event timestamps. Neither the queued profile
-nor its stored row has UTC timestamp slots.
-
-For a packet that may receive an ACK, capacity for the complete profile is reserved before TX with the selected ACK and exact ACK frame already fixed. After the radio has been returned to RX or bounded recovery has been attempted, the communicator fills `ack_tx_result` and `T4` through `T6`, freezes the profile and publishes it against the reservation. Persistence therefore inserts one complete row. A packet that cannot receive an ACK may instead be returned to RX first and then admitted once as a complete profile.
 
 ### BUSY metrics
 
@@ -1842,8 +1860,8 @@ maximum commit duration; quarantine successes and failures; admission-state
 transitions; and WAL-checkpoint attempts, successes and failures. Each
 `ReceiverHealthV1` snapshots these aggregates.
 
-The per-packet profile separately records queue occupancy when admitting a
-measurement candidate. Together, queue occupancy and the health aggregates are
+The per-packet profile separately records queue occupancy when admitting an
+authenticated measurement unit. Together, queue occupancy and the health aggregates are
 enough to determine whether persistence is falling behind without adding
 `persistence_batches` or `receiver_state_operations` tables.
 
@@ -2133,7 +2151,7 @@ The persistence thread must not mutate communicator-owned node, message, clock-p
 - `receiver_instances` is the sole persisted `receiver_instance_id` to
   `linux_boot_id` mapping; every other queue or durable entity stores only its
   receiver instance and obtains boot scope through that immutable row.
-- An atomic exact-size `PersistQueue` reservation for a prevalidated fixed-layout measurement/`MessageProfiling` unit while persistence admission is available establishes protocol acceptance of that occurrence but not SQLite durability or conflict-free canonical insertion.
+- An atomic exact-size `PersistQueue` reservation for a prevalidated fixed-layout `AuthenticatedReadingCandidateV1`/`MessageProfilingV1` unit while persistence admission is available establishes protocol acceptance of that occurrence but not SQLite durability or conflict-free canonical insertion.
 - A successful pre-TX reservation must publish exactly one complete immutable pair after the terminal radio outcome; persistence accepts only complete profiling rows.
 - No admitted queue unit is silently dropped; an item-specific poison is removed only after its exact fixed-size representation and minimal failure provenance are durably committed to `quarantined_entities`.
 - Only the communicator creates `DiagnosticV1`; persistence-derived conflicts use profile classification and canonical rows, while asynchronous persistence failures may be exposed through health counters, admission state and quarantine provenance but are not guaranteed to leave durable evidence while SQLite is unavailable.

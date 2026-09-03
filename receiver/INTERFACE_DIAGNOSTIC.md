@@ -639,8 +639,10 @@ provenance commit is a `PERSISTENCE_CONTROL` operation.
 
 These are receiver-diagnostic encodings of runtime results. They do not change
 the process-local enum rule in `INTERFACE.md` and are independent from any
-library's Python numeric values. For `ADJTIMEX_RETURN`, zero is a valid present
-status because the nonzero status kind supplies presence.
+library's Python numeric values. Their six assignment families are generated
+as separate `encoded_only` enums from `schemas/receiver_enums.json`; runtime
+adapters convert to them explicitly. For `ADJTIMEX_RETURN`, zero is a valid
+present status because the nonzero status kind supplies presence.
 
 ### `ReceiverTimeEpisodeContextV1`
 

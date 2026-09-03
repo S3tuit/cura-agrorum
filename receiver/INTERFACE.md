@@ -1359,11 +1359,11 @@ Encoded size: 490 bytes.
 
 ```text
 entity envelope: 2 bytes
-measurement candidate: 49 bytes
+AuthenticatedReadingCandidateV1: 49 bytes
 MessageProfilingV1: 439 bytes
 ```
 
-The measurement candidate is:
+`AuthenticatedReadingCandidateV1` is:
 
 ```text
 node_id: bytes[8]
@@ -1383,8 +1383,10 @@ packet-occurrence profile. Required invariants are:
 - `header_authenticated = true`; and
 - the received frame is exactly 54 bytes.
 
-The measurement candidate and profile form one queue and SQLite transaction
-unit and must never be split.
+The authenticated reading candidate and profile form one queue and SQLite
+transaction unit and must never be split. The candidate is a pre-SQL value,
+not a prospective `ReadingMessageRowV1`: canonicality and first-occurrence
+provenance do not exist until persistence consults the database.
 
 ### `ProfileOnlyUnitV1`
 
@@ -2707,7 +2709,7 @@ The checked-in schema pipeline is:
 receiver/schemas/receiver_enums.json
     -> generated enum SQL catalogues
 receiver/schemas/receiver_entities.json
-    -> declared logical entities, persistence rows, binders, and table DDL
+    -> reusable logical records, persisted entities, binders, and table DDL
 receiver/db/schema_source.sql + generated catalogues
     -> receiver/db/schema.sql
 exact schema.sql bytes
@@ -2722,6 +2724,12 @@ handwritten; `schema.sql`,
 `cura_receiver/generated/receiver_entities_generated.py` are generated and
 must not be edited. Resources are resolved relative to the installed receiver
 package, never the process working directory.
+
+`schema_source.sql` owns the exceptional `database_metadata`,
+`receiver_instances` and `quarantined_communicator_states` tables. Generation
+executes the fully assembled schema in memory and verifies that every foreign
+key names an existing parent column set backed by a complete primary or unique
+key; `--validate-only` performs the same closure check without writing outputs.
 
 The pilot deliberately has no migration runner, `schema_migrations` table,
 downgrade path or `PRAGMA user_version` contract. A schema change increments
@@ -2750,12 +2758,15 @@ database_schema_fingerprint: bytes[32]
 but does not insert its row: `group_id` is deployment-specific and embedding
 the fingerprint in its own input would be self-referential.
 
-The future initialization tool reads and hashes the exact packaged
-`schema.sql` before executing it, compares that hash with the generated Python
-constant, creates a temporary database, sets `application_id`, executes the
-already verified SQL and inserts the metadata singleton in the same creation
-transaction. It never discovers or sorts SQL fragments on the Pi and never
-computes a new local expected value with which to bless arbitrary SQL.
+`cura_receiver.database_initializer.initialize_database()` reads and hashes
+the exact packaged `schema.sql` before executing it, compares that hash with
+the generated Python constant, creates a temporary database, sets
+`application_id`, executes the already verified SQL and inserts the metadata
+singleton in the same creation transaction. Only after integrity and foreign-
+key checks succeed does it atomically install the new database at an absent
+destination. It never overwrites an existing database, discovers or sorts SQL
+fragments on the Pi, or computes a new local expected value with which to bless
+arbitrary SQL.
 
 Existing-database startup checks `application_id`, the one metadata row, exact
 configured `group_id`, exact generated schema version and exact generated
@@ -2783,6 +2794,11 @@ The manifest has exactly three persistence modes:
 - `encoded_only` generates Python assignments but no SQLite catalogue because
   the value occurs only inside a fixed entity/blob or selects an array slot.
 
+The six time-backend status-byte families selected by
+`TimeBackendStatusKind` are separate `encoded_only` enums. Runtime adapter
+enums remain independent and convert through explicit mappings rather than
+assuming library numeric values match the persisted diagnostic encoding.
+
 Python class names are `PascalCase`; SQL identifiers are `snake_case`; Python
 members and the exact SQL `code` values are `UPPER_SNAKE_CASE`. Generated
 classes use `Enum`, not `IntEnum`; generated field-specific binders extract
@@ -2808,7 +2824,13 @@ source-array index.
 [`schemas/receiver_entities.json`](schemas/receiver_entities.json) is the
 source for generated logical Python entities, explicit persistence-only rows,
 table/column layouts, deterministic array projection and multi-table
-transaction target layouts. It has four current modes:
+transaction target layouts. Its top-level `logical_records` are immutable
+Python value types with no standalone table or binder. A relational field of
+type `logical_record:<NAME>` with `sql.flatten = true` composes one such value
+into a generated row while retaining the logical record's flat column layout.
+Logical records cannot nest.
+
+Persisted entities have four current modes:
 
 - `direct` maps each logical Python field to exactly one SQLite column;
 - `array_expansion` retains a one- or two-dimensional counter array in the
@@ -2832,9 +2854,18 @@ entity and frozen failure provenance.
 
 The packet transaction uses `MessageProfileRowV1` and `ReadingMessageRowV1`
 targets because their values come from multiple inputs or handwritten derived
-decisions. The generated row fields name the values that handwritten code must
-provide; the generator does not declare variants or target-selection effects
-and does not execute a transaction.
+decisions. Generated `MessageProfilingV1` contains the communicator-owned
+physical-occurrence facts. `MessageProfileRowV1` composes that logical record
+with persistence's per-occurrence `PersistenceClassification` and flattens the
+profile into `message_profiles`. `ReadingMessageRowV1` remains a separate,
+conditional effect. The generator does not declare variants, decide which
+target applies, or execute a transaction.
+
+`AuthenticatedReadingCandidateV1`, queue envelopes and the five fixed queue
+unit encodings are volatile handoff contracts rather than SQL mappings. Their
+exact codecs/builders and the diagnostic-context semantic validators remain
+handwritten. They may reuse generated logical values and enums, but they do not
+extend this relational generator into a general policy or queue-layout engine.
 
 `CommunicatorStateV1`, `RtcProvenanceV1` and `TxAirtimeBucketV1` are generated
 from the named communicator-state
@@ -2852,7 +2883,9 @@ expanded in manifest order. They perform no numeric, length, validity-mask,
 cross-field or policy validation and no SQLite I/O. Exact array-shape rejection
 prevents silent loss during projection; it is not domain validation. SQLite
 enforces its generated type, range, length, foreign-key and uniqueness
-constraints. Handwritten code owns semantic validation, classification,
+constraints. A non-null variable-byte field may declare `length_field` naming
+a non-null integer sibling; generation then emits their exact SQLite length
+equality. Handwritten code owns semantic validation, classification,
 conditional effects, replay, transaction boundaries and reconciliation.
 Canonical codecs additionally enforce their binary grammar because decoding
 cannot safely be delegated to SQLite. They do not enforce airtime policy,

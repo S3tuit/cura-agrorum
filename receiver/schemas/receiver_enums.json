@@ -1,7 +1,7 @@
 {
   "schema_format_version": 1,
   "application_id": 1129665106,
-  "database_schema_version": 6,
+  "database_schema_version": 7,
   "enums": [
     {
       "name": "SYSTEM_TIME_QUALITY",
@@ -423,6 +423,73 @@
         {"name": "DS3231_WRITE_DISPOSITION", "value": 4},
         {"name": "DS3231_FAILURE", "value": 5},
         {"name": "ADJTIMEX_RETURN", "value": 6}
+      ]
+    },
+    {
+      "name": "CHRONY_QUERY_STATUS",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "OK", "value": 1},
+        {"name": "UNAVAILABLE", "value": 2},
+        {"name": "DEADLINE_EXCEEDED", "value": 3},
+        {"name": "INVALID_RESPONSE", "value": 4}
+      ]
+    },
+    {
+      "name": "CHRONY_STEP_DISPOSITION",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "SUBMITTED", "value": 1},
+        {"name": "NOT_SUBMITTED", "value": 2},
+        {"name": "OUTCOME_UNKNOWN", "value": 3}
+      ]
+    },
+    {
+      "name": "DS3231_READ_STATUS",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "OK", "value": 1},
+        {"name": "MISSING", "value": 2},
+        {"name": "INVALID", "value": 3},
+        {"name": "IO_ERROR", "value": 4},
+        {"name": "DEADLINE_EXCEEDED", "value": 5}
+      ]
+    },
+    {
+      "name": "DS3231_WRITE_DISPOSITION",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "COMPLETED", "value": 1},
+        {"name": "NOT_APPLIED", "value": 2},
+        {"name": "OUTCOME_UNKNOWN", "value": 3}
+      ]
+    },
+    {
+      "name": "DS3231_FAILURE",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "NONE", "value": 0},
+        {"name": "MISSING", "value": 1},
+        {"name": "IO_ERROR", "value": 2},
+        {"name": "DEADLINE_EXCEEDED", "value": 3}
+      ]
+    },
+    {
+      "name": "ADJTIMEX_RETURN",
+      "storage": "u8",
+      "persistence": {"mode": "encoded_only"},
+      "values": [
+        {"name": "TIME_OK", "value": 0},
+        {"name": "TIME_INS", "value": 1},
+        {"name": "TIME_DEL", "value": 2},
+        {"name": "TIME_OOP", "value": 3},
+        {"name": "TIME_WAIT", "value": 4},
+        {"name": "TIME_ERROR", "value": 5}
       ]
     },
     {

@@ -16,7 +16,13 @@ assignments remain in the protocol schema.
 
 This is the source of truth for generated logical Python entities, explicit
 persistence-only rows, entity-table DDL, array projection, and transaction
-target layouts. It has four mapping modes:
+target layouts. Its top-level `logical_records` define reusable immutable
+Python values that have no table or binder of their own. A relational field
+may reference one as `logical_record:<NAME>` with `sql.flatten: true`; the
+generated row keeps that Python composition while SQL columns and binding stay
+flat. Logical records do not nest.
+
+Persisted entities have four mapping modes:
 
 - `direct` maps every declared logical field to one SQL column;
 - `array_expansion` keeps arrays in the logical Python entity and binds one
@@ -26,11 +32,14 @@ target layouts. It has four mapping modes:
 - `canonical_blob` binds a generated logical entity to a named canonical
   binary encoding and a controlled SQLite envelope.
 
-`ClockObservationV1` and `DiagnosticV1` are generated logical entities with
+`MessageProfilingV1` is a generated logical record shared by queue-facing code
+and `MessageProfileRowV1`; the latter adds persistence's per-occurrence
+classification. `ClockObservationV1` and `DiagnosticV1` are generated logical entities with
 direct binders. `ReceiverHealthV1` is also a logical entity; its arrays remain
 arrays in Python and its binder consumes their exact shapes in deterministic
-axis order. Runtime-only chrony and RTC result names live here as layout labels
-and are not promoted to persisted enums. `QuarantinedEntityRowV1` remains an
+axis order. Runtime-only chrony and RTC result names used only as array axes
+remain layout labels, while stable status bytes stored inside time diagnostic
+contexts are encoded-only enums. `QuarantinedEntityRowV1` remains an
 explicit persistence row because persistence constructs it from an isolated
 queue entity and frozen failure provenance.
 
@@ -40,6 +49,11 @@ multiple inputs or handwritten derived decisions. `ReadingMessageRowV1` is
 keyed by `(node_id, message_id)` and includes the clear reading candidate plus
 `is_canonical_for_sample`; a generated partial unique index permits only one
 canonical row for each `(node_id, sample_id)`.
+
+`AuthenticatedReadingCandidateV1`, the fixed queue envelopes, and diagnostic
+contexts are not relational entities. Their handwritten codecs and semantic
+validators reuse generated logical records and enums but remain outside this
+manifest.
 
 The top-level `encodings` array owns canonical binary layouts. Each encoding
 has a stable name, one endianness, ordered root `fields`, and reusable
@@ -94,10 +108,13 @@ Boolean consistently with classification.
 For a field, omitted `column` means that the SQL column has the field's name,
 and omitted `nullable` means `false`. `enum:<NAME>` refers to an assignment in
 `receiver_enums.json`; optional `minimum`, `maximum`, `minimum_length`, and
-`maximum_length` values are structural bounds. Primary- and foreign-key lists
-use SQL column names. Persistence-row field names identify the values that
-handwritten code must provide after validated protocol decoding or persistence
-classification.
+`maximum_length` values are structural bounds. A non-null variable `bytes`
+field may name a non-null integer sibling through `length_field`; generation
+then emits an exact SQLite length-equality check. Primary- and foreign-key
+lists use SQL column names. Persistence-row field names identify the values
+that handwritten code must provide after validated protocol decoding or
+persistence classification.
 
-Receiver lifecycle completion and preservation of malformed communicator state
-remain outside this manifest revision.
+Receiver lifecycle rows, metadata, and exact malformed communicator-state
+preservation deliberately remain outside the regular entity mappings and are
+defined in `db/schema_source.sql`.

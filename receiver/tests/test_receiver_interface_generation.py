@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import sqlite3
@@ -19,6 +20,11 @@ GENERATOR = RECEIVER_ROOT / "tools" / "generate.py"
 MANIFEST = RECEIVER_ROOT / "schemas" / "receiver_enums.json"
 ENTITY_MANIFEST = RECEIVER_ROOT / "schemas" / "receiver_entities.json"
 SCHEMA = RECEIVER_ROOT / "db" / "schema.sql"
+HANDWRITTEN_TABLES = {
+    "database_metadata",
+    "receiver_instances",
+    "quarantined_communicator_states",
+}
 
 sys.path.insert(0, str(REPO_ROOT))
 from receiver.cura_receiver.generated import (  # noqa: E402
@@ -35,6 +41,33 @@ def pascal_case(name: str) -> str:
 
 def load_manifest() -> dict[str, object]:
     return json.loads(MANIFEST.read_text(encoding="utf-8"))
+
+
+def load_entity_manifest() -> dict[str, object]:
+    return json.loads(ENTITY_MANIFEST.read_text(encoding="utf-8"))
+
+
+def validate_entity_manifest_fixture(
+    tmp_path: Path,
+    entity_manifest: dict[str, object],
+) -> subprocess.CompletedProcess[str]:
+    fixture_directory = tmp_path / "manifest"
+    fixture_directory.mkdir()
+    fixture = fixture_directory / "receiver_entities.json"
+    fixture.write_text(json.dumps(entity_manifest), encoding="utf-8")
+    return subprocess.run(
+        [
+            sys.executable,
+            str(GENERATOR),
+            "--entities",
+            str(fixture),
+            "--validate-only",
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
 
 
 def open_schema() -> sqlite3.Connection:
@@ -78,6 +111,17 @@ def test_generated_outputs_are_current() -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_generator_inputs_validate() -> None:
+    result = subprocess.run(
+        [sys.executable, str(GENERATOR), "--validate-only"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_generated_enums_match_manifest_and_are_not_int_subclasses() -> None:
     manifest = load_manifest()
     for enum_spec in manifest["enums"]:  # type: ignore[index]
@@ -91,11 +135,57 @@ def test_generated_enums_match_manifest_and_are_not_int_subclasses() -> None:
     assert generated.SystemTimeQuality.UNTRUSTED != generated.AdmissionResult.RESERVED
 
 
+def test_time_diagnostic_status_assignments_are_exact() -> None:
+    expected = {
+        generated.ChronyQueryStatus: {
+            "OK": 1,
+            "UNAVAILABLE": 2,
+            "DEADLINE_EXCEEDED": 3,
+            "INVALID_RESPONSE": 4,
+        },
+        generated.ChronyStepDisposition: {
+            "SUBMITTED": 1,
+            "NOT_SUBMITTED": 2,
+            "OUTCOME_UNKNOWN": 3,
+        },
+        generated.Ds3231ReadStatus: {
+            "OK": 1,
+            "MISSING": 2,
+            "INVALID": 3,
+            "IO_ERROR": 4,
+            "DEADLINE_EXCEEDED": 5,
+        },
+        generated.Ds3231WriteDisposition: {
+            "COMPLETED": 1,
+            "NOT_APPLIED": 2,
+            "OUTCOME_UNKNOWN": 3,
+        },
+        generated.Ds3231Failure: {
+            "NONE": 0,
+            "MISSING": 1,
+            "IO_ERROR": 2,
+            "DEADLINE_EXCEEDED": 3,
+        },
+        generated.AdjtimexReturn: {
+            "TIME_OK": 0,
+            "TIME_INS": 1,
+            "TIME_DEL": 2,
+            "TIME_OOP": 3,
+            "TIME_WAIT": 4,
+            "TIME_ERROR": 5,
+        },
+    }
+    for enum_class, assignments in expected.items():
+        assert {member.name: member.value for member in enum_class} == assignments
+    assert generated.AdjtimexReturn.TIME_OK.value == 0
+
+
 def test_schema_fingerprint_is_exact_schema_sql_sha256() -> None:
     schema_bytes = SCHEMA.read_bytes()
     assert hashlib.sha256(schema_bytes).hexdigest() == generated.DATABASE_SCHEMA_SHA256
     assert hashlib.sha256(schema_bytes).digest() == generated.DATABASE_SCHEMA_FINGERPRINT
     assert generated.SQLITE_APPLICATION_ID == 0x43555252
+    assert generated.DATABASE_SCHEMA_VERSION == 7
 
 
 def test_schema_contains_declared_catalogues_and_entity_tables() -> None:
@@ -134,9 +224,7 @@ def test_schema_contains_declared_catalogues_and_entity_tables() -> None:
             "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
         )
     }
-    assert actual_tables == (
-        expected_catalogues | expected_entity_tables | {"database_metadata"}
-    )
+    assert actual_tables == expected_catalogues | expected_entity_tables | HANDWRITTEN_TABLES
 
     strict_by_table = {
         row[1]: row[5]
@@ -172,6 +260,517 @@ def test_generated_entity_binding_is_projection_only() -> None:
     )
     with pytest.raises(sqlite3.IntegrityError):
         connection.execute(insert, values)
+
+
+def test_message_profile_logical_record_is_flattened_for_sql() -> None:
+    assert not hasattr(generated_entities, "MESSAGE_PROFILING_V1_TABLE")
+    assert not hasattr(generated_entities, "MESSAGE_PROFILING_V1_COLUMNS")
+    assert not hasattr(generated_entities, "message_profiling_v1_parameters")
+    profile = generated_entities.MessageProfilingV1(
+        receiver_instance_id=bytes(range(16)),
+        occurrence_sequence=7,
+        received_at_monotonic_us=11,
+        persist_queue_used_bytes_before_admission=13,
+        persist_queue_capacity_bytes=17,
+        received_frame_length=None,
+        received_frame=None,
+        claimed_control=None,
+        claimed_domain=None,
+        claimed_node_id=None,
+        claimed_message_id=None,
+        header_authenticated=False,
+        decoded_sample_id=None,
+        rssi_dbm_x2=None,
+        snr_db_x4=None,
+        irq_status=None,
+        device_errors=None,
+        processing_result=generated.ProcessingResult.RADIO_ERROR,
+        ack_selected=generated.AckSelection.NONE,
+        ack_tx_result=generated.AckTxResult.NOT_APPLICABLE,
+        ack_frame=None,
+        busy_wait_total_us=19,
+        busy_wait_max_us=23,
+        busy_wait_count=29,
+        busy_timeout_count=31,
+        last_busy_timeout_opcode=None,
+        t1_handler_started_monotonic_us=37,
+        t2_packet_copied_monotonic_us=None,
+        t3_authentication_completed_monotonic_us=None,
+        t4_set_tx_attempted_monotonic_us=None,
+        t5_tx_done_monotonic_us=None,
+        t6_set_rx_issued_monotonic_us=None,
+    )
+    row = generated_entities.MessageProfileRowV1(
+        profile=profile,
+        persistence_classification=generated.PersistenceClassification.NOT_APPLICABLE,
+    )
+
+    parameters = generated_entities.message_profile_row_v1_parameters(row)
+    columns = generated_entities.MESSAGE_PROFILE_ROW_V1_COLUMNS
+    assert len(parameters) == len(columns) == 33
+    assert columns[:3] == (
+        "receiver_instance_id",
+        "occurrence_sequence",
+        "received_at_monotonic_us",
+    )
+    assert parameters[:3] == (bytes(range(16)), 7, 11)
+    assert columns[-1] == "persistence_classification_id"
+    assert parameters[-1] == generated.PersistenceClassification.NOT_APPLICABLE.value
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        ("unknown_record", "no logical record UNKNOWN_RECORD_V1"),
+        ("missing_flatten", "missing sql"),
+        ("nested_record", "logical records cannot be nested"),
+        ("duplicate_column", "repeats SQL column receiver_instance_id"),
+    ),
+)
+def test_logical_record_manifest_validation(
+    tmp_path: Path,
+    mutation: str,
+    message: str,
+) -> None:
+    manifest = copy.deepcopy(load_entity_manifest())
+    transaction = next(
+        entity
+        for entity in manifest["entities"]  # type: ignore[index]
+        if entity["name"] == "MESSAGE_PERSISTENCE_TRANSACTION_V1"
+    )
+    profile_target = transaction["persistence"]["targets"][0]
+    profile_field = profile_target["fields"][0]
+    if mutation == "unknown_record":
+        profile_field["type"] = "logical_record:UNKNOWN_RECORD_V1"
+    elif mutation == "missing_flatten":
+        del profile_field["sql"]
+    elif mutation == "nested_record":
+        manifest["logical_records"][0]["fields"][0]["type"] = (
+            "logical_record:MESSAGE_PROFILING_V1"
+        )
+    elif mutation == "duplicate_column":
+        profile_target["fields"].append(
+            {"name": "receiver_instance_id", "type": "u64"}
+        )
+    else:  # pragma: no cover - parametrization is closed above.
+        raise AssertionError(mutation)
+
+    result = validate_entity_manifest_fixture(tmp_path, manifest)
+    assert result.returncode == 2
+    assert message in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        ("unknown", "references unknown field missing_length"),
+        ("non_integer", "must reference an integer"),
+        ("nullable", "cannot be nullable"),
+        ("self", "cannot reference itself"),
+        ("fixed_bytes", "fixed byte field cannot have length constraints"),
+    ),
+)
+def test_length_field_manifest_validation(
+    tmp_path: Path,
+    mutation: str,
+    message: str,
+) -> None:
+    manifest = copy.deepcopy(load_entity_manifest())
+    quarantine = next(
+        entity
+        for entity in manifest["entities"]  # type: ignore[index]
+        if entity["name"] == "QUARANTINED_ENTITY_ROW_V1"
+    )
+    fields_by_name = {field["name"]: field for field in quarantine["fields"]}
+    entity_bytes = fields_by_name["entity_bytes"]
+    if mutation == "unknown":
+        entity_bytes["length_field"] = "missing_length"
+    elif mutation == "non_integer":
+        entity_bytes["length_field"] = "quarantine_id"
+    elif mutation == "nullable":
+        fields_by_name["entity_length"]["nullable"] = True
+    elif mutation == "self":
+        entity_bytes["length_field"] = "entity_bytes"
+    elif mutation == "fixed_bytes":
+        fields_by_name["quarantine_id"]["length_field"] = "entity_length"
+    else:  # pragma: no cover - parametrization is closed above.
+        raise AssertionError(mutation)
+
+    result = validate_entity_manifest_fixture(tmp_path, manifest)
+    assert result.returncode == 2
+    assert message in result.stderr
+
+
+def test_quarantined_entity_bytes_must_match_declared_length() -> None:
+    row = generated_entities.QuarantinedEntityRowV1(
+        quarantine_id=bytes(32),
+        entity_kind=generated.PersistQueueEntityKind.PROFILE_ONLY,
+        entity_schema_version=1,
+        entity_length=2,
+        entity_bytes=b"\x02\x01",
+        receiver_instance_id=bytes(16),
+        quarantined_at_monotonic_us=0,
+        database_schema_version=generated.DATABASE_SCHEMA_VERSION,
+        failure_reason=generated.QuarantineFailureReason.ENTITY_DECODING_INVARIANT,
+        failure_operation=generated.DiagnosticOperation.VALIDATE,
+        sqlite_primary_code=None,
+        sqlite_extended_code=None,
+        os_errno=None,
+        isolation_attempt_count=1,
+    )
+    columns = generated_entities.QUARANTINED_ENTITY_ROW_V1_COLUMNS
+    insert = (
+        f"INSERT INTO quarantined_entities ({', '.join(columns)}) VALUES "
+        f"({', '.join('?' for _ in columns)})"
+    )
+    connection = open_schema()
+    connection.execute("PRAGMA foreign_keys = OFF")
+    connection.execute(
+        insert,
+        generated_entities.quarantined_entity_row_v1_parameters(row),
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            insert,
+            generated_entities.quarantined_entity_row_v1_parameters(
+                replace(
+                    row,
+                    quarantine_id=bytes([1]) * 32,
+                    entity_length=3,
+                )
+            ),
+        )
+
+
+def test_receiver_instance_lifecycle_is_append_only_with_one_clean_stop() -> None:
+    connection = open_schema()
+    first_id = bytes.fromhex("00112233445566778899aabbccddeeff")
+    second_id = bytes.fromhex("102132435465768798a9bacbdcedfe0f")
+    boot_id = bytes.fromhex("ffeeddccbbaa99887766554433221100")
+    insert = (
+        "INSERT INTO receiver_instances "
+        "(receiver_instance_id, linux_boot_id, started_at_monotonic_us) "
+        "VALUES (?, ?, ?)"
+    )
+    connection.execute(insert, (first_id, boot_id, 100))
+    connection.execute(insert, (second_id, boot_id, 300))
+    assert connection.execute(
+        "SELECT instance_ordinal, receiver_instance_id "
+        "FROM receiver_instances ORDER BY instance_ordinal"
+    ).fetchall() == [(1, first_id), (2, second_id)]
+
+    connection.execute(
+        "UPDATE receiver_instances "
+        "SET clean_stopped_at_monotonic_us = ?, clean_stop_state_generation = ? "
+        "WHERE receiver_instance_id = ?",
+        (200, 0, first_id),
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            "UPDATE receiver_instances SET clean_stop_state_generation = 1 "
+            "WHERE receiver_instance_id = ?",
+            (first_id,),
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            "UPDATE receiver_instances SET clean_stopped_at_monotonic_us = ? "
+            "WHERE receiver_instance_id = ?",
+            (400, second_id),
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            "UPDATE receiver_instances "
+            "SET receiver_instance_id = ?, "
+            "clean_stopped_at_monotonic_us = ?, "
+            "clean_stop_state_generation = ? "
+            "WHERE receiver_instance_id = ?",
+            (bytes(16), 400, 1, second_id),
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            "DELETE FROM receiver_instances WHERE receiver_instance_id = ?",
+            (first_id,),
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(insert, (first_id, boot_id, 500))
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            "INSERT INTO receiver_instances "
+            "(receiver_instance_id, linux_boot_id, started_at_monotonic_us, "
+            "clean_stopped_at_monotonic_us, clean_stop_state_generation) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (bytes([2]) * 16, boot_id, 500, 600, 1),
+        )
+
+
+def test_quarantined_communicator_state_preserves_storage_classes() -> None:
+    connection = open_schema()
+    receiver_instance_id = bytes.fromhex("00112233445566778899aabbccddeeff")
+    connection.execute(
+        "INSERT INTO receiver_instances "
+        "(receiver_instance_id, linux_boot_id, started_at_monotonic_us) "
+        "VALUES (?, ?, ?)",
+        (receiver_instance_id, bytes(16), 0),
+    )
+    insert = (
+        "INSERT INTO quarantined_communicator_states "
+        "(observed_singleton_id, observed_state_format_version, "
+        "observed_generation, observed_state_blob, observed_state_sha256, "
+        "calculated_blob_sha256, preserved_by_receiver_instance_id, "
+        "preserved_at_monotonic_us, database_schema_version) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    connection.execute(
+        insert,
+        (
+            None,
+            1,
+            1.25,
+            "not-a-blob",
+            b"not-a-digest",
+            bytes(32),
+            receiver_instance_id,
+            10,
+            generated.DATABASE_SCHEMA_VERSION,
+        ),
+    )
+    assert connection.execute(
+        "SELECT typeof(observed_singleton_id), "
+        "typeof(observed_state_format_version), typeof(observed_generation), "
+        "typeof(observed_state_blob), typeof(observed_state_sha256) "
+        "FROM quarantined_communicator_states"
+    ).fetchone() == ("null", "integer", "real", "text", "blob")
+
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            "UPDATE quarantined_communicator_states "
+            "SET observed_generation = 2"
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute("DELETE FROM quarantined_communicator_states")
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            insert,
+            (None, None, None, None, None, bytes(31), receiver_instance_id, 11, 1),
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            insert,
+            (None, None, None, None, None, None, bytes([1]) * 16, 11, 1),
+        )
+
+
+@pytest.mark.parametrize(
+    ("parent_table", "parent_column", "message"),
+    (
+        ("missing_receiver_instances", "receiver_instance_id", "missing table"),
+        ("receiver_instances", "missing_receiver_instance_id", "missing columns"),
+        ("receiver_instances", "linux_boot_id", "not a complete PRIMARY KEY or UNIQUE key"),
+    ),
+)
+def test_assembled_schema_foreign_key_targets_must_be_valid(
+    tmp_path: Path,
+    parent_table: str,
+    parent_column: str,
+    message: str,
+) -> None:
+    manifest = copy.deepcopy(load_entity_manifest())
+    observation = next(
+        entity
+        for entity in manifest["entities"]  # type: ignore[index]
+        if entity["name"] == "CLOCK_OBSERVATION_V1"
+    )
+    references = observation["foreign_keys"][0]["references"]
+    references["table"] = parent_table
+    references["columns"] = [parent_column]
+
+    result = validate_entity_manifest_fixture(tmp_path, manifest)
+    assert result.returncode == 2
+    assert message in result.stderr
+
+
+def test_receiver_scoped_generated_rows_require_lifecycle_parent() -> None:
+    receiver_instance_id = bytes.fromhex("00112233445566778899aabbccddeeff")
+    profile = generated_entities.MessageProfilingV1(
+        receiver_instance_id=receiver_instance_id,
+        occurrence_sequence=1,
+        received_at_monotonic_us=1,
+        persist_queue_used_bytes_before_admission=0,
+        persist_queue_capacity_bytes=490,
+        received_frame_length=None,
+        received_frame=None,
+        claimed_control=None,
+        claimed_domain=None,
+        claimed_node_id=None,
+        claimed_message_id=None,
+        header_authenticated=False,
+        decoded_sample_id=None,
+        rssi_dbm_x2=None,
+        snr_db_x4=None,
+        irq_status=None,
+        device_errors=None,
+        processing_result=generated.ProcessingResult.RADIO_ERROR,
+        ack_selected=generated.AckSelection.NONE,
+        ack_tx_result=generated.AckTxResult.NOT_APPLICABLE,
+        ack_frame=None,
+        busy_wait_total_us=0,
+        busy_wait_max_us=0,
+        busy_wait_count=0,
+        busy_timeout_count=0,
+        last_busy_timeout_opcode=None,
+        t1_handler_started_monotonic_us=1,
+        t2_packet_copied_monotonic_us=None,
+        t3_authentication_completed_monotonic_us=None,
+        t4_set_tx_attempted_monotonic_us=None,
+        t5_tx_done_monotonic_us=None,
+        t6_set_rx_issued_monotonic_us=None,
+    )
+    profile_row = generated_entities.MessageProfileRowV1(
+        profile=profile,
+        persistence_classification=generated.PersistenceClassification.NOT_APPLICABLE,
+    )
+    health_values = {
+        field.name: 0 for field in fields(generated_entities.ReceiverHealthV1)
+    }
+    health_values.update(
+        receiver_instance_id=receiver_instance_id,
+        radio_state=generated.RadioState.INITIALIZING,
+        radio_recovery_attempts_by_reason=(0,) * 8,
+        system_time_quality=generated.SystemTimeQuality.UNTRUSTED,
+        rtc_health=generated.RtcHealth.PRESENT,
+        chrony_step_command_results=(0,) * 3,
+        rtc_write_results=(0,) * 3,
+        persist_queue_admission_counts=((0,) * 3,) * 5,
+        persistence_admission_state=(
+            generated.PersistenceAdmissionState.UNAVAILABLE_STARTING
+        ),
+        persistence_admission_transition_counts=(0,) * 7,
+    )
+    rows = (
+        (
+            generated_entities.CLOCK_OBSERVATION_V1_TABLE,
+            generated_entities.CLOCK_OBSERVATION_V1_COLUMNS,
+            generated_entities.clock_observation_v1_parameters(
+                generated_entities.ClockObservationV1(
+                    receiver_instance_id=receiver_instance_id,
+                    observation_sequence=1,
+                    clock_state_generation=0,
+                    sampled_at_monotonic_us=1,
+                    sampled_at_utc_us=None,
+                    step_discontinuity_boundary=False,
+                    system_time_quality=generated.SystemTimeQuality.UNTRUSTED,
+                    rtc_health=generated.RtcHealth.PRESENT,
+                )
+            ),
+        ),
+        (
+            generated_entities.DIAGNOSTIC_V1_TABLE,
+            generated_entities.DIAGNOSTIC_V1_COLUMNS,
+            generated_entities.diagnostic_v1_parameters(
+                generated_entities.DiagnosticV1(
+                    receiver_instance_id=receiver_instance_id,
+                    diagnostic_sequence=1,
+                    sampled_at_monotonic_us=1,
+                    severity=generated.DiagnosticSeverity.ERROR,
+                    error_domain=generated.DiagnosticErrorDomain.RADIO,
+                    operation=generated.DiagnosticOperation.VALIDATE,
+                    error_code=1,
+                    context_schema=0,
+                    context_length=0,
+                    context=bytes(128),
+                )
+            ),
+        ),
+        (
+            generated_entities.QUARANTINED_ENTITY_ROW_V1_TABLE,
+            generated_entities.QUARANTINED_ENTITY_ROW_V1_COLUMNS,
+            generated_entities.quarantined_entity_row_v1_parameters(
+                generated_entities.QuarantinedEntityRowV1(
+                    quarantine_id=bytes(32),
+                    entity_kind=generated.PersistQueueEntityKind.PROFILE_ONLY,
+                    entity_schema_version=1,
+                    entity_length=2,
+                    entity_bytes=b"\x02\x01",
+                    receiver_instance_id=receiver_instance_id,
+                    quarantined_at_monotonic_us=1,
+                    database_schema_version=generated.DATABASE_SCHEMA_VERSION,
+                    failure_reason=(
+                        generated.QuarantineFailureReason.ENTITY_DECODING_INVARIANT
+                    ),
+                    failure_operation=generated.DiagnosticOperation.VALIDATE,
+                    sqlite_primary_code=None,
+                    sqlite_extended_code=None,
+                    os_errno=None,
+                    isolation_attempt_count=1,
+                )
+            ),
+        ),
+        (
+            generated_entities.RECEIVER_HEALTH_V1_TABLE,
+            generated_entities.RECEIVER_HEALTH_V1_COLUMNS,
+            generated_entities.receiver_health_v1_parameters(
+                generated_entities.ReceiverHealthV1(**health_values)
+            ),
+        ),
+        (
+            generated_entities.MESSAGE_PROFILE_ROW_V1_TABLE,
+            generated_entities.MESSAGE_PROFILE_ROW_V1_COLUMNS,
+            generated_entities.message_profile_row_v1_parameters(profile_row),
+        ),
+    )
+    connection = open_schema()
+    for table, columns, parameters in rows:
+        insert = (
+            f"INSERT INTO {table} ({', '.join(columns)}) VALUES "
+            f"({', '.join('?' for _ in columns)})"
+        )
+        with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
+            connection.execute(insert, parameters)
+
+    connection.execute(
+        "INSERT INTO receiver_instances "
+        "(receiver_instance_id, linux_boot_id, started_at_monotonic_us) "
+        "VALUES (?, ?, ?)",
+        (receiver_instance_id, bytes(16), 0),
+    )
+    for table, columns, parameters in rows:
+        connection.execute(
+            f"INSERT INTO {table} ({', '.join(columns)}) VALUES "
+            f"({', '.join('?' for _ in columns)})",
+            parameters,
+        )
+
+    reading = generated_entities.ReadingMessageRowV1(
+        node_id=bytes(8),
+        message_id=1,
+        sample_id=1,
+        reading_body=bytes(32),
+        is_canonical_for_sample=True,
+        run_ms=0,
+        soil_0_mv=0,
+        soil_1_mv=0,
+        soil_temp_0_centi_c=0,
+        soil_temp_1_centi_c=0,
+        enclosure_centi_c=0,
+        enclosure_pressure_pa=0,
+        enclosure_humidity_centi_pct=0,
+        reset_reason=0,
+        previous_current_tx_attempts=0,
+        previous_awake_ms=0,
+        previous_current_delivery_ms=0,
+        previous_cycle_tx_attempts=0,
+        previous_cycle_accepted_readings=0,
+        flags=0,
+        first_receiver_instance_id=receiver_instance_id,
+        first_occurrence_sequence=1,
+    )
+    reading_columns = generated_entities.READING_MESSAGE_ROW_V1_COLUMNS
+    connection.execute(
+        f"INSERT INTO reading_messages ({', '.join(reading_columns)}) VALUES "
+        f"({', '.join('?' for _ in reading_columns)})",
+        generated_entities.reading_message_row_v1_parameters(reading),
+    )
+    assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
 def test_receiver_health_binding_expands_only_exact_array_shapes() -> None:

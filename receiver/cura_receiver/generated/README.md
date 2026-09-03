@@ -12,10 +12,12 @@ hand.
   `schema.sql` fingerprint.
 - `receiver_entities_generated.py` comes from
   `receiver/schemas/receiver_entities.json` through the same generator. It
-  contains immutable logical entities for direct mappings, explicit
-  persistence rows for derived or multi-source targets, row-specific SQLite
-  table strings and column tuples, pure parameter binders, and canonical-BLOB
-  codecs. Relational binders project values only. Canonical encoders derive
+  contains reusable immutable logical records, immutable logical entities for
+  direct mappings, explicit persistence rows for derived or multi-source
+  targets, row-specific SQLite table strings and column tuples, pure parameter
+  binders, and canonical-BLOB codecs. Logical records have no standalone SQL
+  identity; a containing row may flatten them into its relational columns.
+  Relational binders project values only. Canonical encoders derive
   representation fields; decoders enforce the binary grammar needed for safe
   parsing. Neither layer performs policy validation or SQLite I/O.
 

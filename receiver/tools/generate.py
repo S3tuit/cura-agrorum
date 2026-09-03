@@ -2,14 +2,16 @@
 """Generate receiver enums, persisted entities, SQLite schema, and constants.
 
 The receiver enum manifest owns every stable receiver-local numeric enum that
-crosses a persistence boundary. The entity manifest owns generated relational
-layouts, logical single-source entities, explicit array projection, and
-multi-table transaction targets, plus canonical binary encodings. This tool
-validates both manifests, appends their generated SQL to the handwritten schema
-source, fingerprints the exact generated ``schema.sql`` bytes, and emits
-ordinary Python ``Enum`` classes, immutable entity or persistence-row classes,
-canonical codecs, row-specific table-name strings and column tuples, pure
-SQLite parameter binders, and the expected database identity constants.
+crosses a persistence boundary. The entity manifest owns reusable logical
+records, generated relational layouts, logical single-source entities,
+explicit array projection, multi-table transaction targets, and canonical
+binary encodings. This tool validates both manifests, appends their generated
+SQL to the handwritten schema source, validates foreign-key closure in the
+assembled schema, fingerprints the exact generated ``schema.sql`` bytes, and
+emits ordinary Python ``Enum`` classes, immutable logical/entity/persistence-
+row classes, canonical codecs, row-specific table-name strings and column
+tuples, pure SQLite parameter binders, and the expected database identity
+constants.
 
 The generated SQL deliberately contains no transaction, ``application_id``
 assignment, or ``database_metadata`` row. Database initialization owns those
@@ -25,6 +27,7 @@ import itertools
 import json
 import os
 import re
+import sqlite3
 import struct
 import sys
 import tempfile
@@ -81,6 +84,9 @@ ENTITY_MODES = {
     "multi_table_transaction",
 }
 FIELD_TYPE_RE = re.compile(r"^bytes(?:\[([1-9][0-9]*)\])?$")
+LOGICAL_RECORD_REFERENCE_RE = re.compile(
+    r"^logical_record:([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*)$"
+)
 ENCODING_REFERENCE_RE = re.compile(r"^(struct|array):([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*)$")
 PERSISTENCE_MODES = {
     "scalar_foreign_key",
@@ -155,6 +161,7 @@ class EntityManifest:
     schema_format_version: int
     enum_source: str
     array_axes: tuple[ArrayAxis, ...]
+    logical_records: tuple[dict[str, Any], ...]
     encodings: tuple[dict[str, Any], ...]
     entities: tuple[dict[str, Any], ...]
 
@@ -169,6 +176,12 @@ class EntityManifest:
             if encoding["name"] == name:
                 return encoding
         raise ManifestError(f"entity manifest has no encoding {name}")
+
+    def logical_record_named(self, name: str) -> dict[str, Any]:
+        for record in self.logical_records:
+            if record["name"] == name:
+                return record
+        raise ManifestError(f"entity manifest has no logical record {name}")
 
 
 @dataclass(frozen=True)
@@ -250,9 +263,6 @@ def main(argv: list[str] | None = None) -> int:
 
         schema_source = args.schema_source.read_text(encoding="utf-8")
         validate_schema_source(schema_source, manifest, entity_manifest)
-        if args.validate_only:
-            return 0
-
         manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
         entity_manifest_sha256 = hashlib.sha256(entity_manifest_bytes).hexdigest()
         schema_source_sha256 = hashlib.sha256(
@@ -269,6 +279,10 @@ def main(argv: list[str] | None = None) -> int:
             entity_manifest_sha256,
             schema_source_sha256,
         )
+        validate_assembled_schema(schema_sql)
+        if args.validate_only:
+            return 0
+
         schema_fingerprint = hashlib.sha256(schema_sql.encode("utf-8")).hexdigest()
 
         outputs = (
@@ -876,13 +890,14 @@ def validate_entity_manifest(
             "schema_format_version",
             "enum_source",
             "array_axes",
+            "logical_records",
             "encodings",
             "entities",
         },
         "entity manifest",
     )
     schema_format_version = require_int(
-        data, "schema_format_version", "entity manifest", 4, 4
+        data, "schema_format_version", "entity manifest", 5, 5
     )
     enum_source = data.get("enum_source")
     if enum_source != enum_manifest_filename:
@@ -950,21 +965,73 @@ def validate_entity_manifest(
 
     encodings = validate_encodings(data.get("encodings"), enum_by_name)
 
-    entities_data = data.get("entities")
-    if not isinstance(entities_data, list) or not entities_data:
-        raise ManifestError("entity manifest.entities must be a nonempty array")
-    entity_names: set[str] = set()
+    logical_records_data = data.get("logical_records")
+    if not isinstance(logical_records_data, list):
+        raise ManifestError("entity manifest.logical_records must be an array")
+    logical_record_names: set[str] = set()
     python_names = {
         struct_spec["python_name"]
         for encoding in encodings
         for struct_spec in encoding["structs"]
     }
+    logical_records: list[dict[str, Any]] = []
+    record_validation_manifest = EntityManifest(
+        schema_format_version,
+        enum_source,
+        tuple(axes),
+        (),
+        encodings,
+        (),
+    )
+    for index, record_data in enumerate(logical_records_data):
+        context = f"entity manifest.logical_records[{index}]"
+        if not isinstance(record_data, dict):
+            raise ManifestError(f"{context} must be an object")
+        require_exact_keys(record_data, {"name", "python_name", "fields"}, context)
+        name = require_upper_name(record_data, "name", context)
+        if name in logical_record_names:
+            raise ManifestError(f"entity manifest repeats logical record {name}")
+        logical_record_names.add(name)
+        python_name = require_python_class_name(record_data, "python_name", context)
+        if python_name in python_names:
+            raise ManifestError(f"entity manifest repeats Python class {python_name}")
+        python_names.add(python_name)
+        fields = record_data.get("fields")
+        if not isinstance(fields, list) or not fields:
+            raise ManifestError(f"{context}.fields must be a nonempty array")
+        field_names: set[str] = set()
+        columns: set[str] = set()
+        for field_index, field in enumerate(fields):
+            field_context = f"{context}.fields[{field_index}]"
+            validate_entity_field(
+                field,
+                field_context,
+                "logical_record",
+                enum_by_name,
+                record_validation_manifest,
+            )
+            assert isinstance(field, dict)
+            if field["name"] in field_names:
+                raise ManifestError(f"{context} repeats field {field['name']}")
+            field_names.add(field["name"])
+            column = field.get("column", field["name"])
+            if column in columns:
+                raise ManifestError(f"{context} repeats SQL column {column}")
+            columns.add(column)
+        validate_length_field_relationships(fields, context)
+        logical_records.append(record_data)
+
+    entities_data = data.get("entities")
+    if not isinstance(entities_data, list) or not entities_data:
+        raise ManifestError("entity manifest.entities must be a nonempty array")
+    entity_names: set[str] = set()
     table_names: set[str] = set()
     entities: list[dict[str, Any]] = []
     provisional = EntityManifest(
         schema_format_version,
         enum_source,
         tuple(axes),
+        tuple(logical_records),
         encodings,
         (),
     )
@@ -973,7 +1040,7 @@ def validate_entity_manifest(
         if not isinstance(entity_data, dict):
             raise ManifestError(f"{context} must be an object")
         name = require_upper_name(entity_data, "name", context)
-        if name in entity_names:
+        if name in entity_names or name in logical_record_names:
             raise ManifestError(f"entity manifest repeats entity {name}")
         entity_names.add(name)
         persistence = entity_data.get("persistence")
@@ -1034,6 +1101,7 @@ def validate_entity_manifest(
         schema_format_version,
         enum_source,
         tuple(axes),
+        tuple(logical_records),
         encodings,
         tuple(entities),
     )
@@ -1089,7 +1157,10 @@ def validate_transaction_mapping(
             target_context,
         )
         target_name = require_upper_name(target, "name", target_context)
-        if target_name in target_names:
+        if target_name in target_names or any(
+            record["name"] == target_name
+            for record in entity_manifest.logical_records
+        ):
             raise ManifestError(f"{context} repeats target {target_name}")
         target_names.add(target_name)
         python_name = require_python_class_name(target, "python_name", target_context)
@@ -1163,11 +1234,12 @@ def validate_row_layout(
         if name in field_names:
             raise ManifestError(f"{context} repeats field {name}")
         field_names.add(name)
-        for _, column in expand_field(field, entity_manifest):
+        for _, column, expanded_field in expand_field(field, entity_manifest):
             if column in columns:
                 raise ManifestError(f"{context} repeats SQL column {column}")
-            columns[column] = bool(field.get("nullable", False))
-            column_types[column] = field["type"]
+            columns[column] = bool(expanded_field.get("nullable", False))
+            column_types[column] = expanded_field["type"]
+    validate_length_field_relationships(fields, context)
 
     primary_key = persistence.get("primary_key")
     validate_identifier_list(primary_key, context + ".primary_key")
@@ -1262,13 +1334,12 @@ def validate_row_layout(
             )
         )
 
-    for field in fields:
+    for _, column, field in sqlite_bound_fields(row, entity_manifest):
         type_name = field["type"]
         if not type_name.startswith("enum:"):
             continue
         enum_spec = enum_by_name[type_name.removeprefix("enum:")]
         assert enum_spec.table is not None
-        column = field.get("column", field["name"])
         expected_shape = ((column,), enum_spec.table, ("id",))
         if expected_shape not in foreign_key_shapes:
             raise ManifestError(
@@ -1295,11 +1366,13 @@ def validate_entity_field(
         "maximum",
         "minimum_length",
         "maximum_length",
+        "length_field",
         "array_axes",
         "column_pattern",
         "constant",
         "derived",
         "encoding",
+        "sql",
     }
     required = {"name", "type"}
     require_allowed_keys(field, allowed, required, context)
@@ -1307,6 +1380,22 @@ def validate_entity_field(
     type_name = field.get("type")
     if not isinstance(type_name, str):
         raise ManifestError(f"{context}.type must be a string")
+    logical_record_reference = LOGICAL_RECORD_REFERENCE_RE.fullmatch(type_name)
+    if logical_record_reference is not None:
+        if mode == "logical_record":
+            raise ManifestError(f"{context} logical records cannot be nested")
+        require_exact_keys(field, {"name", "type", "sql"}, context)
+        record_name = logical_record_reference.group(1)
+        entity_manifest.logical_record_named(record_name)
+        sql = field.get("sql")
+        if not isinstance(sql, dict):
+            raise ManifestError(f"{context}.sql must be an object")
+        require_exact_keys(sql, {"flatten"}, context + ".sql")
+        if sql.get("flatten") is not True:
+            raise ManifestError(f"{context}.sql.flatten must be true")
+        return
+    if "sql" in field:
+        raise ManifestError(f"{context}.sql requires a logical_record reference")
     enum_name: str | None = None
     if type_name.startswith("enum:"):
         enum_name = type_name.removeprefix("enum:")
@@ -1331,6 +1420,13 @@ def validate_entity_field(
         require_sql_identifier(field, "column", context)
     if "nullable" in field and not isinstance(field["nullable"], bool):
         raise ManifestError(f"{context}.nullable must be Boolean")
+    if "length_field" in field:
+        length_field = field["length_field"]
+        if (
+            not isinstance(length_field, str)
+            or SQL_IDENTIFIER_RE.fullmatch(length_field) is None
+        ):
+            raise ManifestError(f"{context}.length_field must be a field name")
     for key in ("minimum", "maximum", "minimum_length", "maximum_length"):
         if key in field and (isinstance(field[key], bool) or not isinstance(field[key], int)):
             raise ManifestError(f"{context}.{key} must be an integer")
@@ -1353,9 +1449,13 @@ def validate_entity_field(
         if "minimum" in field or "maximum" in field:
             raise ManifestError(f"{context} byte field cannot have numeric bounds")
         if fixed_length is not None and (
-            "minimum_length" in field or "maximum_length" in field
+            "minimum_length" in field
+            or "maximum_length" in field
+            or "length_field" in field
         ):
-            raise ManifestError(f"{context} fixed byte field cannot have length bounds")
+            raise ManifestError(
+                f"{context} fixed byte field cannot have length constraints"
+            )
         if fixed_length is None:
             minimum_length = field.get("minimum_length", 0)
             maximum_length = field.get("maximum_length")
@@ -1363,6 +1463,13 @@ def validate_entity_field(
                 raise ManifestError(
                     f"{context} variable bytes require valid minimum_length and maximum_length"
                 )
+            if "length_field" in field and field.get("nullable", False):
+                raise ManifestError(
+                    f"{context} length-checked bytes cannot be nullable"
+                )
+
+    if "length_field" in field and FIELD_TYPE_RE.fullmatch(type_name) is None:
+        raise ManifestError(f"{context}.length_field requires variable bytes")
 
     special_keys = {"constant", "derived", "encoding"} & set(field)
     if mode != "canonical_blob" and special_keys:
@@ -1423,6 +1530,39 @@ def validate_entity_field(
                 raise ManifestError(
                     f"{context}.column_pattern must contain {{{axis_name}}}"
                 )
+
+
+def validate_length_field_relationships(
+    fields: list[dict[str, Any]],
+    context: str,
+) -> None:
+    fields_by_name = {field["name"]: field for field in fields}
+    for field in fields:
+        length_field_name = field.get("length_field")
+        if length_field_name is None:
+            continue
+        if length_field_name == field["name"]:
+            raise ManifestError(
+                f"{context}.{field['name']}.length_field cannot reference itself"
+            )
+        length_field = fields_by_name.get(length_field_name)
+        if length_field is None:
+            raise ManifestError(
+                f"{context}.{field['name']}.length_field references unknown field "
+                f"{length_field_name}"
+            )
+        if length_field["type"] not in SQLITE_INTEGER_RANGES:
+            raise ManifestError(
+                f"{context}.{field['name']}.length_field must reference an integer"
+            )
+        if length_field.get("nullable", False):
+            raise ManifestError(
+                f"{context}.{field['name']}.length_field cannot be nullable"
+            )
+        if "array_axes" in length_field:
+            raise ManifestError(
+                f"{context}.{field['name']}.length_field cannot reference an array"
+            )
 
 
 def validate_canonical_mapping(
@@ -1581,6 +1721,98 @@ def validate_schema_source(
             )
 
 
+def validate_assembled_schema(schema_sql: str) -> None:
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.executescript(schema_sql)
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_schema "
+                "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+            )
+        }
+        columns_by_table: dict[str, set[str]] = {}
+        parent_keys_by_table: dict[str, set[tuple[str, ...]]] = {}
+        for table in tables:
+            table_literal = "'" + table.replace("'", "''") + "'"
+            table_info = list(
+                connection.execute(f"PRAGMA table_info({table_literal})")
+            )
+            columns_by_table[table] = {row[1] for row in table_info}
+            primary_key = tuple(
+                row[1]
+                for row in sorted(table_info, key=lambda row: row[5])
+                if row[5] > 0
+            )
+            parent_keys: set[tuple[str, ...]] = set()
+            if primary_key:
+                parent_keys.add(primary_key)
+            for index_row in connection.execute(
+                f"PRAGMA index_list({table_literal})"
+            ):
+                index_name = index_row[1]
+                is_unique = bool(index_row[2])
+                is_partial = bool(index_row[4])
+                if not is_unique or is_partial:
+                    continue
+                index_columns = tuple(
+                    row[2]
+                    for row in connection.execute(
+                        "PRAGMA index_info('"
+                        + index_name.replace("'", "''")
+                        + "')"
+                    )
+                )
+                if index_columns and all(
+                    column is not None for column in index_columns
+                ):
+                    parent_keys.add(index_columns)
+            parent_keys_by_table[table] = parent_keys
+
+        for table in tables:
+            foreign_keys: dict[int, list[tuple[Any, ...]]] = {}
+            table_literal = "'" + table.replace("'", "''") + "'"
+            for row in connection.execute(
+                f"PRAGMA foreign_key_list({table_literal})"
+            ):
+                foreign_keys.setdefault(row[0], []).append(row)
+            for foreign_key_id, rows in foreign_keys.items():
+                ordered = sorted(rows, key=lambda row: row[1])
+                parent_table = ordered[0][2]
+                local_columns = tuple(row[3] for row in ordered)
+                parent_columns = tuple(row[4] for row in ordered)
+                if parent_table not in tables:
+                    raise ManifestError(
+                        f"assembled schema foreign key {table}{local_columns} "
+                        f"references missing table {parent_table}"
+                    )
+                if any(
+                    column not in columns_by_table[parent_table]
+                    for column in parent_columns
+                ):
+                    raise ManifestError(
+                        f"assembled schema foreign key {table}{local_columns} "
+                        f"references missing columns {parent_table}{parent_columns}"
+                    )
+                if parent_columns not in parent_keys_by_table[parent_table]:
+                    raise ManifestError(
+                        f"assembled schema foreign key {table}{local_columns} "
+                        f"references columns {parent_table}{parent_columns} that "
+                        "are not a complete PRIMARY KEY or UNIQUE key"
+                    )
+        violations = list(connection.execute("PRAGMA foreign_key_check"))
+        if violations:
+            raise ManifestError(
+                f"assembled schema contains foreign-key violations: {violations!r}"
+            )
+    except sqlite3.Error as exc:
+        raise ManifestError(f"assembled schema is invalid: {exc}") from exc
+    finally:
+        connection.close()
+
+
 def generate_schema(
     manifest: Manifest,
     entity_manifest: EntityManifest,
@@ -1718,12 +1950,26 @@ def iter_row_layouts(entity_manifest: EntityManifest) -> tuple[dict[str, Any], .
 
 def expand_field(
     field: dict[str, Any], entity_manifest: EntityManifest
-) -> tuple[tuple[str, str], ...]:
+) -> tuple[tuple[str, str, dict[str, Any]], ...]:
+    logical_record_reference = LOGICAL_RECORD_REFERENCE_RE.fullmatch(field["type"])
+    if logical_record_reference is not None:
+        record = entity_manifest.logical_record_named(
+            logical_record_reference.group(1)
+        )
+        expanded_record: list[tuple[str, str, dict[str, Any]]] = []
+        for child in record["fields"]:
+            for attribute, column, leaf in expand_field(child, entity_manifest):
+                expanded_record.append(
+                    (f"{field['name']}.{attribute}", column, leaf)
+                )
+        return tuple(expanded_record)
     axes = field.get("array_axes")
     if axes is None:
-        return ((field["name"], field.get("column", field["name"])),)
+        return (
+            (field["name"], field.get("column", field["name"]), field),
+        )
     axis_specs = [entity_manifest.axis_named(name) for name in axes]
-    expanded: list[tuple[str, str]] = []
+    expanded: list[tuple[str, str, dict[str, Any]]] = []
     for members in itertools.product(*(axis.members for axis in axis_specs)):
         substitutions = {
             axis.name: member.name.lower()
@@ -1734,7 +1980,10 @@ def expand_field(
             raise ManifestError(
                 f"expanded column {column!r} is not a snake_case SQL identifier"
             )
-        expanded.append((column, column))
+        indexes = "".join(
+            f"[{member.source_index}]" for member in members
+        )
+        expanded.append((field["name"] + indexes, column, field))
     return tuple(expanded)
 
 
@@ -1743,8 +1992,12 @@ def render_entity_table(
 ) -> list[str]:
     definitions: list[str] = []
     for field in row["fields"]:
-        for _, column in expand_field(field, entity_manifest):
-            definitions.append(render_entity_column(field, column))
+        for _, column, expanded_field in expand_field(field, entity_manifest):
+            definitions.append(render_entity_column(expanded_field, column))
+    for bytes_column, length_column in iter_length_field_checks(
+        row["fields"], entity_manifest
+    ):
+        definitions.append(f"CHECK (length({bytes_column}) = {length_column})")
     primary_key = ", ".join(row["primary_key"])
     definitions.append(f"PRIMARY KEY ({primary_key})")
     for foreign_key in row["foreign_keys"]:
@@ -1769,6 +2022,37 @@ def render_entity_table(
     if row["write_policy"] == "append_only":
         lines.extend([*render_append_only_triggers(row["table"]), ""])
     return lines
+
+
+def iter_length_field_checks(
+    fields: list[dict[str, Any]],
+    entity_manifest: EntityManifest,
+) -> tuple[tuple[str, str], ...]:
+    checks: list[tuple[str, str]] = []
+    fields_by_name = {field["name"]: field for field in fields}
+    for field in fields:
+        logical_record_reference = LOGICAL_RECORD_REFERENCE_RE.fullmatch(
+            field["type"]
+        )
+        if logical_record_reference is not None:
+            record = entity_manifest.logical_record_named(
+                logical_record_reference.group(1)
+            )
+            checks.extend(
+                iter_length_field_checks(record["fields"], entity_manifest)
+            )
+            continue
+        length_field_name = field.get("length_field")
+        if length_field_name is None:
+            continue
+        length_field = fields_by_name[length_field_name]
+        checks.append(
+            (
+                field.get("column", field["name"]),
+                length_field.get("column", length_field["name"]),
+            )
+        )
+    return tuple(checks)
 
 
 def render_entity_index(table: str, index: dict[str, Any]) -> list[str]:
@@ -1935,8 +2219,13 @@ def generate_entity_python(
             for field in (
                 [
                     field
+                    for record in entity_manifest.logical_records
+                    for field in record["fields"]
+                ]
+                + [
+                    field
                     for row in relational_rows
-                    for field in row["fields"]
+                    for _, _, field in sqlite_bound_fields(row, entity_manifest)
                 ]
                 + [
                     field
@@ -1955,7 +2244,8 @@ def generate_entity_python(
         for struct_spec in encoding["structs"]
     ]
     class_names = (
-        [row["python_name"] for row in relational_rows]
+        [record["python_name"] for record in entity_manifest.logical_records]
+        + [row["python_name"] for row in relational_rows]
         + struct_class_names
         + [entity["python_name"] for entity in canonical_entities]
     )
@@ -2020,7 +2310,26 @@ def generate_entity_python(
     if canonical_entities:
         lines.extend(render_canonical_runtime_helpers())
 
+    for record in entity_manifest.logical_records:
+        lines.extend(
+            [
+                "@dataclass(frozen=True, slots=True)",
+                f"class {record['python_name']}:",
+            ]
+        )
+        for field in record["fields"]:
+            annotation = python_type_for_field(
+                field,
+                enum_by_name,
+                entity_manifest,
+            )
+            if field.get("nullable", False):
+                annotation += " | None"
+            lines.append(f"    {field['name']}: {annotation}")
+        lines.append("")
+
     for row in relational_rows:
+        emitted_fields = sqlite_bound_fields(row, entity_manifest)
         lines.extend(
             [
                 "@dataclass(frozen=True, slots=True)",
@@ -2029,7 +2338,11 @@ def generate_entity_python(
         )
         for field in row["fields"]:
             attribute = field["name"]
-            annotation = python_type_for_field(field, enum_by_name)
+            annotation = python_type_for_field(
+                field,
+                enum_by_name,
+                entity_manifest,
+            )
             for _ in field.get("array_axes", []):
                 annotation = f"tuple[{annotation}, ...]"
             if field.get("nullable", False):
@@ -2049,23 +2362,11 @@ def generate_entity_python(
                 "    return (",
             ]
         )
-        for field in row["fields"]:
-            axes_data = field.get("array_axes")
-            if axes_data is None:
-                expression = f"entity.{field['name']}"
-                lines.append(
-                    f"        {sqlite_binding_expression(expression, field)},"
-                )
-                continue
-            axes = [entity_manifest.axis_named(name) for name in axes_data]
-            for members in itertools.product(*(axis.members for axis in axes)):
-                indexes = "".join(
-                    f"[{member.source_index}]" for member in members
-                )
-                expression = f"entity.{field['name']}{indexes}"
-                lines.append(
-                    f"        {sqlite_binding_expression(expression, field)},"
-                )
+        for attribute, _, field in emitted_fields:
+            expression = f"entity.{attribute}"
+            lines.append(
+                f"        {sqlite_binding_expression(expression, field)},"
+            )
         lines.extend(["    )", ""])
 
     for encoding in entity_manifest.encodings:
@@ -2629,15 +2930,21 @@ def sqlite_bound_fields(
     fields: list[tuple[str, str, dict[str, Any]]] = []
     for field in row["fields"]:
         expanded = expand_field(field, entity_manifest)
-        for attribute, column in expanded:
-            fields.append((attribute, column, field))
+        fields.extend(expanded)
     return tuple(fields)
 
 
 def python_type_for_field(
-    field: dict[str, Any], enum_by_name: dict[str, EnumSpec]
+    field: dict[str, Any],
+    enum_by_name: dict[str, EnumSpec],
+    entity_manifest: EntityManifest,
 ) -> str:
     type_name = field["type"]
+    logical_record_reference = LOGICAL_RECORD_REFERENCE_RE.fullmatch(type_name)
+    if logical_record_reference is not None:
+        return entity_manifest.logical_record_named(
+            logical_record_reference.group(1)
+        )["python_name"]
     if type_name.startswith("enum:"):
         return enum_by_name[type_name.removeprefix("enum:")].python_name
     if FIELD_TYPE_RE.fullmatch(type_name) is not None:

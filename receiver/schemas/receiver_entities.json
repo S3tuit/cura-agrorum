@@ -1,5 +1,5 @@
 {
-  "schema_format_version": 4,
+  "schema_format_version": 5,
   "enum_source": "receiver_enums.json",
   "array_axes": [
     {
@@ -63,6 +63,98 @@
         {"name": "UNAVAILABLE_CORRUPT", "source_index": 4},
         {"name": "UNAVAILABLE_IO", "source_index": 5},
         {"name": "UNAVAILABLE_INCOMPATIBLE_SCHEMA", "source_index": 6}
+      ]
+    }
+  ],
+  "logical_records": [
+    {
+      "name": "MESSAGE_PROFILING_V1",
+      "python_name": "MessageProfilingV1",
+      "fields": [
+        {"name": "receiver_instance_id", "type": "bytes[16]"},
+        {"name": "occurrence_sequence", "type": "u64"},
+        {"name": "received_at_monotonic_us", "type": "u64"},
+        {
+          "name": "persist_queue_used_bytes_before_admission",
+          "type": "u64"
+        },
+        {"name": "persist_queue_capacity_bytes", "type": "u64"},
+        {
+          "name": "received_frame_length",
+          "type": "u16",
+          "maximum": 255,
+          "nullable": true
+        },
+        {
+          "name": "received_frame",
+          "type": "bytes[255]",
+          "nullable": true
+        },
+        {"name": "claimed_control", "type": "u8", "nullable": true},
+        {"name": "claimed_domain", "type": "u8", "nullable": true},
+        {
+          "name": "claimed_node_id",
+          "type": "bytes[8]",
+          "nullable": true
+        },
+        {"name": "claimed_message_id", "type": "u32", "nullable": true},
+        {"name": "header_authenticated", "type": "bool8"},
+        {"name": "decoded_sample_id", "type": "u32", "nullable": true},
+        {"name": "rssi_dbm_x2", "type": "i16", "nullable": true},
+        {"name": "snr_db_x4", "type": "i16", "nullable": true},
+        {"name": "irq_status", "type": "u16", "nullable": true},
+        {"name": "device_errors", "type": "u16", "nullable": true},
+        {
+          "name": "processing_result",
+          "type": "enum:PROCESSING_RESULT",
+          "column": "processing_result_id"
+        },
+        {
+          "name": "ack_selected",
+          "type": "enum:ACK_SELECTION",
+          "column": "ack_selected_id"
+        },
+        {
+          "name": "ack_tx_result",
+          "type": "enum:ACK_TX_RESULT",
+          "column": "ack_tx_result_id"
+        },
+        {"name": "ack_frame", "type": "bytes[23]", "nullable": true},
+        {"name": "busy_wait_total_us", "type": "u64"},
+        {"name": "busy_wait_max_us", "type": "u64"},
+        {"name": "busy_wait_count", "type": "u32"},
+        {"name": "busy_timeout_count", "type": "u32"},
+        {
+          "name": "last_busy_timeout_opcode",
+          "type": "u8",
+          "nullable": true
+        },
+        {"name": "t1_handler_started_monotonic_us", "type": "u64"},
+        {
+          "name": "t2_packet_copied_monotonic_us",
+          "type": "u64",
+          "nullable": true
+        },
+        {
+          "name": "t3_authentication_completed_monotonic_us",
+          "type": "u64",
+          "nullable": true
+        },
+        {
+          "name": "t4_set_tx_attempted_monotonic_us",
+          "type": "u64",
+          "nullable": true
+        },
+        {
+          "name": "t5_tx_done_monotonic_us",
+          "type": "u64",
+          "nullable": true
+        },
+        {
+          "name": "t6_set_rx_issued_monotonic_us",
+          "type": "u64",
+          "nullable": true
+        }
       ]
     }
   ],
@@ -469,7 +561,8 @@
           "name": "entity_bytes",
           "type": "bytes",
           "minimum_length": 2,
-          "maximum_length": 490
+          "maximum_length": 490,
+          "length_field": "entity_length"
         },
         {
           "name": "receiver_instance_id",
@@ -741,154 +834,9 @@
             "without_rowid": true,
             "fields": [
               {
-                "name": "receiver_instance_id",
-                "type": "bytes[16]"
-              },
-              {
-                "name": "occurrence_sequence",
-                "type": "u64"
-              },
-              {
-                "name": "received_at_monotonic_us",
-                "type": "u64"
-              },
-              {
-                "name": "persist_queue_used_bytes_before_admission",
-                "type": "u64"
-              },
-              {
-                "name": "persist_queue_capacity_bytes",
-                "type": "u64"
-              },
-              {
-                "name": "received_frame_length",
-                "type": "u16",
-                "maximum": 255,
-                "nullable": true
-              },
-              {
-                "name": "received_frame",
-                "type": "bytes[255]",
-                "nullable": true
-              },
-              {
-                "name": "claimed_control",
-                "type": "u8",
-                "nullable": true
-              },
-              {
-                "name": "claimed_domain",
-                "type": "u8",
-                "nullable": true
-              },
-              {
-                "name": "claimed_node_id",
-                "type": "bytes[8]",
-                "nullable": true
-              },
-              {
-                "name": "claimed_message_id",
-                "type": "u32",
-                "nullable": true
-              },
-              {
-                "name": "header_authenticated",
-                "type": "bool8"
-              },
-              {
-                "name": "decoded_sample_id",
-                "type": "u32",
-                "nullable": true
-              },
-              {
-                "name": "rssi_dbm_x2",
-                "type": "i16",
-                "nullable": true
-              },
-              {
-                "name": "snr_db_x4",
-                "type": "i16",
-                "nullable": true
-              },
-              {
-                "name": "irq_status",
-                "type": "u16",
-                "nullable": true
-              },
-              {
-                "name": "device_errors",
-                "type": "u16",
-                "nullable": true
-              },
-              {
-                "name": "processing_result",
-                "type": "enum:PROCESSING_RESULT",
-                "column": "processing_result_id"
-              },
-              {
-                "name": "ack_selected",
-                "type": "enum:ACK_SELECTION",
-                "column": "ack_selected_id"
-              },
-              {
-                "name": "ack_tx_result",
-                "type": "enum:ACK_TX_RESULT",
-                "column": "ack_tx_result_id"
-              },
-              {
-                "name": "ack_frame",
-                "type": "bytes[23]",
-                "nullable": true
-              },
-              {
-                "name": "busy_wait_total_us",
-                "type": "u64"
-              },
-              {
-                "name": "busy_wait_max_us",
-                "type": "u64"
-              },
-              {
-                "name": "busy_wait_count",
-                "type": "u32"
-              },
-              {
-                "name": "busy_timeout_count",
-                "type": "u32"
-              },
-              {
-                "name": "last_busy_timeout_opcode",
-                "type": "u8",
-                "nullable": true
-              },
-              {
-                "name": "t1_handler_started_monotonic_us",
-                "type": "u64"
-              },
-              {
-                "name": "t2_packet_copied_monotonic_us",
-                "type": "u64",
-                "nullable": true
-              },
-              {
-                "name": "t3_authentication_completed_monotonic_us",
-                "type": "u64",
-                "nullable": true
-              },
-              {
-                "name": "t4_set_tx_attempted_monotonic_us",
-                "type": "u64",
-                "nullable": true
-              },
-              {
-                "name": "t5_tx_done_monotonic_us",
-                "type": "u64",
-                "nullable": true
-              },
-              {
-                "name": "t6_set_rx_issued_monotonic_us",
-                "type": "u64",
-                "nullable": true
+                "name": "profile",
+                "type": "logical_record:MESSAGE_PROFILING_V1",
+                "sql": {"flatten": true}
               },
               {
                 "name": "persistence_classification",

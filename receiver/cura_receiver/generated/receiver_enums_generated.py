@@ -5,11 +5,11 @@ from __future__ import annotations
 
 from enum import Enum, unique
 
-RECEIVER_ENUM_MANIFEST_SHA256 = 'fc2067c94c564db57279ee35e78620baa8486471df1e32aae6006789c4c8142a'
-RECEIVER_ENTITY_MANIFEST_SHA256 = '66a0507e495fab9ef737fadffa39e18ae059a07492d5a3dde9809423fdb64189'
+RECEIVER_ENUM_MANIFEST_SHA256 = 'f4605c7c919915a317ffa6b7a5ad8f90448b33acb53dcbc16f1af0cfa96b493e'
+RECEIVER_ENTITY_MANIFEST_SHA256 = '342ceabaa737daf5134149d3802d0e0a87f1a3d862b10dd55e15726c6161af41'
 SQLITE_APPLICATION_ID = 0x43555252
-DATABASE_SCHEMA_VERSION = 6
-DATABASE_SCHEMA_SHA256 = '72f56f7717d21b1dd99e8ccc89ef2a0961657542de6d70ff311da5f8892bc320'
+DATABASE_SCHEMA_VERSION = 7
+DATABASE_SCHEMA_SHA256 = 'bb482d266511702bf64bff939000463e815778f2b50cbffe62bc1ed49bae8231'
 DATABASE_SCHEMA_FINGERPRINT = bytes.fromhex(DATABASE_SCHEMA_SHA256)
 
 __all__ = [
@@ -45,6 +45,12 @@ __all__ = [
     "TimeComponent",
     "TimeFailureStage",
     "TimeBackendStatusKind",
+    "ChronyQueryStatus",
+    "ChronyStepDisposition",
+    "Ds3231ReadStatus",
+    "Ds3231WriteDisposition",
+    "Ds3231Failure",
+    "AdjtimexReturn",
     "PersistenceControlDiagnosticErrorCode",
     "PersistenceControlDiagnosticContextSchema",
     "PersistenceControlCommand",
@@ -316,6 +322,49 @@ class TimeBackendStatusKind(Enum):
     DS3231_WRITE_DISPOSITION = 4
     DS3231_FAILURE = 5
     ADJTIMEX_RETURN = 6
+
+@unique
+class ChronyQueryStatus(Enum):
+    OK = 1
+    UNAVAILABLE = 2
+    DEADLINE_EXCEEDED = 3
+    INVALID_RESPONSE = 4
+
+@unique
+class ChronyStepDisposition(Enum):
+    SUBMITTED = 1
+    NOT_SUBMITTED = 2
+    OUTCOME_UNKNOWN = 3
+
+@unique
+class Ds3231ReadStatus(Enum):
+    OK = 1
+    MISSING = 2
+    INVALID = 3
+    IO_ERROR = 4
+    DEADLINE_EXCEEDED = 5
+
+@unique
+class Ds3231WriteDisposition(Enum):
+    COMPLETED = 1
+    NOT_APPLIED = 2
+    OUTCOME_UNKNOWN = 3
+
+@unique
+class Ds3231Failure(Enum):
+    NONE = 0
+    MISSING = 1
+    IO_ERROR = 2
+    DEADLINE_EXCEEDED = 3
+
+@unique
+class AdjtimexReturn(Enum):
+    TIME_OK = 0
+    TIME_INS = 1
+    TIME_DEL = 2
+    TIME_OOP = 3
+    TIME_WAIT = 4
+    TIME_ERROR = 5
 
 @unique
 class PersistenceControlDiagnosticErrorCode(Enum):

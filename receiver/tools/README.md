@@ -3,12 +3,14 @@
 `generate.py` is a host-side build tool. It validates the receiver enum and
 entity manifests plus the handwritten SQL source, then generates the checked-in
 SQLite schema, Python enum/schema-identity module, and Python entity/binding
-module. Canonical-BLOB declarations additionally produce immutable logical
-entities, deterministic encoders, structural decoders, exact-blob SHA-256
-binders, and their controlled SQLite envelope tables.
+module. Reusable logical records may be flattened into relational rows without
+creating standalone tables. Canonical-BLOB declarations additionally produce
+immutable logical entities, deterministic encoders, structural decoders,
+exact-blob SHA-256 binders, and their controlled SQLite envelope tables. The
+generator validates foreign-key closure against the fully assembled schema.
 Run it from any working directory; use `--check` in tests or CI.
 
-This directory does not yet contain the Pi database initializer. That future
-deployment tool has different authority: it will verify and execute the exact
-packaged `schema.sql`, insert deployment-specific metadata, and install a fresh
-database. It must not regenerate schemas or enum assignments on the Pi.
+The offline initializer lives in `cura_receiver/database_initializer.py`. It
+has different authority: it verifies and executes the exact packaged
+`schema.sql`, inserts deployment-specific metadata, and installs only a fresh
+database. It never regenerates schemas or enum assignments on the Pi.

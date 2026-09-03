@@ -22,7 +22,8 @@ The protocol contract remains under
 
 - [`cura_receiver/`](cura_receiver/) contains handwritten receiver Python code.
   Its [`generated/`](cura_receiver/generated/) subdirectory contains checked-in
-  generated Python modules.
+  generated Python modules. `database_initializer.py` installs a fresh receiver
+  database from the exact packaged schema without overwriting an existing one.
 - [`schemas/`](schemas/) contains machine-readable receiver sources of truth for
   stable enums and persisted entity layouts.
 - [`db/`](db/) contains the handwritten SQLite schema input and generated

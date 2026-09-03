@@ -23,7 +23,7 @@ from .receiver_enums_generated import (
     SystemTimeQuality,
 )
 
-RECEIVER_ENTITY_MANIFEST_SHA256 = '66a0507e495fab9ef737fadffa39e18ae059a07492d5a3dde9809423fdb64189'
+RECEIVER_ENTITY_MANIFEST_SHA256 = '342ceabaa737daf5134149d3802d0e0a87f1a3d862b10dd55e15726c6161af41'
 
 __all__ = [
     "RECEIVER_ENTITY_MANIFEST_SHA256",
@@ -41,6 +41,7 @@ __all__ = [
     "READING_MESSAGE_ROW_V1_COLUMNS",
     "COMMUNICATOR_STATE_V1_TABLE",
     "COMMUNICATOR_STATE_V1_COLUMNS",
+    "MessageProfilingV1",
     "ClockObservationV1",
     "DiagnosticV1",
     "QuarantinedEntityRowV1",
@@ -290,6 +291,41 @@ def _require_bytes_length(value: bytes, length: int, field: str) -> bytes:
     return value
 
 @dataclass(frozen=True, slots=True)
+class MessageProfilingV1:
+    receiver_instance_id: bytes
+    occurrence_sequence: int
+    received_at_monotonic_us: int
+    persist_queue_used_bytes_before_admission: int
+    persist_queue_capacity_bytes: int
+    received_frame_length: int | None
+    received_frame: bytes | None
+    claimed_control: int | None
+    claimed_domain: int | None
+    claimed_node_id: bytes | None
+    claimed_message_id: int | None
+    header_authenticated: bool
+    decoded_sample_id: int | None
+    rssi_dbm_x2: int | None
+    snr_db_x4: int | None
+    irq_status: int | None
+    device_errors: int | None
+    processing_result: ProcessingResult
+    ack_selected: AckSelection
+    ack_tx_result: AckTxResult
+    ack_frame: bytes | None
+    busy_wait_total_us: int
+    busy_wait_max_us: int
+    busy_wait_count: int
+    busy_timeout_count: int
+    last_busy_timeout_opcode: int | None
+    t1_handler_started_monotonic_us: int
+    t2_packet_copied_monotonic_us: int | None
+    t3_authentication_completed_monotonic_us: int | None
+    t4_set_tx_attempted_monotonic_us: int | None
+    t5_tx_done_monotonic_us: int | None
+    t6_set_rx_issued_monotonic_us: int | None
+
+@dataclass(frozen=True, slots=True)
 class ClockObservationV1:
     receiver_instance_id: bytes
     observation_sequence: int
@@ -524,74 +560,43 @@ def receiver_health_v1_parameters(entity: ReceiverHealthV1) -> tuple[object, ...
 
 @dataclass(frozen=True, slots=True)
 class MessageProfileRowV1:
-    receiver_instance_id: bytes
-    occurrence_sequence: int
-    received_at_monotonic_us: int
-    persist_queue_used_bytes_before_admission: int
-    persist_queue_capacity_bytes: int
-    received_frame_length: int | None
-    received_frame: bytes | None
-    claimed_control: int | None
-    claimed_domain: int | None
-    claimed_node_id: bytes | None
-    claimed_message_id: int | None
-    header_authenticated: bool
-    decoded_sample_id: int | None
-    rssi_dbm_x2: int | None
-    snr_db_x4: int | None
-    irq_status: int | None
-    device_errors: int | None
-    processing_result: ProcessingResult
-    ack_selected: AckSelection
-    ack_tx_result: AckTxResult
-    ack_frame: bytes | None
-    busy_wait_total_us: int
-    busy_wait_max_us: int
-    busy_wait_count: int
-    busy_timeout_count: int
-    last_busy_timeout_opcode: int | None
-    t1_handler_started_monotonic_us: int
-    t2_packet_copied_monotonic_us: int | None
-    t3_authentication_completed_monotonic_us: int | None
-    t4_set_tx_attempted_monotonic_us: int | None
-    t5_tx_done_monotonic_us: int | None
-    t6_set_rx_issued_monotonic_us: int | None
+    profile: MessageProfilingV1
     persistence_classification: PersistenceClassification
 
 def message_profile_row_v1_parameters(entity: MessageProfileRowV1) -> tuple[object, ...]:
     return (
-        entity.receiver_instance_id,
-        entity.occurrence_sequence,
-        entity.received_at_monotonic_us,
-        entity.persist_queue_used_bytes_before_admission,
-        entity.persist_queue_capacity_bytes,
-        entity.received_frame_length,
-        entity.received_frame,
-        entity.claimed_control,
-        entity.claimed_domain,
-        entity.claimed_node_id,
-        entity.claimed_message_id,
-        entity.header_authenticated,
-        entity.decoded_sample_id,
-        entity.rssi_dbm_x2,
-        entity.snr_db_x4,
-        entity.irq_status,
-        entity.device_errors,
-        entity.processing_result.value,
-        entity.ack_selected.value,
-        entity.ack_tx_result.value,
-        entity.ack_frame,
-        entity.busy_wait_total_us,
-        entity.busy_wait_max_us,
-        entity.busy_wait_count,
-        entity.busy_timeout_count,
-        entity.last_busy_timeout_opcode,
-        entity.t1_handler_started_monotonic_us,
-        entity.t2_packet_copied_monotonic_us,
-        entity.t3_authentication_completed_monotonic_us,
-        entity.t4_set_tx_attempted_monotonic_us,
-        entity.t5_tx_done_monotonic_us,
-        entity.t6_set_rx_issued_monotonic_us,
+        entity.profile.receiver_instance_id,
+        entity.profile.occurrence_sequence,
+        entity.profile.received_at_monotonic_us,
+        entity.profile.persist_queue_used_bytes_before_admission,
+        entity.profile.persist_queue_capacity_bytes,
+        entity.profile.received_frame_length,
+        entity.profile.received_frame,
+        entity.profile.claimed_control,
+        entity.profile.claimed_domain,
+        entity.profile.claimed_node_id,
+        entity.profile.claimed_message_id,
+        entity.profile.header_authenticated,
+        entity.profile.decoded_sample_id,
+        entity.profile.rssi_dbm_x2,
+        entity.profile.snr_db_x4,
+        entity.profile.irq_status,
+        entity.profile.device_errors,
+        entity.profile.processing_result.value,
+        entity.profile.ack_selected.value,
+        entity.profile.ack_tx_result.value,
+        entity.profile.ack_frame,
+        entity.profile.busy_wait_total_us,
+        entity.profile.busy_wait_max_us,
+        entity.profile.busy_wait_count,
+        entity.profile.busy_timeout_count,
+        entity.profile.last_busy_timeout_opcode,
+        entity.profile.t1_handler_started_monotonic_us,
+        entity.profile.t2_packet_copied_monotonic_us,
+        entity.profile.t3_authentication_completed_monotonic_us,
+        entity.profile.t4_set_tx_attempted_monotonic_us,
+        entity.profile.t5_tx_done_monotonic_us,
+        entity.profile.t6_set_rx_issued_monotonic_us,
         entity.persistence_classification.value,
     )
 

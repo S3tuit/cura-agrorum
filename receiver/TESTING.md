@@ -1,8 +1,9 @@
 # Receiver testing
 
 Status: this document defines the pilot receiver test suite. The generated
-interface and SQLite-schema tests exist; most runtime host and Raspberry Pi
-tests described here will be implemented with their production components.
+interface, SQLite-schema, database-initializer and low-level clock-boundary host
+tests exist; most runtime host and Raspberry Pi tests described here will be
+implemented with their production components.
 
 ## Purpose and authority
 
@@ -41,7 +42,7 @@ is a native Python program on that host. `pytest-embedded` is optional only
 when a later radio test also controls an ESP32 peer over serial; it is not the
 receiver test runner.
 
-The intended layout is:
+The implemented layout is:
 
 ```text
 receiver/tests/
@@ -50,13 +51,13 @@ receiver/tests/
   support/    reviewed builders, reference models, fakes and subprocess helpers
 ```
 
-The existing generation and schema tests become part of the host suite. Test
+The generation and schema tests are part of the host suite. Test
 support may import production public interfaces, but production code must not
 import test support. Shared golden inputs must be reviewed constants or the
 checked-in protocol vectors; expected values must not be calculated by the
 same implementation being tested.
 
-The planned repository entry points are:
+The repository entry points are:
 
 ```text
 make test-receiver-host
@@ -71,6 +72,30 @@ hardware target selects non-destructive fast cases. The slow target selects
 long-running but non-destructive cases. The all target combines both safe
 sets. Destructive cases require their own target, an explicit confirmation
 option, dedicated test paths and any additional fixture-specific interlock.
+
+From the repository root, install the receiver test dependencies and run the
+ordinary validation loop with:
+
+```sh
+.venv/bin/python -m pip install -r receiver/requirements-test.txt
+make test-receiver
+```
+
+Receiver Make targets disable third-party pytest plugin autoload and explicitly
+load Hypothesis. `pytest-embedded` is not loaded by ordinary receiver tests. The
+receiver-local `pytest.ini` also makes direct discovery from `receiver/`
+host-only and enforces strict configuration, markers and expected-failure
+behavior:
+
+```sh
+. .venv/bin/activate
+cd receiver
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest
+```
+
+From the repository root, use the Make targets or pass an explicit receiver test
+path; `-c receiver/pytest.ini` alone does not constrain pytest's initial search
+root.
 
 Register and enforce these pytest markers strictly:
 
@@ -87,6 +112,29 @@ name, database and storage root and must never modify pilot data. A hardware
 fixture that changes device or host state must restore it in teardown; an
 uncertain restoration is a test failure and stops dependent tests.
 
+The hardware entry points pass the required explicit hardware option and verify
+that pytest is running on a Raspberry Pi. The hardware package initially
+contains only these safety and collection rules; component tests arrive with
+their production adapters.
+
+Destructive tests additionally require a dedicated absolute directory containing
+`.cura-receiver-test-root` with the exact line
+`CURA AGRORUM RECEIVER TEST ROOT`, followed by this explicit invocation:
+
+```sh
+receiver_test_root=/absolute/path/to/dedicated/receiver-test-root
+mkdir -p "$receiver_test_root"
+printf '%s\n' 'CURA AGRORUM RECEIVER TEST ROOT' \
+  > "$receiver_test_root/.cura-receiver-test-root"
+make test-receiver-hardware-destructive \
+  CONFIRM_RECEIVER_DESTRUCTIVE=YES \
+  RECEIVER_TEST_ROOT="$receiver_test_root"
+```
+
+Individual destructive fixtures add their own configuration, service, device
+and restoration interlocks when they are implemented. RF-peer execution remains
+deferred and has no Make target yet.
+
 ## Test implementation rules
 
 - Each bullet in this document is a required test or a cohesive parameterized
@@ -100,7 +148,7 @@ uncertain restoration is a test failure and stops dependent tests.
   assertions or replacing it with materially narrower coverage must be
   carefully evaluated and explicitly agreed with the user first. Passing code
   is not by itself a reason to remove a test.
-- Each test must have a coincise description in the form of a comment rigth
+- Each test must have a concise description in the form of a comment right
   above its implementing code.
 - Host tests use injected monotonic clocks, explicit events, barriers and
   bounded subprocesses instead of real sleeps. Thread tests control ordering at
@@ -120,6 +168,20 @@ uncertain restoration is a test failure and stops dependent tests.
   together when they are evidence. Hardware failures additionally retain
   relevant configuration, service journal, device trace, test seed and host
   metadata without retaining secret keys.
+
+The current low-level `FakeOsClock` is manually controlled. Reading monotonic or
+realtime never advances either value. Tests call `advance_elapsed_us()` to move
+both clocks together or `step_realtime_us()` to move realtime independently;
+monotonic time cannot move backward. It contains no time policy, sleeps or
+automatic scheduling behavior.
+
+Reusable builders, reference models, named barriers and bounded subprocess
+helpers are intentionally not implemented in advance. Add each with the first
+production component and test family that establishes its actual input,
+observable-state or coordination boundary. The organization and independence
+rules are in [`tests/support/README.md`](tests/support/README.md). Chrony,
+DS3231, SX1262, host-health and persistence fakes likewise wait for their
+production ports.
 
 ## Protocol ingress
 

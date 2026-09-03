@@ -24,12 +24,17 @@ The protocol contract remains under
   Its [`generated/`](cura_receiver/generated/) subdirectory contains checked-in
   generated Python modules. `database_initializer.py` installs a fresh receiver
   database from the exact packaged schema without overwriting an existing one.
+  [`ports/`](cura_receiver/ports/) defines narrow production capabilities, and
+  [`platform/`](cura_receiver/platform/) contains their deployed Linux adapters.
 - [`schemas/`](schemas/) contains machine-readable receiver sources of truth for
   stable enums and persisted entity layouts.
 - [`db/`](db/) contains the handwritten SQLite schema input and generated
   `schema.sql`.
 - [`tools/`](tools/) contains host-side receiver generation tools.
-- [`tests/`](tests/) contains receiver-side generation and schema tests.
+- [`tests/`](tests/) contains the deterministic host suite, target-Pi hardware
+  suite, and test-only support. The generation/schema tests live under
+  [`tests/host/`](tests/host/); [`tests/support/README.md`](tests/support/README.md)
+  defines when shared fakes, builders, models and coordination helpers are added.
 - `receiver-group.json` is the development receiver-group configuration.
 
 Each subdirectory README explains only the files and editing rules local to

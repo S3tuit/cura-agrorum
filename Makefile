@@ -1,5 +1,7 @@
-.PHONY: test-host test-receiver test-hardware test-hardware-all test-hardware-slow \
-	test-hardware-build
+.PHONY: test-host test-receiver test-receiver-host test-receiver-hardware \
+		test-receiver-hardware-slow test-receiver-hardware-all \
+		test-receiver-hardware-destructive test-hardware test-hardware-all \
+		test-hardware-slow test-hardware-build
 
 PORT ?= /dev/ttyUSB0
 HARDWARE_TEST_APP := $(abspath firmware/test_apps/on_device)
@@ -12,6 +14,10 @@ HARDWARE_TEST_ARGS := \
 	--build-dir=$(HARDWARE_TEST_BUILD) \
 	--target=esp32c6 \
 	--port=$(PORT)
+RECEIVER_PYTEST := $(abspath .venv/bin/python) -m pytest
+RECEIVER_PYTEST_ARGS := -c $(abspath receiver/pytest.ini)
+RECEIVER_TEST_ROOT ?=
+CONFIRM_RECEIVER_DESTRUCTIVE ?=
 
 test-host:
 	CCACHE_DISABLE=1 cmake -S firmware/tests/host -B firmware/build-host \
@@ -19,8 +25,41 @@ test-host:
 	CCACHE_DISABLE=1 cmake --build firmware/build-host
 	ctest --test-dir firmware/build-host --output-on-failure
 
-test-receiver:
-	.venv/bin/python -m pytest receiver/tests
+test-receiver: test-receiver-host
+
+test-receiver-host:
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(RECEIVER_PYTEST) $(RECEIVER_PYTEST_ARGS) \
+		$(abspath receiver/tests/host)
+
+test-receiver-hardware:
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(RECEIVER_PYTEST) $(RECEIVER_PYTEST_ARGS) \
+		$(abspath receiver/tests/hardware) --receiver-hardware \
+		-m 'hardware and not slow and not destructive and not rf_peer'
+
+test-receiver-hardware-slow:
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(RECEIVER_PYTEST) $(RECEIVER_PYTEST_ARGS) \
+		$(abspath receiver/tests/hardware) --receiver-hardware \
+		-m 'hardware and slow and not destructive and not rf_peer'
+
+test-receiver-hardware-all:
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(RECEIVER_PYTEST) $(RECEIVER_PYTEST_ARGS) \
+		$(abspath receiver/tests/hardware) --receiver-hardware \
+		-m 'hardware and not destructive and not rf_peer'
+
+test-receiver-hardware-destructive:
+	@if [ "$(CONFIRM_RECEIVER_DESTRUCTIVE)" != "YES" ]; then \
+		echo "Set CONFIRM_RECEIVER_DESTRUCTIVE=YES to run destructive receiver tests."; \
+		exit 2; \
+	fi
+	@if [ -z "$(RECEIVER_TEST_ROOT)" ]; then \
+		echo "Set RECEIVER_TEST_ROOT to a dedicated marked absolute directory."; \
+		exit 2; \
+	fi
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(RECEIVER_PYTEST) $(RECEIVER_PYTEST_ARGS) \
+		$(abspath receiver/tests/hardware) --receiver-hardware \
+		--confirm-receiver-destructive \
+		--receiver-test-root="$(RECEIVER_TEST_ROOT)" \
+		-m 'hardware and destructive and not rf_peer'
 
 test-hardware-build:
 	idf.py -C $(HARDWARE_TEST_APP) -B $(HARDWARE_TEST_BUILD) build

@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-RECEIVER_ROOT = REPO_ROOT / "receiver"
+RECEIVER_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = RECEIVER_ROOT.parent
 GENERATOR = RECEIVER_ROOT / "tools" / "generate.py"
 MANIFEST = RECEIVER_ROOT / "schemas" / "receiver_enums.json"
 ENTITY_MANIFEST = RECEIVER_ROOT / "schemas" / "receiver_entities.json"
@@ -26,11 +26,10 @@ HANDWRITTEN_TABLES = {
     "quarantined_communicator_states",
 }
 
-sys.path.insert(0, str(REPO_ROOT))
-from receiver.cura_receiver.generated import (  # noqa: E402
+from cura_receiver.generated import (
     receiver_entities_generated as generated_entities,
 )
-from receiver.cura_receiver.generated import (  # noqa: E402
+from cura_receiver.generated import (
     receiver_enums_generated as generated,
 )
 
@@ -123,6 +122,7 @@ def communicator_state(
     )
 
 
+# Requires every checked-in generated receiver artifact to be current.
 def test_generated_outputs_are_current() -> None:
     result = subprocess.run(
         [sys.executable, str(GENERATOR), "--check"],
@@ -134,6 +134,7 @@ def test_generated_outputs_are_current() -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+# Validates all checked-in receiver generator inputs together.
 def test_generator_inputs_validate() -> None:
     result = subprocess.run(
         [sys.executable, str(GENERATOR), "--validate-only"],
@@ -145,6 +146,7 @@ def test_generator_inputs_validate() -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+# Matches generated enum values exactly without cross-domain integer equality.
 def test_generated_enums_match_manifest_and_are_not_int_subclasses() -> None:
     manifest = load_manifest()
     for enum_spec in manifest["enums"]:  # type: ignore[index]
@@ -158,6 +160,7 @@ def test_generated_enums_match_manifest_and_are_not_int_subclasses() -> None:
     assert generated.SystemTimeQuality.UNTRUSTED != generated.AdmissionResult.RESERVED
 
 
+# Pins every generated time-diagnostic status assignment.
 def test_time_diagnostic_status_assignments_are_exact() -> None:
     expected = {
         generated.ChronyQueryStatus: {
@@ -203,6 +206,7 @@ def test_time_diagnostic_status_assignments_are_exact() -> None:
     assert generated.AdjtimexReturn.TIME_OK.value == 0
 
 
+# Pins the generated schema fingerprint and schema version to packaged SQL.
 def test_schema_fingerprint_is_exact_schema_sql_sha256() -> None:
     schema_bytes = SCHEMA.read_bytes()
     assert hashlib.sha256(schema_bytes).hexdigest() == generated.DATABASE_SCHEMA_SHA256
@@ -211,6 +215,7 @@ def test_schema_fingerprint_is_exact_schema_sql_sha256() -> None:
     assert generated.DATABASE_SCHEMA_VERSION == 7
 
 
+# Requires every declared catalogue, entity table, and trigger in assembled SQL.
 def test_schema_contains_declared_catalogues_and_entity_tables() -> None:
     manifest = load_manifest()
     entity_manifest = json.loads(ENTITY_MANIFEST.read_text(encoding="utf-8"))
@@ -274,6 +279,7 @@ def test_schema_contains_declared_catalogues_and_entity_tables() -> None:
     } <= actual_triggers
 
 
+# Keeps generated entity binding limited to relational projection.
 def test_generated_entity_binding_is_projection_only() -> None:
     observation = generated_entities.ClockObservationV1(
         receiver_instance_id=bytes(16),
@@ -302,6 +308,7 @@ def test_generated_entity_binding_is_projection_only() -> None:
         connection.execute(insert, values)
 
 
+# Flattens a logical message-profile record into its exact SQL parameters.
 def test_message_profile_logical_record_is_flattened_for_sql() -> None:
     assert not hasattr(generated_entities, "MESSAGE_PROFILING_V1_TABLE")
     assert not hasattr(generated_entities, "MESSAGE_PROFILING_V1_COLUMNS")
@@ -358,6 +365,7 @@ def test_message_profile_logical_record_is_flattened_for_sql() -> None:
     assert parameters[-1] == generated.PersistenceClassification.NOT_APPLICABLE.value
 
 
+# Rejects invalid logical-record declarations in the entity manifest.
 @pytest.mark.parametrize(
     ("mutation", "message"),
     (
@@ -400,6 +408,7 @@ def test_logical_record_manifest_validation(
     assert message in result.stderr
 
 
+# Rejects generated Python names that collide or are not valid identifiers.
 @pytest.mark.parametrize(
     ("mutation", "message"),
     (
@@ -451,6 +460,7 @@ def test_generated_python_names_are_globally_valid(
     assert message in result.stderr
 
 
+# Rejects every transaction boundary in the handwritten schema source.
 @pytest.mark.parametrize(
     "transaction_statement",
     (
@@ -480,6 +490,7 @@ def test_schema_source_rejects_every_transaction_boundary(
     assert "transaction boundary" in result.stderr
 
 
+# Rejects invalid variable-length field relationships in the entity manifest.
 @pytest.mark.parametrize(
     ("mutation", "message"),
     (
@@ -521,6 +532,7 @@ def test_length_field_manifest_validation(
     assert message in result.stderr
 
 
+# Enforces equality between quarantined entity bytes and declared length.
 def test_quarantined_entity_bytes_must_match_declared_length() -> None:
     row = generated_entities.QuarantinedEntityRowV1(
         quarantine_id=bytes(32),
@@ -593,6 +605,7 @@ def test_quarantined_entity_bytes_must_match_declared_length() -> None:
         )
 
 
+# Enforces append-only receiver instances with exactly one valid clean stop.
 def test_receiver_instance_lifecycle_is_append_only_with_one_clean_stop() -> None:
     connection = open_schema()
     first_id = bytes.fromhex("00112233445566778899aabbccddeeff")
@@ -683,6 +696,7 @@ def test_receiver_instance_lifecycle_is_append_only_with_one_clean_stop() -> Non
         )
 
 
+# Preserves exact SQLite storage classes for rejected communicator state.
 def test_quarantined_communicator_state_preserves_storage_classes() -> None:
     connection = open_schema()
     receiver_instance_id = bytes.fromhex("00112233445566778899aabbccddeeff")
@@ -753,6 +767,7 @@ def test_quarantined_communicator_state_preserves_storage_classes() -> None:
         )
 
 
+# Rejects generated foreign keys without a complete valid parent key.
 @pytest.mark.parametrize(
     ("parent_table", "parent_column", "message"),
     (
@@ -782,6 +797,7 @@ def test_assembled_schema_foreign_key_targets_must_be_valid(
     assert message in result.stderr
 
 
+# Requires lifecycle parents for all generated receiver-scoped rows.
 def test_receiver_scoped_generated_rows_require_lifecycle_parent() -> None:
     receiver_instance_id = bytes.fromhex("00112233445566778899aabbccddeeff")
     profile = generated_entities.MessageProfilingV1(
@@ -966,6 +982,7 @@ def test_receiver_scoped_generated_rows_require_lifecycle_parent() -> None:
     assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
+# Expands receiver-health arrays only when every generated shape is exact.
 def test_receiver_health_binding_expands_only_exact_array_shapes() -> None:
     values = {
         field.name: 0 for field in fields(generated_entities.ReceiverHealthV1)
@@ -994,6 +1011,7 @@ def test_receiver_health_binding_expands_only_exact_array_shapes() -> None:
         generated_entities.receiver_health_v1_parameters(wrong_shape)
 
 
+# Round-trips and binds the exact canonical communicator-state blob.
 def test_communicator_state_canonical_blob_round_trip_and_binding() -> None:
     provenance = generated_entities.RtcProvenanceV1(
         verified_by_receiver_instance_id=bytes(range(16)),
@@ -1024,6 +1042,7 @@ def test_communicator_state_canonical_blob_round_trip_and_binding() -> None:
     ).fetchone() == (1, blob, hashlib.sha256(blob).digest())
 
 
+# Rejects noncanonical communicator-state structure at the binary boundary.
 def test_communicator_state_codec_enforces_only_canonical_structure() -> None:
     state = communicator_state()
     blob = generated_entities.encode_communicator_state_v1(state)
@@ -1049,6 +1068,7 @@ def test_communicator_state_codec_enforces_only_canonical_structure() -> None:
         generated_entities.decode_communicator_state_v1(bytes(reserved_presence_bit))
 
 
+# Keeps representation-only validity masks out of relational tables.
 def test_relational_tables_do_not_persist_validity_masks() -> None:
     connection = open_schema()
     for table in ("clock_observations", "receiver_health", "message_profiles"):
@@ -1056,6 +1076,7 @@ def test_relational_tables_do_not_persist_validity_masks() -> None:
         assert "validity_mask" not in columns
 
 
+# Allows catalogue identifiers to repeat only within separate domains.
 def test_scoped_catalogues_reuse_ids_only_inside_their_domain() -> None:
     connection = open_schema()
     assert connection.execute(
@@ -1071,6 +1092,7 @@ def test_scoped_catalogues_reuse_ids_only_inside_their_domain() -> None:
     ).fetchone() == (8,)
 
 
+# Allows exactly one canonical reading row for each node and sample.
 def test_reading_messages_allow_one_canonical_row_per_sample() -> None:
     connection = open_schema()
     connection.execute("PRAGMA foreign_keys = OFF")
@@ -1138,6 +1160,7 @@ def test_reading_messages_allow_one_canonical_row_per_sample() -> None:
     ).fetchall() == [(10, 1), (11, 0)]
 
 
+# Rejects mutation of installed metadata and generated catalogues.
 def test_catalogues_and_installed_metadata_are_immutable() -> None:
     connection = open_schema()
     connection.execute(

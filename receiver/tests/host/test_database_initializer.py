@@ -6,24 +6,25 @@ from pathlib import Path
 
 import pytest
 
-from receiver.cura_receiver import database_initializer
-from receiver.cura_receiver.database_initializer import (
+from cura_receiver import database_initializer
+from cura_receiver.database_initializer import (
     DatabaseInitializationError,
     DatabaseInstallationUncertainError,
     initialize_database,
     reconcile_database_installation,
 )
-from receiver.cura_receiver.generated.receiver_enums_generated import (
+from cura_receiver.generated.receiver_enums_generated import (
     DATABASE_SCHEMA_FINGERPRINT,
     DATABASE_SCHEMA_VERSION,
     SQLITE_APPLICATION_ID,
 )
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SCHEMA = REPO_ROOT / "receiver" / "db" / "schema.sql"
+RECEIVER_ROOT = Path(__file__).resolve().parents[2]
+SCHEMA = RECEIVER_ROOT / "db" / "schema.sql"
 
 
+# Installs the exact packaged schema, metadata, catalogues, and immutability rules.
 def test_initializer_installs_exact_packaged_schema_and_metadata(
     tmp_path: Path,
 ) -> None:
@@ -87,6 +88,7 @@ def test_initializer_installs_exact_packaged_schema_and_metadata(
     connection.close()
 
 
+# Rejects every noncanonical receiver-group identity before creating a file.
 @pytest.mark.parametrize("group_id", (b"", bytes(7), bytes(9), bytearray(8)))
 def test_initializer_rejects_invalid_group_identity(
     tmp_path: Path,
@@ -98,6 +100,7 @@ def test_initializer_rejects_invalid_group_identity(
     assert not database.exists()
 
 
+# Rejects schema bytes whose digest differs from the generated contract.
 def test_initializer_rejects_schema_bytes_that_do_not_match_generated_hash(
     tmp_path: Path,
 ) -> None:
@@ -112,6 +115,7 @@ def test_initializer_rejects_schema_bytes_that_do_not_match_generated_hash(
     assert not list(tmp_path.glob(".receiver.sqlite3.*.initializing"))
 
 
+# Preserves an existing destination byte for byte.
 def test_initializer_never_overwrites_an_existing_destination(
     tmp_path: Path,
 ) -> None:
@@ -125,6 +129,7 @@ def test_initializer_never_overwrites_an_existing_destination(
     assert hashlib.sha256(database.read_bytes()).digest() == before
 
 
+# Removes initialization artifacts after a definite SQLite failure.
 def test_initializer_cleans_temporary_artifacts_after_sqlite_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -142,6 +147,7 @@ def test_initializer_cleans_temporary_artifacts_after_sqlite_failure(
     assert not list(tmp_path.glob(".receiver.sqlite3.*.initializing"))
 
 
+# Preserves and exactly reconciles an installation with uncertain durability.
 def test_initializer_preserves_and_reconciles_uncertain_installation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -183,6 +189,7 @@ def test_initializer_preserves_and_reconciles_uncertain_installation(
     assert not uncertain.temporary_path.exists()
 
 
+# Reports a linked temporary artifact that could not be removed.
 def test_initializer_reports_temporary_unlink_as_cleanup_pending(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -205,6 +212,7 @@ def test_initializer_reports_temporary_unlink_as_cleanup_pending(
     assert database.samefile(result.cleanup_pending_path)
 
 
+# Rejects reconciliation after the preserved artifact identity changes.
 def test_reconciliation_rejects_a_replaced_temporary_artifact(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -231,6 +239,7 @@ def test_reconciliation_rejects_a_replaced_temporary_artifact(
     assert database.is_file()
 
 
+# Keeps a durable installation successful while reporting cleanup sync failure.
 def test_initializer_reports_cleanup_sync_failure_without_failing_installation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

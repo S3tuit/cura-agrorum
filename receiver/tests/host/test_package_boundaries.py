@@ -9,6 +9,7 @@ import pytest
 
 RECEIVER_ROOT = Path(__file__).resolve().parents[2]
 PRODUCTION_ROOT = RECEIVER_ROOT / "cura_receiver"
+SUPPORT_MODELS_ROOT = RECEIVER_ROOT / "tests" / "support" / "models"
 LINUX_CLOCK_ADAPTER = Path("platform/linux_clocks.py")
 DIRECT_DATETIME_CLOCK_READERS = frozenset(
     {
@@ -118,6 +119,24 @@ def test_production_package_never_imports_receiver_tests() -> None:
             module for module in imported_modules(source) if is_test_module(module)
         )
         for source in production_python_files()
+    }
+
+    assert {path: modules for path, modules in violations.items() if modules} == {}
+
+
+# Keeps behavioral oracles independent from the production implementation.
+def test_reference_models_never_import_production_algorithms() -> None:
+    allowed_production_imports = {
+        "cura_receiver.generated.receiver_enums_generated",
+    }
+    violations = {
+        source.relative_to(SUPPORT_MODELS_ROOT): tuple(
+            module
+            for module in imported_modules(source)
+            if module.startswith("cura_receiver")
+            and module not in allowed_production_imports
+        )
+        for source in sorted(SUPPORT_MODELS_ROOT.rglob("*.py"))
     }
 
     assert {path: modules for path, modules in violations.items() if modules} == {}

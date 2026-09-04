@@ -7,8 +7,8 @@ interfaces, Python package, schema sources, generators, and tests.
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) defines component ownership, runtime
   behavior, persistence lifecycle, durability, and recovery policy.
-- [`INTERFACE.md`](INTERFACE.md) defines shared receiver values, fixed entities,
-  persistence-control interfaces, and the SQLite contract.
+- [`INTERFACE.md`](INTERFACE.md) defines shared receiver values, typed queue
+  entities, persistence-control interfaces, and the SQLite contract.
 - [`INTERFACE_DIAGNOSTIC.md`](INTERFACE_DIAGNOSTIC.md) defines diagnostic
   catalogues and fixed diagnostic contexts.
 - [`TESTING.md`](TESTING.md) defines the pilot host and Raspberry Pi test
@@ -21,6 +21,9 @@ The protocol contract remains under
 ## Directory map
 
 - [`cura_receiver/`](cura_receiver/) contains handwritten receiver Python code.
+  `persist_queue.py`, `persist_queue_entities.py`, and
+  `quarantine_evidence.py` implement the fixed object-reference ring, its
+  immutable handoff values, and the poison-evidence codec respectively.
   Its [`generated/`](cura_receiver/generated/) subdirectory contains checked-in
   generated Python modules. `database_initializer.py` installs a fresh receiver
   database from the exact packaged schema without overwriting an existing one.

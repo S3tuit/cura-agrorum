@@ -50,10 +50,11 @@ keyed by `(node_id, message_id)` and includes the clear reading candidate plus
 `is_canonical_for_sample`; a generated partial unique index permits only one
 canonical row for each `(node_id, sample_id)`.
 
-`AuthenticatedReadingCandidateV1`, the fixed queue envelopes, and diagnostic
-contexts are not relational entities. Their handwritten codecs and semantic
+`AuthenticatedReadingCandidateV1`, the composed queue-unit types and diagnostic
+contexts are not relational entities. The queue-unit types and semantic
 validators reuse generated logical records and enums but remain outside this
-manifest.
+manifest. Normal queue handoff has no entity codec; only the separate poisoned-
+entity evidence format is handwritten.
 
 The top-level `encodings` array owns canonical binary layouts. Each encoding
 has a stable name, one endianness, ordered root `fields`, and reusable
@@ -95,15 +96,12 @@ values and is part of consuming the declared mapping, not domain validation.
 Generated canonical codecs necessarily check the binary grammar: constants,
 encoded length, exact fixed-array sizes, enum assignments, masks, reserved
 zeros, collection counts and trailing bytes. They do not validate policy,
-ordering, time relationships, charge sums, lifecycle references or state
-transitions.
+ordering, time relationships, lifecycle references or state transitions.
 
-Validity masks belong to binary encoding definitions, not logical Python
-entities or relational layouts. A packet, fixed queue encoding or canonical
-BLOB codec translates between encoded mask bits and Python optional values;
-SQLite stores those optional values as nullable columns and does not duplicate
-the mask. Raw encoded bytes naturally retain their original mask when exact
-evidence is deliberately stored.
+Validity masks belong to canonical binary encoding definitions, not logical
+Python entities or relational layouts. A packet or canonical-BLOB codec
+translates between encoded mask bits and Python optional values; SQLite stores
+those optional values as nullable columns and does not duplicate the mask.
 
 An optional `indexes` array declares generated structured indexes. Its current
 form permits a unique index over non-null identity columns with one non-null

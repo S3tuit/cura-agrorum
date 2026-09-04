@@ -1,8 +1,8 @@
 # Receiver interfaces
 
 Status: provisional pilot contract. This document defines the shared values and
-fixed-size `PersistQueue` entities that communicator and persistence
-implementations must interpret identically. Names, numeric values and layouts
+typed `PersistQueue` entities that communicator and persistence implementations
+must interpret identically. Names, numeric values and layouts
 may be revised during initial implementation. During the pilot, an incompatible
 persisted change starts a new explicitly archived-and-recreated database schema
 epoch; an existing database is never reinterpreted or upgraded in place.
@@ -17,9 +17,11 @@ catalogues are defined separately in
 [`INTERFACE_DIAGNOSTIC.md`](INTERFACE_DIAGNOSTIC.md). Numeric assignments in
 that document are part of this interface.
 
-## Encoding conventions
+## Value and encoding conventions
 
-Fixed-size queue entities use the following canonical encoding:
+The scalar notation used throughout this document has the following meaning
+when a value is projected into SQLite or a section explicitly defines a
+canonical binary encoding:
 
 - integers are little-endian;
 - signed integers use two's-complement representation;
@@ -29,21 +31,13 @@ Fixed-size queue entities use the following canonical encoding:
 - `bool8` is a `u8` whose only valid values are `0` and `1`; and
 - every reserved bit and byte is zero.
 
-Every entity begins with this two-byte envelope:
-
-```text
-entity_kind: u8
-entity_schema_version: u8
-```
-
-The pilot uses `entity_schema_version = 1`. The `(entity_kind,
-entity_schema_version)` pair determines the complete encoded size; no
-entity-length field is needed.
-
-The implementation may expose frozen typed objects, canonical byte buffers or
-both. Queue accounting always uses the exact encoded sizes in this document,
-never Python object size or an estimate. A quarantined entity preserves this
-exact canonical representation.
+`PersistQueue` does not encode these values. It transfers strong references to
+complete immutable Python objects together with a separate entity kind and
+schema version. Its capacity is counted only in occupied entity slots; neither
+serialized length nor Python heap size participates in admission. The normal
+queue path therefore has no entity encoder or decoder. When a poisoned typed
+entity must be preserved, the separate bounded `QuarantineEvidenceV1` tagged-
+JSON codec captures its logical value.
 
 ## Common scalar values
 
@@ -63,8 +57,8 @@ exact canonical representation.
 SQLite represents integers as signed 64-bit values. Every `u64` that is bound
 to SQLite must therefore be in `0..INT64_MAX`; crossing that bound is an
 interface invariant failure. The receiver terminates or saturates the
-applicable counter before it can cross the bound. The queue and canonical
-binary encodings remain unsigned and retain their `u64` representation.
+applicable counter before it can cross the bound. Canonical binary encodings
+remain unsigned and retain their `u64` representation.
 
 ## Identities and sequences
 
@@ -83,7 +77,7 @@ binary encodings remain unsigned and retain their `u64` representation.
 | `DiagnosticSequence` | `u64` | Per-instance communicator-diagnostic sequence |
 | `StateGeneration` | `u64` | Durable communicator-state generation |
 | `AdmissionGeneration` | `u64` | Persistence-admission publication generation |
-| `QueueReservationToken` | opaque process-local `u64` | Unique single-use queue reservation token |
+| `QueueReservationToken` | opaque process-local object identity | Unique single-use queue reservation token |
 
 `MessageId` and `SampleId` never wrap or repeat within their protocol-defined
 identity lifetimes.
@@ -127,8 +121,10 @@ row.
 
 `StateGeneration = 0` means that no authoritative state generation exists.
 Explicitly initialized durable state starts at generation `1`.
-`AdmissionGeneration` starts at `0` and increments whenever the persistence
-thread publishes a different `PersistenceAdmissionState`.
+`AdmissionGeneration` starts at `0` and increments for every accepted
+persistence-admission snapshot publication. The persistence owner normally
+publishes only a state transition; the queue enforces publication order but
+does not decide whether repeating a state was useful.
 
 `QueueReservationToken` is never serialized, stored in SQLite or reused after
 publication or cancellation.
@@ -143,14 +139,16 @@ therefore remains monotonic but its rate is not assumed to equal physical
 elapsed time exactly. The pilot does not use `CLOCK_MONOTONIC_RAW`.
 
 `UtcUs` stores UTC rather than local civil time. A clock-observation UTC is
-canonical only when its validity bit is set and that observation's
+canonical only when `sampled_at_utc_us` is present and that observation's
 `SystemTimeQuality` is `RTC_HOLDOVER` or `NETWORK_SYNCED`. An event UTC is
 canonical only when analysis has derived it from such an observation in the
 same `LinuxBootId` and returns the value together with the source-observation
 identity. Receiver event and lifecycle rows are not updated with that result.
 
 Zero is a valid numeric timestamp and is never an absence sentinel. Optional
-timestamps use an explicit validity bit and contain zero when absent.
+timestamps use `None` in logical Python values and `NULL` in relational rows.
+An explicit canonical binary encoding may instead define its own validity bit
+and zero representation.
 
 In `MessageProfilingV1`, `received_at_monotonic_us` is `T0`, the
 kernel-recorded DIO1 edge. `T1` through `T6` use the same monotonic clock and
@@ -433,27 +431,38 @@ cadence remains sufficient only until about 24.46 days in this example. After
 that point the calculated horizon shortens the cadence progressively until no
 positive interval remains.
 
-## Optional-field rules
+## Logical optional-field rules
 
-Every fixed-size entity obeys these rules:
+For the typed Python values in this interface:
 
-- a validity bitmap is authoritative;
-- an absent scalar is zero;
-- an absent byte array is entirely zero;
-- a bounded byte array has an explicit meaningful length and a zeroed unused
-  tail;
-- a present zero-valued scalar remains distinguishable from an absent value;
-- no string, dictionary, arbitrary exception object, list, float or `None`
-  value crosses `PersistQueue`;
-- an enum value of zero is invalid unless that enum explicitly assigns it a
-  meaning; and
-- reserved validity bits remain zero.
+- an absent optional field is `None`, while a present zero remains distinct;
+- a `bytes[N]` field has exactly `N` bytes, while an explicitly variable
+  `bytes` field contains only its meaningful bytes;
+- a sibling meaningful-length field, zeroed fixed-capacity tail, fixed tuple
+  shape or bounded byte length remains an entity contract that the producing
+  component validates rather than queue capacity metadata;
+- enum fields contain members of their declared enum and a numeric zero is
+  valid only when that enum assigns it a meaning; and
+- lists, dictionaries, mutable buffers and arbitrary exception objects are not
+  valid members of a production queue entity.
 
-Before committing to an ACK outcome, the communicator fills and validates
-every pre-TX field in the reserved entity. After that decision, it modifies
-only the preallocated terminal-result and timestamp slots. Publication performs
-no allocation, variable-size serialization or fallible representation
-conversion.
+`PersistQueue` treats the object as opaque and neither enforces nor normalizes
+these rules. This is intentional: a defective typed entity can still reach the
+persistence boundary and the quarantine-evidence encoder can preserve any
+supported malformed scalar, length or tuple value exactly. Unsupported mutable
+or unbounded values make evidence encoding fail closed and leave the queue head
+owned.
+
+Where a section explicitly defines a canonical binary encoding, its validity
+bitmap, zero representation for absent fields, padded arrays and reserved bits
+remain authoritative for those bytes only. They are not the in-memory queue
+representation.
+
+Before committing to an ACK outcome, the communicator validates every stable
+pre-TX input. After the terminal outcome it constructs one complete frozen
+typed object and publishes that existing reference against the reservation.
+Publication itself performs no payload allocation, conversion or
+serialization; construction remains ordinary Python process work.
 
 ## Time and radio enums
 
@@ -975,7 +984,7 @@ results and available host `errno` together:
 | `SQLITE_CORRUPT`, `SQLITE_NOTADB`, a corruption-specific extended result or failed configured integrity check | `UNAVAILABLE_CORRUPT`; preserve artifacts and require operator recovery |
 | Schema version/fingerprint, immutable metadata, global identity or entity/schema compatibility failure | `UNAVAILABLE_INCOMPATIBLE_SCHEMA`; require compatible software or operator recovery |
 | `SQLITE_BUSY`, `SQLITE_LOCKED`, temporary access failure, non-capacity `SQLITE_IOERR`, or another global database/storage result not classified above | `UNAVAILABLE_IO`; automatic paced recovery |
-| Reproducible failure of one representation-valid entity after every global/transient cause is excluded | Item-specific poison-isolation path; no global unavailable transition unless quarantine itself fails |
+| Reproducible failure of one complete typed entity after every global/transient cause is excluded | Item-specific poison-isolation path; no global unavailable transition unless quarantine itself fails |
 | `COMMIT` may have run | Preserve the applicable lease and frozen work; reconcile before retry regardless of the unavailable reason |
 
 An unrecognized SQLite or host-storage result fails closed as
@@ -987,9 +996,9 @@ exposed by the selected SQLite binding without changing these semantic rows.
 
 | Value | Name | Meaning |
 |---:|---|---|
-| `0` | `RESERVED` | Exact queue capacity was reserved while persistence was available |
+| `0` | `RESERVED` | One queue slot was reserved while persistence was available |
 | `1` | `PERSISTENCE_UNAVAILABLE` | Admission state prevented reservation |
-| `2` | `QUEUE_FULL` | Exact capacity was unavailable |
+| `2` | `QUEUE_FULL` | No entity slot was available |
 
 `PERSISTENCE_UNAVAILABLE` and `QUEUE_FULL` complete the original admission
 attempt. For either result, the communicator increments only the original
@@ -999,18 +1008,18 @@ another `PersistQueue` reservation because of it. This rule applies to every
 entity kind. If the original entity was itself a diagnostic, its already
 allocated identity belongs only to that failed original attempt.
 
-Invalid kinds, sizes, tokens or publication contents are interface violations,
+Invalid kinds, capacities, tokens or publication contents are interface violations,
 not operational admission results.
 
 ### `PersistQueueEntityKind`
 
-| Value | Name | V1 encoded size |
-|---:|---|---:|
-| `1` | `MEASUREMENT_PROFILE` | 490 bytes |
-| `2` | `PROFILE_ONLY` | 441 bytes |
-| `3` | `RECEIVER_HEALTH_REQUEST` | 342 bytes |
-| `4` | `DIAGNOSTIC` | 171 bytes |
-| `5` | `CLOCK_OBSERVATION` | 53 bytes |
+| Value | Name |
+|---:|---|
+| `1` | `MEASUREMENT_PROFILE` |
+| `2` | `PROFILE_ONLY` |
+| `3` | `RECEIVER_HEALTH_REQUEST` |
+| `4` | `DIAGNOSTIC` |
+| `5` | `CLOCK_OBSERVATION` |
 
 Persistence-batch metrics originate in the persistence thread and do not
 cross `PersistQueue`. Receiver lifecycle rows are also written directly by
@@ -1034,7 +1043,8 @@ the persistence thread.
 | `10` | `RETRY_LATER_PERSISTENCE_UNAVAILABLE` |
 | `11` | `ACCEPTED` |
 
-Value `0` is an incomplete builder value and is forbidden at publication.
+Value `0` is reserved for private in-progress communicator state and is
+forbidden in a published entity.
 The two retry-later values normally create a profiling gap because the profile
 itself could not be admitted. They remain valid communicator decision and
 counter values.
@@ -1062,8 +1072,8 @@ The nonzero values equal the protocol ACK-domain bytes.
 | `5` | `TX_DONE` |
 | `6` | `UNKNOWN_INTERRUPTED` |
 
-Value `0` is permitted only in a private pre-TX builder. Every published
-profile contains a terminal value.
+Value `0` is permitted only in private pre-TX communicator state. Every
+published profile contains a terminal value.
 
 ### `PersistenceClassification`
 
@@ -1110,29 +1120,21 @@ quarantine reasons.
 
 ## `ClockObservationV1`
 
-Encoded size: 53 bytes, including the two-byte entity envelope.
-
 ```text
 receiver_instance_id: bytes[16]
 observation_sequence: u64
 clock_state_generation: u64
-validity_mask: u8
 sampled_at_monotonic_us: u64
-sampled_at_utc_us: i64
+sampled_at_utc_us: i64 or absent
+step_discontinuity_boundary: bool
 system_time_quality: u8
 rtc_health: u8
 ```
 
-This is the fixed queue encoding, not the logical Python field list. The
-generated `ClockObservationV1` uses `sampled_at_utc_us: int | None` and
-`step_discontinuity_boundary: bool` and exposes no validity mask. Its binary
-codec consumes or derives the mask; its relational binder stores the optional
-UTC as SQL `NULL` and the boundary as a Boolean column.
-
-Validity bit 0 is `SAMPLED_AT_UTC_VALID`; bit 1 is
-`STEP_DISCONTINUITY_BOUNDARY`; bits 2 through 7 are reserved and zero. UTC is
-absent exactly when `system_time_quality = UNTRUSTED` and present exactly when
-quality is `RTC_HOLDOVER` or `NETWORK_SYNCED`.
+The generated immutable logical entity crosses the queue directly. Its
+relational binder stores absent UTC as SQL `NULL` and the boundary as a Boolean
+column. UTC is absent exactly when `system_time_quality = UNTRUSTED` and
+present exactly when quality is `RTC_HOLDOVER` or `NETWORK_SYNCED`.
 
 `STEP_DISCONTINUITY_BOUNDARY` may be set only on the `UNTRUSTED` observation
 created for one pending explicit chrony step. Ordinary quality-loss
@@ -1225,8 +1227,9 @@ mapping. Analysis may use it only for an event carrying that same
 `receiver_instance_id`; neither a shared Linux boot nor comparable monotonic
 values permit cross-instance assignment.
 
-Clock observations have ordinary FIFO importance. Every reservation attempt,
-including a failed observation attempt, increments exactly one
+Clock observations have ordinary FIFO importance. After every reservation
+attempt returns, including a failed observation attempt, the communicator
+increments exactly one
 `persist_queue_admission_counts[CLOCK_OBSERVATION][result]` cell. A pending
 transition boundary is offered before subsequent ordinary queue admissions; an
 explicit chrony step additionally requires successful complete publication of
@@ -1238,92 +1241,66 @@ unavailable and processes no later ordinary FIFO entity.
 
 ## `MessageProfilingV1`
 
-`MessageProfilingV1` is the 439-byte packet-occurrence payload shared by the
-two packet-related queue entities. `received_at_monotonic_us` is `T0`.
+`MessageProfilingV1` is the immutable packet-occurrence value shared by the two
+packet-related queue entities. `received_at_monotonic_us` is `T0`.
 
-Fields in canonical order:
+Logical fields:
 
 ```text
 receiver_instance_id: bytes[16]
 occurrence_sequence: u64
-validity_mask: u64
 
 received_at_monotonic_us: u64
 
-persist_queue_used_bytes_before_admission: u64
-persist_queue_capacity_bytes: u64
+received_frame_length: u16 or absent
+received_frame: bytes[255] or absent
 
-received_frame_length: u16
-received_frame: bytes[255]
-
-claimed_control: u8
-claimed_domain: u8
-claimed_node_id: bytes[8]
-claimed_message_id: u32
+claimed_control: u8 or absent
+claimed_domain: u8 or absent
+claimed_node_id: bytes[8] or absent
+claimed_message_id: u32 or absent
 header_authenticated: bool8
-decoded_sample_id: u32
+decoded_sample_id: u32 or absent
 
-rssi_dbm_x2: i16
-snr_db_x4: i16
-irq_status: u16
-device_errors: u16
+rssi_dbm_x2: i16 or absent
+snr_db_x4: i16 or absent
+irq_status: u16 or absent
+device_errors: u16 or absent
 
 processing_result: u8
 ack_selected: u8
 ack_tx_result: u8
-ack_frame: bytes[23]
+ack_frame: bytes[23] or absent
 
 busy_wait_total_us: u64
 busy_wait_max_us: u64
 busy_wait_count: u32
 busy_timeout_count: u32
-last_busy_timeout_opcode: u8
+last_busy_timeout_opcode: u8 or absent
 
 t1_handler_started_monotonic_us: u64
-t2_packet_copied_monotonic_us: u64
-t3_authentication_completed_monotonic_us: u64
-t4_set_tx_attempted_monotonic_us: u64
-t5_tx_done_monotonic_us: u64
-t6_set_rx_issued_monotonic_us: u64
+t2_packet_copied_monotonic_us: u64 or absent
+t3_authentication_completed_monotonic_us: u64 or absent
+t4_set_tx_attempted_monotonic_us: u64 or absent
+t5_tx_done_monotonic_us: u64 or absent
+t6_set_rx_issued_monotonic_us: u64 or absent
 ```
 
-The validity-mask assignments are:
+Optional Python fields use `None`; `message_profiles` projects them to nullable
+columns. The exact `received_frame` bytes remain separate evidence of the
+incoming protocol packet.
 
-| Bit | Field |
-|---:|---|
-| `0` | received frame |
-| `1` | claimed control |
-| `2` | claimed domain |
-| `3` | claimed node ID |
-| `4` | claimed message ID |
-| `5` | decoded sample ID |
-| `6` | RSSI |
-| `7` | SNR |
-| `8` | IRQ status |
-| `9` | device errors |
-| `10` | ACK frame |
-| `11` | T2 |
-| `12` | T3 |
-| `13` | T4 |
-| `14` | T5 |
-| `15` | T6 |
-| `16` | last BUSY-timeout opcode |
-| `17`–`63` | Reserved; zero |
+`T0` and `T1` are mandatory. `rssi_dbm_x2` and `snr_db_x4` must either both be
+present or both be absent. The queued profile and stored profiling row contain
+no UTC, `SystemTimeQuality` or `RtcHealth`. Analysis may correlate their
+monotonic fields with `ClockObservationV1` without updating the row.
 
-The mask exists only in the fixed queue encoding. The logical Python profile
-uses optional fields, and its codec translates between `None` and these bits.
-`message_profiles` stores nullable columns and does not store the mask. The
-exact `received_frame` bytes remain separate evidence of the incoming protocol
-packet.
-
-`T0` and `T1` are mandatory. RSSI and SNR validity bits must be equal. The
-queued profile and stored profiling row contain no UTC, `SystemTimeQuality` or
-`RtcHealth`. Analysis may correlate their monotonic fields with
-`ClockObservationV1` without updating the row.
-
-When the received-frame bit is clear, `received_frame_length` and every frame
-byte are zero. When it is set, the length is from `0` through `255` and every
-byte after that length is zero.
+`received_frame_length` and `received_frame` are either both absent or both
+present. When present, the length is from `0` through `255`, the byte string has
+exactly 255 bytes, its prefix through that length is the received frame and its
+remaining tail is zero. This fixed-capacity entity field is independent of
+queue accounting: the queue still stores only the existing object reference
+and assigns the enclosing entity one slot.
 
 Claimed-header validity follows received length:
 
@@ -1338,8 +1315,8 @@ message ID valid only when received_frame_length >= 14
 tag were present and authentication succeeded. `decoded_sample_id` may be
 valid only after authentication and exact reading-body decoding.
 
-ACK-frame validity is equivalent to `ack_selected != NONE`. When no ACK is
-selected, the frame is zero and `ack_tx_result = NOT_APPLICABLE`. When an ACK
+ACK-frame presence is equivalent to `ack_selected != NONE`. When no ACK is
+selected, the frame is absent and `ack_tx_result = NOT_APPLICABLE`. When an ACK
 is selected, `ack_frame` contains the exact 23 protocol bytes whether TX later
 succeeds, fails or is suppressed.
 
@@ -1351,16 +1328,13 @@ remain explicitly absent rather than being reconstructed.
 stored profiling row by adding its derived classification without mutating the
 queued value.
 
-## Fixed-size queue entities
+## Queue entity values
 
 ### `MeasurementProfileUnitV1`
 
-Encoded size: 490 bytes.
-
 ```text
-entity envelope: 2 bytes
-AuthenticatedReadingCandidateV1: 49 bytes
-MessageProfilingV1: 439 bytes
+candidate: AuthenticatedReadingCandidateV1
+profile: MessageProfilingV1
 ```
 
 `AuthenticatedReadingCandidateV1` is:
@@ -1390,11 +1364,8 @@ provenance do not exist until persistence consults the database.
 
 ### `ProfileOnlyUnitV1`
 
-Encoded size: 441 bytes.
-
 ```text
-entity envelope: 2 bytes
-MessageProfilingV1: 439 bytes
+profile: MessageProfilingV1
 ```
 
 It represents one complete packet-occurrence profile without an application
@@ -1402,19 +1373,16 @@ candidate. It covers unknown nodes, authentication failures, malformed or
 unsupported packets, wrong-direction packets and radio events without a usable
 application frame.
 
-The common fixed representation permits frame and identity fields to be absent;
-a separate variable-sized radio-event entity is unnecessary.
+The common typed profile permits frame and identity fields to be absent; a
+separate radio-event entity is unnecessary.
 
 ### `ReceiverHealthRequestV1`
-
-Encoded size: 342 bytes.
 
 This is the immutable communicator-owned portion of a receiver-health row.
 
 ```text
 receiver_instance_id: bytes[16]
 health_sequence: u64
-validity_mask: u8
 communicator_sampled_at_monotonic_us: u64
 radio_state: u8
 
@@ -1427,8 +1395,8 @@ system_time_quality: u8
 rtc_health: u8
 time_quality_transition_count: u64
 rtc_health_transition_count: u64
-last_time_quality_transition_monotonic_us: u64
-last_rtc_health_transition_monotonic_us: u64
+last_time_quality_transition_monotonic_us: u64 or absent
+last_rtc_health_transition_monotonic_us: u64 or absent
 
 chrony_step_command_results: u64[3]
 rtc_write_results: u64[3]
@@ -1464,8 +1432,10 @@ durable.
 
 `persist_queue_admission_counts` is a cumulative reservation-attempt matrix.
 Its rows are ordered by `PersistQueueEntityKind` values `1` through `5`, and
-its columns are ordered by `AdmissionResult` values `0` through `2`. One call
-to `try_reserve_one()` increments exactly one cell after the result is known.
+its columns are ordered by `AdmissionResult` values `0` through `2`. After one
+`try_reserve_one()` call returns an operational result, the communicator
+increments exactly one corresponding cell; the queue does not own or mutate
+the matrix.
 The counting unit is one logical queue-unit reservation attempt, not one radio
 packet, SQLite row, encoded byte or eventual publication. In particular,
 `MeasurementProfileUnitV1` is one attempt and not separate measurement and
@@ -1485,22 +1455,11 @@ the persistence-owned current state and cumulative transition counts by
 state. The pilot accepts that these fields cannot reconstruct the precise
 unavailable reason for every rejected attempt.
 
-The validity-mask assignments are:
-
-| Bit | Field |
-|---:|---|
-| `0` | last time-quality transition |
-| `1` | last RTC-health transition |
-| `2`–`7` | Reserved; zero |
-
-The mask exists only in the fixed queue encoding. Logical Python request and
-health values use optional transition timestamps, and `receiver_health` stores
-those values as nullable columns without storing the mask.
-
 For a periodic health attempt, the communicator advances `health_sequence`,
 calls `try_reserve_one(RECEIVER_HEALTH_REQUEST)`, and increments the returned
-matrix cell. On `RESERVED`, it then copies the updated matrix and the other
-communicator-owned observations into the reserved builder and publishes it.
+matrix cell. On `RESERVED`, it then constructs one complete immutable request
+from the updated matrix and the other communicator-owned observations and
+publishes that object against the reservation.
 Consequently, a successfully admitted health request includes its own
 `RESERVED` attempt. A failed health attempt appears only in a later
 successfully persisted health request. Publication has no operational failure
@@ -1516,8 +1475,8 @@ obtained when needed by joining its `receiver_instance_id` to
 
 `ReceiverHealthV1` is the persistence-created, SQLite-bound value formed from
 one immutable `ReceiverHealthRequestV1`. It is not a queue entity. It retains
-every communicator-owned logical request field, but not the encoding-only
-validity mask, and adds the following mandatory fields:
+every communicator-owned logical request field and adds the following
+mandatory fields:
 
 ```text
 persistence_sampled_at_monotonic_us: u64
@@ -1534,7 +1493,6 @@ batch_transaction_attempts: u64
 batch_transaction_commits: u64
 batch_transaction_failures: u64
 batch_entities_committed: u64
-batch_encoded_bytes_committed: u64
 batch_commit_duration_total_us: u64
 batch_commit_duration_max_us: u64
 
@@ -1547,11 +1505,10 @@ The transition-count array is indexed by `PersistenceAdmissionState`,
 including `UNAVAILABLE_INCOMPATIBLE_SCHEMA`. All counters are cumulative within
 one `receiver_instance_id` and obey the SQLite `INT64_MAX` binding limit.
 Batch counters cover ordinary queue-persistence transaction attempts,
-including retries and isolation attempts. `batch_entities_committed` and
-`batch_encoded_bytes_committed` advance only for queue units whose ordinary
-SQLite effects committed; quarantined units advance the quarantine counters
-instead. Checkpoint counters cover explicit receiver-initiated checkpoints,
-not SQLite's internal page writes.
+including retries and isolation attempts. `batch_entities_committed` advances
+only for queue units whose ordinary SQLite effects committed; quarantined units
+advance the quarantine counters instead. Checkpoint counters cover explicit
+receiver-initiated checkpoints, not SQLite's internal page writes.
 
 These host observations are optional and become SQL `NULL` when unavailable:
 
@@ -1578,12 +1535,11 @@ retry. SQLite uses `NULL`, not numeric zero, for absent stored observations.
 
 ### `DiagnosticV1`
 
-Encoded size: 171 bytes. Its canonical field layout, ownership, replay rules,
-severity and operation assignments, domain/error catalogues and fixed context
-schemas are normative in
-[`INTERFACE_DIAGNOSTIC.md`](INTERFACE_DIAGNOSTIC.md). `PersistQueue` relies only
-on the kind, schema version and exact encoded size defined by the two documents;
-it never interprets domain-local context.
+Its logical fields, ownership, replay rules, severity and operation
+assignments, domain/error catalogues and fixed context schemas are normative in
+[`INTERFACE_DIAGNOSTIC.md`](INTERFACE_DIAGNOSTIC.md). `PersistQueue` carries the
+immutable object with its kind and schema version and never interprets the
+domain-local context.
 
 ## `PersistQueue` contract
 
@@ -1599,7 +1555,9 @@ handling. Either thread may take an immutable queue snapshot.
 `PersistQueue` performs no SQLite, quarantine-table or communicator-state I/O. It
 protects capacity, visibility, ordering and ownership only. All compound state
 changes use one queue lock; correctness must not depend on the CPython GIL or
-on the atomicity of an individual container operation.
+on the atomicity of an individual container operation. The two owners run in
+ordinary `threading.Thread` OS threads under the rationale and limitations in
+[`ARCHITECTURE.md`](ARCHITECTURE.md#why-the-pilot-uses-threadingthread).
 
 ### Entity specifications and storage
 
@@ -1612,40 +1570,31 @@ class PersistQueueEntitySpec:
     schema_version: int
 ```
 
-For the pilot, every accepted specification has `schema_version = 1` and the
-size shown in the `PersistQueueEntityKind` table. The queue derives the exact
-encoded size from `(kind, schema_version)`; callers never provide or estimate a
-size. An unknown kind, version or pair is an interface error.
+For the pilot, every accepted specification has `schema_version = 1`. An
+unknown kind, version or pair is an interface error. A specification identifies
+the logical contract for persistence and quarantine; it does not supply a size
+and the queue does not dispatch on it.
 
-A successful reservation preallocates:
+The queue constructor accepts `capacity_entities` in `1..500`; production uses
+500. It allocates fixed-length parallel storage for payload references,
+specifications and reservation-token references during construction and never grows or
+replaces those backing arrays. Smaller capacities exist for focused tests, not
+as a second production sizing policy.
 
-- the complete canonical entity buffer;
-- a mutable kind-specific entity builder over that buffer; and
-- every internal entry and bookkeeping object needed for later publication.
+A successful reservation exclusively claims the currently empty tail slot but
+does not construct an entity. The communicator constructs the complete
+immutable typed object in its own local state and publication assigns that
+existing object reference into the reserved slot. The queue performs no
+serialization, copying, recursive size inspection or kind-specific building.
+An unpublished reserved tail is invisible to batch claims. Because there is
+only one producer and at most one outstanding reservation, no published entry
+can appear behind it.
 
-The queue initializes the two-byte entity envelope. The builder may modify the
-entity fields but cannot replace its buffer, kind, schema version or encoded
-size. It owns no variable-sized data outside the canonical buffer.
-
-The initial implementation may use `collections.deque` for FIFO storage. To
-keep publication allocation-free, reservation appends the already allocated
-internal entry at the unpublished tail, or provides an equivalent preallocated
-slot. An unpublished entry is invisible to batch claims. Because the pilot has
-one producer and at most one outstanding reservation, no published entry can
-appear behind that unpublished tail entry. Publication changes its visibility;
-it does not append a newly allocated queue node.
-
-The configured bounds are:
-
-```text
-capacity_bytes
-capacity_entities
-```
-
-`capacity_bytes` charges the complete canonical encoding, including the entity
-envelope. `capacity_entities` separately bounds Python builder, entry and queue
-metadata overhead. A reservation must fit both limits. Internal Python object
-sizes are not added to byte accounting.
+Capacity is only the number of occupied slots. One reserved or published entry
+occupies one slot regardless of its entity kind or Python representation.
+There is no byte-capacity field, per-kind charge or claim-batch byte limit. The
+500-slot bound is a deliberately conservative pilot limit; measuring recursive
+object memory or calibrating it against RSS is deferred.
 
 ### Persistence-admission publication
 
@@ -1659,8 +1608,11 @@ publish_admission_state(
 
 The queue validates the snapshot generation and stores the complete immutable
 snapshot while holding the same lock used for capacity reservation. The
-persistence thread remains the only publisher. Invalid generation ordering is
-an interface error and leaves the preceding snapshot unchanged.
+persistence thread remains the only publisher. Each publication uses exactly
+the preceding generation plus one and a nondecreasing
+`changed_at_monotonic_us`; the state must be a `PersistenceAdmissionState`.
+A replay, gap, time regression or invalid state is an interface error and
+leaves the preceding snapshot unchanged.
 
 The initial snapshot has generation `0` and state `UNAVAILABLE_STARTING`.
 Queue closure is separate from persistence admission and does not create
@@ -1682,26 +1634,27 @@ The immutable result contains:
 status: AdmissionResult
 reservation: PersistQueueReservation or absent
 admission_snapshot: PersistenceAdmissionSnapshot
-used_bytes_before: u64
 used_entities_before: u64
-capacity_bytes: u64
 capacity_entities: u64
 ```
 
-`used_bytes_before` and `used_entities_before` are sampled before charging the
-requested entity. Together with `admission_snapshot`, they come from the same
-critical section as the admission decision. `MessageProfilingV1` uses this
-`used_bytes_before` value rather than taking a separate, racy snapshot.
+`used_entities_before` and `admission_snapshot` are sampled in the same critical
+section as the admission decision. The count is the number of occupied slots
+before this call's successful reservation; because the SPSC queue permits only
+one outstanding reservation, another call made while that reservation exists
+is an interface violation rather than a second admission result.
 
 The operation applies checks in this order while holding the queue lock:
 
 1. reject use after producer closure as an interface error;
-2. if admission is not `AVAILABLE`, return `PERSISTENCE_UNAVAILABLE` without
-   allocating or charging capacity;
-3. if either configured capacity would be exceeded, return `QUEUE_FULL`
-   without allocating or charging capacity; and
-4. allocate and register the complete unpublished entry, charge both limits
-   and return `RESERVED` with its reservation handle.
+2. require a supported exact kind/version specification and no outstanding
+   producer reservation;
+3. if admission is not `AVAILABLE`, return `PERSISTENCE_UNAVAILABLE` without
+   occupying a slot;
+4. if `capacity_entities` is already occupied, return `QUEUE_FULL` without
+   changing the ring; and
+5. register the preallocated tail slot as unpublished and return `RESERVED`
+   with its reservation handle.
 
 Failure to allocate Python memory does not return `RESERVED` and leaves all
 queue counters and contents unchanged. `MemoryError` is a process-level failure,
@@ -1714,15 +1667,15 @@ not an operational `QUEUE_FULL` result.
 ```python
 reservation.token
 reservation.spec
-reservation.entity
-reservation.publish() -> None
+reservation.publish(entity: object) -> None
 reservation.cancel() -> None
 ```
 
-There is deliberately no separate `seal()` operation. While the reservation is
-outstanding, its entity is communicator-owned and mutable. The queue does not
-know which fields are pre-TX fields, which are terminal fields, or when the
-communicator commits to a protocol outcome.
+There is deliberately no queue-owned builder or separate `seal()` operation.
+While the reservation is outstanding, all entity construction state remains
+communicator-owned. The queue does not know which fields are pre-TX fields,
+which are terminal fields, or when the communicator commits to a protocol
+outcome.
 
 The only queue-level transitions are:
 
@@ -1731,26 +1684,25 @@ RESERVED -> PUBLISHED
 RESERVED -> CANCELLED
 ```
 
-`publish()` atomically:
+`publish(entity)` atomically:
 
-- verifies the live token, entity specification, envelope and exact size;
-- makes the existing canonical buffer immutable through ownership transfer;
-- invalidates all communicator access through the reservation and builder;
-- moves the entry from reserved to published accounting without changing total
-  used capacity;
+- verifies the live token and reservation specification;
+- stores one strong reference to the already complete entity in the reserved
+  slot without interpreting its fields;
+- invalidates the reservation handle;
+- changes the slot from reserved to published without changing occupied count;
 - makes the entry visible at the FIFO tail; and
 - wakes the persistence thread.
 
 Publication performs no admission-state or capacity check and remains valid if
 persistence became unavailable or the producer side was closed after the
-reservation succeeded. It performs no allocation, copying or entity
-serialization. A correctly used reservation therefore cannot fail due to
-queue pressure.
+reservation succeeded. It performs no backing-store growth, payload copying or
+entity serialization. A correctly used reservation therefore cannot fail due
+to queue pressure.
 
-`cancel()` atomically removes the unpublished entry, releases its byte and
-entity capacity, invalidates the handle and builder, and wakes the persistence
-thread if this completes a closed queue's drain condition. It is forbidden
-after publication.
+`cancel()` atomically releases the unpublished slot, invalidates the handle and
+wakes the persistence thread if this completes a closed queue's drain
+condition. It is forbidden after publication.
 
 The queue permits either transition and does not understand radio acceptance.
 The communicator decides which transition is legal:
@@ -1767,9 +1719,14 @@ cancellation during exception unwinding could discard an occurrence after an
 ACK attempt. The communicator's top-level event finalizer explicitly chooses
 publication or cancellation from its own processing state.
 
-Any retained mutable reference or attempted builder use after publication or
-cancellation is an interface violation. The persistence thread receives only a
-read-only view of the canonical bytes.
+Publication transfers logical ownership, not Python alias reachability. The
+queue holds the strong reference until durable acknowledgement. Queue entities
+must therefore be deeply immutable: frozen slotted dataclasses composed only
+of other immutable admitted dataclasses, tuples, `bytes`, enums, integers,
+Booleans and declared `None` values. Producer mutation or semantic reuse after
+publication is an interface violation even though Python cannot revoke an
+alias. The persistence thread receives the exact same object (`is` identity),
+not a copy.
 
 ### Queue snapshot
 
@@ -1781,13 +1738,9 @@ The returned immutable snapshot contains:
 
 ```text
 admission_snapshot
-capacity_bytes
 capacity_entities
-reserved_bytes
 reserved_entities
-published_bytes
 published_entities
-claimed_bytes
 claimed_entities
 closed
 closed_and_drained
@@ -1796,10 +1749,8 @@ closed_and_drained
 The accounting invariants are:
 
 ```text
-used_bytes    = reserved_bytes + published_bytes
 used_entities = reserved_entities + published_entities
 
-claimed_bytes    <= published_bytes
 claimed_entities <= published_entities
 ```
 
@@ -1814,34 +1765,32 @@ The nonblocking consumer operation is:
 ```python
 claim_batch(
     *,
-    max_bytes: int,
     max_entities: int,
 ) -> PersistQueueBatchLease | None
 ```
 
-Both limits must be positive, and `max_bytes` must be at least the largest
-registered entity size. Invalid limits are configuration errors. If no
-published entry is available, the operation returns `None`.
+`max_entities` must be positive. An invalid limit is a configuration error. If
+no published entry is available, the operation returns `None`.
 
-Otherwise it claims the longest complete FIFO prefix that fits both limits.
+Otherwise it claims the longest complete FIFO prefix up to that limit.
 It never splits an entity or a `MeasurementProfileUnitV1`. A nonempty queue
 therefore produces at least one entry. Only one batch lease may exist; an
 overlapping claim is an interface error. Reservations and publication may
 continue at the tail while a batch is claimed.
 
-The immutable lease contains:
+The lease exposes an immutable borrowed entry tuple:
 
 ```text
 entries: tuple[PersistQueueEntryView, ...]
-total_bytes: u64
 ```
 
-Each entry view exposes its reservation token, specification, encoded size and
-a read-only view of its exact canonical buffer. Claiming allocates only
-persistence-thread view and tuple metadata; it does not concatenate or copy
-the canonical entity bytes. Persistence-derived values such as duplicate
-classification and enriched receiver-health fields remain separate work data
-and never mutate a claimed entity.
+Each entry view exposes its reservation token, specification and immutable
+payload reference. Claiming may allocate persistence-thread view and tuple
+metadata but does not copy, serialize or inspect the payload. Persistence-
+derived values such as duplicate classification and enriched receiver-health
+fields remain separate work data and never mutate a claimed entity.
+Python cannot revoke a retained entry-view or payload alias after the lease
+ends; using either beyond the active lease is an interface violation.
 
 ### Durable batch disposition
 
@@ -1878,7 +1827,7 @@ batch.acknowledge_durable(
 batch.release_for_retry() -> None
 ```
 
-`acknowledge_durable()` requires exactly one disposition in entry order. The
+`acknowledge_durable()` requires exactly one disposition per entry in order. The
 persistence thread may acknowledge only after every entry has reached the
 reported durable outcome. For example, a batch containing valid `X`, poisoned
 `Y` and valid `Z` may be removed only after `X` and `Z` commit to SQLite and
@@ -1887,14 +1836,15 @@ complete batch. Persistence must retain completed per-entry work or make it
 idempotent so retry does not invalidate an already durable disposition.
 
 Acknowledgement atomically validates that the lease still names the claimed
-queue-head prefix, removes the entire prefix, releases its byte and entity
-capacity, invalidates the lease and wakes any shutdown waiter. The queue trusts
+queue-head prefix, removes the entire prefix, releases its entity slots,
+invalidates the lease and wakes any shutdown waiter. The queue trusts
 the persistence thread's durability assertion; it does not perform I/O to
 verify it.
 
 `release_for_retry()` removes nothing. It clears the active claim, invalidates
 the lease and leaves every entry in its original FIFO position so persistence
-may retry or claim a narrower batch. Exiting a batch-lease context manager
+may retry or claim a narrower batch. It also sets the shared wakeup hint so the
+still-published head remains visible to the surrounding scheduler. Exiting a batch-lease context manager
 without successful acknowledgement performs `release_for_retry()`.
 
 ### Transient and global failure recovery
@@ -1993,7 +1943,8 @@ every entity's complete durable effect.
 ### Wakeup and controlled closure
 
 The queue is constructed with a shared `threading.Event` used to wake the
-persistence thread. Successful publication and closure set this event. The
+persistence thread. Successful publication, closure, retry release and
+completion of a closed drain set this event; the queue never clears it. The
 separate persistence control channel uses the same event, allowing the
 persistence loop to wait on queue work, synchronous control operations and
 shutdown without polling independent condition variables.
@@ -2024,9 +1975,9 @@ acknowledgement.
 
 ### Interface errors
 
-Invalid entity specifications, stale or foreign tokens, buffer/specification
-mismatch, use after publication or cancellation, double publication or
-cancellation, overlapping batch claims, disposition-count mismatch and
+Invalid entity specifications or capacities, stale or foreign tokens, use
+after publication or cancellation, double publication or cancellation,
+overlapping batch claims, disposition-count mismatch and
 acknowledgement of a stale queue prefix are implementation invariant failures.
 They do not become `AdmissionResult` values and must not trigger another
 capacity attempt after a response may have been sent.
@@ -2793,8 +2744,9 @@ whole-database preservation policy.
 source of truth for stable receiver-local enum assignments that cross a
 persistence boundary. Generation emits ordinary static Python `Enum` classes,
 the relational SQL catalogues and the schema identity constants. Python does
-not load enum definitions dynamically from SQLite, so queue decoding, radio
-handling and persistence-unavailable behavior work without a usable database.
+not load enum definitions dynamically from SQLite, so queue specification
+handling, radio behavior and persistence-unavailable behavior work without a
+usable database.
 
 The manifest has exactly three persistence modes:
 
@@ -2804,7 +2756,8 @@ The manifest has exactly three persistence modes:
   `(error_domain_id, id, code)` so reused domain-local IDs cannot be referenced
   without their scope; and
 - `encoded_only` generates Python assignments but no SQLite catalogue because
-  the value occurs only inside a fixed entity/blob or selects an array slot.
+  the value occurs only inside a canonical binary encoding or selects an array
+  slot.
 
 The six time-backend status-byte families selected by
 `TimeBackendStatusKind` are separate `encoded_only` enums. Runtime adapter
@@ -2873,11 +2826,12 @@ profile into `message_profiles`. `ReadingMessageRowV1` remains a separate,
 conditional effect. The generator does not declare variants, decide which
 target applies, or execute a transaction.
 
-`AuthenticatedReadingCandidateV1`, queue envelopes and the five fixed queue
-unit encodings are volatile handoff contracts rather than SQL mappings. Their
-exact codecs/builders and the diagnostic-context semantic validators remain
-handwritten. They may reuse generated logical values and enums, but they do not
-extend this relational generator into a general policy or queue-layout engine.
+`AuthenticatedReadingCandidateV1` and the composed queue units are volatile
+typed handoff contracts rather than SQL mappings. Their immutable dataclasses,
+the quarantine-evidence codec and the diagnostic-context semantic validators
+remain handwritten. Normal queue handoff has no entity codec or builder. These
+types may reuse generated logical values and enums, but they do not extend this
+relational generator into a general policy or queue-layout engine.
 
 `CommunicatorStateV1`, `RtcProvenanceV1` and `TxAirtimeBucketV1` are generated
 from the named communicator-state
@@ -2899,14 +2853,14 @@ constraints. A non-null variable-byte field may declare `length_field` naming
 a non-null integer sibling; generation then emits their exact SQLite length
 equality. Handwritten code owns semantic validation, classification,
 conditional effects, replay, transaction boundaries and reconciliation.
-Canonical codecs additionally enforce their binary grammar because decoding
+Canonical-BLOB codecs additionally enforce their binary grammar because decoding
 cannot safely be delegated to SQLite. They do not enforce airtime policy,
-ordering, time relationships, charge sums, lifecycle references or state
+ordering, time relationships, lifecycle references or state
 transitions; handwritten communicator and persistence code retain those
 responsibilities.
 
 Validity masks belong to binary encodings, not logical Python entities or
-relational tables. A protocol, fixed queue or canonical-BLOB codec translates
+relational tables. A protocol or canonical-BLOB codec translates
 between mask bits and Python `None`/Boolean values. The relational binder then
 stores optional values as SQL `NULL`; it never stores a second mask column.
 Exact raw bytes retain their encoded mask only where preserving those bytes is
@@ -2916,7 +2870,7 @@ an explicit evidence or canonical-state requirement.
 
 The assembled pilot schema contains the following core tables in addition to
 the generated enum catalogues. Completing these Stage 1 tables does not make
-the receiver operational: queue codecs and validators, runtime persistence,
+the receiver operational: queue behavior and validators, runtime persistence,
 classification, replay and recovery remain deferred to their owning stages.
 
 | Table | Canonical identity and role |
@@ -2930,7 +2884,7 @@ classification, replay and recovery remain deferred to their owning stages.
 | `reading_messages` | `(node_id, message_id)`; every new logical reading message, with one canonical row per `(node_id, sample_id)` |
 | `diagnostics` | `(receiver_instance_id, diagnostic_sequence)`; communicator-created diagnostics only |
 | `receiver_health` | `(receiver_instance_id, health_sequence)`; complete enriched `ReceiverHealthV1` |
-| `quarantined_entities` | Exact canonical bytes and minimal failure provenance for poisoned queue units |
+| `quarantined_entities` | Exact canonical tagged-JSON evidence and minimal failure provenance for poisoned queue units |
 
 `database_metadata` permanently binds one database to one eight-byte
 `group_id`, one schema version and one exact schema fingerprint. It never
@@ -2949,8 +2903,8 @@ replacing the conflict.
 
 `message_profiles` stores all logical `MessageProfilingV1` fields with absent
 fields mapped to `NULL` and adds the derived `persistence_classification`. It
-does not store the encoding-only validity mask, UTC or source-observation
-columns and is immutable after insertion.
+does not store a separate validity mask, UTC or source-observation columns and
+is immutable after insertion.
 `reading_messages` stores one row for each new `(node_id, message_id)`, including
 new logical messages that persistence classifies as duplicate or conflicting.
 It retains `sample_id`, the exact clear 32-byte reading body, decoded protocol
@@ -3169,10 +3123,10 @@ shutdown was not durably confirmed.
 
 ### Poisoned queue units
 
-A poisoned unit is an admitted, representation-valid immutable queue unit that
-reproducibly fails persistence when isolated because of an entity-specific
-decoder, binding, derivation, range or unexpected schema-constraint defect. It
-is not malformed radio input, a duplicate classification, disk full, database
+A poisoned unit is a complete immutable typed queue unit that reproducibly
+fails persistence when isolated because of an entity-specific binding,
+derivation, range, schema-version or unexpected schema-constraint defect. It is
+not malformed radio input, a duplicate classification, disk full, database
 corruption, locking or a transient/global I/O failure.
 
 `ClockObservationV1` is not eligible for item quarantine. Its isolated failure
@@ -3184,8 +3138,80 @@ while analysis continues correlating later events with UTC.
 
 Persistence rolls back the failed batch, excludes global and transient causes,
 narrows the batch and retries the suspected unit alone. Except for the clock
-observation rule above, only reproduction of the item-specific failure permits quarantine. A
-`MeasurementProfileUnitV1` is always quarantined as one complete 490-byte unit.
+observation rule above, only reproduction of the item-specific failure permits
+quarantine. A `MeasurementProfileUnitV1` is always quarantined as one complete
+logical unit.
+
+#### `QuarantineEvidenceV1`
+
+The normal queue path has no encoder. When persistence has isolated a poison-
+eligible typed unit, it invokes the handwritten `QuarantineEvidenceV1` codec to
+snapshot the exact admitted logical value through:
+
+```python
+encode_quarantine_evidence_v1(
+    entity: object,
+    *,
+    spec: PersistQueueEntitySpec,
+) -> bytes
+
+decode_quarantine_evidence_v1(encoded: bytes) -> QuarantineEvidenceV1
+
+quarantine_evidence_sha256(encoded: bytes) -> bytes
+```
+
+The hash helper is applied to the exact successfully encoded bytes; it does not
+replace decoder validation. The canonical evidence bytes are
+ASCII JSON with no whitespace or trailing newline, lexicographically sorted
+object keys and this exact top-level shape:
+
+```json
+{"entity_kind":1,"entity_schema_version":1,"format":"cura-agrorum-quarantine-evidence","format_version":1,"value":{"tag":"none"}}
+```
+
+`entity_kind` and `entity_schema_version` duplicate the queue specification and
+must be integer values in `0..255`; Boolean values are not integers here. The
+format name and version are fixed as shown. Every logical value is one tagged
+object with an exact key set:
+
+| Tag | Additional keys | Logical value |
+|---|---|---|
+| `none` | none | `None` |
+| `bool` | `value` as JSON Boolean | Python `bool` |
+| `int` | `value` as minimal decimal string | Arbitrary signed Python integer within the evidence bound |
+| `str` | `value` as JSON string | Exact Python string/code points |
+| `bytes` | `encoding = "base64"`, `value` | Exact bytes using padded standard base64 |
+| `enum` | `class`, `member`, decimal-string `value` | Allowlisted enum class, member name and integer value |
+| `tuple` | `items` | Ordered immutable sequence of tagged nodes |
+| `record` | `class`, `fields` | Allowlisted dataclass; `fields` is an ordered array of exact `{"name", "value"}` pairs |
+
+The record allowlist contains the handwritten queue-unit and candidate classes
+plus generated `MessageProfilingV1`, `ClockObservationV1` and `DiagnosticV1`.
+The enum allowlist contains only enum classes used by those records. Canonical
+class labels are their fully qualified module and class names. Record fields
+must occur exactly once in declared order. This schema intentionally has no
+generic mapping, list, float, mutable-buffer, pickle, `repr` or arbitrary-
+object node. A field containing the wrong supported scalar type, wrong byte
+length or out-of-domain integer remains distinguishable and exact; an
+unsupported type fails closed instead of being coerced.
+
+The fixed bounds are 262,144 canonical evidence bytes, 32 nested node levels,
+4,096 total nodes, 1,024 items in one tuple, 65,536 UTF-8 bytes in one string,
+65,536 bytes in one byte value and 1,024 digits in one integer magnitude.
+Cycles and every exceeded bound are errors. Decoding additionally rejects
+invalid UTF-8/ASCII, duplicate or unknown keys/tags, unknown class labels,
+noncanonical integers or base64, noncanonical JSON spelling/key order/spacing,
+trailing bytes and any structurally invalid tagged node.
+
+The decoder returns only frozen neutral evidence nodes containing scalar values
+and record/enum labels. It never imports a label, invokes application code or
+reconstructs a production entity. Later offline analysis owns interpretation.
+Before returning that tree, the decoder canonically re-encodes the parsed JSON
+and requires byte-for-byte identity with the supplied evidence. If encoding
+fails for a poisoned queue head, persistence cannot
+manufacture substitute bytes or acknowledge it: the active lease and every
+following FIFO entry remain queue-owned and admission closes under the
+applicable incompatible state.
 
 SQLite contains one generic append-only table:
 
@@ -3208,10 +3234,11 @@ os_errno: i32 or absent
 isolation_attempt_count: u32
 ```
 
-`quarantine_id` is SHA-256 of the exact canonical entity bytes and is the
-primary key. The explicit kind, version and length duplicate the entity
-envelope so quarantine can be indexed and validated without decoding the
-problematic payload. `length(entity_bytes)` must equal `entity_length`.
+`quarantine_id` is SHA-256 of the exact canonical `QuarantineEvidenceV1` bytes
+and is the primary key. The explicit entity kind and schema version duplicate
+the tagged-JSON envelope so quarantine can be indexed and screened without
+interpreting the problematic payload. `length(entity_bytes)` must equal
+`entity_length`.
 `receiver_instance_id` comes from the immutable process startup context, not
 by decoding the suspected entity. Its durable lifecycle row supplies the Linux
 boot ID when quarantine evidence is analyzed.
@@ -3300,14 +3327,13 @@ disposition, persist-queue entity/admission-result pair and persistence-state
 transition count. It also stores
 `rtc_write_readback_verified_count` and
 `rtc_write_trust_invalidated_count` as distinct scalar columns and stores
-optional transition timestamps and host observations as `NULL`. It does not
-store the fixed queue encoding's validity mask. No redundant step-required or
-total RTC-write-attempt column exists; those totals are derived by summing
+optional transition timestamps and host observations as `NULL`. No redundant
+step-required or total RTC-write-attempt column exists; those totals are derived by summing
 their disposition columns. Persistence creates the complete immutable row once
 and never resamples it across transaction retry.
 
 No `persistence_batches` or `receiver_state_operations` tables exist in the
-pilot. Batch throughput, failure, byte and checkpoint aggregates are carried by
+pilot. Batch throughput, failure and checkpoint aggregates are carried by
 `ReceiverHealthV1`. Communicator-state control failures may use `DiagnosticV1`
 according to the `PERSISTENCE_CONTROL` or caller-violation `CORE` catalogue
 when the communicator can admit one; authoritative state remains only in

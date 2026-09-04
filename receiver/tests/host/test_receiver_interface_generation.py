@@ -212,7 +212,7 @@ def test_schema_fingerprint_is_exact_schema_sql_sha256() -> None:
     assert hashlib.sha256(schema_bytes).hexdigest() == generated.DATABASE_SCHEMA_SHA256
     assert hashlib.sha256(schema_bytes).digest() == generated.DATABASE_SCHEMA_FINGERPRINT
     assert generated.SQLITE_APPLICATION_ID == 0x43555252
-    assert generated.DATABASE_SCHEMA_VERSION == 7
+    assert generated.DATABASE_SCHEMA_VERSION == 8
 
 
 # Requires every declared catalogue, entity table, and trigger in assembled SQL.
@@ -317,8 +317,6 @@ def test_message_profile_logical_record_is_flattened_for_sql() -> None:
         receiver_instance_id=bytes(range(16)),
         occurrence_sequence=7,
         received_at_monotonic_us=11,
-        persist_queue_used_bytes_before_admission=13,
-        persist_queue_capacity_bytes=17,
         received_frame_length=None,
         received_frame=None,
         claimed_control=None,
@@ -354,7 +352,7 @@ def test_message_profile_logical_record_is_flattened_for_sql() -> None:
 
     parameters = generated_entities.message_profile_row_v1_parameters(row)
     columns = generated_entities.MESSAGE_PROFILE_ROW_V1_COLUMNS
-    assert len(parameters) == len(columns) == 33
+    assert len(parameters) == len(columns) == 31
     assert columns[:3] == (
         "receiver_instance_id",
         "occurrence_sequence",
@@ -363,6 +361,33 @@ def test_message_profile_logical_record_is_flattened_for_sql() -> None:
     assert parameters[:3] == (bytes(range(16)), 7, 11)
     assert columns[-1] == "persistence_classification_id"
     assert parameters[-1] == generated.PersistenceClassification.NOT_APPLICABLE.value
+
+
+# Keeps queue-capacity policy out of persisted profiling and health entities.
+def test_generated_entities_have_no_queue_byte_accounting_fields() -> None:
+    removed_fields = {
+        "persist_queue_used_bytes_before_admission",
+        "persist_queue_capacity_bytes",
+        "batch_encoded_bytes_committed",
+    }
+
+    assert removed_fields.isdisjoint(
+        field.name for field in fields(generated_entities.MessageProfilingV1)
+    )
+    assert removed_fields.isdisjoint(
+        field.name for field in fields(generated_entities.ReceiverHealthV1)
+    )
+    assert removed_fields.isdisjoint(
+        generated_entities.MESSAGE_PROFILE_ROW_V1_COLUMNS
+    )
+    assert removed_fields.isdisjoint(generated_entities.RECEIVER_HEALTH_V1_COLUMNS)
+
+    connection = open_schema()
+    for table in ("message_profiles", "receiver_health"):
+        columns = {
+            row[1] for row in connection.execute(f"PRAGMA table_info({table})")
+        }
+        assert removed_fields.isdisjoint(columns)
 
 
 # Rejects invalid logical-record declarations in the entity manifest.
@@ -804,8 +829,6 @@ def test_receiver_scoped_generated_rows_require_lifecycle_parent() -> None:
         receiver_instance_id=receiver_instance_id,
         occurrence_sequence=1,
         received_at_monotonic_us=1,
-        persist_queue_used_bytes_before_admission=0,
-        persist_queue_capacity_bytes=490,
         received_frame_length=None,
         received_frame=None,
         claimed_control=None,
@@ -1003,8 +1026,8 @@ def test_receiver_health_binding_expands_only_exact_array_shapes() -> None:
     )
     health = generated_entities.ReceiverHealthV1(**values)
     parameters = generated_entities.receiver_health_v1_parameters(health)
-    assert len(parameters) == 74
-    assert len(generated_entities.RECEIVER_HEALTH_V1_COLUMNS) == 74
+    assert len(parameters) == 73
+    assert len(generated_entities.RECEIVER_HEALTH_V1_COLUMNS) == 73
 
     wrong_shape = replace(health, chrony_step_command_results=(0,) * 2)
     with pytest.raises(ValueError, match="chrony_step_command_results"):

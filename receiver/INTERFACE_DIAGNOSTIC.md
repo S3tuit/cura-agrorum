@@ -45,7 +45,7 @@ episodes. They do not duplicate:
 - ordinary protocol outcomes already present in `MessageProfilingV1`;
 - duplicate/conflict classifications and immutable reading-message evidence;
 - aggregate rates already represented by `ReceiverHealthV1`; or
-- exact poisoned-unit bytes and failure provenance in quarantine tables.
+- exact poisoned-unit logical evidence and failure provenance in quarantine tables.
 
 Only the communicator allocates diagnostic identity, constructs
 `DiagnosticV1` and attempts its nonblocking `PersistQueue` admission. The
@@ -66,11 +66,7 @@ that failed attempt.
 
 ## `DiagnosticV1`
 
-Encoded size: 171 bytes, including the two-byte entity envelope.
-
 ```text
-entity envelope: 2 bytes
-
 receiver_instance_id: bytes[16]
 diagnostic_sequence: u64
 sampled_at_monotonic_us: u64
@@ -1117,7 +1113,7 @@ recovery.
 | `0` | `NONE` | Success only; invalid in a diagnostic |
 | `1` | `INVALID_ARGUMENT` | Communicator code supplied an invalid value to an internal receiver interface not covered by a more specific contract code |
 | `2` | `INVALID_STATE` | The communicator reached an impossible orchestration state or transition |
-| `3` | `REPRESENTATION_INVARIANT` | A supposedly validated fixed-size entity or immutable receiver value could not be represented canonically |
+| `3` | `REPRESENTATION_INVARIANT` | A supposedly validated immutable receiver value could not be represented as required by its destination contract |
 | `4` | `PERSIST_QUEUE_CONTRACT` | The communicator violated the producer side of the `PersistQueue` contract |
 | `5` | `PERSISTENCE_CONTROL_CONTRACT` | A synchronous control result reports a caller-side `PersistenceControlInterfaceViolation` |
 | `6` | `MEMORY_EXHAUSTED` | Required bounded runtime allocation failed outside normal queue-capacity admission |
@@ -1352,10 +1348,10 @@ failure.
 |---|---|
 | Malformed, unauthenticated, unsupported or wrong-direction radio frame | No core diagnostic; record the protocol/profile outcome |
 | Queue returns `QUEUE_FULL` or `PERSISTENCE_UNAVAILABLE` | No core diagnostic; increment only the original admission-result cell |
-| Communicator calls a queue method with an invalid spec/token/buffer or violates reservation ownership | Emit `APPEND` or `CLEANUP + PERSIST_QUEUE_CONTRACT` only if the queue is explicitly known sound, then terminate |
+| Communicator calls a queue method with an invalid spec/token or violates reservation ownership | Emit `APPEND` or `CLEANUP + PERSIST_QUEUE_CONTRACT` only if the queue is explicitly known sound, then terminate |
 | Persistence consumer detects overlapping claims, invalid disposition count or stale-prefix acknowledgement | No communicator diagnostic through that queue; close admission, retain safe ownership and use bounded service evidence |
 | Persistence control returns a caller interface violation | Emit `READ`, `WRITE` or `CLEANUP + PERSISTENCE_CONTROL_CONTRACT` with the exact normalized violation and terminate |
-| Canonical fixed-size construction fails after its inputs passed validation | Emit `ENCODE` or `APPEND + REPRESENTATION_INVARIANT` and terminate before selecting another protocol outcome |
+| Immutable entity construction or required destination representation fails after its inputs passed validation | Emit `ENCODE` or `APPEND + REPRESENTATION_INVARIANT` and terminate before selecting another protocol outcome |
 | Protocol decoding rejects malformed external bytes normally | No core diagnostic |
 | Codec or crypto library fails outside its documented malformed/authentication result | Emit `DECODE` or `ENCODE + CODEC_BACKEND`/`CRYPTO_BACKEND` and terminate; never include key material or plaintext in context |
 | Required checked non-time arithmetic exceeds its allowed representation | Emit the applicable operation plus `ARITHMETIC_RANGE` and terminate |

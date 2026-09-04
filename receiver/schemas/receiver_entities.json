@@ -75,11 +75,6 @@
         {"name": "occurrence_sequence", "type": "u64"},
         {"name": "received_at_monotonic_us", "type": "u64"},
         {
-          "name": "persist_queue_used_bytes_before_admission",
-          "type": "u64"
-        },
-        {"name": "persist_queue_capacity_bytes", "type": "u64"},
-        {
           "name": "received_frame_length",
           "type": "u16",
           "maximum": 255,
@@ -754,7 +749,6 @@
         {"name": "batch_transaction_commits", "type": "u64"},
         {"name": "batch_transaction_failures", "type": "u64"},
         {"name": "batch_entities_committed", "type": "u64"},
-        {"name": "batch_encoded_bytes_committed", "type": "u64"},
         {"name": "batch_commit_duration_total_us", "type": "u64"},
         {"name": "batch_commit_duration_max_us", "type": "u64"},
         {"name": "wal_checkpoint_attempts", "type": "u64"},

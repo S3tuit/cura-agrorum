@@ -1068,33 +1068,44 @@ its sample.
 
 ### Acceptance invariant
 
-An authenticated, structurally valid reading occurrence may be marked accepted only after one atomic `PersistQueue` reservation exclusively owns the exact fixed-size `AuthenticatedReadingCandidateV1`/`MessageProfilingV1` unit, including preallocated slots for all post-TX fields. The reservation counts against queue capacity immediately but is not visible to the persistence consumer until the communicator publishes it. The pair remains one logical persistence unit and batch selection must not split it across SQLite transactions.
+An authenticated, structurally valid reading occurrence may be marked accepted
+only after one atomic `PersistQueue` reservation exclusively owns one entity
+slot for the eventual `AuthenticatedReadingCandidateV1`/`MessageProfilingV1`
+unit. The reservation counts against the 500-entity queue capacity immediately
+but is not visible to the persistence consumer until the communicator publishes
+the complete immutable pair. The pair remains one logical persistence unit and
+batch selection must not split it across SQLite transactions.
 
 Required ordering:
 
 ```text
 validate message
-  -> construct and validate the fixed-layout candidate/profile unit and candidate success ACK
+  -> construct and validate the stable candidate/profile inputs and candidate success ACK
   -> require persistence admission state AVAILABLE
      -> unavailable: reserve nothing and select RETRY_LATER
-  -> atomically reserve the unit's exact bytes
+  -> atomically reserve one entity slot
      -> capacity failure: reserve nothing and select RETRY_LATER
      -> success: mark occurrence accepted and transmit the selected ACK when permitted
   -> reach a terminal TX/suppression/recovery outcome
-  -> finalize one immutable pair and publish it against the reservation
+  -> construct one complete immutable pair and publish its existing object reference against the reservation
 ```
 
 Publication uses the existing reservation, performs no new capacity check and cannot fail because of queue pressure. If TX fails or its ACK is lost, a later retransmission repeats this complete admission path. This may publish another `MeasurementProfileUnitV1`, but persistence retains only canonical data and stores a profile for every admitted radio occurrence.
 
 ### Retry-later behavior
 
-`ACK_RETRY_LATER_DOWNLINK` means that the receiver did not accept ownership of this occurrence because durable persistence was currently unavailable or it could not reserve the exact capacity for the complete measurement/profile unit. When the node retries, the occurrence goes through the same availability and reservation path again. The communicator neither remembers nor caches `RETRY_LATER`.
+`ACK_RETRY_LATER_DOWNLINK` means that the receiver did not accept ownership of
+this occurrence because durable persistence was currently unavailable or it
+could not reserve an entity slot for the complete measurement/profile unit.
+When the node retries, the occurrence goes through the same availability and
+reservation path again. The communicator neither remembers nor caches
+`RETRY_LATER`.
 
 ### ACK semantics in the pilot
 
 A successful ACK means:
 
-> The receiver authenticated and validated the message while persistence admission was available, then reserved exclusive bounded-pipeline capacity for its fixed-size `AuthenticatedReadingCandidateV1`/`MessageProfilingV1` unit.
+> The receiver authenticated and validated the message while persistence admission was available, then reserved one exclusive slot in the bounded persistence pipeline for its immutable `AuthenticatedReadingCandidateV1`/`MessageProfilingV1` unit.
 
 It does **not** mean:
 
@@ -1284,15 +1295,15 @@ Decode sample_id only at the protocol's reading-body validation step
   |
   +--> protocol selects a response-eligible authenticated rejection
   |       -> construct the protocol-selected rejection ACK and pre-TX profiling fields
-  |       -> require persistence AVAILABLE and reserve exact profile capacity,
+  |       -> require persistence AVAILABLE and reserve one profile slot,
   |          or select RETRY_LATER
   |
   +--> authenticated structurally valid reading
           -> validate
           -> construct AuthenticatedReadingCandidateV1, deterministic candidate ACCEPTED ACK
                and pre-TX MessageProfilingV1 fields containing the exact ACK frame
-          -> require persistence AVAILABLE and atomically reserve the exact
-               fixed-size pair without consulting message history
+          -> require persistence AVAILABLE and atomically reserve one slot for
+               the complete pair without consulting message history
           -> if unavailable: reserve nothing, RETRY_LATER, not accepted
           -> otherwise: mark occurrence accepted and select ACCEPTED
   |
@@ -1327,7 +1338,14 @@ otherwise retain the already-recorded reservation result only
 Return to DIO1 wait
 ```
 
-The communicator reserves the exact fixed-size unit before an ACK transmission but publishes no partial profile. It retains the preallocated unit locally while TX, suppression and any bounded recovery complete, fills only the fixed-width terminal TX result and timestamp slots, then freezes and publishes it. Publication cannot fail because of queue pressure, allocation or serialization.
+The communicator reserves one queue slot before an ACK transmission but
+publishes no partial profile. It retains its local construction state while TX,
+suppression and any bounded recovery complete, then creates one complete frozen
+typed unit and publishes that existing object reference. Publication performs
+no queue-capacity check, payload copy or serialization and cannot fail because
+of queue pressure. Construction of the Python value remains ordinary process
+work; the pilot does not claim that CPython performs no allocation after ACK
+selection.
 
 If persistence admission is unavailable or profile reservation fails, the detailed packet-occurrence record cannot be retained. The pilot explicitly permits this exception and selects `ACK_RETRY_LATER_DOWNLINK` for an authenticated packet that is eligible for a response. The reservation attempt has already incremented exactly one `persist_queue_admission_counts` cell for the selected profile-unit kind and returned `AdmissionResult`; no overlapping profiling-failure counter is maintained. Packets that cannot be authenticated remain silent. The communicator offers the cumulative matrix in a later `ReceiverHealthRequest`; a crash before successful admission may lose the increments under the documented persistence-unavailable observability limitation.
 
@@ -1343,25 +1361,37 @@ that best-effort diagnostic never changes radio-state or airtime safety.
 
 `PersistQueue` is a bounded in-memory handoff between the communicator and persistence threads.
 
-The concrete shared values, enum assignments, optional-field rules and fixed
-entity layouts are defined by [`INTERFACE.md`](INTERFACE.md).
+The concrete shared values, enum assignments, optional-field rules and typed
+entity contracts are defined by [`INTERFACE.md`](INTERFACE.md).
 
 A `PersistQueue` capacity reservation is volatile, process-local queue accounting. It is unrelated to the durable receiver TX-airtime bucket precharge described above.
 
-Initial target capacity:
+Pilot production capacity:
 
 ```text
-approximately 50 MB
+500 entities
 ```
 
-Every `PersistQueue` entity kind has a fixed serialized size chosen with its schema. Different entity kinds may have different fixed sizes, but an individual kind must not contain dynamically sized strings, byte arrays, containers or object graphs. Variable-length protocol values use fixed-capacity storage plus an explicit length; for example, a received frame uses a protocol-sized byte array and `received_frame_length`. Diagnostics use fixed fields and bounded buffers rather than arbitrary text or dictionaries.
+`PersistQueue` preallocates a circular array of 500 generic slots. Each slot
+holds an opaque immutable Python object reference plus queue metadata. Smaller
+positive capacities may be constructed by focused tests, but production does
+not exceed 500. Admission counts occupied slots only: every entity kind costs
+one slot. The queue neither estimates recursive Python-object size nor assigns
+logical byte charges. Measuring actual object/RSS cost and revisiting the cap
+are deferred until receiver workload evidence justifies them.
 
-The fixed sizes are implementation constants validated at startup. Byte-capacity accounting and every reservation use their exact sum, not an estimated Python-object size or object count. A separate configured entity-count limit additionally bounds Python object and queue-node overhead; it does not replace exact byte accounting.
+The queue does not encode, decode, copy or construct normal entities. The
+communicator creates a complete immutable typed value and publication stores
+that existing reference; the persistence thread receives the same object.
+Variable-length logical values such as received frames remain bounded by their
+own entity contracts, not by queue storage policy. Only quarantine of a
+poisoned typed entity uses the separate canonical tagged-JSON evidence codec.
 
 The queue may contain:
 
 - atomic `AuthenticatedReadingCandidateV1`/complete-`MessageProfilingV1` units;
 - complete profile-only `MessageProfilingV1` records for occurrences without an authenticated reading candidate;
+- complete `ClockObservationV1` time-state boundaries;
 - `ReceiverHealthRequest` snapshots;
 - structured diagnostics.
 
@@ -1369,15 +1399,38 @@ The queue may contain:
 
 The pilot implements no `PersistQueue` priority policy. Every object published to the queue has the same importance regardless of whether it contains a measurement/profile unit, a profile-only occurrence, a diagnostic, a clock observation or a `ReceiverHealthRequest`.
 
-The queue admits and processes published units in FIFO publication order. It does not reorder, evict, sample or drop an admitted unit based on entity type. New admission requires current `PersistenceAdmissionState = AVAILABLE`, sufficient exact byte capacity and space under the configured entity-count limit; any failure rejects the new object or complete atomic pair without removing existing entries. For an authenticated packet eligible for a response, either admission failure selects `ACK_RETRY_LATER_DOWNLINK`.
+The queue admits and processes published units in FIFO publication order. It
+does not reorder, evict, sample or drop an admitted unit based on entity type.
+New admission requires current `PersistenceAdmissionState = AVAILABLE` and one
+free entity slot; either failure rejects the new object or complete atomic pair
+without removing existing entries. For an authenticated packet eligible for a
+response, either admission failure selects `ACK_RETRY_LATER_DOWNLINK`.
 
-Outstanding reservations count against queue capacity but remain invisible to the persistence consumer until publication. Publishing a correctly sized unit against its reservation performs no capacity check and cannot be rejected due to pressure. Once published, every entity remains queue-owned until its persistence transaction commits, independent of its type.
+Outstanding reservations count against queue capacity but remain invisible to
+the persistence consumer until publication. Publishing a complete object
+against its reservation performs no capacity check and cannot be rejected due
+to pressure. Once published, every entity remains queue-owned until its durable
+disposition is acknowledged, independent of its type.
 
-The communicator is the only reservation owner and processes one radio event at a time, so it publishes or terminally finalizes the active reservation before accepting another packet. Reserved bytes are released only by successful publication or by cancellation before any response is attempted. Once an occurrence has been accepted, its reservation must be published with the best terminal outcome available rather than cancelled.
+The communicator is the only reservation owner and processes one radio event
+at a time, so it publishes or terminally finalizes the active reservation
+before accepting another packet. Cancellation before any response is attempted
+releases the reserved slot; publication retains it until durable
+acknowledgement. Once an occurrence has been accepted, its reservation must be
+published with the best terminal outcome available rather than cancelled.
 
-A reservation token is unique and single-use. Before reserving capacity and selecting an ACK, the communicator constructs and validates the complete fixed-layout `AuthenticatedReadingCandidateV1` and all stable `MessageProfilingV1` fields. The profiling layout preallocates fixed-width slots for `ack_tx_result` and `T4` through `T6`; after the terminal radio outcome, the communicator only fills those already validated slots and freezes the unit. No allocation, variable-sized serialization or fallible representation conversion is permitted after ACK selection.
+A reservation token is unique and single-use. Before reserving capacity and
+selecting an ACK, the communicator validates the authenticated candidate and
+all stable profile inputs. After the terminal radio outcome it constructs one
+frozen typed unit containing `ack_tx_result` and `T4` through `T6`, then gives
+the queue that object reference. No normal-path entity serialization or kind-
+specific queue builder exists.
 
-Publication atomically transfers the complete immutable fixed-size unit against its exact reservation. A size mismatch or inability to fill a prevalidated slot is an implementation invariant violation, not a reason to perform a second admission attempt after an ACK may have been sent.
+Publication atomically transfers logical ownership of the complete immutable
+unit against its reservation. Python aliases cannot be revoked, so deep
+immutability and producer non-use after publication are interface obligations.
+An inability to construct the promised unit is an implementation failure, not
+a reason to perform a second admission attempt after an ACK may have been sent.
 
 ### Non-recursive diagnostics
 
@@ -1422,9 +1475,11 @@ It:
 - opens and validates SQLite with the required WAL and synchronization settings;
 - exclusively publishes `PersistenceAdmissionState` and closes ordinary admission on storage failure;
 - services high-priority state and clean-stop control operations and acknowledges only confirmed durable outcomes;
-- wakes approximately every five seconds, or when a configurable queue threshold is reached;
+- wakes approximately every five seconds, or when a configurable entity-count
+  queue threshold is reached;
 - checks whether the queue contains data;
-- takes a logical batch of at most approximately N MB, where N is chosen from benchmarks on the deployed Pi and storage medium;
+- claims a FIFO batch of at most the configured number of complete queue
+  entities;
 - writes the batch using one SQLite transaction;
 - removes entries from the queue only after a successful commit;
 - classifies transport retransmissions and identity conflicts against canonical SQLite records;
@@ -1435,7 +1490,9 @@ It:
 - enriches `ReceiverHealthRequest` snapshots with persistence-owned and host-owned observations and inserts complete `ReceiverHealth` rows;
 - repeats while work remains.
 
-The five-second interval and batch limit are pilot defaults and should remain configurable.
+The five-second interval, entity-count wake threshold and entity-count batch
+limit are pilot defaults and should remain configurable. Choosing their runtime
+values belongs to the later persistence worker rather than `PersistQueue`.
 
 ### SQLite durability and retention
 
@@ -1468,7 +1525,7 @@ WAL checkpointing uses a configurable page or byte threshold and records checkpo
 
 Implementation benchmarking must compare `synchronous=FULL` with `synchronous=NORMAL` on the deployed Pi and storage medium using realistic entity mixes, batch sizes and checkpoint behavior. Record at least transaction throughput, commit-latency percentiles, queue growth, WAL growth and checkpoint stalls. `FULL` remains the pilot deployment setting regardless of benchmark results; changing it requires an explicit architecture decision accepting weaker power-loss durability.
 
-These settings protect transactions whose SQLite commit completed. They do not make a preceding radio ACK durable while its fixed-size queue unit remains only in RAM.
+These settings protect transactions whose SQLite commit completed. They do not make a preceding radio ACK durable while its typed queue unit remains only in RAM.
 
 The pilot performs no automatic retention deletion within the active schema
 epoch. Reading-message rows, packet profiles, diagnostics, receiver health and
@@ -1737,11 +1794,18 @@ One retry transaction may treat matching rows as no-ops and insert identities
 that are still absent. Only confirmed commit, or later reconciliation showing
 every unit exact and complete, permits queue acknowledgement.
 
-An atomic measurement/profile pair is one batch unit. A configured batch-size target may not split it; when a single pair exceeds that target but fits the queue's validated entity-size limit, persistence processes the complete pair in one transaction.
+An atomic measurement/profile pair is one queue entity. Entity-count batching
+therefore cannot split it: persistence either includes the complete pair in the
+claimed FIFO prefix or leaves it at the head for a later transaction.
 
 ### Poisoned entities
 
-All queue units have already passed fixed-layout construction and representation validation before admission. A poisoned unit is an admitted, representation-valid immutable unit that reproducibly fails while isolated because of an entity-specific decoder, binding, derivation, range or unexpected schema-constraint defect. Malformed radio input, duplicate classification, expected uniqueness conflicts, disk full, locking, database corruption and transient or global I/O failures are not poison.
+All queue units are complete immutable typed values when published. A poisoned
+unit is an admitted unit that reproducibly fails while isolated because of an
+entity-specific binding, derivation, range, schema-version or unexpected
+schema-constraint defect. Malformed radio input, duplicate classification,
+expected uniqueness conflicts, disk full, locking, database corruption and
+transient or global I/O failures are not poison.
 
 `ClockObservationV1` is deliberately excluded from item quarantine. Losing a
 time-state boundary while allowing later entities to commit could make
@@ -1757,14 +1821,32 @@ The persistence thread needs a bounded failure-isolation strategy:
 batch fails
   -> roll back and exclude global or transient causes
   -> narrow the batch and reproduce the suspected unit alone
-  -> durably quarantine its exact fixed-size bytes and minimal failure provenance
+  -> encode and durably quarantine its exact tagged logical evidence and minimal failure provenance
   -> only then remove it from PersistQueue
   -> continue with later entities
 ```
 
-An admitted unit is never silently dropped, regardless of whether an ACK was transmitted for it. A `MeasurementProfileUnitV1` remains one indivisible 490-byte unit during isolation and quarantine. The generic append-only SQLite `quarantined_entities` table preserves the complete original canonical bytes, redundant kind/version/length metadata, receiver-instance identity, quarantine monotonic time, database schema version, stable failure reason and operation, available SQLite/OS codes and isolation-attempt count. The lifecycle join supplies the Linux boot identity. Its primary key is SHA-256 of the exact bytes; an identical existing row makes retry idempotent only after every stored value is verified.
+An admitted unit is never silently dropped, regardless of whether an ACK was
+transmitted for it. A `MeasurementProfileUnitV1` remains one indivisible logical
+unit during isolation and quarantine. The generic append-only SQLite
+`quarantined_entities` table preserves a bounded canonical `QuarantineEvidenceV1`
+tagged-JSON snapshot, redundant kind/version/length metadata, receiver-instance
+identity, quarantine monotonic time, database schema version, stable failure
+reason and operation, available SQLite/OS codes and isolation-attempt count.
+The lifecycle join supplies the Linux boot identity. Its primary key is SHA-256
+of the exact evidence bytes; an identical existing row makes retry idempotent
+only after every stored value is verified.
 
-After the normal batch transaction rolls back, quarantine uses a separate WAL/`FULL` transaction. Only a confirmed or reconciled quarantine commit permits the batch to acknowledge that unit as `QUARANTINED`. If quarantine cannot be durably committed, the complete batch remains queue-owned, persistence publishes `UNAVAILABLE_IO` and all new ordinary `PersistQueue` admission closes. Infinite retry of the same failing batch is not acceptable, but neither is removing an already-ACKed unit without a durable copy. Quarantining is successful failure isolation, not successful canonical measurement persistence; the retained bytes exist for diagnosis and later recovery.
+After the normal batch transaction rolls back, quarantine uses a separate
+WAL/`FULL` transaction. Only a confirmed or reconciled quarantine commit
+permits the batch to acknowledge that unit as `QUARANTINED`. If evidence cannot
+be encoded or quarantine cannot be durably committed, the complete batch
+remains queue-owned, persistence closes new ordinary admission and reports the
+applicable incompatible or I/O state. Infinite retry of the same failing batch
+is not acceptable, but neither is removing an already-ACKed unit without
+durable evidence. Quarantining is successful failure isolation, not successful
+canonical measurement persistence; the retained evidence exists for diagnosis
+and later recovery.
 
 Persistence does not invent a `DiagnosticV1` for an asynchronous poison. Only
 the communicator owns diagnostic identity. A successfully committed quarantine
@@ -1802,8 +1884,9 @@ event timeline contains, when applicable:
 produce one of the optional events stores that timestamp as absent rather than
 reconstructing it.
 
-It also records queue occupancy and configured byte capacity immediately before
-admission. It does not contain `PersistenceClassification`, UTC,
+It does not record queue occupancy or capacity; queue admission attempts are
+instead accumulated by entity kind and result in the communicator-owned health
+snapshot. The profile also does not contain `PersistenceClassification`, UTC,
 `SystemTimeQuality` or `RtcHealth`.
 
 The communicator publishes the completed profile in exactly one of two queue
@@ -1866,21 +1949,22 @@ Do not log every tight polling iteration as a separate entity.
 
 The pilot does not persist one row per batch or state operation. Persistence
 instead maintains cumulative per-instance counters for transaction attempts,
-commits and failures; committed entities and exact encoded bytes; total and
-maximum commit duration; quarantine successes and failures; admission-state
-transitions; and WAL-checkpoint attempts, successes and failures. Each
-`ReceiverHealthV1` snapshots these aggregates.
+commits and failures; committed entities; total and maximum commit duration;
+quarantine successes and failures; admission-state transitions; and WAL-
+checkpoint attempts, successes and failures. Each `ReceiverHealthV1` snapshots
+these aggregates.
 
-The per-packet profile separately records queue occupancy when admitting an
-authenticated measurement unit. Together, queue occupancy and the health aggregates are
-enough to determine whether persistence is falling behind without adding
-`persistence_batches` or `receiver_state_operations` tables.
+The communicator-owned admission-result matrix reports queue-full pressure by
+entity kind. Together with the cumulative commit and duration aggregates, it
+provides bounded evidence that persistence is falling behind without inventing
+byte occupancy or adding `persistence_batches` or
+`receiver_state_operations` tables.
 
 ### ReceiverHealth
 
 `ReceiverHealth` is a periodic application-aware snapshot. It is not sampled per packet and is not part of ACK acceptance. The initial pilot interval is one minute and remains configurable.
 
-The communicator drives the interval because only that thread can take a coherent snapshot of its live state. Once per interval, and once immediately after successful communicator initialization, it advances `health_sequence` and attempts a nonblocking `ReceiverHealthRequest` reservation. It increments the returned admission-matrix cell and, on `RESERVED`, fills the reserved request with the updated matrix and its other coherent observations before publishing it. If the health deadline coincides with DIO1 or another radio deadline, the communicator completes the deadline-bound radio work before starting the health attempt. This event-loop scheduling rule does not give the resulting queue object different FIFO importance after publication.
+The communicator drives the interval because only that thread can take a coherent snapshot of its live state. Once per interval, and once immediately after successful communicator initialization, it advances `health_sequence` and attempts a nonblocking `ReceiverHealthRequest` reservation. It increments the returned admission-matrix cell and, on `RESERVED`, constructs the immutable request with the updated matrix and its other coherent observations before publishing it. If the health deadline coincides with DIO1 or another radio deadline, the communicator completes the deadline-bound radio work before starting the health attempt. This event-loop scheduling rule does not give the resulting queue object different FIFO importance after publication.
 
 The request contains only communicator-owned observations:
 
@@ -1910,7 +1994,7 @@ from one that established usable provenance under a still-valid episode
 `clock_state_generation`. These are process-local operational observations,
 not correctness state in `CommunicatorStateV1`.
 
-The request sequence and communicator sampling time are the communicator heartbeat: they prove that the communicator event loop reached the periodic health task. No separate high-frequency heartbeat is required. `health_sequence` advances before every reservation attempt, so a gap in persisted sequence values exposes a missed or failed sample. The `RECEIVER_HEALTH_REQUEST` failure cells distinguish known queue-full and persistence-unavailable losses once a later request succeeds. A successfully admitted request includes its own `RESERVED` attempt because the communicator updates the matrix before filling the reserved builder.
+The request sequence and communicator sampling time are the communicator heartbeat: they prove that the communicator event loop reached the periodic health task. No separate high-frequency heartbeat is required. `health_sequence` advances before every reservation attempt, so a gap in persisted sequence values exposes a missed or failed sample. The `RECEIVER_HEALTH_REQUEST` failure cells distinguish known queue-full and persistence-unavailable losses once a later request succeeds. A successfully admitted request includes its own `RESERVED` attempt because the communicator updates the matrix before constructing and publishing the immutable request.
 
 The matrix counts reservation calls, not packets, SQL rows, bytes or durable
 entities. `RESERVED` means capacity was obtained even if the process later
@@ -1934,7 +2018,7 @@ mandatory persistence-owned fields are:
   `PersistenceAdmissionState`, including incompatible schema;
 - cumulative durable-quarantine successes and failures;
 - cumulative batch transaction attempts, commits and failures;
-- cumulative entities and exact encoded bytes committed;
+- cumulative entities committed;
 - cumulative and maximum batch-commit duration; and
 - cumulative WAL-checkpoint attempts, successes and failures.
 
@@ -2109,16 +2193,36 @@ than emitting separate diagnostics.
 
 ## Concurrency model
 
-The initial implementation should use one communicator thread and one persistence thread.
+### Why the pilot uses `threading.Thread`
 
-No additional worker is required unless measurements show a real need.
+The pilot runs the communicator and persistence owners in two ordinary
+`threading.Thread` instances within one Python process. These are operating-
+system threads: the Linux scheduler may place them on different logical cores,
+and one can make progress while the other is blocked in GPIO, SPI, SQLite or
+filesystem I/O. The design does not pin either thread to a core and does not
+require or promise simultaneous execution of Python bytecode. On the standard
+CPython build the GIL still serializes ordinary Python-bytecode execution; many
+blocking I/O operations release it. This is sufficient because the workload is
+I/O-oriented and the bounded packet-to-ACK CPU work is small. It is not a hard-
+real-time scheduling claim.
 
-Python's GIL is not a practical concern for this workload because:
+A single `asyncio` event loop would normally remain one OS thread. It would not
+put persistence on another logical core, and blocking GPIO/SPI/SQLite APIs
+would still need thread executors or async-specific adapters. That would retain
+threads while spreading ownership and cancellation semantics across two
+programming models. Multiprocessing would permit parallel Python-bytecode
+execution, but would replace direct immutable-object handoff with serialization
+and IPC and add process-lifecycle, failure-reconciliation and secret/configuration
+ownership machinery. The pilot has no measured CPU-bound need that justifies
+those costs.
 
-- the communicator mostly waits for GPIO events;
-- persistence mostly waits or performs SQLite I/O;
-- the packet-to-ACK CPU work is small;
-- thread ownership is more important than parallel CPU execution.
+`PersistQueue` therefore bridges the two owner threads directly. One short
+`threading.Lock` protects each compound reservation, publication, claim,
+acknowledgement, admission-snapshot and closure transition. Correctness does not
+rely on the GIL or on an individual list/integer operation being atomic, and the
+lock is never held across caller work, radio operations, evidence encoding,
+SQLite or filesystem I/O. No additional worker is introduced unless later
+measurements establish a concrete need.
 
 Shared state should be minimized to:
 
@@ -2132,11 +2236,16 @@ Receiver-health counters remain communicator-owned and cross the existing `Persi
 
 The persistence thread must not mutate communicator-owned node, message, clock-policy or airtime-policy state. Its communicator-state result reports only whether the exact requested generation and bytes became durable, definitely did not become durable, or require reconciliation.
 
+Clean shutdown coordinates and bounds draining but is not part of the
+correctness argument. Process termination or power loss may discard the
+volatile queue under the pilot's documented ACK semantics; neither thread
+depends on a finalizer running.
+
 ## Core invariants
 
 - Only the communicator mutates live protocol, time-policy and airtime-policy state.
 - Only the persistence thread performs disk I/O and loads receiver configuration.
-- Only the persistence thread publishes `PersistenceAdmissionState`; the communicator may accept an application/profile unit only while its current snapshot is `AVAILABLE` and exact queue capacity is reserved.
+- Only the persistence thread publishes `PersistenceAdmissionState`; the communicator may accept an application/profile unit only while its current snapshot is `AVAILABLE` and one queue slot is reserved.
 - SQLite application identity and the immutable database schema
   version/fingerprint/group metadata must exactly match the build before
   ordinary persistence admission becomes available.
@@ -2162,9 +2271,9 @@ The persistence thread must not mutate communicator-owned node, message, clock-p
 - `receiver_instances` is the sole persisted `receiver_instance_id` to
   `linux_boot_id` mapping; every other queue or durable entity stores only its
   receiver instance and obtains boot scope through that immutable row.
-- An atomic exact-size `PersistQueue` reservation for a prevalidated fixed-layout `AuthenticatedReadingCandidateV1`/`MessageProfilingV1` unit while persistence admission is available establishes protocol acceptance of that occurrence but not SQLite durability or conflict-free canonical insertion.
+- An atomic one-slot `PersistQueue` reservation for a prevalidated `AuthenticatedReadingCandidateV1`/`MessageProfilingV1` unit while persistence admission is available establishes protocol acceptance of that occurrence but not SQLite durability or conflict-free canonical insertion.
 - A successful pre-TX reservation must publish exactly one complete immutable pair after the terminal radio outcome; persistence accepts only complete profiling rows.
-- No admitted queue unit is silently dropped; an item-specific poison is removed only after its exact fixed-size representation and minimal failure provenance are durably committed to `quarantined_entities`.
+- No admitted queue unit is silently dropped; an item-specific poison is removed only after its canonical tagged logical evidence and minimal failure provenance are durably committed to `quarantined_entities`.
 - Only the communicator creates `DiagnosticV1`; persistence-derived conflicts use profile classification and canonical rows, while asynchronous persistence failures may be exposed through health counters, admission state and quarantine provenance but are not guaranteed to leave durable evidence while SQLite is unavailable.
 - The pilot database uses WAL with `synchronous=FULL`, retains all pilot records automatically, and closes all new ordinary `PersistQueue` admission on low space, disk full, corruption or persistence I/O failure.
 - A communicator-state generation is usable only after durable acknowledgement or explicit startup reconciliation.
@@ -2257,8 +2366,8 @@ At minimum, add tests or simulations for:
 - persistence-unavailable admission for every entity kind increments only the
   original admission-result matrix cell and never constructs a diagnostic
   about that result or makes a second reservation attempt;
-- fixed-size entity construction rejects over-capacity fields before reservation and ACK selection;
-- exact pre-TX pair reservation, fixed-width post-terminal field completion and publication without allocation or serialization;
+- stable entity inputs reject invalid lengths or values before reservation and ACK selection;
+- one-slot pre-TX pair reservation followed by complete frozen-object construction and reference publication without queue serialization;
 - exception finalization as `UNKNOWN_INTERRUPTED` without a partial SQLite row;
 - BUSY timeout;
 - unexpected IRQ combination;
@@ -2315,7 +2424,7 @@ At minimum, add tests or simulations for:
 - receiver-process restart within one Linux boot and documented state loss;
 - automatic receiver-process restart within one Linux boot creates a new `receiver_instance_id` without repeating RTC-to-system-clock bootstrap;
 - Pi reboot changing both identity fields;
-- queue encodings and every receiver-instance-scoped table other than
+- queue entities and every receiver-instance-scoped table other than
   `receiver_instances` omit `linux_boot_id`, and their instance references
   resolve to exactly one lifecycle row;
 - analysis never assigns a clock observation across receiver-instance or Linux-

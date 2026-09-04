@@ -432,8 +432,8 @@ receiver, and resetting `sample_id` would still collide with stored readings.
 
 - A reading occurrence is accepted after it has been authenticated, decoded
   and checked while receiver persistence admission is available, and after one
-  atomic bounded-queue reservation exclusively owns the exact fixed-size unit
-  for its application candidate and complete packet-occurrence profile. The
+  atomic bounded-queue reservation exclusively owns one entity slot for its
+  eventual immutable application-candidate/packet-occurrence-profile unit. The
   communicator does not consult transport-message or
   reading-duplicate history before admission.
 - An ACK does not guarantee durable disk persistence. The receiver may persist
@@ -445,9 +445,9 @@ receiver, and resetting `sample_id` would still collide with stored readings.
   items. Either persistence unavailability or failure to reserve the complete
   pair produces `RETRY_LATER`; partial admission is forbidden.
 - Unsupported and malformed authenticated readings receive their corresponding
-  permanent rejection after persistence admission is available and exact
-  capacity for their occurrence profile is reserved. If either prerequisite
-  fails, they receive `RETRY_LATER` instead. The node
+  permanent rejection after persistence admission is available and one entity
+  slot for their occurrence profile is reserved. If either prerequisite fails,
+  they receive `RETRY_LATER` instead. The node
   retains a permanent rejection for diagnosis but does not keep sending the
   rejected message unchanged.
 - Implausible sensor values are accepted and recorded as anomalous when the
@@ -498,26 +498,25 @@ The receiver processes a packet in this order:
 6. Require the exact 32-byte reading body, decode authenticated `sample_id`, and
    enforce the structural encoding rules above; otherwise select
    `REJECTED_MALFORMED`.
-7. Construct and validate the fixed-layout application/profile unit and
+7. Construct and validate the stable application/profile inputs and
    deterministic candidate `ACCEPTED` ACK without consulting receiver message
-   history. The unit contains that exact ACK frame and preallocated fixed-width
-   slots for all post-TX fields.
+   history. Those inputs include that exact ACK frame.
 8. Require receiver persistence admission to be available, then atomically
-   reserve the unit's exact bounded-queue bytes. If either check fails, select
-   `RETRY_LATER`. The reservation counts as admission but is not visible to the
-   persistence consumer yet.
+   reserve one bounded-queue entity slot for the complete unit. If either check
+   fails, select `RETRY_LATER`. The reservation counts as admission but is not
+   visible to the persistence consumer yet.
 9. After successful admission, select `ACCEPTED`.
 10. Send the selected deterministic ACK, which echoes the uplink `message_id`,
     only if the receiver TX-airtime budget permits it. If admission failed, the
     selected `RETRY_LATER` ACK is constructed after the pair was rejected. Lack
     of ACK budget does not undo validation or the successful reservation.
 11. For a successfully reserved occurrence, after TX, suppression or bounded
-    radio recovery reaches a terminal outcome, finalize `ack_tx_result` and the
-    TX-dependent timestamps by filling only their prevalidated fixed-width
-    slots, then freeze and publish the complete immutable application/profile
-    unit against its exact reservation. This publication performs no new
-    capacity check, allocation or serialization and cannot fail because of
-    queue pressure.
+    radio recovery reaches a terminal outcome, construct one complete frozen
+    application/profile unit containing `ack_tx_result` and the TX-dependent
+    timestamps, then publish that existing object reference against its
+    reservation. Queue publication performs no new capacity check, payload copy
+    or serialization and cannot fail because of queue pressure; Python object
+    construction remains ordinary process work.
 
 The bounded-queue reservation above is volatile capacity accounting. It is
 unrelated to the receiver's separately persisted TX-airtime reservation.
@@ -703,8 +702,8 @@ occurs before deep sleep and outside the 30-second radio-cycle deadline.
 ### Receiver packet log
 
 The receiver attempts to record every packet occurrence delivered by the
-radio. The pilot persistence queue has no priority classes: packet-occurrence
-profiles, application candidates and all other published queue objects have
+radio. The pilot persistence queue has no priority classes: profile-only units,
+atomic measurement/profile units and all other published queue objects have
 equal importance and FIFO treatment. The reception event is captured as Linux
 monotonic time at `RX_DONE`, rather than when the record is written. Canonical
 UTC is derived later from the receiver's same-Linux-boot clock-observation
@@ -717,26 +716,28 @@ never uses that later observation to extrapolate backward across the boundary.
 See
 [`receiver/INTERFACE.md`](../../receiver/INTERFACE.md#clock-observations-and-utc-assignment).
 
-Every queued entity kind has a fixed serialized size. Variable-length protocol
-values use fixed-capacity storage plus an explicit length, and diagnostics use
-fixed fields and bounded buffers rather than dynamically sized queue data.
+`PersistQueue` preallocates 500 generic circular slots and admits by entity
+count only. It stores an opaque reference to each complete immutable typed
+object and performs no normal-path entity encoding, copying, recursive object
+sizing or per-kind byte charging. Fixed-capacity fields such as a received-frame
+buffer remain part of their entity contract rather than queue storage policy.
 
-For every accepted reading occurrence, admission is one atomic exact-size
-reservation for the fixed-layout application candidate and complete
-packet-occurrence profile. Both are published as one immutable queue unit after
-the terminal radio outcome, and persistence does not split the pair across
-transactions. Any authenticated packet eligible for a response requires
-available persistence admission and sufficient exact profile capacity before
-TX. If either prerequisite fails, the receiver selects
-`ACK_RETRY_LATER_DOWNLINK`; packets that cannot be authenticated remain silent.
+For every accepted reading occurrence, admission is one atomic one-slot
+reservation for the eventual application-candidate/packet-occurrence-profile
+unit. The complete pair is published as one immutable queue object after the
+terminal radio outcome, and persistence does not split it across transactions.
+Any authenticated packet eligible for a response requires available
+persistence admission and one free entity slot before TX. If either
+prerequisite fails, the receiver selects `ACK_RETRY_LATER_DOWNLINK`; packets
+that cannot be authenticated remain silent.
 
 Queue exhaustion or unavailable persistence can therefore prevent the receiver
 from retaining the very profile that reports the admission failure. This is an
-explicit pilot exception to the per-occurrence recording requirement. Each
-failed persistence check, profile reservation or best-effort profile admission
-increments bounded counters by reason, including the
-`message_profiling_admission_failures` counter, which is reported later through
-a non-recursive persistence or diagnostic path so that gaps remain observable.
+explicit pilot exception to the per-occurrence recording requirement. After
+each `try_reserve_one()` attempt returns, the communicator increments exactly
+one `persist_queue_admission_counts[entity_kind][result]` cell. The cumulative
+matrix is offered later in `ReceiverHealthRequestV1`; queue-full or persistence-
+unavailable results never cause a recursive diagnostic reservation.
 
 Each record contains:
 
@@ -744,8 +745,6 @@ Each record contains:
 receiver_instance_id
 occurrence_sequence
 received_at_monotonic_us
-persist_queue_used_bytes_before_admission
-persist_queue_capacity_bytes
 received_frame_length
 received_frame
 claimed_node_id
@@ -771,8 +770,6 @@ t6_set_rx_issued_monotonic_us
 `receiver_instance_id` and the monotonically increasing per-instance
 `occurrence_sequence` together identify one logical profiling row.
 `received_at_monotonic_us` is the former `T0` kernel-recorded DIO1 timestamp.
-The queue occupancy and capacity use the same byte-accounting rules as the
-bounded persistence queue and are sampled immediately before admission.
 `MessageProfilingV1` queues only the receiver-instance-scoped monotonic
 reception time. `receiver_instances` is the sole persisted mapping from
 `receiver_instance_id` to `linux_boot_id`; the stored profiling row does not
@@ -830,14 +827,14 @@ frame is constructed before capacity reservation and remains locally owned by
 the communicator until the complete profile is published.
 
 One logical profiling row is inserted once. Every stored field, including its
-persistence classification, is immutable. For a packet that may receive an ACK, the
-communicator constructs the fixed-layout profile and reserves its exact size
-before TX, then fills the preallocated `ack_tx_result` and `T4` through `T6`
-slots after TX, suppression or bounded radio recovery reaches a terminal
-outcome. It freezes and publishes the complete immutable profile against that
-reservation without further allocation or serialization. A packet that cannot
-receive an ACK may instead be returned to RX first and then admitted once as a
-complete profile with `ack_tx_result` set to `NOT_APPLICABLE`.
+persistence classification, is immutable. For a packet that may receive an ACK,
+the communicator validates the stable profile inputs and reserves one entity
+slot before TX. After TX, suppression or bounded radio recovery reaches a
+terminal outcome, it constructs the complete frozen profile containing
+`ack_tx_result` and `T4` through `T6`, then publishes that existing object
+reference without another capacity check, copy or serialization. A packet that
+cannot receive an ACK may instead be returned to RX first and then admitted once
+as a complete profile with `ack_tx_result` set to `NOT_APPLICABLE`.
 
 `ack_tx_result` independently records what happened after selection:
 

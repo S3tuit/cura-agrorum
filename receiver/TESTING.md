@@ -199,7 +199,7 @@ production ports.
 - **Nonce identity:** Verify every ingress authentication and ACK construction uses `node_id || message_id || domain` and never incorporates `sample_id`; use deliberately different transport and sample values.
 - **Acceptance ordering:** Prove an authenticated valid reading becomes accepted only after `PersistenceAdmissionState.AVAILABLE` and successful exact pair reservation, and that airtime suppression cannot reverse that acceptance.
 - **Retry-later selection:** Cover persistence unavailable and queue-full results for every response-eligible authenticated packet, requiring no acceptance, no cached outcome and the deterministic `ACK_RETRY_LATER_DOWNLINK` response when airtime permits.
-- **Profile completeness:** Verify all stable profile fields and the exact selected ACK frame are fixed before ACK selection, while only the preallocated terminal TX-result and optional timestamp slots are completed afterward.
+- **Profile completeness:** Verify all stable profile inputs and the exact selected ACK frame are fixed before ACK selection, then require one complete immutable typed profile containing the terminal TX result and optional timestamps to be published against the already reserved queue slot.
 - **Ingress properties:** Use Hypothesis to generate valid and invalid headers, bodies and authenticated frames around every integer and length boundary, comparing the result with a small independent validation-order model.
 
 ### Hardware tests
@@ -245,27 +245,40 @@ production ports.
 
 ### Host tests
 
-- **Exact byte and entity limits:** For every `PersistQueueEntityKind`, reserve at zero, one-below, exact and one-above byte/count boundaries using generated fixed sizes and verify checked accounting without Python-object-size estimates.
-- **Atomic measurement/profile reservation:** Require one token to own the complete fixed-size pair and prove neither batch selection nor cancellation can expose or split a partial measurement/profile unit.
-- **Profile-only reservation:** Verify response-eligible rejections and silent occurrences reserve exactly the profile-only size and preserve their distinct response policies.
-- **Reservation lifecycle:** Cover reserve, fill, publish, permitted pre-response cancel, double publish, double cancel, stale token and size mismatch, with invariant violations rejected deterministically.
-- **Outstanding reservation visibility:** Prove reserved capacity counts immediately but the persistence consumer cannot claim the unit until publication.
-- **Publication guarantee:** Fill only prevalidated fixed-width terminal slots and publish under full queue pressure without a second capacity check, allocation-dependent failure or serialization decision.
+- **Constructor and slot bounds:** Reject capacities below one or above the pilot maximum of 500, construct both boundary values, and prove all backing arrays have fixed identity and length for the queue lifetime.
+- **Exact entity-count limit:** Reserve at empty, one-below, exact and full boundaries with mixed entity kinds and verify every reservation consumes exactly one slot without byte charges or Python-object-size inspection.
+- **Atomic measurement/profile reservation:** Require one token to own one slot for the complete typed pair and prove neither batch selection nor cancellation can expose or split a partial measurement/profile unit.
+- **Profile-only reservation:** Verify response-eligible rejections and silent occurrences reserve one ordinary slot and preserve their distinct response policies outside the queue.
+- **Reservation lifecycle:** Cover reserve, publish an existing immutable object, permitted pre-response cancel, double publish, double cancel, stale and foreign tokens, with invariant violations rejected deterministically.
+- **Outstanding reservation visibility:** Prove a reservation counts immediately but the persistence consumer cannot claim it until publication.
+- **Opaque publication:** Publish under full queue pressure and require the consumer to receive the identical object reference without a second capacity check, copying, serialization, field validation or kind-specific builder.
 - **FIFO across entity kinds:** Interleave measurement/profile, profile-only, clock observation, health and diagnostic units and require global publication order with no priority, sampling, eviction or reordering.
 - **Persistence admission gate:** Parameterize every unavailable state and prove new reservations return `PERSISTENCE_UNAVAILABLE`, already published work remains owned and synchronous control commands retain their separate path.
 - **Admission-count matrix:** For every entity kind and result, verify exactly one matrix cell increments per reservation call, including a successful health request containing its own updated `RESERVED` count.
 - **Non-recursive diagnostics:** Fail an ordinary entity admission and a diagnostic admission with queue-full and persistence-unavailable outcomes and require no diagnostic sequence allocation, no diagnostic construction and no second reservation.
 - **Claim and disposition ownership:** Verify claimed units remain queue-owned through attempt, rollback, replay and quarantine work and are released only by confirmed or reconciled durable disposition.
+- **Quarantine evidence:** Round-trip every allowed neutral value kind and queue-unit shape through canonical tagged JSON; preserve invalid field types, lengths and arbitrary-size integers exactly; reject unsupported/cyclic values, duplicate or unknown keys/tags, noncanonical JSON/base64/integers, excessive depth/nodes/output, and any attempt to interpret decoded evidence as a production entity.
+- **Poison retention:** Make evidence encoding fail for an unsupported or over-limit poisoned value and prove the active FIFO head and following entries remain claimed and owned rather than being acknowledged or bypassed.
 - **Close and wake semantics:** Cover empty and nonempty closure, blocked producer/consumer wakeup, publication racing closure and shutdown drain without lost items or indefinite waits.
-- **Queue state-machine properties:** Generate reservation, publication, claim, rollback, commit and close sequences against an independent capacity/FIFO model and assert byte, count, token and ownership invariants after every step.
+- **Queue state-machine properties:** Generate reservation, publication, claim, rollback, durable acknowledgement and close sequences against an independent entity-count/FIFO model and assert count, token and ownership invariants after every step.
+- **Deterministic SPSC interleavings:** Use named barriers/events and bounded joins with real `threading.Thread` producer and consumer calls to cover admission-state publication versus reservation, publication versus claim, acknowledgement versus a new reservation, retry, closure and clear/recheck wakeup ordering without timing sleeps.
 
 ### Hardware tests
 
-- **Configured-capacity allocation:** Construct the approximately 50 MB pilot queue on the Pi, populate each entity mix to configured limits and record resident-memory overhead while enforcing exact logical capacity.
+- **Configured-capacity construction:** Construct the production 500-slot queue on the Pi, verify its fixed backing lengths and exercise every slot without recursive object-size or RSS characterization.
 - **Sustained handoff:** Run communicator-style publication and persistence-style batch claims concurrently for a bounded interval and verify FIFO identities, stable accounting and no deadlock on the target interpreter.
-- **Queue-pressure recovery:** Pause the consumer until both capacity gates reject new work, resume it and prove admission recovers without eviction, reordering or a recursive diagnostic storm.
-- **Target shutdown drain:** Signal the test process with a populated queue and verify the bounded drain/stop protocol completes or reports a non-clean outcome without hanging.
-- **Target load latency:** Measure reservation and publication latency under representative Pi CPU and SQLite load, record percentiles and confirm those in-memory operations remain bounded independently of disk commit latency.
+- **Queue-pressure recovery:** Pause the consumer until the 500-slot entity bound rejects new work, resume it and prove admission recovers without eviction, reordering or a recursive diagnostic storm.
+- **Target queue close/drain:** Close a populated queue during sustained handoff and verify existing reservations may finish, every published entity drains and both threads terminate without hanging. Process-signal and owning-service shutdown policy belong to later lifecycle integration tests.
+- **Target lock latency:** Measure reservation, publication, claim and acknowledgement latency under sustained SPSC contention on the Pi and record percentiles plus maxima. The bounded run must finish without deadlock, but Linux scheduling supplies no hard per-call latency ceiling; representative external CPU and SQLite load belong to later integration tests.
+
+The `PersistQueue` implementation stage owns the ring, typed handoff values,
+evidence codec and queue-only coordination assertions above. Protocol response
+selection, admission-matrix updates and non-recursive diagnostic policy remain
+future communicator work; SQLite dispositions, the persistence worker and
+process-signal lifecycle behavior remain future persistence/integration work.
+Recursive heap sizing and RSS-based admission are deliberately not test
+requirements for the 500-slot pilot unless later measurements reopen that
+decision.
 
 ## Persistence
 
@@ -291,7 +304,7 @@ production ports.
 - **Retry scheduler:** Verify finite per-attempt SQLite waits and interruptible 250 ms doubling backoff capped at 5 seconds, no maximum retry count, no early retry after unrelated wakeup and recovery only after validation plus commit/reconciliation.
 - **Retained frozen batch:** On global failure, retain original immutable units and every derived classification/enrichment value without reconstruction or poison classification.
 - **Corruption preservation:** On corruption, close admission and preserve database, WAL and shared-memory files together without delete, truncate, rebuild or silent epoch replacement.
-- **Poison isolation:** Require a representation-valid entity-specific failure to reproduce alone before quarantine, then store exact canonical bytes and provenance durably before later valid units proceed.
+- **Poison isolation:** Require an entity-specific failure to reproduce alone before quarantine, then store exact canonical `QuarantineEvidenceV1` bytes and provenance durably before later valid units proceed.
 - **Non-quarantinable clock boundary:** Reproduce an isolated `ClockObservationV1` failure and require retained queue head plus incompatible admission, with no bypass or quarantine.
 - **Quarantine reconciliation:** Cover confirmed, definite-failure and ambiguous quarantine commits, accepting only an exactly matching frozen row and retaining the active lease otherwise.
 - **No automatic retention:** Populate every retained table and prove normal operation and checkpointing never delete active-epoch canonical, profile, health, diagnostic or quarantine history.

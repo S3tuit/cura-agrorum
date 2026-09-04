@@ -23,7 +23,7 @@ from .receiver_enums_generated import (
     SystemTimeQuality,
 )
 
-RECEIVER_ENTITY_MANIFEST_SHA256 = '342ceabaa737daf5134149d3802d0e0a87f1a3d862b10dd55e15726c6161af41'
+RECEIVER_ENTITY_MANIFEST_SHA256 = 'c22b7dcec9d66a88280268398de9d9b2d30a2aa21eb153153768b624314596d2'
 
 __all__ = [
     "RECEIVER_ENTITY_MANIFEST_SHA256",
@@ -173,7 +173,6 @@ RECEIVER_HEALTH_V1_COLUMNS = (
     'batch_transaction_commits',
     'batch_transaction_failures',
     'batch_entities_committed',
-    'batch_encoded_bytes_committed',
     'batch_commit_duration_total_us',
     'batch_commit_duration_max_us',
     'wal_checkpoint_attempts',
@@ -194,8 +193,6 @@ MESSAGE_PROFILE_ROW_V1_COLUMNS = (
     'receiver_instance_id',
     'occurrence_sequence',
     'received_at_monotonic_us',
-    'persist_queue_used_bytes_before_admission',
-    'persist_queue_capacity_bytes',
     'received_frame_length',
     'received_frame',
     'claimed_control',
@@ -295,8 +292,6 @@ class MessageProfilingV1:
     receiver_instance_id: bytes
     occurrence_sequence: int
     received_at_monotonic_us: int
-    persist_queue_used_bytes_before_admission: int
-    persist_queue_capacity_bytes: int
     received_frame_length: int | None
     received_frame: bytes | None
     claimed_control: int | None
@@ -442,7 +437,6 @@ class ReceiverHealthV1:
     batch_transaction_commits: int
     batch_transaction_failures: int
     batch_entities_committed: int
-    batch_encoded_bytes_committed: int
     batch_commit_duration_total_us: int
     batch_commit_duration_max_us: int
     wal_checkpoint_attempts: int
@@ -543,7 +537,6 @@ def receiver_health_v1_parameters(entity: ReceiverHealthV1) -> tuple[object, ...
         entity.batch_transaction_commits,
         entity.batch_transaction_failures,
         entity.batch_entities_committed,
-        entity.batch_encoded_bytes_committed,
         entity.batch_commit_duration_total_us,
         entity.batch_commit_duration_max_us,
         entity.wal_checkpoint_attempts,
@@ -568,8 +561,6 @@ def message_profile_row_v1_parameters(entity: MessageProfileRowV1) -> tuple[obje
         entity.profile.receiver_instance_id,
         entity.profile.occurrence_sequence,
         entity.profile.received_at_monotonic_us,
-        entity.profile.persist_queue_used_bytes_before_admission,
-        entity.profile.persist_queue_capacity_bytes,
         entity.profile.received_frame_length,
         entity.profile.received_frame,
         entity.profile.claimed_control,

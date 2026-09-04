@@ -21,10 +21,13 @@ support/
   models/         small independent behavioral oracles
 ```
 
-At this stage only `fakes/os_clock.py` exists. It implements the already defined
-monotonic and realtime clock capabilities. Chrony, DS3231, SX1262, host-health,
-filesystem and persistence fakes wait for their production interfaces and
-component tests.
+At this stage `fakes/os_clock.py` implements the already defined monotonic and
+realtime clock capabilities, `models/persist_queue.py` is the independent
+list-based oracle for the production queue's observable state machine, and
+`coordination/threads.py` provides named checked workers plus bounded deadlock
+detection for the queue's real-thread tests. Chrony, DS3231, SX1262, host-
+health, filesystem and persistence fakes wait for their production interfaces
+and component tests.
 
 ## Builders
 
@@ -51,6 +54,11 @@ Add reviewed examples that establish the model's boundaries before comparing it
 with production behavior or using it with Hypothesis. Add an automated import
 boundary for `support/models` when the first model is introduced.
 
+The `PersistQueue` model may reuse the stable `AdmissionResult` enum solely as
+an output label. It must not import the production queue, quarantine-evidence
+codec, entity binders or another production algorithm; its ordinary list and
+primitive counters remain an independently implemented oracle.
+
 ## Thread and subprocess coordination
 
 Thread tests coordinate at named, documented safe boundaries using explicit
@@ -59,8 +67,11 @@ does not represent receiver time and must not be used to choose a winner in a
 race. Host timing behavior uses an injected manual clock, and tests do not use
 `sleep()` to manufacture an interleaving.
 
-Create a shared thread helper only after a real concurrency test defines the
-needed arrival, inspection and release lifecycle. Create subprocess support only
+The queue thread helper captures worker exceptions and performs bounded joins;
+each test still declares its own named `Event` or `Barrier` arrival, inspection
+and release boundaries. It never sleeps or chooses an interleaving.
+
+Create subprocess support only
 with the first crash test, using an explicit child-readiness boundary, a bounded
 join, exact child-process termination and preservation of database evidence.
 A simulated process crash must not be described as physical power-loss proof.

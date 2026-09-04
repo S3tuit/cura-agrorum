@@ -75,7 +75,8 @@ its random ID to the receiver's active set. It refuses an existing header.
 the header's previous ID, while `--rotate-node-identity` retires the previous
 ID. Both secret files are written with mode `0600`; existing secret files
 accessible by group or others are rejected. The tools print public IDs and
-paths but never keys.
+paths but never keys. These host-side operations update staged credentials and
+receiver configuration only; they do not erase storage on a physical node.
 
 The receiver-group loader also requires the state file to be owned by the
 expected receiver service UID (the effective UID by default). It walks every
@@ -118,11 +119,25 @@ Unknown or revoked IDs receive no response. Historical readings are not erased
 by protocol-level revocation.
 
 When an identity must be replaced, use a new random `node_id` and its newly
-derived node key:
+derived node key. Identity rotation is an operator-controlled destructive
+transition, not a migration of node-local state:
 
-1. Add the new ID to the receiver allowlist.
-2. Provision the node with the new ID and key and verify communication.
-3. Revoke the old ID.
+1. Stop the node's production firmware and prevent further transmission.
+2. Add or stage the new ID in the receiver configuration and generate the new
+   node identity and key.
+3. Erase all node-local persistence: the entire NVS namespace, all LittleFS
+   logs and retained RTC state. A full-chip erase followed by a cold power cycle
+   satisfies this pilot procedure; the LittleFS-only `erase_storage`
+   maintenance application does not.
+4. Build and flash production firmware containing only the new identity, then
+   allow it to transmit and verify communication.
+5. Revoke the old ID if the selected provisioning operation did not already do
+   so.
+
+This erasure deliberately discards pending readings, persisted backlog frames,
+quarantined readings and node diagnostic and delivery logs from the retired
+identity. Receiver-side historical records remain associated with the retired
+ID and are not erased by rotation.
 
 If compromise or theft is suspected, revoke the old ID before provisioning the
 replacement, accepting the resulting downtime. Compromise of one node key
@@ -396,7 +411,10 @@ The pilot node treats a missing local counter as fresh provisioning and cannot
 distinguish that state from NVS erasure or rollback. Erasing or restoring a
 counter while retaining the same node identity and key is prohibited because a
 subsequent uplink could reuse a CCM nonce. Recovery in the pilot requires
-rotating both the node identity and key before transmission resumes.
+rotating both the node identity and key before transmission resumes. Every
+operator-initiated identity rotation also follows the destructive node-local
+storage procedure above, so no counter or identity-bound backlog state crosses
+an identity-lifetime boundary.
 
 Automatic recovery is deferred to a coordinated protocol, node and receiver
 revision. Before sending ordinary traffic, a node missing trusted counter state
@@ -447,9 +465,9 @@ receiver, and resetting `sample_id` would still collide with stored readings.
 - Unsupported and malformed authenticated readings receive their corresponding
   permanent rejection after persistence admission is available and one entity
   slot for their occurrence profile is reserved. If either prerequisite fails,
-  they receive `RETRY_LATER` instead. The node
-  retains a permanent rejection for diagnosis but does not keep sending the
-  rejected message unchanged.
+  they receive `RETRY_LATER` instead. The node attempts to retain a permanently
+  rejected reading for diagnosis, but that quarantine copy is best-effort; the
+  node favors backlog progress if local archival fails.
 - Implausible sensor values are accepted and recorded as anomalous when the
   packet is otherwise valid.
 - Invalid authentication or an unusable header receives no response.
@@ -622,10 +640,16 @@ The wake sequence is:
 3. Continue sending backlog readings until it is empty or either wake limit
    prevents another complete attempt.
 4. On `RETRY_LATER`, stop all transmission for this wake. Retain the reading.
-5. On a permanent rejection, quarantine the reading for diagnosis and do not
-   send it unchanged again. A rejected current reading ends the wake without
-   backlog processing; a rejected backlog reading does not prevent trying the
-   next backlog entry while both budgets allow it.
+5. On a permanent rejection, attempt to quarantine the reading for diagnosis,
+   then attempt to remove its known persisted pending copy even if the
+   quarantine append failed. A quarantine failure is reported through the
+   best-effort diagnostic path; if pending removal succeeds, the rejected
+   payload may therefore have no remaining node-local copy. This progress-first
+   rule prevents a rejected tail from indefinitely obstructing older backlog
+   entries. A rejected current reading ends the wake without backlog processing;
+   a rejected backlog reading permits the next backlog entry while both budgets
+   allow it and removal succeeded. A removal failure leaves the pending copy in
+   place and stops backlog drainage.
 6. On silence at `retry_at`, retain the reading and make another attempt if both
    limits allow it.
 7. At the radio-cycle deadline, or when no further attempt can fit, stop radio
@@ -633,10 +657,21 @@ The wake sequence is:
 8. Flush persistent logs and state, then enter deep sleep. This final work may
    extend the total awake duration beyond 30 seconds.
 
-There is no protocol-level backlog maximum or expiration policy during the
-pilot. Storage must be provisioned for the worst-case pilot duration. A stored
-reading is removed from the normal backlog only after authenticated `ACCEPTED`;
-permanently rejected readings are retained separately for diagnosis.
+There is no time-based backlog expiration policy during the pilot, but the node
+enforces a 512 KiB `pending.log` limit. When the next append would exceed that
+limit, pressure compaction retains the newest complete pending logical items
+whose combined encoded size is at most 256 KiB and discards every older item. A
+reading and its optional bound backlog frame are retained or discarded as one
+item. Pressure eviction does not require an authenticated ACK and may therefore
+discard an unaccepted reading. Storage is provisioned so this remains an
+exceptional pilot boundary rather than routine expiration.
+
+Outside pressure eviction, a stored reading leaves the normal backlog after an
+authenticated `ACCEPTED` or after an authenticated permanent rejection triggers
+the best-effort quarantine transition described above. Quarantine retention is
+not guaranteed: after the quarantine attempt, a known persisted rejected
+reading is removed even if archival failed, so sensing and backlog progress take
+priority over preserving the rejected payload.
 
 ## Pilot diagnostic logs
 
@@ -675,17 +710,18 @@ attempt_count                  relative to this wake cycle
 final_result
 ```
 
-`final_result` is one of:
+`final_result` uses the persisted node-delivery mapping:
 
-```text
-ACCEPTED
-RETRY_LATER
-REJECTED_UNSUPPORTED
-REJECTED_MALFORMED
-NO_ACK_RADIO_DEADLINE
-NO_ACK_AIRTIME_LIMIT
-LOCAL_RADIO_ERROR
-```
+| Value | Result | Meaning |
+|---:|---|---|
+| `0` | `INVALID` | Reserved uninitialized value; never written as a completed result |
+| `1` | `ACCEPTED` | Authenticated `ACCEPTED` ACK |
+| `2` | `RETRY_LATER` | Authenticated `RETRY_LATER` ACK |
+| `3` | `UNSUPPORTED` | Authenticated `REJECTED_UNSUPPORTED` ACK |
+| `4` | `MALFORMED` | Authenticated `REJECTED_MALFORMED` ACK |
+| `5` | `AIRTIME_BUDGET_END` | No terminal ACK before another attempt ceased to fit the charged-TX budget |
+| `6` | `RADIO_CYCLE_DEADLINE` | No terminal ACK before another attempt ceased to fit the 30-second radio-cycle deadline |
+| `7` | `LOCAL_RADIO_ERROR` | Local initialization, TX, IRQ or RX operation failed |
 
 The start and finish bracket the complete delivery episode, including all
 retries; they do not bracket individual attempts. `DELIVERY_STARTED` means that

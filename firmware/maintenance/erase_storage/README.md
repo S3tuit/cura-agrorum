@@ -20,6 +20,22 @@ or restored from an older image, rotate both the node identity and key before
 the node transmits again. A protocol recovery handshake is deferred; see the
 protocol and architecture documentation.
 
+This application is not the erase step for identity rotation because it
+deliberately preserves NVS. For an operator-controlled rotation, stop production
+firmware, generate the new identity, erase the complete flash, cold-power-cycle
+the node to clear retained RTC state, then build and flash production firmware
+containing the new identity. For example, the destructive flash step is:
+
+```bash
+source ~/esp/esp-idf/export.sh
+idf.py -p PORT erase-flash
+```
+
+Do not let the old production firmware run after that erase, and do not let the
+new identity transmit before the complete node-local erase has finished. The
+rotation deliberately discards the node's pending, quarantine, diagnostic and
+delivery logs; it does not erase receiver-side historical records.
+
 Build and flash from this directory:
 
 ```bash

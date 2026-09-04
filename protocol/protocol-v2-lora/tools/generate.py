@@ -82,6 +82,10 @@ SUPPORTED_CONSTRAINTS = {
 
 C_PREFIX = "CURA_LORA_V2"
 C_TYPE_PREFIX = "cura_lora_v2"
+V2_CCM_NONCE_SIZE_BYTES = 13
+V2_CCM_TAG_SIZE_BYTES = 8
+V2_READING_FRAME_SIZE_BYTES = 54
+V2_ACK_FRAME_SIZE_BYTES = 23
 
 
 class SchemaError(ValueError):
@@ -637,10 +641,10 @@ def validate_ccm(
 ) -> None:
     require_equal(ccm, "algorithm", "AES-CCM-128", "ccm")
     require_equal(ccm, "key_size_bytes", 16, "ccm")
-    nonce_size = require_int(ccm, "nonce_size_bytes", "ccm", 7, 13)
-    tag_size = require_int(ccm, "tag_size_bytes", "ccm", 4, 16)
-    if tag_size not in {4, 6, 8, 10, 12, 14, 16}:
-        raise SchemaError("ccm.tag_size_bytes is not an AES-CCM tag size")
+    require_equal(
+        ccm, "nonce_size_bytes", V2_CCM_NONCE_SIZE_BYTES, "ccm"
+    )
+    require_equal(ccm, "tag_size_bytes", V2_CCM_TAG_SIZE_BYTES, "ccm")
 
     aad = require_object(ccm, "aad", "ccm")
     require_equal(aad, "source", "clear_header", "ccm.aad")
@@ -651,7 +655,9 @@ def validate_ccm(
         raise SchemaError("ccm.aad.fields must contain the complete clear header")
 
     nonce = require_object(ccm, "nonce", "ccm")
-    require_equal(nonce, "size_bytes", nonce_size, "ccm.nonce")
+    require_equal(
+        nonce, "size_bytes", V2_CCM_NONCE_SIZE_BYTES, "ccm.nonce"
+    )
     nonce_fields = validate_record(
         {
             "wire_size_bytes": nonce["size_bytes"],
@@ -659,6 +665,11 @@ def validate_ccm(
         },
         "ccm.nonce",
         descriptions_required=False,
+    )
+    require_exact_fields(
+        nonce_fields,
+        (("node_id", "bytes[8]"), ("message_id", "u32"), ("domain", "u8")),
+        "ccm.nonce",
     )
     header_by_name = {field["name"]: field for field in header_fields}
     for field in nonce_fields:
@@ -680,9 +691,14 @@ def validate_frames(
 ) -> None:
     header_size = clear_header["wire_size_bytes"]
     tag_size = ccm["tag_size_bytes"]
-    for frame_name, body_name, body in (
-        ("reading", "reading_body", reading_body),
-        ("ack", "ack_body", ack_body),
+    for frame_name, body_name, body, exact_frame_size in (
+        (
+            "reading",
+            "reading_body",
+            reading_body,
+            V2_READING_FRAME_SIZE_BYTES,
+        ),
+        ("ack", "ack_body", ack_body, V2_ACK_FRAME_SIZE_BYTES),
     ):
         frame = require_object(frames, frame_name, "frames")
         frame_context = f"frames.{frame_name}"
@@ -707,6 +723,9 @@ def validate_frames(
         expected_frame_size = header_size + body["wire_size_bytes"] + tag_size
         require_equal(
             frame, "sx1262_payload_size_bytes", expected_frame_size, frame_context
+        )
+        require_equal(
+            frame, "sx1262_payload_size_bytes", exact_frame_size, frame_context
         )
 
 

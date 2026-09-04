@@ -363,8 +363,9 @@ but never prevents the ESP32 from entering deep sleep.
   durably binds its exact backlog frame before TX; later-wake retries reuse that
   binding.
 - An invalid ACK never changes delivery or persistence state.
-- A pending reading is removed only after authenticated `ACCEPTED` or after a
-  permanent rejection has triggered a quarantine attempt.
+- A pending reading is removed after authenticated `ACCEPTED`, after a
+  permanent rejection has triggered a quarantine attempt, or when bounded
+  pending-log pressure compaction evicts it under the retention policy below.
 - `RETRY_LATER` stops all transmissions for the wake.
 - Current delivery always precedes backlog drainage.
 - The charged-TX budget and radio-cycle deadline are independent limits.
@@ -408,6 +409,14 @@ maintenance application formats only LittleFS and deliberately preserves NVS.
 An automatic counter-recovery handshake is deferred to a coordinated protocol,
 node and receiver revision; the protocol document defines the required safety
 properties of that future work.
+
+Every operator-initiated identity rotation is a destructive boundary for
+node-local state. Before production firmware using the new identity may
+transmit, the operator erases NVS, all LittleFS logs and retained RTC state.
+Pending readings and exact backlog-frame bindings from the retired identity are
+discarded rather than migrated; receiver-side historical records remain. This
+full-device rotation procedure is distinct from the ordinary LittleFS-only
+maintenance application.
 
 ## RTC-state lifecycle
 

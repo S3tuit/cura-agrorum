@@ -250,6 +250,14 @@ application preserves NVS; if counter state is lost or rolled back, rotate both
 the identity and key before any further transmission. Automatic recovery is
 deferred to a future protocol and receiver handshake.
 
+Identity rotation is an operator-controlled destructive transition. Before the
+new identity transmits, erase all node-local persistence, including NVS,
+LittleFS logs and retained RTC state. Do not migrate pending readings or bound
+backlog frames across the identity-lifetime boundary. Receiver-side historical
+records are outside this node-local erase. The ordinary `erase_storage`
+maintenance application is not this transition because it deliberately
+preserves NVS.
+
 Its argument, lazy-NVS, read, set and commit behavior mirrors
 `claim_sample_id`, but diagnostics identify `NVS_MESSAGE_COUNTER` and exhaustion
 returns `CURAG_EMESSAGE_ID_EXHAUSTED`. On failure `node_core` constructs no

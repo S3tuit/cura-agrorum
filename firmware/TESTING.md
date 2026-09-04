@@ -244,6 +244,11 @@ the same strict warnings, ASan and UBSan as the other native component tests.
 - Initialization applies the complete pilot profile: 868.1 MHz, SF7, BW125,
   CR4/5, +14 dBm, preamble 8, explicit header, payload CRC, private sync word,
   40 us ramp, boosted RX and the selected regulator mode.
+- The host fake validates portable initialization policy and profile values,
+  but does not execute ESP-IDF backend register work such as the SX1262
+  TX-clamp workaround. The firmware build compile-links that production path;
+  its electrical effect remains part of the deliberately deferred radio
+  hardware validation.
 - The first transmit initializes once; repeated TX does not repeat full
   initialization, and initialization failure is cached.
 - Uplink selects normal IQ; downlink selects inverted IQ; TX after downlink RX

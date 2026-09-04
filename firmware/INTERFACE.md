@@ -1408,6 +1408,8 @@ operations is part of the public interface.
   ISR timestamp. A component-owned static binary semaphore wakes the blocking
   caller; the component does not consume a task-notification slot.
 - BUSY waits are bounded to 10 ms, with 20 ms allowed after hardware reset.
+  After reset and confirmed `STDBY_RC`, cold initialization applies the
+  vendored `sx126x_cfg_tx_clamp` workaround before the remaining pilot profile.
   The SX1262 TX watchdog is programmed to expire 5 ms before the caller's
   absolute deadline when enough time remains. The software deadline remains
   authoritative. A second post-setup check rejects the operation before

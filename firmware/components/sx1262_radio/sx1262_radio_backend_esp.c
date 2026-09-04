@@ -475,6 +475,13 @@ bool sx1262_radio_backend_initialize(const sx1262_radio_profile_t *profile,
     return false;
   }
   prepare_driver_call(CURAG_RADIO_STAGE_WRITE_COMMAND,
+                      SX1262_OPCODE_WRITE_REGISTER);
+  if (finalize_driver_call(
+          sx126x_cfg_tx_clamp(&s_backend), CURAG_RADIO_STAGE_WRITE_COMMAND,
+          SX1262_OPCODE_WRITE_REGISTER, error) != SX1262_COMMAND_CONFIRMED) {
+    return false;
+  }
+  prepare_driver_call(CURAG_RADIO_STAGE_WRITE_COMMAND,
                       SX1262_OPCODE_SET_DIO3_TCXO);
   if (finalize_driver_call(
           sx126x_set_dio3_as_tcxo_ctrl(

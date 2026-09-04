@@ -1010,7 +1010,8 @@ checks and by the ISR, while a static binary semaphore wakes the waiting task.
 The selected Waveshare Pico-LoRa-SX1262-868M uses its onboard DIO2 RF switch,
 DIO3 1.7 V TCXO and the SX1262 DC-DC regulator. SPI runs at 8 MHz; the seven
 ESP32-C6 pins are provisional component Kconfig values until the board is
-assembled.
+assembled. Every reset or cold-start initialization applies Semtech's SX1262
+TX-clamp workaround before configuring the pilot profile.
 
 BUSY waits are bounded to 10 ms, reset startup to 20 ms and the radio TX
 watchdog to five milliseconds before the caller deadline when representable.

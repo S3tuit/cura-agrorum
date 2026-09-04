@@ -388,6 +388,7 @@ set(
   unexpected_irq_reports_device_error
   receive_exact_packet_and_iq_transition
   receive_pending_irq_at_deadline_wins
+  receive_setup_crossing_deadline_does_not_arm
   receive_snapshots_before_clear_and_rearms
   receive_deadline_keeps_rx_armed
   receive_discards_phy_errors
@@ -397,7 +398,8 @@ set(
   receive_local_error_is_distinct
   unexpected_receive_irq_fails
   sleep_lifecycle
-  sleep_failure_retries_and_preserves_first_error
+  sleep_standby_failure_blocks_sleep_and_retries
+  sleep_command_failure_retries
 )
 
 foreach(SCENARIO IN LISTS SX1262_RADIO_TEST_SCENARIOS)

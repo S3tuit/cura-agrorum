@@ -294,6 +294,7 @@ target_include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/fakes
     ${FIRMWARE_ROOT}/components/node_core/include
     ${FIRMWARE_ROOT}/components/node_platform_esp/include
+    ${FIRMWARE_ROOT}/components/protocol_v2_lora/include
 )
 target_compile_features(test_node_platform_esp PRIVATE c_std_11)
 target_compile_options(

@@ -12,6 +12,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "protocol_v2_lora_schema_generated.h"
 
 #define NODE_PLATFORM_ESP_FATAL_RESTART_DELAY_MS UINT32_C(60000)
 
@@ -49,10 +50,48 @@ static uint32_t uniform_u32_inclusive(void *context, uint32_t minimum,
 static uint8_t get_reset_reason(void *context) {
   (void)context;
   const int reason = (int)esp_reset_reason();
-  if (reason < 0 || reason > (int)UINT8_MAX) {
-    return (uint8_t)ESP_RST_UNKNOWN;
+
+  switch (reason) {
+  case ESP_RST_UNKNOWN:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_UNKNOWN;
+  case ESP_RST_POWERON:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_POWERON;
+  case ESP_RST_EXT:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_EXT;
+  case ESP_RST_SW:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_SW;
+  case ESP_RST_PANIC:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_PANIC;
+  case ESP_RST_INT_WDT:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_INT_WDT;
+  case ESP_RST_TASK_WDT:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_TASK_WDT;
+  case ESP_RST_WDT:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_WDT;
+  case ESP_RST_DEEPSLEEP:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_DEEPSLEEP;
+  case ESP_RST_BROWNOUT:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_BROWNOUT;
+  case ESP_RST_SDIO:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_SDIO;
+  case ESP_RST_USB:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_USB;
+  case ESP_RST_JTAG:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_JTAG;
+  case ESP_RST_EFUSE:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_EFUSE;
+  case ESP_RST_PWR_GLITCH:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_PWR_GLITCH;
+  case ESP_RST_CPU_LOCKUP:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_CPU_LOCKUP;
+  default:
+    break;
   }
-  return (uint8_t)reason;
+
+  if (reason >= 16 && reason <= (int)UINT8_MAX) {
+    return (uint8_t)reason;
+  }
+  return CURA_LORA_V2_RESET_REASON_ESP_RST_UNKNOWN;
 }
 
 static void enter_deep_sleep_for(void *context, uint64_t duration_us) {

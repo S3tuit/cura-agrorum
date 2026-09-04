@@ -1,9 +1,11 @@
 # Firmware testing
 
 Status: the `node_core`, `node_persistence`, `node_sensors`, `sx1262_radio` and
-platform-port host matrices and the `node_persistence` on-device matrix are
-implemented. The remaining RTC, radio and sensor on-device, platform-port, and
-`node_core` integration suites below are agreed but not yet implemented.
+platform-port host matrices, the `node_persistence` on-device matrix, and the
+platform-port clock, randomness and timer-deep-sleep on-device cases are
+implemented. The remaining RTC, radio and sensor on-device suites, the
+platform-port shared-radio-clock and software-reset cases, and the `node_core`
+integration suite below are agreed but not yet implemented.
 
 ## Philosophy and build
 

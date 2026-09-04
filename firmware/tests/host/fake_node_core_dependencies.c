@@ -209,6 +209,12 @@ size_t fake_node_core_trace_find(fake_node_core_trace_t value, size_t start) {
   return SIZE_MAX;
 }
 
+void node_core_test_observe_rtc_precommit(const node_rtc_record_t *record) {
+  assert(record != NULL);
+  fake_node_core.rtc_at_precommit = *record;
+  fake_node_core.rtc_precommit_observation_count++;
+}
+
 static uint64_t fake_monotonic_us(void *context) {
   (void)context;
   if (fake_node_core.deep_sleep_call_count != 0U) {

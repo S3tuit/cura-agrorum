@@ -326,6 +326,47 @@ static bool airtime_budget_is_shared_across_backlog(void) {
   return true;
 }
 
+static bool wall_clock_deadline_is_shared_across_backlog(void) {
+  node_rtc_record_t rtc;
+  node_platform_ports_t platform;
+  core_test_setup(&rtc, &platform);
+  const cura_lora_v2_reading_t backlog = core_test_reading(0U);
+  fake_node_core_add_pending(0U, &backlog);
+  fake_node_core.claimed_sample_id = 1U;
+
+  const uint64_t deadline_us =
+      fake_node_core.now_us + NODE_CORE_RADIO_CYCLE_LIMIT_US;
+  const uint64_t backlog_admitted_at_us =
+      deadline_us - core_test_reading_min_tx_window_us();
+  const uint64_t current_done_us = backlog_admitted_at_us - UINT64_C(20000);
+  CORE_TEST_ASSERT(core_test_script_ack(
+      CORE_TEST_FIRST_MESSAGE_ID, CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
+      CURA_LORA_V2_ACK_STATUS_ACCEPTED,
+      current_done_us - core_test_reading_airtime_us(), current_done_us,
+      backlog_admitted_at_us));
+
+  const uint64_t backlog_set_us = deadline_us - core_test_reading_airtime_us();
+  fake_node_core_script_tx_done(backlog_set_us, deadline_us);
+  fake_node_core_script_rx_deadline(deadline_us);
+
+  core_test_run(&rtc, &platform);
+
+  CORE_TEST_ASSERT_EQ_SIZE(2U, fake_node_core.transmission_count);
+  CORE_TEST_ASSERT_EQ_U64(deadline_us,
+                          fake_node_core.transmissions[0].deadline_us);
+  CORE_TEST_ASSERT_EQ_U64(deadline_us,
+                          fake_node_core.transmissions[1].deadline_us);
+  CORE_TEST_ASSERT_EQ_SIZE(1U, fake_node_core.pending_count);
+  CORE_TEST_ASSERT_EQ_U32(0U,
+                          fake_node_core.pending[0].value.reading.sample_id);
+  CORE_TEST_ASSERT_EQ_U32(2U, rtc.metrics.cycle_tx_attempts);
+  CORE_TEST_ASSERT_EQ_U32(
+      NODE_DELIVERY_RESULT_RADIO_CYCLE_DEADLINE,
+      fake_node_core.delivery_events[fake_node_core.delivery_event_count - 1U]
+          .detail.finished.final_result);
+  return true;
+}
+
 static bool backlog_silence_retries_the_same_frame(void) {
   node_rtc_record_t rtc;
   node_platform_ports_t platform;
@@ -450,6 +491,9 @@ bool node_core_test_transitions(const char *name) {
   }
   if (strcmp(name, "airtime_budget_is_shared_across_backlog") == 0) {
     return airtime_budget_is_shared_across_backlog();
+  }
+  if (strcmp(name, "wall_clock_deadline_is_shared_across_backlog") == 0) {
+    return wall_clock_deadline_is_shared_across_backlog();
   }
   if (strcmp(name, "backlog_silence_retries_the_same_frame") == 0) {
     return backlog_silence_retries_the_same_frame();

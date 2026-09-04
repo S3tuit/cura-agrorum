@@ -168,6 +168,8 @@ typedef struct {
   size_t deep_sleep_call_count;
   uint64_t deep_sleep_duration_us;
   size_t calls_after_deep_sleep;
+  node_rtc_record_t rtc_at_precommit;
+  size_t rtc_precommit_observation_count;
 } fake_node_core_state_t;
 
 extern fake_node_core_state_t fake_node_core;
@@ -198,3 +200,6 @@ bool fake_node_core_make_ack(uint8_t output[CURA_LORA_V2_ACK_FRAME_SIZE],
                              uint8_t control, cura_lora_v2_domain_t domain,
                              cura_lora_v2_ack_status_t status);
 size_t fake_node_core_trace_find(fake_node_core_trace_t value, size_t start);
+
+/* NODE_CORE_TESTING-only marker-last observation point. */
+void node_core_test_observe_rtc_precommit(const node_rtc_record_t *record);

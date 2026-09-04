@@ -11,6 +11,10 @@
 #include "protocol_v2_lora_crypto.h"
 #include "sx1262_radio.h"
 
+#ifdef NODE_CORE_TESTING
+void node_core_test_observe_rtc_precommit(const node_rtc_record_t *record);
+#endif
+
 typedef struct {
   uint32_t current_tx_attempts;
   uint64_t current_delivery_us;
@@ -110,6 +114,9 @@ bool node_rtc_record_commit(node_rtc_record_t *record,
   record->metrics = *metrics;
   atomic_signal_fence(memory_order_seq_cst);
   atomic_thread_fence(memory_order_seq_cst);
+#ifdef NODE_CORE_TESTING
+  node_core_test_observe_rtc_precommit(record);
+#endif
   record->commit_marker = NODE_RTC_COMMITTED_V1;
   return true;
 }

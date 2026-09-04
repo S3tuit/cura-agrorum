@@ -36,7 +36,9 @@ target_include_directories(
     ${FIRMWARE_ROOT}/components/sx1262_radio/private_include
 )
 target_compile_features(test_node_core PRIVATE c_std_11)
-target_compile_definitions(test_node_core PRIVATE CURA_LORA_V2_CRYPTO_USE_OPENSSL)
+target_compile_definitions(
+  test_node_core PRIVATE CURA_LORA_V2_CRYPTO_USE_OPENSSL NODE_CORE_TESTING=1
+)
 target_compile_options(
   test_node_core
   PRIVATE
@@ -89,6 +91,7 @@ set(
   backlog_quarantine_removal_combinations
   accepted_backlog_removal_failure_stops
   airtime_budget_is_shared_across_backlog
+  wall_clock_deadline_is_shared_across_backlog
   backlog_silence_retries_the_same_frame
   bound_backlog_reuses_persisted_frame_without_new_id
   backlog_binding_failure_prevents_first_transmission
@@ -98,6 +101,7 @@ set(
   unaccepted_current_has_zero_delivery_metric
   awake_time_includes_cleanup_and_sync_and_sleep_is_terminal
   rtc_metric_boundaries_and_semantics_are_enforced
+  rtc_commit_stores_payload_before_marker
   sync_induced_metric_overflow_has_no_late_diagnostic
   component_diagnostics_are_copied_opaquely
   cleanup_failures_do_not_prevent_sync_or_sleep

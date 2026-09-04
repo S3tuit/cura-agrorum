@@ -33,6 +33,18 @@ static bool delivery_events_bracket_retries_and_failures_are_best_effort(void) {
                     retry_at + UINT64_C(110000)));
   core_test_run(&rtc, &platform);
   CORE_TEST_ASSERT_EQ_SIZE(2U, fake_node_core.delivery_event_count);
+  const size_t start_trace =
+      fake_node_core_trace_find(FAKE_CORE_TRACE_DELIVERY_EVENT, 0U);
+  const size_t first_tx_trace =
+      fake_node_core_trace_find(FAKE_CORE_TRACE_TRANSMIT, 0U);
+  const size_t last_tx_trace =
+      fake_node_core_trace_find(FAKE_CORE_TRACE_TRANSMIT, first_tx_trace + 1U);
+  const size_t finish_trace = fake_node_core_trace_find(
+      FAKE_CORE_TRACE_DELIVERY_EVENT, start_trace + 1U);
+  CORE_TEST_ASSERT(start_trace != SIZE_MAX && first_tx_trace != SIZE_MAX &&
+                   last_tx_trace != SIZE_MAX && finish_trace != SIZE_MAX);
+  CORE_TEST_ASSERT(start_trace < first_tx_trace);
+  CORE_TEST_ASSERT(last_tx_trace < finish_trace);
   const node_delivery_event_t *start = &fake_node_core.delivery_events[0];
   const node_delivery_event_t *finish = &fake_node_core.delivery_events[1];
   CORE_TEST_ASSERT_EQ_U32(NODE_DELIVERY_EVENT_STARTED, start->type);
@@ -203,6 +215,37 @@ static bool rtc_metric_boundaries_and_semantics_are_enforced(void) {
   return true;
 }
 
+static bool rtc_commit_stores_payload_before_marker(void) {
+  fake_node_core_reset();
+  node_rtc_record_t record = {
+      .commit_marker = NODE_RTC_COMMITTED_V1,
+      .completed_sample_id = UINT32_C(6),
+  };
+  const node_cycle_metrics_t metrics = {
+      .current_tx_attempts = UINT8_C(2),
+      .awake_ms = UINT16_C(345),
+      .current_delivery_ms = UINT16_C(67),
+      .cycle_tx_attempts = UINT8_C(4),
+      .accepted_readings = UINT8_C(2),
+      .current_accepted = true,
+  };
+
+  CORE_TEST_ASSERT(node_rtc_record_commit(&record, UINT32_C(7), &metrics));
+
+  CORE_TEST_ASSERT_EQ_SIZE(1U, fake_node_core.rtc_precommit_observation_count);
+  const node_rtc_record_t *precommit = &fake_node_core.rtc_at_precommit;
+  CORE_TEST_ASSERT_EQ_U32(0U, precommit->commit_marker);
+  CORE_TEST_ASSERT_EQ_U32(7U, precommit->completed_sample_id);
+  CORE_TEST_ASSERT_EQ_U32(2U, precommit->metrics.current_tx_attempts);
+  CORE_TEST_ASSERT_EQ_U32(345U, precommit->metrics.awake_ms);
+  CORE_TEST_ASSERT_EQ_U32(67U, precommit->metrics.current_delivery_ms);
+  CORE_TEST_ASSERT_EQ_U32(4U, precommit->metrics.cycle_tx_attempts);
+  CORE_TEST_ASSERT_EQ_U32(2U, precommit->metrics.accepted_readings);
+  CORE_TEST_ASSERT(precommit->metrics.current_accepted);
+  CORE_TEST_ASSERT_EQ_U32(NODE_RTC_COMMITTED_V1, record.commit_marker);
+  return true;
+}
+
 static bool sync_induced_metric_overflow_has_no_late_diagnostic(void) {
   node_rtc_record_t rtc;
   node_platform_ports_t platform;
@@ -299,6 +342,9 @@ bool node_core_test_finalization(const char *name) {
   }
   if (strcmp(name, "rtc_metric_boundaries_and_semantics_are_enforced") == 0) {
     return rtc_metric_boundaries_and_semantics_are_enforced();
+  }
+  if (strcmp(name, "rtc_commit_stores_payload_before_marker") == 0) {
+    return rtc_commit_stores_payload_before_marker();
   }
   if (strcmp(name, "sync_induced_metric_overflow_has_no_late_diagnostic") ==
       0) {

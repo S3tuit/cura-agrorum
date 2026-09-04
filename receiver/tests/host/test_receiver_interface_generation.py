@@ -32,6 +32,16 @@ from cura_receiver.generated import (
 from cura_receiver.generated import (
     receiver_enums_generated as generated,
 )
+from cura_receiver.persist_queue_entities import (
+    PROFILE_ONLY_V1_SPEC,
+    ProfileOnlyUnitV1,
+)
+from cura_receiver.quarantine_evidence import (
+    QUARANTINE_EVIDENCE_MAX_BYTES,
+    QUARANTINE_EVIDENCE_MAX_SCALAR_BYTES,
+    encode_quarantine_evidence_v1,
+    quarantine_evidence_sha256,
+)
 
 
 def pascal_case(name: str) -> str:
@@ -212,7 +222,7 @@ def test_schema_fingerprint_is_exact_schema_sql_sha256() -> None:
     assert hashlib.sha256(schema_bytes).hexdigest() == generated.DATABASE_SCHEMA_SHA256
     assert hashlib.sha256(schema_bytes).digest() == generated.DATABASE_SCHEMA_FINGERPRINT
     assert generated.SQLITE_APPLICATION_ID == 0x43555252
-    assert generated.DATABASE_SCHEMA_VERSION == 8
+    assert generated.DATABASE_SCHEMA_VERSION == 9
 
 
 # Requires every declared catalogue, entity table, and trigger in assembled SQL.
@@ -557,7 +567,7 @@ def test_length_field_manifest_validation(
     assert message in result.stderr
 
 
-# Enforces equality between quarantined entity bytes and declared length.
+# Enforces append-only identity and equality between evidence bytes and length.
 def test_quarantined_entity_bytes_must_match_declared_length() -> None:
     row = generated_entities.QuarantinedEntityRowV1(
         quarantine_id=bytes(32),
@@ -599,24 +609,62 @@ def test_quarantined_entity_bytes_must_match_declared_length() -> None:
     assert connection.execute(
         "SELECT entity_schema_version, entity_bytes FROM quarantined_entities"
     ).fetchone() == (1, b"\x02\x01")
-    maximum_measurement = replace(
+    empty_values = ("",) * 4
+    empty_evidence = encode_quarantine_evidence_v1(
+        ProfileOnlyUnitV1(profile=empty_values),  # type: ignore[arg-type]
+        spec=PROFILE_ONLY_V1_SPEC,
+    )
+    payload_bytes = QUARANTINE_EVIDENCE_MAX_BYTES - len(empty_evidence)
+    assert 0 <= payload_bytes <= 4 * QUARANTINE_EVIDENCE_MAX_SCALAR_BYTES
+    scalar_lengths = tuple(
+        min(
+            QUARANTINE_EVIDENCE_MAX_SCALAR_BYTES,
+            max(0, payload_bytes - offset),
+        )
+        for offset in range(
+            0,
+            4 * QUARANTINE_EVIDENCE_MAX_SCALAR_BYTES,
+            QUARANTINE_EVIDENCE_MAX_SCALAR_BYTES,
+        )
+    )
+    maximum_evidence = encode_quarantine_evidence_v1(
+        ProfileOnlyUnitV1(
+            profile=tuple(  # type: ignore[arg-type]
+                "x" * length for length in scalar_lengths
+            ),
+        ),
+        spec=PROFILE_ONLY_V1_SPEC,
+    )
+    assert len(maximum_evidence) == QUARANTINE_EVIDENCE_MAX_BYTES
+    maximum_evidence_row = replace(
         row,
-        quarantine_id=bytes([2]) * 32,
-        entity_kind=generated.PersistQueueEntityKind.MEASUREMENT_PROFILE,
-        entity_length=490,
-        entity_bytes=bytes(range(245)) * 2,
+        quarantine_id=quarantine_evidence_sha256(maximum_evidence),
+        entity_length=len(maximum_evidence),
+        entity_bytes=maximum_evidence,
     )
     connection.execute(
         insert,
         generated_entities.quarantined_entity_row_v1_parameters(
-            maximum_measurement
+            maximum_evidence_row
         ),
     )
     assert connection.execute(
         "SELECT length(entity_bytes) FROM quarantined_entities "
         "WHERE quarantine_id = ?",
-        (maximum_measurement.quarantine_id,),
-    ).fetchone() == (490,)
+        (maximum_evidence_row.quarantine_id,),
+    ).fetchone() == (QUARANTINE_EVIDENCE_MAX_BYTES,)
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            insert,
+            generated_entities.quarantined_entity_row_v1_parameters(
+                replace(
+                    maximum_evidence_row,
+                    quarantine_id=bytes([2]) * 32,
+                    entity_length=QUARANTINE_EVIDENCE_MAX_BYTES + 1,
+                    entity_bytes=maximum_evidence + b"x",
+                )
+            ),
+        )
     with pytest.raises(sqlite3.IntegrityError):
         connection.execute(
             insert,

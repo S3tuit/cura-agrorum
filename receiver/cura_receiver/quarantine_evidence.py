@@ -119,20 +119,92 @@ _ALLOWED_RECORD_FIELDS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-_ALLOWED_ENUM_CLASSES = frozenset(
-    {
-        "cura_receiver.generated.protocol_v2_lora_generated.Domain",
-        "cura_receiver.generated.receiver_enums_generated.AckSelection",
-        "cura_receiver.generated.receiver_enums_generated.AckTxResult",
-        "cura_receiver.generated.receiver_enums_generated.DiagnosticErrorDomain",
-        "cura_receiver.generated.receiver_enums_generated.DiagnosticOperation",
-        "cura_receiver.generated.receiver_enums_generated.DiagnosticSeverity",
-        "cura_receiver.generated.receiver_enums_generated.ProcessingResult",
-        "cura_receiver.generated.receiver_enums_generated.RadioState",
-        "cura_receiver.generated.receiver_enums_generated.RtcHealth",
-        "cura_receiver.generated.receiver_enums_generated.SystemTimeQuality",
-    }
-)
+_ALLOWED_ENUM_MEMBERS: dict[str, dict[str, int]] = {
+    "cura_receiver.generated.protocol_v2_lora_generated.Domain": {
+        "CURRENT_READING_UPLINK": 1,
+        "BACKLOG_READING_UPLINK": 2,
+        "ACK_ACCEPTED_DOWNLINK": 3,
+        "ACK_RETRY_LATER_DOWNLINK": 4,
+        "ACK_REJECTED_UNSUPPORTED_DOWNLINK": 5,
+        "ACK_REJECTED_MALFORMED_DOWNLINK": 6,
+    },
+    "cura_receiver.generated.receiver_enums_generated.AckSelection": {
+        "NONE": 0,
+        "ACCEPTED": 3,
+        "RETRY_LATER": 4,
+        "REJECTED_UNSUPPORTED": 5,
+        "REJECTED_MALFORMED": 6,
+    },
+    "cura_receiver.generated.receiver_enums_generated.AckTxResult": {
+        "NOT_APPLICABLE": 1,
+        "SUPPRESSED_AIRTIME_BUDGET": 2,
+        "SET_TX_FAILED": 3,
+        "TX_TIMEOUT": 4,
+        "TX_DONE": 5,
+        "UNKNOWN_INTERRUPTED": 6,
+    },
+    "cura_receiver.generated.receiver_enums_generated.DiagnosticErrorDomain": {
+        "NONE": 0,
+        "RADIO": 1,
+        "TIME": 2,
+        "PERSISTENCE_CONTROL": 3,
+        "CORE": 4,
+    },
+    "cura_receiver.generated.receiver_enums_generated.DiagnosticOperation": {
+        "NONE": 0,
+        "INITIALIZE": 1,
+        "VALIDATE": 2,
+        "READ": 3,
+        "WRITE": 4,
+        "APPEND": 5,
+        "SYNC": 6,
+        "RECOVER": 7,
+        "ENCODE": 8,
+        "DECODE": 9,
+        "TRANSMIT": 10,
+        "RECEIVE": 11,
+        "CLEANUP": 12,
+    },
+    "cura_receiver.generated.receiver_enums_generated.DiagnosticSeverity": {
+        "WARN": 1,
+        "ERROR": 2,
+        "FATAL": 3,
+    },
+    "cura_receiver.generated.receiver_enums_generated.ProcessingResult": {
+        "RADIO_ERROR": 1,
+        "UNKNOWN_NODE": 2,
+        "AUTHENTICATION_FAILED": 3,
+        "WRONG_DIRECTION": 4,
+        "REJECTED_UNSUPPORTED_CONTROL": 5,
+        "REJECTED_UNSUPPORTED_DOMAIN": 6,
+        "REJECTED_MALFORMED_LENGTH": 7,
+        "REJECTED_MALFORMED_BODY": 8,
+        "RETRY_LATER_QUEUE_FULL": 9,
+        "RETRY_LATER_PERSISTENCE_UNAVAILABLE": 10,
+        "ACCEPTED": 11,
+    },
+    "cura_receiver.generated.receiver_enums_generated.RadioState": {
+        "INITIALIZING": 1,
+        "RX_SINGLE": 2,
+        "RX_EVENT_PENDING": 3,
+        "TX_ACTIVE": 4,
+        "RECOVERING": 5,
+        "SHUTDOWN": 6,
+        "INITIALIZATION_FAILED": 7,
+        "RECOVERY_EXHAUSTED": 8,
+        "HARDWARE_MISSING": 9,
+    },
+    "cura_receiver.generated.receiver_enums_generated.RtcHealth": {
+        "PRESENT": 1,
+        "MISSING": 2,
+        "INVALID": 3,
+    },
+    "cura_receiver.generated.receiver_enums_generated.SystemTimeQuality": {
+        "UNTRUSTED": 0,
+        "RTC_HOLDOVER": 1,
+        "NETWORK_SYNCED": 2,
+    },
+}
 
 _INTEGER_PATTERN = re.compile(r"(?:0|-[1-9][0-9]*|[1-9][0-9]*)\Z")
 _ENUM_MEMBER_PATTERN = re.compile(r"[A-Z][A-Z0-9_]*\Z")
@@ -223,6 +295,7 @@ class QuarantineEvidenceV1:
 @dataclass(slots=True)
 class _Budget:
     nodes: int = 0
+    canonical_bytes: int = 0
 
     def consume(self, depth: int, error_type: type[QuarantineEvidenceError]) -> None:
         if depth > QUARANTINE_EVIDENCE_MAX_DEPTH:
@@ -230,6 +303,15 @@ class _Budget:
         self.nodes += 1
         if self.nodes > QUARANTINE_EVIDENCE_MAX_NODES:
             raise error_type("quarantine evidence node limit exceeded")
+
+    def consume_canonical_bytes(
+        self,
+        amount: int,
+        error_type: type[QuarantineEvidenceError],
+    ) -> None:
+        self.canonical_bytes += amount
+        if self.canonical_bytes > QUARANTINE_EVIDENCE_MAX_BYTES:
+            raise error_type("quarantine evidence canonical byte limit exceeded")
 
 
 def _class_name(value: object) -> str:
@@ -280,12 +362,21 @@ def _encode_node(
     budget.consume(depth, QuarantineEvidenceEncodeError)
 
     if value is None:
-        return {"tag": "none"}
+        node: dict[str, object] = {"tag": "none"}
+        budget.consume_canonical_bytes(
+            len(_canonical_json(node)), QuarantineEvidenceEncodeError
+        )
+        return node
     if type(value) is bool:
-        return {"tag": "bool", "value": value}
+        node = {"tag": "bool", "value": value}
+        budget.consume_canonical_bytes(
+            len(_canonical_json(node)), QuarantineEvidenceEncodeError
+        )
+        return node
     if isinstance(value, Enum):
         class_name = _class_name(value)
-        if class_name not in _ALLOWED_ENUM_CLASSES:
+        allowed_members = _ALLOWED_ENUM_MEMBERS.get(class_name)
+        if allowed_members is None:
             raise QuarantineEvidenceEncodeError(
                 f"unsupported quarantine evidence enum class {class_name}"
             )
@@ -302,33 +393,53 @@ def _encode_node(
             raise QuarantineEvidenceEncodeError(
                 "unsupported quarantine evidence enum member name"
             )
-        return {
+        if allowed_members.get(member_name) != enum_value:
+            raise QuarantineEvidenceEncodeError(
+                "unsupported quarantine evidence enum member assignment"
+            )
+        node = {
             "class": class_name,
             "member": member_name,
             "tag": "enum",
             "value": _decimal(enum_value, QuarantineEvidenceEncodeError),
         }
+        budget.consume_canonical_bytes(
+            len(_canonical_json(node)), QuarantineEvidenceEncodeError
+        )
+        return node
     if type(value) is int:
-        return {
+        node = {
             "tag": "int",
             "value": _decimal(value, QuarantineEvidenceEncodeError),
         }
+        budget.consume_canonical_bytes(
+            len(_canonical_json(node)), QuarantineEvidenceEncodeError
+        )
+        return node
     if type(value) is str:
         if _scalar_utf8_size(value) > QUARANTINE_EVIDENCE_MAX_SCALAR_BYTES:
             raise QuarantineEvidenceEncodeError(
                 "quarantine evidence string byte limit exceeded"
             )
-        return {"tag": "str", "value": value}
+        node = {"tag": "str", "value": value}
+        budget.consume_canonical_bytes(
+            len(_canonical_json(node)), QuarantineEvidenceEncodeError
+        )
+        return node
     if type(value) is bytes:
         if len(value) > QUARANTINE_EVIDENCE_MAX_SCALAR_BYTES:
             raise QuarantineEvidenceEncodeError(
                 "quarantine evidence bytes limit exceeded"
             )
-        return {
+        node = {
             "encoding": "base64",
             "tag": "bytes",
             "value": base64.b64encode(value).decode("ascii"),
         }
+        budget.consume_canonical_bytes(
+            len(_canonical_json(node)), QuarantineEvidenceEncodeError
+        )
+        return node
 
     if type(value) is tuple:
         if len(value) > QUARANTINE_EVIDENCE_MAX_TUPLE_ITEMS:
@@ -340,6 +451,11 @@ def _encode_node(
             raise QuarantineEvidenceEncodeError("quarantine evidence cycle detected")
         ancestors.add(identity)
         try:
+            budget.consume_canonical_bytes(
+                len(_canonical_json({"items": [], "tag": "tuple"}))
+                + max(0, len(value) - 1),
+                QuarantineEvidenceEncodeError,
+            )
             return {
                 "items": [
                     _encode_node(
@@ -372,6 +488,22 @@ def _encode_node(
             raise QuarantineEvidenceEncodeError("quarantine evidence cycle detected")
         ancestors.add(identity)
         try:
+            structural_bytes = len(
+                _canonical_json(
+                    {
+                        "class": class_name,
+                        "fields": [],
+                        "tag": "record",
+                    }
+                )
+            ) + max(0, len(expected_fields) - 1)
+            for field_name in expected_fields:
+                structural_bytes += len(
+                    _canonical_json({"name": field_name, "value": None})
+                ) - len("null")
+            budget.consume_canonical_bytes(
+                structural_bytes, QuarantineEvidenceEncodeError
+            )
             encoded_fields: list[dict[str, object]] = []
             for field_name in expected_fields:
                 encoded_fields.append(
@@ -439,22 +571,32 @@ def encode_quarantine_evidence_v1(
     """Encode one admitted logical value as bounded canonical tagged JSON."""
 
     entity_kind, entity_schema_version = _spec_metadata(spec)
-    document = {
+    envelope_without_value = {
         "entity_kind": entity_kind,
         "entity_schema_version": entity_schema_version,
         "format": QUARANTINE_EVIDENCE_FORMAT,
         "format_version": QUARANTINE_EVIDENCE_VERSION,
+        "value": None,
+    }
+    budget = _Budget()
+    budget.consume_canonical_bytes(
+        len(_canonical_json(envelope_without_value)) - len("null"),
+        QuarantineEvidenceEncodeError,
+    )
+    document = {
+        **envelope_without_value,
         "value": _encode_node(
-            entity,
-            depth=1,
-            budget=_Budget(),
-            ancestors=set(),
+            entity, depth=1, budget=budget, ancestors=set()
         ),
     }
     encoded = _canonical_json(document)
     if len(encoded) > QUARANTINE_EVIDENCE_MAX_BYTES:
         raise QuarantineEvidenceEncodeError(
             "quarantine evidence canonical byte limit exceeded"
+        )
+    if len(encoded) != budget.canonical_bytes:
+        raise QuarantineEvidenceEncodeError(
+            "quarantine evidence canonical byte accounting mismatch"
         )
     return encoded
 
@@ -554,17 +696,25 @@ def _decode_node(
         )
         class_name = node["class"]
         member_name = node["member"]
-        if type(class_name) is not str or class_name not in _ALLOWED_ENUM_CLASSES:
+        if type(class_name) is not str:
+            raise QuarantineEvidenceDecodeError("enum node class is unknown")
+        allowed_members = _ALLOWED_ENUM_MEMBERS.get(class_name)
+        if allowed_members is None:
             raise QuarantineEvidenceDecodeError("enum node class is unknown")
         if (
             type(member_name) is not str
             or _ENUM_MEMBER_PATTERN.fullmatch(member_name) is None
         ):
             raise QuarantineEvidenceDecodeError("enum node member is invalid")
+        value = _decode_decimal(node["value"])
+        if allowed_members.get(member_name) != value:
+            raise QuarantineEvidenceDecodeError(
+                "enum node member assignment is unknown"
+            )
         return NeutralEnumV1(
             class_name=class_name,
             member_name=member_name,
-            value=_decode_decimal(node["value"]),
+            value=value,
         )
     if tag == "tuple":
         node = _require_keys(

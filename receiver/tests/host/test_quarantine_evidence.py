@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import fields
+from enum import Enum
 import json
 
 import pytest
@@ -11,6 +12,7 @@ from cura_receiver.generated.receiver_entities_generated import (
     DiagnosticV1,
     MessageProfilingV1,
 )
+from cura_receiver.generated.protocol_v2_lora_generated import Domain
 from cura_receiver.generated.receiver_enums_generated import (
     AckSelection,
     AckTxResult,
@@ -242,6 +244,45 @@ def test_neutral_tree_keeps_none_enum_tuple_and_record_tags_distinct() -> None:
     )
 
 
+ALLOWED_ENUM_MEMBERS = tuple(
+    member
+    for enum_type in (
+        Domain,
+        AckSelection,
+        AckTxResult,
+        DiagnosticErrorDomain,
+        DiagnosticOperation,
+        DiagnosticSeverity,
+        ProcessingResult,
+        RadioState,
+        RtcHealth,
+        SystemTimeQuality,
+    )
+    for member in enum_type
+)
+
+
+# Every fixed enum assignment accepted by the encoder is accepted neutrally by
+# the decoder.
+@pytest.mark.parametrize("member", ALLOWED_ENUM_MEMBERS)
+def test_every_allowlisted_enum_assignment_round_trips(member: Enum) -> None:
+    evidence = decode_quarantine_evidence_v1(
+        encode_quarantine_evidence_v1(
+            ProfileOnlyUnitV1(profile=member),  # type: ignore[arg-type]
+            spec=PROFILE_ONLY_V1_SPEC,
+        )
+    )
+    assert isinstance(evidence.value, NeutralRecordV1)
+    assert len(evidence.value.fields) == 1
+    assert evidence.value.fields[0].name == "profile"
+    enum_node = evidence.value.fields[0].value
+    assert enum_node == NeutralEnumV1(
+        class_name=f"{type(member).__module__}.{type(member).__qualname__}",
+        member_name=member.name,
+        value=member.value,  # type: ignore[arg-type]
+    )
+
+
 # Mutable, unbounded or ambiguous value categories fail the closed encoder grammar.
 @pytest.mark.parametrize(
     "unsupported",
@@ -289,7 +330,9 @@ def test_encoder_rejects_scalar_and_tuple_bounds(oversized: object) -> None:
 
 
 # Aggregate depth, node-count and document-size limits fail closed independently.
-def test_encoder_rejects_depth_node_and_total_output_bounds() -> None:
+def test_encoder_rejects_depth_node_and_total_output_bounds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     nested: object = 0
     for _ in range(40):
         nested = (nested,)
@@ -302,17 +345,31 @@ def test_encoder_rejects_depth_node_and_total_output_bounds() -> None:
     with pytest.raises(QuarantineEvidenceEncodeError, match="node limit"):
         encode_quarantine_evidence_v1(too_many, spec=PROFILE_ONLY_V1_SPEC)
 
+    import cura_receiver.quarantine_evidence as evidence_module
+
     scalar = b"x" * QUARANTINE_EVIDENCE_MAX_SCALAR_BYTES
-    huge = AuthenticatedReadingCandidateV1(
-        node_id=scalar,
-        message_id=1,
-        domain=1,
-        sample_id=1,
-        reading_body=scalar,
-    )
-    unit = MeasurementProfileUnitV1(candidate=huge, profile=scalar)  # type: ignore[arg-type]
+    unit = ProfileOnlyUnitV1(profile=(scalar,) * 256)  # type: ignore[arg-type]
+    base64_calls = 0
+    envelope_values: list[object] = []
+    real_base64_encode = evidence_module.base64.b64encode
+    real_canonical_json = evidence_module._canonical_json
+
+    def counted_base64_encode(value: bytes) -> bytes:
+        nonlocal base64_calls
+        base64_calls += 1
+        return real_base64_encode(value)
+
+    def observed_canonical_json(document: object) -> bytes:
+        if type(document) is dict and "entity_kind" in document:
+            envelope_values.append(document["value"])
+        return real_canonical_json(document)
+
+    monkeypatch.setattr(evidence_module.base64, "b64encode", counted_base64_encode)
+    monkeypatch.setattr(evidence_module, "_canonical_json", observed_canonical_json)
     with pytest.raises(QuarantineEvidenceEncodeError, match="byte limit"):
-        encode_quarantine_evidence_v1(unit, spec=MEASUREMENT_PROFILE_V1_SPEC)
+        encode_quarantine_evidence_v1(unit, spec=PROFILE_ONLY_V1_SPEC)
+    assert base64_calls < len(unit.profile)  # type: ignore[arg-type]
+    assert envelope_values == [None]
 
 
 def _canonical_mutation(encoded: bytes, mutation: object) -> bytes:
@@ -341,6 +398,30 @@ def _canonical_evidence_document(value: object) -> bytes:
         separators=(",", ":"),
         sort_keys=True,
     ).encode("ascii")
+
+
+# Enum nodes must identify one exact member assignment from the fixed grammar.
+@pytest.mark.parametrize(
+    ("member_name", "value"),
+    (("NOT_A_RADIO_STATE", "999"), ("RX_SINGLE", "999")),
+)
+def test_decoder_rejects_unknown_or_contradictory_enum_assignment(
+    member_name: str,
+    value: str,
+) -> None:
+    encoded = _canonical_evidence_document(
+        {
+            "class": (
+                "cura_receiver.generated.receiver_enums_generated.RadioState"
+            ),
+            "member": member_name,
+            "tag": "enum",
+            "value": value,
+        }
+    )
+
+    with pytest.raises(QuarantineEvidenceDecodeError, match="assignment"):
+        decode_quarantine_evidence_v1(encoded)
 
 
 # Canonical input still cannot exceed any decoder-side logical resource bound.

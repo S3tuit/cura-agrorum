@@ -550,13 +550,13 @@
           "name": "entity_length",
           "type": "u32",
           "minimum": 2,
-          "maximum": 490
+          "maximum": 262144
         },
         {
           "name": "entity_bytes",
           "type": "bytes",
           "minimum_length": 2,
-          "maximum_length": 490,
+          "maximum_length": 262144,
           "length_field": "entity_length"
         },
         {

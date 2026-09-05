@@ -205,8 +205,16 @@ production ports.
 ### Hardware tests
 
 - **Target runtime compatibility:** On the Pi, import the installed production package and process the reviewed current, backlog and invalid frames without radio hardware, proving compatibility with the deployed Python, cryptography and generated-codec versions.
-- **Target crypto latency characterization:** Repeatedly authenticate and construct ACKs from reviewed frames on an otherwise idle Pi, record latency percentiles and assert a generous configured watchdog bound; this measures the platform without redefining protocol correctness.
-- **Target load characterization:** Repeat the in-memory ingress benchmark under a documented bounded CPU and I/O load and record whether the receiver still leaves adequate margin for the packet-to-ACK deadline; exact policy boundaries remain host tests.
+
+Protocol-ingress latency and bounded-load measurements are benchmarks rather
+than correctness tests. They live under
+[`benchmarks/protocol_ingress/`](benchmarks/protocol_ingress/), run only through
+their explicit benchmark entry points, and are never selected by an ordinary
+receiver test target. Curated target runs retain raw samples, environment and
+source identity alongside a concise summary. Their coarse timing margin is
+characterization evidence only: it excludes Linux scheduling and radio-profile
+transition time and does not redefine protocol correctness or establish an
+end-to-end ACK deadline.
 
 ## Radio
 

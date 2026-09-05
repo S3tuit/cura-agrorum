@@ -1,7 +1,9 @@
 .PHONY: test-host test-receiver test-receiver-host test-receiver-hardware \
 		test-receiver-hardware-slow test-receiver-hardware-all \
 		test-receiver-hardware-destructive test-hardware test-hardware-all \
-		test-hardware-slow test-hardware-build
+		test-hardware-slow test-hardware-build \
+		benchmark-receiver-protocol-ingress \
+		benchmark-receiver-protocol-ingress-load
 
 PORT ?= /dev/ttyUSB0
 HARDWARE_TEST_APP := $(abspath firmware/test_apps/on_device)
@@ -18,6 +20,15 @@ RECEIVER_PYTEST := $(abspath .venv/bin/python) -m pytest
 RECEIVER_PYTEST_ARGS := -c $(abspath receiver/pytest.ini)
 RECEIVER_TEST_ROOT ?=
 CONFIRM_RECEIVER_DESTRUCTIVE ?=
+RECEIVER_BENCHMARK_OUTPUT ?=
+RECEIVER_BENCHMARK_WARMUPS ?= 200
+RECEIVER_BENCHMARK_SAMPLES ?= 2000
+RECEIVER_BENCHMARK_MAX_RUNTIME_SECONDS ?= 60
+RECEIVER_BENCHMARK_SOURCE_COMMIT ?=
+RECEIVER_BENCHMARK_SOURCE_TREE_STATE ?= auto
+RECEIVER_BENCHMARK_PYTHON := $(abspath .venv/bin/python)
+RECEIVER_PROTOCOL_INGRESS_BENCHMARK := \
+	$(abspath receiver/benchmarks/protocol_ingress/run.py)
 
 test-host:
 	CCACHE_DISABLE=1 cmake -S firmware/tests/host -B firmware/build-host \
@@ -60,6 +71,34 @@ test-receiver-hardware-destructive:
 		--confirm-receiver-destructive \
 		--receiver-test-root="$(RECEIVER_TEST_ROOT)" \
 		-m 'hardware and destructive and not rf_peer'
+
+benchmark-receiver-protocol-ingress:
+	@if [ -z "$(RECEIVER_BENCHMARK_OUTPUT)" ]; then \
+		echo "Set RECEIVER_BENCHMARK_OUTPUT to a new result directory."; \
+		exit 2; \
+	fi
+	PYTHONPATH=$(abspath receiver) $(RECEIVER_BENCHMARK_PYTHON) \
+		$(RECEIVER_PROTOCOL_INGRESS_BENCHMARK) --mode idle \
+		--output-dir="$(RECEIVER_BENCHMARK_OUTPUT)" \
+		--warmups=$(RECEIVER_BENCHMARK_WARMUPS) \
+		--samples=$(RECEIVER_BENCHMARK_SAMPLES) \
+		--max-runtime-seconds=$(RECEIVER_BENCHMARK_MAX_RUNTIME_SECONDS) \
+		--source-commit="$(RECEIVER_BENCHMARK_SOURCE_COMMIT)" \
+		--source-tree-state=$(RECEIVER_BENCHMARK_SOURCE_TREE_STATE)
+
+benchmark-receiver-protocol-ingress-load:
+	@if [ -z "$(RECEIVER_BENCHMARK_OUTPUT)" ]; then \
+		echo "Set RECEIVER_BENCHMARK_OUTPUT to a new result directory."; \
+		exit 2; \
+	fi
+	PYTHONPATH=$(abspath receiver) $(RECEIVER_BENCHMARK_PYTHON) \
+		$(RECEIVER_PROTOCOL_INGRESS_BENCHMARK) --mode load \
+		--output-dir="$(RECEIVER_BENCHMARK_OUTPUT)" \
+		--warmups=$(RECEIVER_BENCHMARK_WARMUPS) \
+		--samples=$(RECEIVER_BENCHMARK_SAMPLES) \
+		--max-runtime-seconds=$(RECEIVER_BENCHMARK_MAX_RUNTIME_SECONDS) \
+		--source-commit="$(RECEIVER_BENCHMARK_SOURCE_COMMIT)" \
+		--source-tree-state=$(RECEIVER_BENCHMARK_SOURCE_TREE_STATE)
 
 test-hardware-build:
 	idf.py -C $(HARDWARE_TEST_APP) -B $(HARDWARE_TEST_BUILD) build

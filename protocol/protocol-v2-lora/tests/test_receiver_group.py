@@ -161,3 +161,16 @@ def test_read_error_retains_original_errno(
 def test_invalid_owner_argument(tmp_path: Path, owner: object) -> None:
     with pytest.raises(ValueError):
         load_receiver_group(tmp_path / "missing.json", expected_owner_uid=owner)
+
+
+# Parser nesting exhaustion is a document rejection and leaves the private file intact.
+def test_deeply_nested_document_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "group.json"
+    raw = '{"sensitive-test-value":' + '[' * 100_000 + '0' + ']' * 100_000 + '}'
+    path.write_text(raw, encoding="utf-8")
+    path.chmod(0o600)
+    with pytest.raises(ReceiverGroupRejectedError) as captured:
+        load_receiver_group(path)
+    assert captured.value.reason is Rejection.INVALID_DOCUMENT
+    assert "sensitive-test-value" not in str(captured.value)
+    assert path.read_text(encoding="utf-8") == raw

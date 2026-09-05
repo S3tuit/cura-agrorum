@@ -74,7 +74,9 @@ def load_receiver_group(
         descriptor = -1
         with stream:
             document = json.load(stream)
-    except (UnicodeError, json.JSONDecodeError) as exc:
+    except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
+        # Excessive nesting cannot satisfy the receiver-group document schema;
+        # retain the same structured rejection when the JSON parser stops early.
         raise ReceiverGroupRejectedError(
             ReceiverGroupRejection.INVALID_DOCUMENT,
             "cannot read receiver group state: invalid UTF-8 or JSON",

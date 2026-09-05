@@ -493,10 +493,12 @@ def test_unsafe_existing_node_identity_permissions_are_rejected(
     assert identity_path.read_bytes() == identity_before
 
 
+# Malformed input, including parser nesting exhaustion, preserves CLI failure and files.
 @pytest.mark.parametrize(
     ("case", "expected_error"),
     (
         ("invalid-syntax", "cannot read receiver group state"),
+        ("deep-nesting", "cannot read receiver group state"),
         ("missing-field", "receiver group state fields differ"),
         ("unknown-field", "receiver group state fields differ"),
         (
@@ -528,6 +530,8 @@ def test_malformed_receiver_group_is_rejected_without_changes(
 
     if case == "invalid-syntax":
         malformed = "{not valid JSON\n"
+    elif case == "deep-nesting":
+        malformed = '{"x":' + '[' * 100_000 + '0' + ']' * 100_000 + '}'
     else:
         if case == "missing-field":
             del state["group_id"]
@@ -551,5 +555,6 @@ def test_malformed_receiver_group_is_rejected_without_changes(
 
     assert result.returncode == 2
     assert expected_error in result.stderr
+    assert "Traceback" not in result.stderr
     assert state_path.read_bytes() == original
     assert not (node_dir / "protocol_v2_lora_identity.h").exists()

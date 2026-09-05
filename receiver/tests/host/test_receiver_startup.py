@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import json
 import os
 import select
@@ -11,6 +12,7 @@ from uuid import UUID
 
 import pytest
 
+from cura_protocol_v2_lora.receiver_group import ReceiverGroupRejection
 from cura_receiver import receiver_startup, sqlite_database
 from cura_receiver.database_initializer import initialize_database
 from cura_receiver.generated.receiver_enums_generated import PersistenceAdmissionState
@@ -246,6 +248,153 @@ def test_startup_composition(tmp_path: Path) -> None:
         result.connection.close()
 
 
+# Rollback failure preserves the original reason/codes and the actual commit boundary.
+@pytest.mark.parametrize(
+    ("boundary", "code", "os_errno", "state"),
+    (
+        (
+            "insert", sqlite3.SQLITE_CORRUPT, None,
+            PersistenceAdmissionState.UNAVAILABLE_CORRUPT,
+        ),
+        (
+            "insert", sqlite3.SQLITE_FULL, None,
+            PersistenceAdmissionState.UNAVAILABLE_DISK_FULL,
+        ),
+        (
+            "insert", sqlite3.SQLITE_ERROR, None,
+            PersistenceAdmissionState.UNAVAILABLE_INCOMPATIBLE_SCHEMA,
+        ),
+        (
+            "commit", sqlite3.SQLITE_CORRUPT_VTAB, None,
+            PersistenceAdmissionState.UNAVAILABLE_CORRUPT,
+        ),
+        (
+            "commit", None, errno.ENOSPC,
+            PersistenceAdmissionState.UNAVAILABLE_DISK_FULL,
+        ),
+    ),
+)
+@pytest.mark.parametrize("rollback_os_error", (False, True))
+def test_rollback_failure_preserves_start_failure(
+    tmp_path: Path,
+    boundary: str,
+    code: int | None,
+    os_errno: int | None,
+    state: PersistenceAdmissionState,
+    rollback_os_error: bool,
+) -> None:
+    path = tmp_path / "receiver.db"
+    initialize_database(path, GROUP)
+    if os_errno is None:
+        start_error = sqlite3.OperationalError("injected startup failure")
+        start_error.sqlite_errorcode = code
+    else:
+        start_error = OSError(os_errno, "injected startup failure")
+    if rollback_os_error:
+        rollback_error = OSError(errno.EIO, "injected rollback failure")
+    else:
+        rollback_error = sqlite3.OperationalError("injected rollback failure")
+        rollback_error.sqlite_errorcode = sqlite3.SQLITE_IOERR
+
+    class FailingConnection(sqlite3.Connection):
+        rollback_attempted = False
+
+        def execute(self, sql: str, *args: object, **kwargs: object):
+            if (
+                boundary == "insert"
+                and sql.startswith("INSERT INTO receiver_instances")
+            ) or (boundary == "commit" and sql == "COMMIT"):
+                raise start_error
+            if sql == "ROLLBACK":
+                self.rollback_attempted = True
+                raise rollback_error
+            return super().execute(sql, *args, **kwargs)
+
+    connection = sqlite3.connect(path, isolation_level=None, factory=FailingConnection)
+    try:
+        result = insert_receiver_instance_start(
+            connection, ReceiverInstanceStart(INSTANCE, 10), BOOT
+        )
+        assert result.disposition is (
+            Disposition.NOT_STARTED
+            if boundary == "insert"
+            else Disposition.OUTCOME_UNKNOWN
+        )
+        assert result.instance_ordinal is None
+        assert result.failure.admission_state is state
+        assert result.failure.sqlite_primary_code == (
+            None if code is None else code & 255
+        )
+        assert result.failure.sqlite_extended_code == code
+        assert result.failure.os_errno == os_errno
+        assert connection.rollback_attempted
+        assert "injected" not in repr(result)
+    finally:
+        # The direct primitive's caller owns discarding the failed connection,
+        # including any transaction left open by the unsuccessful rollback.
+        connection.close()
+    observer = sqlite3.connect(path)
+    try:
+        assert observer.execute("SELECT * FROM receiver_instances").fetchall() == []
+    finally:
+        observer.close()
+
+
+# Composed startup discards the failed transaction and never exposes its connection.
+def test_startup_closes_connection_after_rollback_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "receiver.db"
+    initialize_database(path, GROUP)
+    real_connect = sqlite3.connect
+    failed_connections = []
+
+    class FailingConnection(sqlite3.Connection):
+        closed = False
+
+        def execute(self, sql: str, *args: object, **kwargs: object):
+            if sql.startswith("INSERT INTO receiver_instances"):
+                failed_connections.append(self)
+                error = sqlite3.OperationalError("injected corruption")
+                error.sqlite_errorcode = sqlite3.SQLITE_CORRUPT
+                raise error
+            if sql == "ROLLBACK":
+                error = sqlite3.OperationalError("injected rollback failure")
+                error.sqlite_errorcode = sqlite3.SQLITE_IOERR
+                raise error
+            return super().execute(sql, *args, **kwargs)
+
+        def close(self) -> None:
+            super().close()
+            self.closed = True
+
+    def connect(*args: object, **kwargs: object):
+        return real_connect(*args, factory=FailingConnection, **kwargs)
+
+    monkeypatch.setattr(sqlite_database.sqlite3, "connect", connect)
+    result = start_receiver_instance(
+        ReceiverInstanceStart(INSTANCE, 12),
+        configuration_reader=_reader(tmp_path),
+        database_path=path,
+        minimum_free_bytes=0,
+    )
+    assert not result.started
+    assert result.connection is None
+    assert result.instance_start.disposition is Disposition.NOT_STARTED
+    assert (
+        result.instance_start.failure.admission_state
+        is PersistenceAdmissionState.UNAVAILABLE_CORRUPT
+    )
+    assert result.instance_start.failure.sqlite_primary_code == sqlite3.SQLITE_CORRUPT
+    assert len(failed_connections) == 1
+    assert failed_connections[0].closed
+    observer = real_connect(path)
+    try:
+        assert observer.execute("SELECT * FROM receiver_instances").fetchall() == []
+    finally:
+        observer.close()
+
+
 # Configuration failure prevents database access; missing database prevents any start operation.
 @pytest.mark.parametrize("failure_stage", ("configuration", "database"))
 def test_startup_failure_order(
@@ -386,3 +535,39 @@ def test_failed_start_preserves_result_when_close_raises(
         assert observer.execute("SELECT * FROM receiver_instances").fetchall() == []
     finally:
         observer.close()
+
+
+# Deep JSON nesting returns a secret-free rejection before startup can open SQLite.
+def test_deeply_nested_configuration_prevents_database_access(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    reader = _reader(tmp_path)
+    config = tmp_path / "test-group.json"
+    raw = '{"sensitive-test-value":' + '[' * 100_000 + '0' + ']' * 100_000 + '}'
+    config.write_text(raw, encoding="utf-8")
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        pytest.fail("rejected configuration reached database access")
+
+    monkeypatch.setattr(receiver_startup, "open_receiver_database", forbidden)
+    path = tmp_path / "missing.db"
+    result = start_receiver_instance(
+        ReceiverInstanceStart(INSTANCE, 0),
+        configuration_reader=reader,
+        database_path=path,
+        minimum_free_bytes=0,
+    )
+    assert not result.started
+    assert result.database_failure is result.instance_start is None
+    loaded = result.configuration_load
+    assert loaded.status is ReceiverConfigurationLoadStatus.CONFIGURATION_REJECTED
+    assert loaded.protocol_rejection is ReceiverGroupRejection.INVALID_DOCUMENT
+    assert loaded.configuration is loaded.linux_boot_id is loaded.os_errno is None
+    assert "sensitive-test-value" not in repr(result)
+    assert caplog.text == ""
+    assert capsys.readouterr() == ("", "")
+    assert config.read_text(encoding="utf-8") == raw
+    assert not path.exists()

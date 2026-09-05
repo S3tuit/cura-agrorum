@@ -69,6 +69,8 @@ def insert_receiver_instance_start(
     The caller must use a validated production connection and must not start
     ordinary admission before this returns STARTED. An uncertain result needs
     later reconciliation; it is not permission to reinsert or to admit work.
+    After a failed start the caller must close/discard the connection; rollback
+    is best effort and may leave a transaction open if cleanup also fails.
     """
 
     if type(instance) is not ReceiverInstanceStart:
@@ -112,8 +114,10 @@ def insert_receiver_instance_start(
         if connection.in_transaction:
             try:
                 connection.execute("ROLLBACK")
-            except (sqlite3.Error, OSError) as rollback_error:
-                failure = database_failure(rollback_error)
+            except (sqlite3.Error, OSError):
+                # Cleanup cannot replace the classified startup failure. The
+                # owner must discard this connection even if rollback failed.
+                pass
         disposition = (
             ReceiverInstanceStartDisposition.OUTCOME_UNKNOWN
             if commit_may_have_run

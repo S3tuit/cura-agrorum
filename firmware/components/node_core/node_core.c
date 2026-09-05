@@ -13,6 +13,19 @@
 
 #ifdef NODE_CORE_TESTING
 void node_core_test_observe_rtc_precommit(const node_rtc_record_t *record);
+void node_core_test_after_rtc_take(const node_rtc_record_t *retained,
+                                   const node_rtc_record_t *incoming_copy);
+#endif
+
+#ifdef NODE_CORE_ON_DEVICE_TESTING
+#ifndef NODE_CORE_TEST_DEEP_SLEEP_DURATION_US
+#error "on-device node_core tests require an explicit deep-sleep duration"
+#endif
+#define NODE_CORE_EFFECTIVE_DEEP_SLEEP_DURATION_US                             \
+  NODE_CORE_TEST_DEEP_SLEEP_DURATION_US
+#else
+#define NODE_CORE_EFFECTIVE_DEEP_SLEEP_DURATION_US                             \
+  NODE_CORE_DEEP_SLEEP_DURATION_US
 #endif
 
 typedef struct {
@@ -866,7 +879,8 @@ static void finalize_cycle(node_cycle_context_t *cycle,
   }
 
   cycle->platform->system.enter_deep_sleep_for(
-      cycle->platform->system.context, NODE_CORE_DEEP_SLEEP_DURATION_US);
+      cycle->platform->system.context,
+      NODE_CORE_EFFECTIVE_DEEP_SLEEP_DURATION_US);
 }
 
 void node_cycle_run(const node_platform_ports_t *platform,
@@ -889,6 +903,9 @@ void node_cycle_run(const node_platform_ports_t *platform,
 
   node_rtc_record_t incoming_rtc;
   node_rtc_record_take(rtc_record, &incoming_rtc);
+#ifdef NODE_CORE_TESTING
+  node_core_test_after_rtc_take(rtc_record, &incoming_rtc);
+#endif
 
   diagn_context_t diagnostic;
   uint32_t sample_id = 0U;

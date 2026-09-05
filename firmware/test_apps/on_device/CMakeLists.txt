@@ -20,4 +20,16 @@ target_compile_definitions(
       NODE_PERSISTENCE_PENDING_COMPACT_RETAIN_LIMIT=256
       NODE_PERSISTENCE_QUARANTINE_LOG_LIMIT=128
       NODE_PERSISTENCE_DIAGNOSTIC_LOG_LIMIT=128
-      NODE_PERSISTENCE_DELIVERY_LOG_LIMIT=128)
+      NODE_PERSISTENCE_DELIVERY_LOG_LIMIT=256)
+
+idf_component_get_property(main_lib main COMPONENT_LIB)
+target_compile_definitions(
+    ${main_lib} PRIVATE NODE_PERSISTENCE_DELIVERY_LOG_LIMIT=256)
+
+idf_component_get_property(node_core_lib node_core COMPONENT_LIB)
+target_compile_definitions(
+    ${node_core_lib}
+    PRIVATE
+      NODE_CORE_TESTING=1
+      NODE_CORE_ON_DEVICE_TESTING=1
+      NODE_CORE_TEST_DEEP_SLEEP_DURATION_US=250000ULL)

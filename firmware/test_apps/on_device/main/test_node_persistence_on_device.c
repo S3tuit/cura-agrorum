@@ -9,6 +9,10 @@
 #include "persistence_test_support.h"
 #include "unity.h"
 
+#define HWTEST_DELIVERY_STARTED_RECORD_SIZE                                    \
+  (NODE_PERSISTENCE_DELIVERY_STARTED_PAYLOAD_SIZE +                            \
+   NODE_PERSISTENCE_RECORD_OVERHEAD)
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -671,14 +675,17 @@ TEST_CASE("full non-pending logs reject without changing old data",
   }
   TEST_ASSERT_TRUE(diagnostic_full);
 
-  for (uint32_t id = 0U; id < 4U; ++id) {
+  const uint32_t delivery_capacity =
+      NODE_PERSISTENCE_DELIVERY_LOG_LIMIT / HWTEST_DELIVERY_STARTED_RECORD_SIZE;
+  TEST_ASSERT_GREATER_THAN_UINT32(0U, delivery_capacity);
+  for (uint32_t id = 0U; id < delivery_capacity; ++id) {
     const node_delivery_event_t event = hwtest_make_delivery_started(20U, id);
     TEST_ASSERT_EQUAL_HEX32(
         CURAG_OK, node_persistence_append_delivery_event(&event, &diag));
   }
   hwtest_snapshot(HWTEST_DELIVERY_PATH, &before);
   const node_delivery_event_t extra_delivery =
-      hwtest_make_delivery_started(20U, 5U);
+      hwtest_make_delivery_started(20U, delivery_capacity);
   TEST_ASSERT_EQUAL_HEX32(
       CURAG_ELOG_FULL,
       node_persistence_append_delivery_event(&extra_delivery, &diag));

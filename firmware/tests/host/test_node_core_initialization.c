@@ -65,7 +65,16 @@ static bool claim_failure_invalidates_and_cleans_up(void) {
 
   core_test_run(&rtc, &platform);
 
+  CORE_TEST_ASSERT_EQ_SIZE(1U, fake_node_core.rtc_take_hook_count);
+  CORE_TEST_ASSERT_EQ_U32(0U, fake_node_core.rtc_retained_marker_after_take);
+  CORE_TEST_ASSERT_EQ_U32(NODE_RTC_COMMITTED_V1,
+                          fake_node_core.rtc_copy_marker_after_take);
   CORE_TEST_ASSERT_EQ_U32(0U, fake_node_core.rtc_marker_at_claim);
+  const size_t hook =
+      fake_node_core_trace_find(FAKE_CORE_TRACE_RTC_TAKE_HOOK, 0U);
+  const size_t claim =
+      fake_node_core_trace_find(FAKE_CORE_TRACE_CLAIM_SAMPLE, 0U);
+  CORE_TEST_ASSERT(hook != SIZE_MAX && claim != SIZE_MAX && hook < claim);
   CORE_TEST_ASSERT_EQ_U32(0U, rtc.commit_marker);
   CORE_TEST_ASSERT_EQ_SIZE(0U, fake_node_core.sample_call_count);
   CORE_TEST_ASSERT_EQ_SIZE(0U, fake_node_core.transmission_count);

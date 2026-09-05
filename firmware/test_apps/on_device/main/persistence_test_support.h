@@ -53,6 +53,9 @@ size_t
 hwtest_encode_delivery_record(const node_delivery_event_t *event,
                               uint8_t output[NODE_PERSISTENCE_RECORD_MAX_SIZE]);
 void hwtest_recalculate_record_crc(uint8_t *record, size_t record_length);
+bool hwtest_pending_tail_matches_binding(
+    uint32_t expected_message_id,
+    const cura_lora_v2_authenticated_reading_frame_t *expected_frame);
 
 node_diagnostic_event_t hwtest_make_diagnostic(diagn_context_t *context,
                                                uint8_t marker);

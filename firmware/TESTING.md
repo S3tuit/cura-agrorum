@@ -1,11 +1,11 @@
 # Firmware testing
 
 Status: the `node_core`, `node_persistence`, `node_sensors`, `sx1262_radio` and
-platform-port host matrices, the `node_persistence` on-device matrix, and the
-platform-port clock, randomness and timer-deep-sleep on-device cases are
-implemented. The remaining RTC, radio and sensor on-device suites, the
-platform-port shared-radio-clock and software-reset cases, and the `node_core`
-integration suite below are agreed but not yet implemented.
+platform-port host matrices are implemented. The on-device implementation now
+includes the `node_persistence` matrix, the complete bare-board RTC suite, the
+receiver-free `node_core` integration suite, and platform clock, randomness,
+software-reset-reason and timer-deep-sleep cases. Sensor and SX1262 hardware,
+the shared-radio-clock case and physical power-loss injection remain deferred.
 
 ## Philosophy and build
 
@@ -333,26 +333,35 @@ results. ESP-IDF CMake and `idf.py` remain the build layer rather than a separat
 hardware-test runner.
 
 The repository contains a dedicated ESP32-C6 test application under
-`firmware/test_apps/on_device`. Its implemented persistence suite links the
-production `node_persistence` component and uses:
+`firmware/test_apps/on_device`. Its implemented bare-board suites link
+production `node_core`, `node_persistence`, `node_platform_esp` and protocol
+codec/crypto code and use:
 
 - a 24 KiB `nvs_test` partition and a 2,944 KiB `storage_test` LittleFS
   partition, separate from production labels;
 - deterministic reading and event values;
 - reduced logical log quotas so retention behavior can be exercised quickly;
 - the real ESP-IDF NVS, LittleFS and software-reset paths; and
-- a test-only physical-log inspector and raw-record injector.
+- a test-only physical-log inspector and raw-record injector; and
+- a fixed non-production identity plus deterministic sensor, receiver-free
+  radio, clock and randomness adapters that never access sensor or radio GPIOs.
 
-The planned `node_core` integration suite will add the fixed node identity,
-short deep-sleep/radio durations and scripted sensor, radio, clock and
-randomness adapters described below.
+New RTC and `node_core` terminal sleeps are 250 ms only in this test build. The
+production radio-cycle, airtime, ACK-wait and retry-jitter constants remain
+unchanged; the deterministic clock advances them without wall-clock waiting.
 
 Test state is erased before and after a scenario, but is preserved between the
 reset/deep-sleep stages of that scenario. A test-only storage inspector may read
 and decode physical logs for assertions; it is never exposed as a production
-interface. A narrowly placed, compile-time-only `node_core` test hook may force
-software restart at the RTC-consumption boundary. Neither facility is present
-in production builds.
+interface. A compile-time-only `node_core` hook may force software restart
+immediately after `node_rtc_record_take` has copied and invalidated RTC state and
+before the sample-ID claim. Neither facility is present in production builds.
+
+Connect the ESP32-C6-DEVKITM-1 through the USB-C connector labelled `UART`, not
+the connector labelled `USB`. The runner requires the external USB-to-UART
+bridge to remain enumerated while the ESP32 resets and enters deep sleep; the
+native USB device disconnects during those transitions and is not a supported
+test ingress.
 
 Install the runner in the repository virtual environment and activate ESP-IDF
 before invoking the entry points:
@@ -370,8 +379,9 @@ make test-hardware-all PORT=/dev/serial/by-id/...
 Unity `[slow]` tag. `test-hardware-slow` runs only `[slow]` cases, while
 `test-hardware-all` runs both sets. Every hardware target builds and flashes the
 test image before executing it, replacing the application previously on the
-board. Fast hardware tests run during ordinary validation; compaction, quota
-and churn cases remain in the explicitly selected slow set.
+board. Fast hardware tests run during ordinary validation. Persistence
+compaction/quota/churn, the one-minute platform timer test and the exactly-20
+RTC round trips form the explicitly selected slow set.
 
 Physical power-loss testing is deliberately deferred. Software restart is used
 only after an operation has returned success. Torn or corrupted records are
@@ -380,16 +390,19 @@ claim to reproduce interruption during an in-progress flash operation.
 
 ### `node_core` integration
 
+The following receiver-free integration cases are implemented in the bare-board
+test application.
+
 - **Current accepted across deep sleep:** start with erased state, use a fixed
   sensor snapshot and return first-attempt `ACCEPTED`. On the next test stage,
   before starting another wake cycle, verify sample ID `0`, the committed NVS
   successor, empty pending storage, one delivery start/finish pair and RTC
   metrics for one accepted attempt.
-- **Unacknowledged current becomes backlog:** let cycle 0 exhaust its shortened
-  limits in silence. After deep sleep, verify sample `0` remains pending and
-  previous-current acceptance is false. In cycle 1 accept current sample `1`
-  and then backlog sample `0`; verify `(1, CURRENT)` precedes `(0, BACKLOG)` and
-  pending storage is empty after the following wake.
+- **Unacknowledged current becomes backlog:** let cycle 0 exhaust the production
+  limits in deterministic-clock silence. After deep sleep, verify sample `0`
+  remains pending and previous-current acceptance is false. In cycle 1 accept
+  current sample `1` and then backlog sample `0`; verify `(1, CURRENT)` precedes
+  `(0, BACKLOG)` and pending storage is empty after the following wake.
 - **Permanent current rejection is quarantined:** return authenticated
   `REJECTED_MALFORMED`. After deep sleep, verify the reading is in
   `quarantine.log`, absent from `pending.log`, no backlog delivery was attempted
@@ -411,8 +424,8 @@ internal call sequence already covered by host tests.
 
 ### RTC memory
 
-RTC cases use Unity multi-stage tests so the assertion stage executes after the
-required boot transition.
+The complete RTC suite below is implemented. RTC cases use Unity multi-stage
+tests so the assertion stage executes after the required boot transition.
 
 - **Committed record survives deep sleep:** write a committed record with
   distinctive values, enter timer deep sleep and verify every field, the commit
@@ -429,7 +442,7 @@ required boot transition.
 - **RTC and NVS sample continuity:** commit RTC state for completed sample `N`,
   deep-sleep and claim `N + 1` from real NVS; validation must succeed. Repeat
   with a deliberately nonconsecutive NVS value and verify rejection.
-- **Repeated deep-sleep round trip (slow):** run approximately 20 short cycles
+- **Repeated deep-sleep round trip (slow):** run exactly 20 short cycles
   with a changing counter and bit pattern. Every wake must observe exactly the
   immediately preceding committed record.
 
@@ -620,8 +633,10 @@ identity and absence of obvious steady-state back-power.
 
 ### Platform ports
 
-The platform ports receive a small on-device smoke suite. These tests exercise
-the concrete ESP-IDF adapters; they do not add statistical randomness tests or
+The bare-board monotonic-clock, random-range, software-reset-reason and
+one-minute timer-deep-sleep cases are implemented. The shared-radio-clock case
+remains deferred until SX1262 hardware is available. These tests exercise the
+concrete ESP-IDF adapters; they do not add statistical randomness tests or
 duplicate controller policy already covered by host fakes.
 
 - **Monotonic clock:** take many immediate `monotonic_us` readings and readings
@@ -791,11 +806,6 @@ measurement setup and remain deferred.
 
 - Physical power-loss injection and its external power-switching rig are
   deferred.
-- Short `node_core` and radio timing values remain to be chosen when those
-  hardware tests are implemented.
-- The exact placement of the RTC-consumption restart hook remains an
-  implementation decision; its permitted scope and production exclusion are
-  fixed above.
 - Hardware-runner provisioning, including permanent serial-port assignment and
   whether slow tests run automatically, remains to be defined when a dedicated
   runner exists.

@@ -215,6 +215,16 @@ void node_core_test_observe_rtc_precommit(const node_rtc_record_t *record) {
   fake_node_core.rtc_precommit_observation_count++;
 }
 
+void node_core_test_after_rtc_take(const node_rtc_record_t *retained,
+                                   const node_rtc_record_t *incoming_copy) {
+  assert(retained != NULL);
+  assert(incoming_copy != NULL);
+  trace_call(FAKE_CORE_TRACE_RTC_TAKE_HOOK);
+  fake_node_core.rtc_take_hook_count++;
+  fake_node_core.rtc_retained_marker_after_take = retained->commit_marker;
+  fake_node_core.rtc_copy_marker_after_take = incoming_copy->commit_marker;
+}
+
 static uint64_t fake_monotonic_us(void *context) {
   (void)context;
   if (fake_node_core.deep_sleep_call_count != 0U) {

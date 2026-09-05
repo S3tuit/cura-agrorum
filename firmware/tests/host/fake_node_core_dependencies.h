@@ -32,6 +32,7 @@ typedef enum {
   FAKE_CORE_TRACE_RADIO_SLEEP,
   FAKE_CORE_TRACE_SYNC,
   FAKE_CORE_TRACE_DEEP_SLEEP,
+  FAKE_CORE_TRACE_RTC_TAKE_HOOK,
 } fake_node_core_trace_t;
 
 typedef struct {
@@ -170,6 +171,9 @@ typedef struct {
   size_t calls_after_deep_sleep;
   node_rtc_record_t rtc_at_precommit;
   size_t rtc_precommit_observation_count;
+  uint32_t rtc_retained_marker_after_take;
+  uint32_t rtc_copy_marker_after_take;
+  size_t rtc_take_hook_count;
 } fake_node_core_state_t;
 
 extern fake_node_core_state_t fake_node_core;
@@ -203,3 +207,7 @@ size_t fake_node_core_trace_find(fake_node_core_trace_t value, size_t start);
 
 /* NODE_CORE_TESTING-only marker-last observation point. */
 void node_core_test_observe_rtc_precommit(const node_rtc_record_t *record);
+
+/* NODE_CORE_TESTING-only wake-controller consumption observation point. */
+void node_core_test_after_rtc_take(const node_rtc_record_t *retained,
+                                   const node_rtc_record_t *incoming_copy);

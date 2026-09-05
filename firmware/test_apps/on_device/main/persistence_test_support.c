@@ -290,6 +290,40 @@ void hwtest_recalculate_record_crc(uint8_t *record, size_t record_length) {
   node_persistence_store_le32(record + record_length - sizeof(uint32_t), crc);
 }
 
+bool hwtest_pending_tail_matches_binding(
+    uint32_t expected_message_id,
+    const cura_lora_v2_authenticated_reading_frame_t *expected_frame) {
+  if (expected_frame == NULL) {
+    return false;
+  }
+  static hwtest_snapshot_t snapshot;
+  hwtest_snapshot(HWTEST_PENDING_PATH, &snapshot);
+  if (snapshot.length < NODE_PERSISTENCE_RECORD_FOOTER_SIZE) {
+    return false;
+  }
+  const size_t footer = snapshot.length - NODE_PERSISTENCE_RECORD_FOOTER_SIZE;
+  const size_t record_length =
+      node_persistence_load_le16(snapshot.bytes + footer);
+  if (record_length > snapshot.length ||
+      record_length > NODE_PERSISTENCE_RECORD_MAX_SIZE) {
+    return false;
+  }
+  const uint8_t *const record =
+      snapshot.bytes + snapshot.length - record_length;
+  if (node_persistence_record_validate(
+          node_persistence_backend(), NODE_PERSISTENCE_LOG_PENDING, record,
+          record_length) != NODE_PERSISTENCE_RECORD_VALID) {
+    return false;
+  }
+  uint32_t sample_id = 0U;
+  uint32_t message_id = 0U;
+  cura_lora_v2_authenticated_reading_frame_t frame;
+  return node_persistence_record_decode_backlog_binding(
+             record, record_length, &sample_id, &message_id, &frame) &&
+         message_id == expected_message_id &&
+         memcmp(frame.bytes, expected_frame->bytes, sizeof(frame.bytes)) == 0;
+}
+
 node_diagnostic_event_t hwtest_make_diagnostic(diagn_context_t *context,
                                                uint8_t marker) {
   memset(context, 0, sizeof(*context));

@@ -44,15 +44,17 @@ static void assert_pending_empty(void) {
   TEST_ASSERT_FALSE(found);
 }
 
-static void assert_pending_sample(uint32_t sample_id, bool expected_bound) {
+static void assert_pending_reading(const cura_lora_v2_reading_t *expected,
+                                   bool expected_bound) {
   node_pending_reading_t pending;
   bool found = false;
   diagn_context_t diag;
   TEST_ASSERT_EQUAL_HEX32(CURAG_OK, node_persistence_peek_most_recent_pending(
                                         &pending, &found, &diag));
   TEST_ASSERT_TRUE(found);
-  TEST_ASSERT_EQUAL_UINT32(sample_id, pending.reading.sample_id);
+  TEST_ASSERT_EQUAL_UINT32(expected->sample_id, pending.reading.sample_id);
   TEST_ASSERT_EQUAL(expected_bound, pending.backlog_bound);
+  hwtest_assert_reading_equal(expected, &pending.reading);
 }
 
 static cura_lora_v2_reading_t
@@ -224,7 +226,10 @@ static void backlog_stage_2(void) {
   TEST_ASSERT_GREATER_THAN_UINT32(1U, core_hwtest_retained.transmission_count);
   core_hwtest_retained.checkpoint_transmission_count =
       core_hwtest_retained.transmission_count;
-  assert_pending_sample(0U, false);
+  const cura_lora_v2_reading_t original = assert_transmission(
+      0U, 0U, 0U, CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK);
+  assert_sensor_values(&original, 2U);
+  assert_pending_reading(&original, false);
   assert_unaccepted_rtc(
       0U, (uint8_t)core_hwtest_retained.checkpoint_transmission_count,
       UINT16_C(30000));
@@ -254,8 +259,11 @@ static void backlog_stage_3(void) {
   const cura_lora_v2_reading_t current = assert_transmission(
       checkpoint, 1U, 1U, CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK);
   assert_sensor_values(&current, 3U);
-  (void)assert_transmission(checkpoint + 1U, 0U, 2U,
-                            CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK);
+  const cura_lora_v2_reading_t original = assert_transmission(
+      0U, 0U, 0U, CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK);
+  const cura_lora_v2_reading_t backlog = assert_transmission(
+      checkpoint + 1U, 0U, 2U, CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK);
+  hwtest_assert_reading_equal(&original, &backlog);
   TEST_ASSERT_TRUE(core_hwtest_retained.backlog_binding_verified_before_tx);
   assert_pending_empty();
   assert_accepted_rtc(1U, 1U, 2U, 2U, CORE_HWTEST_CURRENT_AND_BACKLOG_AWAKE_MS,

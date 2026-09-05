@@ -1629,6 +1629,14 @@ existing reconciliation contracts.
 
 On SQLite corruption or a failed configured integrity check, the persistence thread rolls back when possible, publishes `UNAVAILABLE_CORRUPT`, closes the database and preserves the database, WAL and shared-memory files together. It must not automatically delete, replace, truncate or rebuild them. Radio RX may continue with all new ordinary `PersistQueue` admission closed so nodes retain their readings. Operator recovery must preserve the corrupt artifacts for diagnosis, restore or recover the database through an explicit maintenance procedure, and pass startup validation before persistence returns to `AVAILABLE`.
 
+Startup inspection that rejects a corrupt or incompatible database must leave
+the database and WAL contents unchanged and retain the identities and sizes of
+all existing database, WAL and shared-memory files. SQLite may update its own
+shared-memory WAL-index and coordination bookkeeping while inspecting the
+database; shared-memory contents need not remain byte-identical. This permits
+SQLite-managed bookkeeping, not receiver-initiated repair or replacement of
+the preserved artifacts.
+
 If the process crashes or loses power while an accepted unit remains only in the volatile queue during either outage, that unit can still be lost under the pilot's documented non-durable-ACK guarantee. Eliminating that window requires the deferred durable queue or pre-ACK journal.
 
 ### Communicator-state ownership

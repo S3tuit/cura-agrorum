@@ -17,6 +17,7 @@ import pytest
 
 
 PROTOCOL_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROTOCOL_ROOT / "python"))
 REPO_ROOT = Path(__file__).resolve().parents[3]
 GOLDEN_VECTORS_PATH = PROTOCOL_ROOT / "test-vectors" / "golden_vectors.json"
 GENERATED_C_HEADER_DIR = (

@@ -2207,7 +2207,7 @@ The result contains:
 status: ReceiverConfigurationLoadStatus
 operation: DiagnosticOperation
 interface_violation: PersistenceControlInterfaceViolation
-protocol_rejection: protocol-defined configuration error or absent
+protocol_rejection: protocol ReceiverGroupRejection or absent
 os_errno: int or absent
 linux_boot_id: bytes[16] or absent
 configuration: immutable protocol ReceiverGroupState or absent
@@ -2225,6 +2225,18 @@ and may be repeated without a receiver-side filesystem effect, but the pilot
 calls it once before radio operation. There is no runtime configuration write
 or hot reload. Rejected configuration always requires operator action and a
 receiver restart.
+
+The protocol-owned `cura_protocol_v2_lora.receiver_group` module supplies the
+immutable value, loader and closed rejection enum, as defined in the
+[protocol provisioning contract](../protocol/protocol-v2-lora/README.md).
+`ReceiverGroupRejectedError` maps to `CONFIGURATION_REJECTED` and copies only
+its `ReceiverGroupRejection`. An `OSError` from configuration or boot-ID loading
+maps to `OS_ERROR` and copies only its original errno. This includes a missing
+configuration file; symlink/type/ownership/permission policy violations remain
+configuration rejections. `protocol_rejection` is present only for
+`CONFIGURATION_REJECTED`, and `os_errno` is present only for `OS_ERROR` when
+available. Successful configuration results omit the secret-bearing snapshot
+from their representation; no failure result retains it.
 
 ## `CommunicatorStateV1`
 

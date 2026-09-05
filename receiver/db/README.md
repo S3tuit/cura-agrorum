@@ -23,3 +23,29 @@ linked but before its directory entry is durably synchronized raises
 resolved with `reconcile_database_installation()` using the original error and
 group identity. Once destination durability is confirmed, later cleanup
 failure does not recast the valid database installation as failed.
+
+Runtime opening is separate:
+`cura_receiver.sqlite_database.open_receiver_database()` accepts an existing
+path, configured group identity and an explicit preventive free-space threshold.
+It validates identity and integrity through a read-only connection, then
+reopens without creation and revalidates before establishing WAL. Every usable
+connection verifies foreign keys, FULL synchronization and the 250 ms busy
+timeout. A failed result contains bounded admission-reason/error-code evidence;
+it never initializes, migrates or repairs the supplied database.
+
+`cura_receiver.receiver_startup.start_receiver_instance()` combines the
+persistence owner's configuration load, database open and durable lifecycle
+start transaction. Success transfers the connection to that owner, while an
+uncertain start commit remains unsuccessful. State-policy reconciliation,
+initial clock observation and radio readiness are separate later obligations.
+`cura_receiver.sqlite_repository.SqliteRepository` exposes explicit insert and
+lookup methods over that connection. Inserts require a caller-owned open
+transaction, use the generated binders and never commit or suppress conflicts.
+Lookups return complete stored tuples; raw state reads retain every envelope
+row for the later semantic validator.
+
+Runtime connections disable automatic and close-time checkpoints so closing
+a rejected connection preserves WAL evidence and later worker scheduling owns
+checkpoint work. A caller closing a usable connection must retain its database,
+WAL and shared-memory files together. The primitives do not implement the
+worker's bounded checkpoint or shutdown policy.

@@ -100,6 +100,38 @@ thread constructs its in-memory authentication map. Missing or invalid
 configuration prevents normal receiver startup. The pilot applies
 configuration changes by restart rather than hot reload.
 
+The read-only Python loader and immutable `ReceiverGroupState` live in
+`python/cura_protocol_v2_lora/receiver_group.py`. Provisioning tools and the
+receiver import this same protocol-owned module; deployment includes the
+`cura_protocol_v2_lora` package, independently of the tools directory. The
+provisioning tools retain their command-line `ProvisioningError` compatibility
+wrapper. Loading does not generate identities, derive keys or write files.
+
+Content and file-security rejection raises `ReceiverGroupRejectedError` with
+one `ReceiverGroupRejection` enum member. These are process-local names with
+no numeric wire or database encoding:
+
+| Name | Rejection |
+|---|---|
+| `INVALID_DOCUMENT` | Invalid UTF-8/JSON, non-object document or wrong field set |
+| `UNSUPPORTED_VERSION` | Format version is not the exact supported integer |
+| `INVALID_GROUP_ID` | Invalid group identity encoding, length or zero value |
+| `INVALID_MASTER_KEY` | Invalid master-key encoding or length |
+| `INVALID_NODE_IDS` | Invalid active/retired collection, node ID or duplicate |
+| `OVERLAPPING_NODE_IDS` | Active and retired node sets overlap |
+| `UNSAFE_PARENT` | Symlink/non-directory parent or untrusted parent ownership/write access |
+| `UNSAFE_FILE` | Final entry is a symlink or is not a regular file |
+| `OWNER_MISMATCH` | File owner is not the configured service UID |
+| `UNSAFE_PERMISSIONS` | File grants group or other access |
+
+Filesystem operation failures, including missing files and access failures,
+raise `OSError` with the original errno. Recognized symlink/non-directory
+rejections retain their security category even when an OS call detects them.
+Invalid API arguments raise `TypeError` or `ValueError` before file access.
+Exception text is for the provisioning CLI only: receiver results copy the
+enum or original errno and never copy exception objects, messages or document
+contents. `ReceiverGroupState` excludes its master key from `repr`.
+
 The following public, non-production test vector is used by both Python and
 firmware tests to detect HKDF parameter or byte-encoding differences:
 

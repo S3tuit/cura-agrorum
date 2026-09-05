@@ -1,9 +1,10 @@
 # Receiver testing
 
-Status: this document defines the pilot receiver test suite. The generated
-interface, SQLite-schema, database-initializer and low-level clock-boundary host
-tests exist; most runtime host and Raspberry Pi tests described here will be
-implemented with their production components.
+Status: this document defines the pilot receiver test suite. Generated
+contracts, initialization, clocks, queue, ingress, configuration/boot identity,
+database opening, lifecycle start and SQLite row primitives have host coverage.
+Pi component coverage includes queue/ingress and the startup/database boundary;
+the remaining runtime tests below arrive with their production components.
 
 ## Purpose and authority
 
@@ -77,7 +78,10 @@ From the repository root, install the receiver test dependencies and run the
 ordinary validation loop with:
 
 ```sh
-.venv/bin/python -m pip install -r receiver/requirements-test.txt
+.venv/bin/python -m pip install \
+  -r receiver/requirements-test.txt \
+  -r protocol/protocol-v2-lora/requirements-test.txt \
+  ./protocol/protocol-v2-lora/python
 make test-receiver
 ```
 
@@ -292,6 +296,14 @@ decision.
 
 ## Persistence
 
+The startup/repository implementation covers opening identity checks,
+WAL/FULL enforcement, durable lifecycle insertion, concrete row projection and
+SQLite integer boundaries using real temporary databases. Its Pi tests verify
+the production connection and record deployed SQLite capabilities. Raw
+singleton reads do not perform communicator-state classification or recovery.
+The transaction policy, replay, worker, checkpoint scheduling and recovery
+obligations below remain required for their owning later components.
+
 ### Host tests
 
 - **Generated schema freshness:** Run receiver generation in validate and check modes, verify checked-in outputs are current and verify the exact `schema.sql` SHA-256, schema version and SQLite application ID.
@@ -313,7 +325,7 @@ decision.
 - **Closed storage-failure classifier:** Map low space, disk full, corruption, incompatibility, global/transient I/O, entity-specific reproducible faults and unrecognized errors to their exact distinct paths, with unknown results failing closed as `UNAVAILABLE_IO`.
 - **Retry scheduler:** Verify finite per-attempt SQLite waits and interruptible 250 ms doubling backoff capped at 5 seconds, no maximum retry count, no early retry after unrelated wakeup and recovery only after validation plus commit/reconciliation.
 - **Retained frozen batch:** On global failure, retain original immutable units and every derived classification/enrichment value without reconstruction or poison classification.
-- **Corruption preservation:** On corruption, close admission and preserve database, WAL and shared-memory files together without delete, truncate, rebuild or silent epoch replacement.
+- **Corruption preservation:** On corruption, close admission and preserve database, WAL and shared-memory files together without delete, truncate, rebuild or silent epoch replacement. For corrupt or incompatible startup rejection, require unchanged database/WAL bytes and retained identities and sizes of all existing artifacts; permit SQLite-managed shared-memory WAL-index and coordination bookkeeping as defined in `ARCHITECTURE.md`.
 - **Poison isolation:** Require an entity-specific failure to reproduce alone before quarantine, then store exact canonical `QuarantineEvidenceV1` bytes and provenance durably before later valid units proceed.
 - **Non-quarantinable clock boundary:** Reproduce an isolated `ClockObservationV1` failure and require retained queue head plus incompatible admission, with no bypass or quarantine.
 - **Quarantine reconciliation:** Cover confirmed, definite-failure and ambiguous quarantine commits, accepting only an exactly matching frozen row and retaining the active lease otherwise.
@@ -425,6 +437,13 @@ decision.
 - **Continuous-window observation:** Run a slow, legally bounded sequence spanning bucket edges and confirm no set of attempted ACK transmissions exceeds the configured 36 seconds in any continuous 3,600-second observation period.
 
 ## Deployment and lifecycle
+
+Current component tests cover strict configuration loading, canonical boot-ID
+reading, UUIDv4 process identities and the ordering through durable instance
+insertion. A bounded child-process kill verifies lifecycle durability without
+cleanup hooks; Pi tests run separate processes under the same real kernel boot.
+They do not claim coverage of full admission/radio startup, systemd, clean-stop
+control, RTC bootstrap, process-local communicator counters or Pi reboot.
 
 ### Host tests
 

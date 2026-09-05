@@ -3,7 +3,7 @@ from __future__ import annotations
 import struct
 
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
-from hypothesis import given, settings, strategies as st
+from hypothesis import example, given, settings, strategies as st
 
 from cura_receiver.generated.receiver_enums_generated import (
     PersistenceAdmissionState,
@@ -138,7 +138,7 @@ def ingress_cases(draw: st.DrawFn) -> tuple[bytes, str]:
     body = draw(
         st.one_of(
             valid_reading_bodies(),
-            st.binary(min_size=1, max_size=33),
+            st.binary(min_size=0, max_size=33),
         )
     )
     correct_key = draw(st.booleans())
@@ -215,6 +215,11 @@ def test_reference_model_matches_the_reviewed_current_reading() -> None:
 
 # Establishes silent, permanent-rejection and retry model boundaries explicitly.
 def test_reference_model_reviewed_nonaccepted_boundaries() -> None:
+    truncated = classify_protocol_ingress(
+        frame=bytes(21),
+        auth_node_keys={REVIEWED_NODE_ID: REVIEWED_NODE_KEY},
+        admission_result="RESERVED",
+    )
     unknown = classify_protocol_ingress(
         frame=bytes(22),
         auth_node_keys={REVIEWED_NODE_ID: REVIEWED_NODE_KEY},
@@ -239,8 +244,12 @@ def test_reference_model_reviewed_nonaccepted_boundaries() -> None:
         admission_result="QUEUE_FULL",
     )
 
-    assert (unknown.processing_result, unknown.ack_selected) == (
+    assert (truncated.processing_result, truncated.ack_selected) == (
         "REJECTED_MALFORMED_LENGTH",
+        "NONE",
+    )
+    assert (unknown.processing_result, unknown.ack_selected) == (
+        "UNKNOWN_NODE",
         "NONE",
     )
     assert (unsupported.processing_result, unsupported.ack_selected) == (
@@ -253,9 +262,53 @@ def test_reference_model_reviewed_nonaccepted_boundaries() -> None:
     )
 
 
+# F-003: Establishes the authenticated empty-body model boundary from explicit facts.
+def test_reference_model_authenticates_empty_body_before_malformed_rejection() -> None:
+    frame = _seal_independently(
+        key=REVIEWED_NODE_KEY,
+        control=0x20,
+        domain=1,
+        node_id=REVIEWED_NODE_ID,
+        message_id=0x11223344,
+        body=b"",
+    )
+    expected = classify_protocol_ingress(
+        frame=frame,
+        auth_node_keys={REVIEWED_NODE_ID: REVIEWED_NODE_KEY},
+        admission_result="RESERVED",
+    )
+
+    assert len(frame) == 22
+    assert expected.processing_result == "REJECTED_MALFORMED_LENGTH"
+    assert expected.ack_selected == "REJECTED_MALFORMED"
+    assert expected.ack_frame == bytes.fromhex(
+        "2006010203040506070844332211fc834d4cf1792538f2"
+    )
+    assert expected.header_authenticated
+    assert expected.decoded_sample_id is None
+    assert expected.candidate is None
+    assert expected.admission_kind == "PROFILE_ONLY"
+    assert expected.admission_result == "RESERVED"
+
+
 # Compares valid and invalid integer/header/body/frame boundaries with an independent model.
 @settings(max_examples=600, deadline=None)
 @given(case=ingress_cases())
+@example(case=(
+    _seal_independently(key=REVIEWED_NODE_KEY, control=0x20, domain=1,
+                        node_id=REVIEWED_NODE_ID, message_id=0x11223344, body=b""),
+    "RESERVED",
+))
+@example(case=(
+    _seal_independently(key=REVIEWED_NODE_KEY, control=0x20, domain=2,
+                        node_id=REVIEWED_NODE_ID, message_id=0x11223344, body=b""),
+    "QUEUE_FULL",
+))
+@example(case=(
+    _seal_independently(key=REVIEWED_NODE_KEY, control=0x20, domain=1,
+                        node_id=REVIEWED_NODE_ID, message_id=0x11223344, body=b""),
+    "PERSISTENCE_UNAVAILABLE",
+))
 def test_ingress_properties_match_independent_validation_order_model(
     case: tuple[bytes, str],
 ) -> None:

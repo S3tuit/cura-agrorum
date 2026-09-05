@@ -4,6 +4,7 @@ from cura_receiver.generated import protocol_v2_lora_generated as protocol
 from cura_receiver.generated.receiver_enums_generated import (
     AckTxResult,
     PersistenceAdmissionState,
+    RadioState,
 )
 from cura_receiver.persist_queue import (
     PersistQueue,
@@ -12,7 +13,7 @@ from cura_receiver.persist_queue import (
 )
 from cura_receiver.protocol_ingress import (
     ProtocolIngress,
-    ProtocolIngressDecisionV1,
+    ProtocolIngressOccurrenceV1,
     ProtocolIngressTerminalV1,
 )
 from cura_receiver.protocol_v2_lora_crypto import open_frame, seal_frame
@@ -49,7 +50,7 @@ def _context() -> tuple[PersistQueue, ProtocolIngress]:
 def _finish_and_drain(
     queue: PersistQueue,
     ingress: ProtocolIngress,
-    decision: ProtocolIngressDecisionV1,
+    decision: ProtocolIngressOccurrenceV1,
 ) -> None:
     ingress.finalize(
         decision,
@@ -58,6 +59,7 @@ def _finish_and_drain(
             t4_set_tx_attempted_monotonic_us=None,
             t5_tx_done_monotonic_us=None,
             t6_set_rx_issued_monotonic_us=21,
+            radio_state=RadioState.RX_SINGLE,
         ),
     )
     lease = queue.claim_batch(max_entities=1)
@@ -100,7 +102,11 @@ def test_ack_reconstruction_is_stateless_across_repeated_and_unrelated_messages(
         "_queue",
         "_monotonic_clock",
         "_auth_node_keys",
+        "_active_occurrence",
     }
+    assert ingress._active_occurrence is repeated
+    _finish_and_drain(queue, ingress, repeated)
+    assert ingress._active_occurrence is None
 
 
 # Derives authentication and ACK nonces only from transport identity and domain.

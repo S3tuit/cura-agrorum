@@ -200,6 +200,8 @@ production ports.
 - **Acceptance ordering:** Prove an authenticated valid reading becomes accepted only after `PersistenceAdmissionState.AVAILABLE` and successful exact pair reservation, and that airtime suppression cannot reverse that acceptance.
 - **Retry-later selection:** Cover persistence unavailable and queue-full results for every response-eligible authenticated packet, requiring no acceptance, no cached outcome and the deterministic `ACK_RETRY_LATER_DOWNLINK` response when airtime permits.
 - **Profile completeness:** Verify all stable profile inputs and the exact selected ACK frame are fixed before ACK selection, then require one complete immutable typed profile containing the terminal TX result and optional timestamps to be published against the already reserved queue slot.
+- **Occurrence ownership:** Reject construction, copying, dataclass replacement, foreign/stale completion and overlapping `begin()` calls for the opaque occurrence handle; preserve its original accepted candidate and reservation after invalid uses, and retain only the one active occurrence until completion.
+- **Radio completion evidence:** Require explicit completion state before publication; reject unfinished states and confirmed-rearm reports lacking T6 without consuming the occurrence, accept an immediately pending new RX event after rearm, and preserve missing error-path timestamps for terminal shutdown/recovery/hardware failure. Verify private evolving radio facts cannot change the published frozen entity.
 - **Ingress properties:** Use Hypothesis to generate valid and invalid headers, bodies and authenticated frames around every integer and length boundary, comparing the result with a small independent validation-order model.
 
 ### Hardware tests

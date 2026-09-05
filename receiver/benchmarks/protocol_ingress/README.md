@@ -15,7 +15,9 @@ ProtocolIngress.begin()
 ```
 
 Packet construction, terminal profile publication and queue draining happen
-outside each timing sample. The runner uses the production `LinuxOsClock`,
+outside each timing sample. Completion uses synthetic confirmed-rearm facts;
+these exercise the ingress lifecycle without observing or operating a radio.
+The runner uses the production `LinuxOsClock`,
 protocol codec/crypto, ingress component and `PersistQueue`; it performs no
 radio, SQLite, configuration or network I/O. The current input comes from the
 checked-in protocol golden vector. The backlog input is constructed once before

@@ -12,6 +12,7 @@ from cura_receiver.generated.receiver_enums_generated import (
     AdmissionResult,
     PersistenceAdmissionState,
     ProcessingResult,
+    RadioState,
 )
 from cura_receiver.persist_queue import (
     PersistQueue,
@@ -27,6 +28,7 @@ from tests.support.builders.protocol_ingress import (
     REVIEWED_NODE_KEY,
     REVIEWED_REJECTED_MALFORMED_ACK,
     REVIEWED_REJECTED_UNSUPPORTED_ACK,
+    REVIEWED_RETRY_LATER_ACK,
     REVIEWED_READING_BODY,
     authenticated_frame,
     ingress_packet,
@@ -197,17 +199,22 @@ def test_tampered_authenticated_data_never_reaches_ack_or_queue_admission(
     assert ingress._queue.snapshot().published_entities == 0
 
 
-# Rejects short and over-maximum clear-frame encodings before node or crypto use.
+# Preserves length rejection and lets a complete header/tag reach node lookup.
 @pytest.mark.parametrize(
-    "frame",
-    (b"", bytes(1), bytes(9), bytes(13), bytes(22), bytes(55), bytes(255)),
+    ("frame", "expected_result"),
+    tuple(
+        (frame, ProcessingResult.REJECTED_MALFORMED_LENGTH)
+        for frame in (b"", bytes(1), bytes(9), bytes(13), bytes(21), bytes(55), bytes(255))
+    )
+    + ((bytes(22), ProcessingResult.UNKNOWN_NODE),),
 )
-def test_unusable_frame_lengths_remain_silent_and_unadmitted(frame: bytes) -> None:
+def test_unusable_frame_lengths_remain_silent_and_unadmitted(
+    frame: bytes,
+    expected_result: ProcessingResult,
+) -> None:
     decision = _ingress().begin(ingress_packet(frame=frame))
 
-    assert decision.pre_tx_profile.processing_result is (
-        ProcessingResult.REJECTED_MALFORMED_LENGTH
-    )
+    assert decision.pre_tx_profile.processing_result is expected_result
     assert decision.pre_tx_profile.ack_selected is AckSelection.NONE
     assert not decision.pre_tx_profile.header_authenticated
     assert decision.candidate is None
@@ -223,6 +230,12 @@ def test_unusable_frame_lengths_remain_silent_and_unadmitted(frame: bytes) -> No
         ),
         _changed_byte(authenticated_frame(), protocol.CLEAR_HEADER_SIZE),
         _changed_byte(authenticated_frame(), protocol.READING_FRAME_SIZE - 1),
+        _direct_authenticated_frame(
+            key=bytes.fromhex("c1f9a1a0f386692e01028082be92330e"),
+            body=b"",
+        ),
+        _changed_byte(_direct_authenticated_frame(body=b""), 14),
+        _changed_byte(_direct_authenticated_frame(body=b""), 21),
     ),
 )
 def test_authentication_failures_are_silent_without_candidate_reservation(
@@ -303,10 +316,10 @@ def test_every_structural_reading_constraint_selects_malformed_profile(
 
 
 # Rejects every authenticated non-reading body length with the exact malformed ACK.
-@pytest.mark.parametrize("body_length", (1, 2, 31))
+@pytest.mark.parametrize("body_length", (0, 1, 2, 31))
 def test_authenticated_reading_body_length_is_exact(body_length: int) -> None:
     decision = _ingress().begin(
-        ingress_packet(frame=authenticated_frame(body=bytes(body_length)))
+        ingress_packet(frame=_direct_authenticated_frame(body=bytes(body_length)))
     )
 
     assert decision.pre_tx_profile.processing_result is (
@@ -316,6 +329,119 @@ def test_authenticated_reading_body_length_is_exact(body_length: int) -> None:
     assert decision.pre_tx_profile.ack_selected is AckSelection.REJECTED_MALFORMED
     assert decision.pre_tx_profile.ack_frame == REVIEWED_REJECTED_MALFORMED_ACK
     assert decision.pre_tx_profile.decoded_sample_id is None
+
+
+# F-003: Authenticates an empty body before protocol policy and exact queue admission.
+@pytest.mark.parametrize(
+    ("control", "domain", "protocol_result", "protocol_ack", "ack_frame"),
+    (
+        (0x20, 1, ProcessingResult.REJECTED_MALFORMED_LENGTH,
+         AckSelection.REJECTED_MALFORMED, REVIEWED_REJECTED_MALFORMED_ACK),
+        (0x20, 2, ProcessingResult.REJECTED_MALFORMED_LENGTH,
+         AckSelection.REJECTED_MALFORMED, REVIEWED_REJECTED_MALFORMED_ACK),
+        (0x30, 3, ProcessingResult.REJECTED_UNSUPPORTED_CONTROL,
+         AckSelection.REJECTED_UNSUPPORTED, REVIEWED_REJECTED_UNSUPPORTED_ACK),
+        (0x20, 0, ProcessingResult.REJECTED_UNSUPPORTED_DOMAIN,
+         AckSelection.REJECTED_UNSUPPORTED, REVIEWED_REJECTED_UNSUPPORTED_ACK),
+    )
+    + tuple(
+        (0x20, domain, ProcessingResult.WRONG_DIRECTION, AckSelection.NONE, None)
+        for domain in (3, 4, 5, 6)
+    ),
+    ids=(
+        "current", "backlog", "control_first", "unknown_domain",
+        "accepted_downlink", "retry_downlink", "unsupported_downlink", "malformed_downlink",
+    ),
+)
+@pytest.mark.parametrize(
+    ("state", "full", "admission_result", "retry_result"),
+    (
+        (PersistenceAdmissionState.AVAILABLE, False, AdmissionResult.RESERVED, None),
+        (PersistenceAdmissionState.AVAILABLE, True, AdmissionResult.QUEUE_FULL,
+         ProcessingResult.RETRY_LATER_QUEUE_FULL),
+        (PersistenceAdmissionState.UNAVAILABLE_IO, False,
+         AdmissionResult.PERSISTENCE_UNAVAILABLE,
+         ProcessingResult.RETRY_LATER_PERSISTENCE_UNAVAILABLE),
+    ),
+    ids=("reserved", "full", "unavailable"),
+)
+def test_empty_authenticated_body_follows_validation_and_admission_order(
+    control: int,
+    domain: int,
+    protocol_result: ProcessingResult,
+    protocol_ack: AckSelection,
+    ack_frame: bytes | None,
+    state: PersistenceAdmissionState,
+    full: bool,
+    admission_result: AdmissionResult,
+    retry_result: ProcessingResult | None,
+) -> None:
+    queue = _queue(state=state, full=full)
+    ingress = _ingress(queue)
+    frame = _direct_authenticated_frame(control=control, domain=domain, body=b"")
+    assert len(frame) == 22
+
+    decision = ingress.begin(ingress_packet(frame=frame))
+
+    response_eligible = protocol_ack is not AckSelection.NONE
+    retry = response_eligible and admission_result is not AdmissionResult.RESERVED
+    expected_result = retry_result if retry else protocol_result
+    expected_ack = AckSelection.RETRY_LATER if retry else protocol_ack
+    expected_frame = REVIEWED_RETRY_LATER_ACK if retry else ack_frame
+    profile = decision.pre_tx_profile
+    assert profile.header_authenticated
+    assert profile.t3_authentication_completed_monotonic_us == 20
+    assert profile.processing_result is expected_result
+    assert profile.ack_selected is expected_ack
+    assert profile.ack_frame == expected_frame
+    assert profile.decoded_sample_id is None
+    assert decision.candidate is None
+    if response_eligible:
+        assert decision.admission is not None
+        assert decision.admission.entity_kind is PROFILE_ONLY_V1_SPEC.kind
+        assert decision.admission.result is admission_result
+    else:
+        assert decision.admission is None
+    assert queue.snapshot().reserved_entities == int(response_eligible and not retry)
+    assert queue.snapshot().published_entities == int(full)
+
+    finalized = ingress.finalize(
+        decision,
+        ProtocolIngressTerminalV1(
+            ack_tx_result=(
+                AckTxResult.SUPPRESSED_AIRTIME_BUDGET
+                if response_eligible else AckTxResult.NOT_APPLICABLE
+            ),
+            t4_set_tx_attempted_monotonic_us=None,
+            t5_tx_done_monotonic_us=None,
+            t6_set_rx_issued_monotonic_us=23,
+            radio_state=RadioState.RX_SINGLE,
+        ),
+    )
+
+    if response_eligible:
+        assert finalized.admission is None
+    else:
+        assert finalized.admission is not None
+        assert finalized.admission.entity_kind is PROFILE_ONLY_V1_SPEC.kind
+        assert finalized.admission.result is admission_result
+    if admission_result is AdmissionResult.RESERVED:
+        assert isinstance(finalized.published_entity, ProfileOnlyUnitV1)
+        assert finalized.published_entity.profile.processing_result is expected_result
+        assert finalized.published_entity.profile.header_authenticated
+        assert finalized.published_entity.profile.received_frame_length == 22
+        assert finalized.published_entity.profile.received_frame[:22] == frame
+        assert finalized.published_entity.profile.ack_frame == expected_frame
+        lease = queue.claim_batch(max_entities=1)
+        assert lease is not None
+        assert lease.entries[0].spec is PROFILE_ONLY_V1_SPEC
+        assert lease.entries[0].entity is finalized.published_entity
+    else:
+        assert finalized.published_entity is None
+    assert queue.snapshot().reserved_entities == 0
+    assert queue.snapshot().published_entities == int(full) + int(
+        admission_result is AdmissionResult.RESERVED
+    )
 
 
 # Keeps every downlink ACK domain silent under all persistence admission conditions.
@@ -359,6 +485,7 @@ def test_wrong_direction_is_silent_under_every_queue_state_with_at_most_one_prof
             t4_set_tx_attempted_monotonic_us=None,
             t5_tx_done_monotonic_us=None,
             t6_set_rx_issued_monotonic_us=21,
+            radio_state=RadioState.RX_SINGLE,
         ),
     )
 
@@ -393,6 +520,7 @@ def test_unsupported_authenticated_control_selects_complete_profile(
             t4_set_tx_attempted_monotonic_us=21,
             t5_tx_done_monotonic_us=22,
             t6_set_rx_issued_monotonic_us=23,
+            radio_state=RadioState.RX_SINGLE,
         ),
     )
     assert isinstance(finalized.published_entity, ProfileOnlyUnitV1)

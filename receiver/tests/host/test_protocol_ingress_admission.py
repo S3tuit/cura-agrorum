@@ -10,6 +10,7 @@ from cura_receiver.generated.receiver_enums_generated import (
     PersistenceAdmissionState,
     PersistQueueEntityKind,
     ProcessingResult,
+    RadioState,
 )
 from cura_receiver.persist_queue import (
     PersistQueue,
@@ -62,10 +63,10 @@ def _ingress(queue: PersistQueue) -> ProtocolIngress:
 
 def _terminal(result: AckTxResult) -> ProtocolIngressTerminalV1:
     if result is AckTxResult.NOT_APPLICABLE:
-        return ProtocolIngressTerminalV1(result, None, None, 23)
+        return ProtocolIngressTerminalV1(result, None, None, 23, radio_state=RadioState.RX_SINGLE)
     if result is AckTxResult.SUPPRESSED_AIRTIME_BUDGET:
-        return ProtocolIngressTerminalV1(result, None, None, 23)
-    return ProtocolIngressTerminalV1(result, 21, 22, 23)
+        return ProtocolIngressTerminalV1(result, None, None, 23, radio_state=RadioState.RX_SINGLE)
+    return ProtocolIngressTerminalV1(result, 21, 22, 23, radio_state=RadioState.RX_SINGLE)
 
 
 # Reserves the exact pair before acceptance and publishes it despite later unavailability.

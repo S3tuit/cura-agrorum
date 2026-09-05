@@ -14,6 +14,7 @@ from .generated.receiver_enums_generated import (
     AdmissionResult,
     PersistQueueEntityKind,
     ProcessingResult,
+    RadioState,
 )
 from .persist_queue import PersistQueue, PersistQueueReservation
 from .persist_queue_entities import (
@@ -24,7 +25,12 @@ from .persist_queue_entities import (
     ProfileOnlyUnitV1,
 )
 from .ports.clocks import MonotonicClock
-from .protocol_v2_lora_crypto import AuthenticationError, open_frame, seal_frame
+from .protocol_v2_lora_crypto import (
+    MIN_FRAME_SIZE,
+    AuthenticationError,
+    open_frame,
+    seal_frame,
+)
 
 
 _U8_MAX = (1 << 8) - 1
@@ -368,18 +374,26 @@ class ProtocolIngressAdmissionV1:
 
 @dataclass(frozen=True, slots=True)
 class ProtocolIngressTerminalV1:
-    """Radio-owned terminal facts supplied after ACK TX or receive rearm."""
+    """Completed radio-owner report, frozen from its private construction state.
+
+    ``radio_state`` reports confirmed receive rearm or a terminal receiver
+    state. It is required evidence for completion, not a persisted profile
+    field or a request for ingress to perform radio operations.
+    """
 
     ack_tx_result: AckTxResult
     t4_set_tx_attempted_monotonic_us: int | None
     t5_tx_done_monotonic_us: int | None
     t6_set_rx_issued_monotonic_us: int | None
+    radio_state: RadioState = field(kw_only=True)
 
     def __post_init__(self) -> None:
         if type(self.ack_tx_result) is not AckTxResult:
             raise ProtocolIngressInterfaceError(
                 "ack_tx_result must be an AckTxResult"
             )
+        if type(self.radio_state) is not RadioState:
+            raise ProtocolIngressInterfaceError("radio_state must be a RadioState")
         for name, value in (
             (
                 "t4_set_tx_attempted_monotonic_us",
@@ -391,27 +405,59 @@ class ProtocolIngressTerminalV1:
             _require_optional_int_range(value, name, 0, _U64_MAX)
 
 
-class _ProtocolIngressOccurrenceToken:
-    __slots__ = ("active", "owner", "reservation")
+class ProtocolIngressOccurrenceV1:
+    """Opaque single-use occurrence with read-only protocol/admission facts.
 
-    def __init__(
-        self,
-        owner: ProtocolIngress,
+    Only the exact handle returned by ``begin()`` may be finalized. The owning
+    ingress retains that identity until completion; snapshots of its facts do
+    not carry publication authority.
+    """
+
+    __slots__ = ("_pre_tx_profile", "_candidate", "_admission", "_reservation")
+
+    def __new__(cls) -> ProtocolIngressOccurrenceV1:
+        raise TypeError("protocol-ingress occurrences are created by begin()")
+
+    @classmethod
+    def _create(
+        cls,
+        *,
+        pre_tx_profile: ProtocolIngressPreTxProfileV1,
+        candidate: AuthenticatedReadingCandidateV1 | None,
+        admission: ProtocolIngressAdmissionV1 | None,
         reservation: PersistQueueReservation | None,
-    ) -> None:
-        self.active = True
-        self.owner = owner
-        self.reservation = reservation
+    ) -> ProtocolIngressOccurrenceV1:
+        occurrence = object.__new__(cls)
+        occurrence._pre_tx_profile = pre_tx_profile
+        occurrence._candidate = candidate
+        occurrence._admission = admission
+        occurrence._reservation = reservation
+        return occurrence
 
+    @property
+    def pre_tx_profile(self) -> ProtocolIngressPreTxProfileV1:
+        return self._pre_tx_profile
 
-@dataclass(frozen=True, slots=True)
-class ProtocolIngressDecisionV1:
-    """Immutable protocol/admission decision awaiting terminal radio facts."""
+    @property
+    def candidate(self) -> AuthenticatedReadingCandidateV1 | None:
+        return self._candidate
 
-    pre_tx_profile: ProtocolIngressPreTxProfileV1
-    candidate: AuthenticatedReadingCandidateV1 | None
-    admission: ProtocolIngressAdmissionV1 | None
-    _token: _ProtocolIngressOccurrenceToken = field(repr=False, compare=False)
+    @property
+    def admission(self) -> ProtocolIngressAdmissionV1 | None:
+        return self._admission
+
+    @property
+    def ack_frame(self) -> bytes | None:
+        return self._pre_tx_profile.ack_frame
+
+    def __copy__(self) -> ProtocolIngressOccurrenceV1:
+        raise TypeError("protocol-ingress occurrences are not copyable")
+
+    def __deepcopy__(self, memo: object) -> ProtocolIngressOccurrenceV1:
+        raise TypeError("protocol-ingress occurrences are not copyable")
+
+    def __reduce_ex__(self, protocol_version: int) -> object:
+        raise TypeError("protocol-ingress occurrences are not serializable")
 
 
 @dataclass(frozen=True, slots=True)
@@ -464,13 +510,24 @@ class ProtocolIngress:
         self._queue = queue
         self._monotonic_clock = monotonic_clock
         self._auth_node_keys = MappingProxyType(copied_keys)
+        self._active_occurrence: ProtocolIngressOccurrenceV1 | None = None
 
-    def begin(self, packet: ProtocolIngressPacketV1) -> ProtocolIngressDecisionV1:
+    def __copy__(self) -> ProtocolIngress:
+        raise TypeError("protocol-ingress owners are not copyable")
+
+    def __deepcopy__(self, memo: object) -> ProtocolIngress:
+        raise TypeError("protocol-ingress owners are not copyable")
+
+    def begin(self, packet: ProtocolIngressPacketV1) -> ProtocolIngressOccurrenceV1:
         """Validate one copied frame and make its pre-radio admission decision."""
 
         if type(packet) is not ProtocolIngressPacketV1:
             raise ProtocolIngressInterfaceError(
                 "packet must be a ProtocolIngressPacketV1"
+            )
+        if self._active_occurrence is not None:
+            raise ProtocolIngressInterfaceError(
+                "the active protocol-ingress occurrence must be finalized first"
             )
 
         frame = packet.frame
@@ -486,11 +543,7 @@ class ProtocolIngress:
         candidate: AuthenticatedReadingCandidateV1 | None = None
         node_key: bytes | None = None
 
-        if not (
-            self._minimum_authenticatable_frame_size()
-            <= len(frame)
-            <= protocol.READING_FRAME_SIZE
-        ):
+        if not MIN_FRAME_SIZE <= len(frame) <= protocol.READING_FRAME_SIZE:
             processing_result = ProcessingResult.REJECTED_MALFORMED_LENGTH
             ack_selected = AckSelection.NONE
         elif claimed_node_id not in self._auth_node_keys:
@@ -618,46 +671,46 @@ class ProtocolIngress:
             ),
             t3_authentication_completed_monotonic_us=t3,
         )
-        return ProtocolIngressDecisionV1(
+        occurrence = ProtocolIngressOccurrenceV1._create(
             pre_tx_profile=pre_tx_profile,
             candidate=candidate,
             admission=admission,
-            _token=_ProtocolIngressOccurrenceToken(self, reservation),
+            reservation=reservation,
         )
+        self._active_occurrence = occurrence
+        return occurrence
 
     def finalize(
         self,
-        decision: ProtocolIngressDecisionV1,
+        occurrence: ProtocolIngressOccurrenceV1,
         terminal: ProtocolIngressTerminalV1,
     ) -> ProtocolIngressFinalizationV1:
         """Publish the terminal occurrence, admitting silent profiles after rearm."""
 
-        if type(decision) is not ProtocolIngressDecisionV1:
+        if type(occurrence) is not ProtocolIngressOccurrenceV1:
             raise ProtocolIngressInterfaceError(
-                "decision must be a ProtocolIngressDecisionV1"
+                "occurrence must be a ProtocolIngressOccurrenceV1"
             )
         if type(terminal) is not ProtocolIngressTerminalV1:
             raise ProtocolIngressInterfaceError(
                 "terminal must be a ProtocolIngressTerminalV1"
             )
-        token = decision._token
-        if token.owner is not self:
-            raise ProtocolIngressInterfaceError("foreign protocol-ingress decision")
-        if not token.active:
-            raise ProtocolIngressInterfaceError("stale protocol-ingress decision")
-        self._validate_terminal(decision.pre_tx_profile, terminal)
+        if occurrence is not self._active_occurrence:
+            raise ProtocolIngressInterfaceError(
+                "foreign or stale protocol-ingress occurrence"
+            )
+        self._validate_terminal(occurrence.pre_tx_profile, terminal)
 
-        profile = self._complete_profile(decision.pre_tx_profile, terminal)
+        profile = self._complete_profile(occurrence.pre_tx_profile, terminal)
         admission: ProtocolIngressAdmissionV1 | None = None
         published_entity: MeasurementProfileUnitV1 | ProfileOnlyUnitV1 | None = None
 
-        if decision.admission is None:
+        if occurrence.admission is None:
             reserve_result = self._queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
             admission = ProtocolIngressAdmissionV1(
                 entity_kind=PersistQueueEntityKind.PROFILE_ONLY,
                 result=reserve_result.status,
             )
-            token.active = False
             if reserve_result.status is AdmissionResult.RESERVED:
                 if reserve_result.reservation is None:
                     raise ProtocolIngressInterfaceError(
@@ -669,36 +722,33 @@ class ProtocolIngress:
                 raise ProtocolIngressInterfaceError(
                     "failed queue admission returned a reservation"
                 )
-        elif decision.admission.result is AdmissionResult.RESERVED:
-            reservation = token.reservation
+        elif occurrence.admission.result is AdmissionResult.RESERVED:
+            reservation = occurrence._reservation
             if reservation is None:
                 raise ProtocolIngressInterfaceError(
-                    "reserved ingress decision lost its queue reservation"
+                    "reserved ingress occurrence lost its queue reservation"
                 )
-            if decision.candidate is None:
+            if occurrence.candidate is None:
                 published_entity = ProfileOnlyUnitV1(profile=profile)
             else:
                 published_entity = MeasurementProfileUnitV1(
-                    candidate=decision.candidate,
+                    candidate=occurrence.candidate,
                     profile=profile,
                 )
-            token.active = False
             reservation.publish(published_entity)
         else:
-            if token.reservation is not None:
+            if occurrence._reservation is not None:
                 raise ProtocolIngressInterfaceError(
                     "failed ingress admission retained a reservation"
                 )
-            token.active = False
+
+        occurrence._reservation = None
+        self._active_occurrence = None
 
         return ProtocolIngressFinalizationV1(
             admission=admission,
             published_entity=published_entity,
         )
-
-    @staticmethod
-    def _minimum_authenticatable_frame_size() -> int:
-        return protocol.CLEAR_HEADER_SIZE + protocol.ACK_BODY_SIZE + protocol.TAG_SIZE
 
     def _authentication_completed_at(
         self,
@@ -773,6 +823,24 @@ class ProtocolIngress:
         t4 = terminal.t4_set_tx_attempted_monotonic_us
         t5 = terminal.t5_tx_done_monotonic_us
         t6 = terminal.t6_set_rx_issued_monotonic_us
+
+        if terminal.radio_state in {RadioState.RX_SINGLE, RadioState.RX_EVENT_PENDING}:
+            if t6 is None:
+                raise ProtocolIngressInterfaceError(
+                    "confirmed receive rearm requires T6"
+                )
+            if terminal.ack_tx_result is AckTxResult.UNKNOWN_INTERRUPTED:
+                raise ProtocolIngressInterfaceError(
+                    "UNKNOWN_INTERRUPTED requires a terminal receiver state"
+                )
+        elif terminal.radio_state not in {
+            RadioState.SHUTDOWN,
+            RadioState.RECOVERY_EXHAUSTED,
+            RadioState.HARDWARE_MISSING,
+        }:
+            raise ProtocolIngressInterfaceError(
+                "radio handling must reach confirmed rearm or a terminal receiver state"
+            )
 
         if terminal.ack_tx_result in {
             AckTxResult.NOT_APPLICABLE,
@@ -869,7 +937,7 @@ __all__ = [
     "ProtocolIngressPreTxProfileV1",
     "ProtocolIngressAdmissionV1",
     "ProtocolIngressTerminalV1",
-    "ProtocolIngressDecisionV1",
+    "ProtocolIngressOccurrenceV1",
     "ProtocolIngressFinalizationV1",
     "ProtocolIngress",
 ]

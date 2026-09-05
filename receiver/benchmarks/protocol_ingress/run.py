@@ -32,6 +32,7 @@ from cura_receiver.generated.receiver_enums_generated import (
     AckTxResult,
     PersistenceAdmissionState,
     ProcessingResult,
+    RadioState,
 )
 from cura_receiver.persist_queue import (
     PersistQueue,
@@ -550,6 +551,7 @@ def _measure_one(
             t4_set_tx_attempted_monotonic_us=None,
             t5_tx_done_monotonic_us=None,
             t6_set_rx_issued_monotonic_us=clock.now_monotonic_us(),
+            radio_state=RadioState.RX_SINGLE,
         ),
     )
     lease = persist_queue.claim_batch(max_entities=1)

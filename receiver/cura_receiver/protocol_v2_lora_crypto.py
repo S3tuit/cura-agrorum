@@ -19,7 +19,9 @@ from .generated import protocol_v2_lora_generated as schema
 
 MIN_BODY_SIZE = schema.ACK_BODY_SIZE
 MAX_BODY_SIZE = schema.READING_BODY_SIZE
-MIN_FRAME_SIZE = schema.CLEAR_HEADER_SIZE + MIN_BODY_SIZE + schema.TAG_SIZE
+# Received frames need a complete header and tag to authenticate. Body shape
+# is protocol policy applied afterward; outbound construction still needs a body.
+MIN_FRAME_SIZE = schema.CLEAR_HEADER_SIZE + schema.TAG_SIZE
 MAX_FRAME_SIZE = schema.CLEAR_HEADER_SIZE + MAX_BODY_SIZE + schema.TAG_SIZE
 
 
@@ -87,7 +89,7 @@ def seal_frame(
 
 
 def open_frame(node_key: bytes, frame: bytes) -> AuthenticatedFrame:
-    """Authenticate a complete frame and return its trusted decoded contents."""
+    """Authenticate header/tag framing, leaving body-shape policy to the caller."""
 
     key = _require_node_key(node_key)
     encoded_frame = _require_bytes(frame, "frame")
@@ -113,7 +115,6 @@ def open_frame(node_key: bytes, frame: bytes) -> AuthenticatedFrame:
     except InvalidTag as exc:
         raise AuthenticationError("frame authentication failed") from exc
 
-    _require_body_size(len(plaintext_body))
     return AuthenticatedFrame(
         header=header,
         plaintext_body=plaintext_body,

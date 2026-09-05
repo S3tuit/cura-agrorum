@@ -1351,6 +1351,15 @@ If persistence admission is unavailable or profile reservation fails, the detail
 
 If the communicator regains control after an exception but cannot determine the attempted ACK's terminal radio outcome, it finalizes the reserved profile as `UNKNOWN_INTERRUPTED` before entering a terminal receiver state. A hard process crash or power loss drops the volatile reservation and leaves no partial SQLite row. This deliberately gives up persistence of pre-TX partial records and does not weaken the pilot's existing non-durable ACK guarantee.
 
+The radio-independent ingress boundary retains the exact opaque handle for its
+one active occurrence. Accepted candidate and protocol facts are fixed before
+radio handling, while the radio owner may accumulate later facts privately.
+Finalization requires an explicit report of confirmed rearm or a terminal
+receiver state under `INTERFACE.md`'s protocol-ingress lifecycle contract.
+Neither ACK suppression nor absent timestamps alone establish completion.
+Invalid completion reports preserve the active handle and its reservation;
+valid completion freezes the full queue entity and releases the active handle.
+
 Every radio failure path must either intentionally establish a known safe next
 state or enter bounded recovery. An exceptional path constructs the one direct
 or episode-level radio diagnostic required by

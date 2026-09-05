@@ -7,6 +7,7 @@ from cura_receiver.generated.receiver_enums_generated import (
     AckTxResult,
     PersistenceAdmissionState,
     ProcessingResult,
+    RadioState,
 )
 from cura_receiver.persist_queue import (
     PersistQueue,
@@ -78,6 +79,7 @@ def test_target_runtime_processes_reviewed_readings_without_radio(frame: bytes) 
             t4_set_tx_attempted_monotonic_us=None,
             t5_tx_done_monotonic_us=None,
             t6_set_rx_issued_monotonic_us=clock.now_monotonic_us(),
+            radio_state=RadioState.RX_SINGLE,
         ),
     )
     lease = queue.claim_batch(max_entities=1)
@@ -107,6 +109,7 @@ def test_target_runtime_rejects_invalid_authenticated_frame_without_radio() -> N
             t4_set_tx_attempted_monotonic_us=None,
             t5_tx_done_monotonic_us=None,
             t6_set_rx_issued_monotonic_us=clock.now_monotonic_us(),
+            radio_state=RadioState.RX_SINGLE,
         ),
     )
     assert finalized.published_entity is not None

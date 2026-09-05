@@ -6,7 +6,7 @@ from inspect import signature
 
 import pytest
 
-from cura_receiver.generated.receiver_enums_generated import AckTxResult
+from cura_receiver.generated.receiver_enums_generated import AckTxResult, RadioState
 from cura_receiver.persist_queue import PersistQueue
 from cura_receiver.protocol_ingress import (
     ProtocolIngress,
@@ -106,6 +106,7 @@ def test_terminal_facts_are_immutable_and_contain_no_radio_port() -> None:
         t4_set_tx_attempted_monotonic_us=20,
         t5_tx_done_monotonic_us=21,
         t6_set_rx_issued_monotonic_us=22,
+        radio_state=RadioState.RX_SINGLE,
     )
 
     assert not hasattr(terminal, "__dict__")
@@ -118,6 +119,14 @@ def test_terminal_facts_are_immutable_and_contain_no_radio_port() -> None:
         terminal.ack_tx_result = AckTxResult.TX_TIMEOUT  # type: ignore[misc]
     with pytest.raises(ProtocolIngressInterfaceError):
         replace(terminal, ack_tx_result=1)  # type: ignore[arg-type]
+    with pytest.raises(ProtocolIngressInterfaceError):
+        replace(terminal, radio_state=2)  # type: ignore[arg-type]
+
+
+# F-002: Missing radio completion state cannot silently default to successful rearm.
+def test_terminal_facts_require_an_explicit_radio_state() -> None:
+    with pytest.raises(TypeError, match="radio_state"):
+        ProtocolIngressTerminalV1(AckTxResult.NOT_APPLICABLE, None, None, None)
 
 
 # Copies startup authentication material and retains no caller-owned node map state.

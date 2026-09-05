@@ -1328,6 +1328,53 @@ remain explicitly absent rather than being reconstructed.
 stored profiling row by adding its derived classification without mutating the
 queued value.
 
+## Protocol ingress lifecycle
+
+`ProtocolIngress.begin(packet)` returns one opaque
+`ProtocolIngressOccurrenceV1` handle. Its read-only `pre_tx_profile`,
+`candidate`, `admission` and `ack_frame` properties expose the immutable facts
+established during validation and admission. The handle privately owns any
+queue reservation. It is not a queue entity and cannot be constructed, copied,
+serialized or replaced as a dataclass through its public interface.
+The stateful `ProtocolIngress` owner is also non-copyable so a second owner
+cannot inherit completion authority by copying its active-handle reference.
+
+Ingress processes one occurrence at a time, including silent packets and
+failed admission attempts. It retains the exact active handle until
+`finalize(occurrence, terminal)` completes. Foreign, reconstructed and stale
+handles are interface errors, and a second `begin()` before completion is an
+interface error. Invalid completion input leaves the original occurrence and
+its reservation active for a corrected call. Successful completion releases
+the active reference; no completed occurrence or per-node history is retained.
+
+Acceptance fixes the authenticated candidate and protocol/admission facts
+before radio work. Copying or constructing a different profile value cannot
+replace those facts or authorize dropping an accepted candidate. Radio-owned
+construction state may evolve privately until completion; ingress then creates
+one complete immutable entity and publishes that object against the existing
+reservation. `PersistQueue` continues to account in entity slots, with its
+kind/version specification fixed at reservation.
+
+`ProtocolIngressTerminalV1` is the immutable completion report constructed from
+the radio owner's private evolving facts. Alongside `ack_tx_result` and T4/T5/T6,
+its required keyword-only `radio_state: RadioState` reports the state established
+at completion. There is no default assumption that reception was restored.
+
+| Reported state | Completion requirement |
+|---|---|
+| `RX_SINGLE` | Complete receive profile and `SetRx` were confirmed; T6 is present. |
+| `RX_EVENT_PENDING` | Receive rearm was confirmed and a new event is pending; T6 is present. |
+| `SHUTDOWN`, `RECOVERY_EXHAUSTED`, `HARDWARE_MISSING` | Packet handling is finished in a terminal receiver state; T6 is present exactly when `SetRx` was issued. |
+| `INITIALIZING`, `INITIALIZATION_FAILED`, `TX_ACTIVE`, `RECOVERING` | Cannot complete a copied packet occurrence. |
+
+The existing ACK/timestamp consistency and event ordering checks also apply.
+`UNKNOWN_INTERRUPTED` accompanies a terminal receiver state, as required by
+the exceptional finalization path in `ARCHITECTURE.md`. A timestamp never
+substitutes for confirmation of the reported state. The radio owner establishes
+the hardware facts and owns subsequent state transitions; ingress validates
+the report before any deferred admission or publication. The reported radio
+state is completion evidence only and adds no field to the persisted profile.
+
 ## Queue entity values
 
 ### `MeasurementProfileUnitV1`

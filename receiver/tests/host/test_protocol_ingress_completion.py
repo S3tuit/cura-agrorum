@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError, fields
+from dataclasses import FrozenInstanceError, fields, replace
 
 import pytest
 
@@ -12,13 +12,19 @@ from cura_receiver.generated.receiver_enums_generated import (
     PersistenceAdmissionState,
     PersistQueueEntityKind,
     ProcessingResult,
+    RadioState,
 )
 from cura_receiver.persist_queue import (
     PersistQueue,
     PersistQueueBatchDisposition,
     PersistenceAdmissionSnapshot,
 )
-from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC
+from cura_receiver.persist_queue_entities import (
+    MEASUREMENT_PROFILE_V1_SPEC,
+    PROFILE_ONLY_V1_SPEC,
+    MeasurementProfileUnitV1,
+    ProfileOnlyUnitV1,
+)
 from cura_receiver.protocol_ingress import (
     ProtocolIngress,
     ProtocolIngressInterfaceError,
@@ -104,6 +110,7 @@ def _tx_done_terminal() -> ProtocolIngressTerminalV1:
         t4_set_tx_attempted_monotonic_us=21,
         t5_tx_done_monotonic_us=22,
         t6_set_rx_issued_monotonic_us=23,
+        radio_state=RadioState.RX_SINGLE,
     )
 
 
@@ -222,11 +229,20 @@ TERMINAL_CASES = (
         None,
         None,
         23,
+        radio_state=RadioState.RX_SINGLE,
     ),
-    ProtocolIngressTerminalV1(AckTxResult.SET_TX_FAILED, 21, None, 23),
-    ProtocolIngressTerminalV1(AckTxResult.TX_TIMEOUT, 21, None, 23),
-    ProtocolIngressTerminalV1(AckTxResult.TX_DONE, 21, 22, 23),
-    ProtocolIngressTerminalV1(AckTxResult.UNKNOWN_INTERRUPTED, 21, None, None),
+    ProtocolIngressTerminalV1(
+        AckTxResult.SET_TX_FAILED, 21, None, 23, radio_state=RadioState.RX_SINGLE,
+    ),
+    ProtocolIngressTerminalV1(
+        AckTxResult.TX_TIMEOUT, 21, None, 23, radio_state=RadioState.RX_SINGLE,
+    ),
+    ProtocolIngressTerminalV1(
+        AckTxResult.TX_DONE, 21, 22, 23, radio_state=RadioState.RX_SINGLE,
+    ),
+    ProtocolIngressTerminalV1(
+        AckTxResult.UNKNOWN_INTERRUPTED, 21, None, None, radio_state=RadioState.SHUTDOWN,
+    ),
 )
 
 
@@ -285,16 +301,25 @@ def test_terminal_completion_preserves_pre_tx_facts_and_identical_object_referen
 @pytest.mark.parametrize(
     "terminal",
     (
-        ProtocolIngressTerminalV1(AckTxResult.NOT_APPLICABLE, None, None, 23),
+        ProtocolIngressTerminalV1(
+            AckTxResult.NOT_APPLICABLE, None, None, 23, radio_state=RadioState.RX_SINGLE,
+        ),
         ProtocolIngressTerminalV1(
             AckTxResult.SUPPRESSED_AIRTIME_BUDGET,
             21,
             None,
             23,
+            radio_state=RadioState.RX_SINGLE,
         ),
-        ProtocolIngressTerminalV1(AckTxResult.TX_DONE, 21, None, 23),
-        ProtocolIngressTerminalV1(AckTxResult.TX_TIMEOUT, 19, None, 23),
-        ProtocolIngressTerminalV1(AckTxResult.TX_DONE, 22, 21, 23),
+        ProtocolIngressTerminalV1(
+            AckTxResult.TX_DONE, 21, None, 23, radio_state=RadioState.RX_SINGLE,
+        ),
+        ProtocolIngressTerminalV1(
+            AckTxResult.TX_TIMEOUT, 19, None, 23, radio_state=RadioState.RX_SINGLE,
+        ),
+        ProtocolIngressTerminalV1(
+            AckTxResult.TX_DONE, 22, 21, 23, radio_state=RadioState.RX_SINGLE,
+        ),
     ),
 )
 def test_selected_ack_rejects_impossible_terminal_radio_facts(
@@ -315,6 +340,7 @@ def test_selected_ack_rejects_impossible_terminal_radio_facts(
             None,
             None,
             23,
+            radio_state=RadioState.RX_SINGLE,
         ),
     )
     assert valid.published_entity is not None
@@ -336,8 +362,189 @@ def test_foreign_ingress_cannot_finalize_a_live_decision() -> None:
                 None,
                 None,
                 23,
+                radio_state=RadioState.RX_SINGLE,
             ),
         )
 
     assert first_queue.snapshot().reserved_entities == 1
     assert second_queue.snapshot().reserved_entities == 0
+
+
+SILENT_FRAME = authenticated_frame(node_id=b"unknown!")
+SILENT_TERMINAL = ProtocolIngressTerminalV1(
+    AckTxResult.NOT_APPLICABLE, None, None, 23, radio_state=RadioState.RX_SINGLE,
+)
+
+
+# F-002: Rejects missing rearm evidence without consuming silent or accepted occurrences.
+@pytest.mark.parametrize("frame", (SILENT_FRAME, REVIEWED_CURRENT_FRAME), ids=("silent", "suppressed"))
+@pytest.mark.parametrize("radio_state", (RadioState.RX_SINGLE, RadioState.RX_EVENT_PENDING))
+def test_rearmed_completion_requires_t6_and_preserves_the_original_occurrence(
+    frame: bytes,
+    radio_state: RadioState,
+) -> None:
+    queue = _queue(state=PersistenceAdmissionState.AVAILABLE)
+    ingress = _ingress(queue)
+    occurrence = ingress.begin(ingress_packet(frame=frame))
+    terminal = ProtocolIngressTerminalV1(
+        AckTxResult.NOT_APPLICABLE if frame == SILENT_FRAME else AckTxResult.SUPPRESSED_AIRTIME_BUDGET,
+        None, None, None, radio_state=radio_state,
+    )
+    before = queue.snapshot()
+
+    with pytest.raises(ProtocolIngressInterfaceError, match="requires T6"):
+        ingress.finalize(occurrence, terminal)
+
+    assert queue.snapshot() == before
+    assert ingress._active_occurrence is occurrence
+    assert queue.claim_batch(max_entities=1) is None
+    finalized = ingress.finalize(
+        occurrence, replace(terminal, t6_set_rx_issued_monotonic_us=23),
+    )
+    assert finalized.published_entity is not None
+    assert finalized.published_entity.profile.t6_set_rx_issued_monotonic_us == 23
+    assert ingress._active_occurrence is None
+
+
+# F-002: An unfinished or initialization-only state cannot finalize even with T6 present.
+@pytest.mark.parametrize(
+    "radio_state",
+    (RadioState.INITIALIZING, RadioState.INITIALIZATION_FAILED, RadioState.TX_ACTIVE, RadioState.RECOVERING),
+)
+@pytest.mark.parametrize("silent", (False, True), ids=("selected_ack", "silent"))
+def test_incomplete_radio_state_cannot_publish_an_occurrence(
+    radio_state: RadioState,
+    silent: bool,
+) -> None:
+    queue = _queue(state=PersistenceAdmissionState.AVAILABLE)
+    ingress = _ingress(queue)
+    occurrence = ingress.begin(
+        ingress_packet(frame=SILENT_FRAME if silent else REVIEWED_CURRENT_FRAME)
+    )
+    completed = SILENT_TERMINAL if silent else _tx_done_terminal()
+    before = queue.snapshot()
+
+    with pytest.raises(ProtocolIngressInterfaceError, match="radio handling must reach"):
+        ingress.finalize(occurrence, replace(completed, radio_state=radio_state))
+
+    assert queue.snapshot() == before
+    assert ingress._active_occurrence is occurrence
+    assert ingress.finalize(occurrence, completed).published_entity is not None
+
+
+# F-002: A terminal receiver failure preserves the exact best available ACK and RX evidence.
+@pytest.mark.parametrize("terminal", TERMINAL_CASES + (SILENT_TERMINAL,))
+@pytest.mark.parametrize(
+    "radio_state",
+    (RadioState.SHUTDOWN, RadioState.RECOVERY_EXHAUSTED, RadioState.HARDWARE_MISSING),
+)
+@pytest.mark.parametrize("t6", (None, 23), ids=("rx_not_issued", "rx_issued"))
+def test_stopped_completion_preserves_missing_or_observed_error_path_timestamps(
+    terminal: ProtocolIngressTerminalV1,
+    radio_state: RadioState,
+    t6: int | None,
+) -> None:
+    queue = _queue(state=PersistenceAdmissionState.AVAILABLE)
+    ingress = _ingress(queue)
+    silent = terminal.ack_tx_result is AckTxResult.NOT_APPLICABLE
+    occurrence = ingress.begin(
+        ingress_packet(frame=SILENT_FRAME if silent else REVIEWED_CURRENT_FRAME)
+    )
+    terminal = replace(terminal, radio_state=radio_state, t6_set_rx_issued_monotonic_us=t6)
+
+    finalized = ingress.finalize(occurrence, terminal)
+
+    if silent:
+        assert isinstance(finalized.published_entity, ProfileOnlyUnitV1)
+        expected_spec = PROFILE_ONLY_V1_SPEC
+    else:
+        assert isinstance(finalized.published_entity, MeasurementProfileUnitV1)
+        assert finalized.published_entity.candidate is occurrence.candidate
+        assert finalized.published_entity.profile.processing_result is ProcessingResult.ACCEPTED
+        expected_spec = MEASUREMENT_PROFILE_V1_SPEC
+    profile = finalized.published_entity.profile
+    assert profile.ack_tx_result is terminal.ack_tx_result
+    assert profile.t4_set_tx_attempted_monotonic_us == terminal.t4_set_tx_attempted_monotonic_us
+    assert profile.t5_tx_done_monotonic_us == terminal.t5_tx_done_monotonic_us
+    assert profile.t6_set_rx_issued_monotonic_us == t6
+    assert not hasattr(profile, "radio_state")
+    lease = queue.claim_batch(max_entities=1)
+    assert lease is not None
+    assert lease.entries[0].spec is expected_spec
+    assert lease.entries[0].entity is finalized.published_entity
+    assert ingress._active_occurrence is None
+
+
+# F-002: Handles a new DIO1 event immediately following confirmed receive rearm.
+@pytest.mark.parametrize("terminal", TERMINAL_CASES[:4] + (SILENT_TERMINAL,))
+def test_rearm_followed_by_a_new_rx_event_is_a_complete_previous_occurrence(
+    terminal: ProtocolIngressTerminalV1,
+) -> None:
+    queue = _queue(state=PersistenceAdmissionState.AVAILABLE)
+    ingress = _ingress(queue)
+    silent = terminal.ack_tx_result is AckTxResult.NOT_APPLICABLE
+    occurrence = ingress.begin(
+        ingress_packet(frame=SILENT_FRAME if silent else REVIEWED_CURRENT_FRAME)
+    )
+
+    finalized = ingress.finalize(
+        occurrence, replace(terminal, radio_state=RadioState.RX_EVENT_PENDING),
+    )
+
+    assert finalized.published_entity is not None
+    assert finalized.published_entity.profile.t6_set_rx_issued_monotonic_us == 23
+    assert ingress._active_occurrence is None
+
+
+# F-002: The exceptional unknown ACK terminal must accompany receiver termination.
+@pytest.mark.parametrize("radio_state", (RadioState.RX_SINGLE, RadioState.RX_EVENT_PENDING))
+def test_unknown_interrupted_ack_cannot_claim_a_resumed_receiver(
+    radio_state: RadioState,
+) -> None:
+    queue = _queue(state=PersistenceAdmissionState.AVAILABLE)
+    ingress = _ingress(queue)
+    occurrence = ingress.begin(ingress_packet())
+    terminal = ProtocolIngressTerminalV1(
+        AckTxResult.UNKNOWN_INTERRUPTED, 21, None, 23, radio_state=radio_state,
+    )
+    before = queue.snapshot()
+
+    with pytest.raises(ProtocolIngressInterfaceError, match="UNKNOWN_INTERRUPTED requires"):
+        ingress.finalize(occurrence, terminal)
+
+    assert queue.snapshot() == before
+    assert ingress.finalize(
+        occurrence, replace(terminal, radio_state=RadioState.SHUTDOWN),
+    ).published_entity is not None
+
+
+# F-002: Private evolving facts become a frozen queue value only at valid completion.
+def test_private_radio_construction_does_not_escape_before_completion() -> None:
+    queue = _queue(state=PersistenceAdmissionState.AVAILABLE)
+    ingress = _ingress(queue)
+    occurrence = ingress.begin(ingress_packet())
+    draft = {
+        "ack_tx_result": AckTxResult.SUPPRESSED_AIRTIME_BUDGET,
+        "t4_set_tx_attempted_monotonic_us": None,
+        "t5_tx_done_monotonic_us": None,
+        "t6_set_rx_issued_monotonic_us": None,
+        "radio_state": RadioState.RECOVERING,
+    }
+    incomplete = ProtocolIngressTerminalV1(**draft)  # type: ignore[arg-type]
+    with pytest.raises(ProtocolIngressInterfaceError):
+        ingress.finalize(occurrence, incomplete)
+    assert queue.snapshot().reserved_entities == 1
+    assert queue.claim_batch(max_entities=1) is None
+
+    draft.update(radio_state=RadioState.RX_SINGLE, t6_set_rx_issued_monotonic_us=23)
+    complete = ProtocolIngressTerminalV1(**draft)  # type: ignore[arg-type]
+    finalized = ingress.finalize(occurrence, complete)
+    draft.update(t6_set_rx_issued_monotonic_us=99)
+
+    assert incomplete.radio_state is RadioState.RECOVERING
+    assert incomplete.t6_set_rx_issued_monotonic_us is None
+    assert isinstance(finalized.published_entity, MeasurementProfileUnitV1)
+    assert finalized.published_entity.candidate is occurrence.candidate
+    assert finalized.published_entity.profile.t6_set_rx_issued_monotonic_us == 23
+    with pytest.raises(FrozenInstanceError):
+        finalized.published_entity.profile.t6_set_rx_issued_monotonic_us = 99  # type: ignore[misc]

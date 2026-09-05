@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 _CONTROL = 0x20
 _CLEAR_HEADER_SIZE = 14
 _TAG_SIZE = 8
-_MIN_FRAME_SIZE = 23
+_MIN_FRAME_SIZE = _CLEAR_HEADER_SIZE + _TAG_SIZE
 _MAX_FRAME_SIZE = 54
 _READING_BODY_SIZE = 32
 _READING_DOMAINS = frozenset({1, 2})

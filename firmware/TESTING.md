@@ -539,10 +539,58 @@ real ADC conversion, I2C and 1-Wire behavior, configured sensor identity and the
 physical switched rail. They do not impose agricultural plausibility ranges or
 calibration policy on production sampling.
 
-The normal automated fixture has both soil sensors, both configured DS18B20 ROM
-identities and the BME280 attached. Missing-device and channel-mapping cases are
-separate physical fixture configurations. They may be selected explicitly from
-pytest rather than pretending that unplugging hardware is automated.
+The approved electrical implementation is documented in
+[`test_apps/on_device/SENSOR_CARRIER.md`](test_apps/on_device/SENSOR_CARRIER.md).
+The sensor carrier has one authoritative schematic and separate annotated
+connection diagrams for the declared fixture states below. A state is created
+only by fitting or removing the specified sensor connectors and reference-input
+jumpers; no active fault-injection circuit is part of the pilot fixture. Power
+is removed from the carrier before changing state. The selected state, carrier
+schematic revision, DUT identity and configured DS18B20 ROM identities are
+recorded with every run.
+
+Missing-device and reference-input cases are selected explicitly from pytest.
+A state mismatch is a failed precondition rather than a skipped or reclassified
+test. The exact runner option and preflight mechanism are chosen when the sensor
+hardware suite is implemented.
+
+The two soil probes are sampled in air with the production 200 ms switched-rail
+stabilization and ADC averaging path. Whenever a sensor hardware case expects a
+connected air-exposed soil probe to be valid, every acquired value for that
+group must be in the inclusive range 2,000 through 2,700 mV. This applies to
+every iteration of the repeated-acquisition case and to unaffected soil groups
+in missing-device states. The deliberately lower `adc_reference` voltages are
+exempt because they verify conversion and channel mapping rather than an air
+reading. This is a test-fixture acceptance condition for the connected probes;
+it does not change the production meaning of a validity bit or add an agronomic
+plausibility policy to `node_sensors`.
+
+### `node_sensors`: declared fixture states and test mapping
+
+| Fixture state | Physical configuration | Automated mapping | Manual or host-guided mapping |
+|---|---|---|---|
+| `nominal` | Both soil probes, both externally powered DS18B20 probes with their configured ROM identities, and the BME280 are connected. | All groups acquired; every soil reading is 2,000–2,700 mV inclusive; atomic enclosure group; at least 100 repeated switched-rail acquisitions; idempotent final cleanup; successful diagnostic slots remain empty; the corresponding node reading sets all seven sensor validity bits. | DS18B20 identity mapping; sampling-owned successful shutdown; stable active-low gate states; final cleanup; reset and deep-sleep default-off behavior; post-sampling and deep-sleep back-power check. |
+| `missing_ds0` | The complete power, ground and data connector for the probe whose ROM is configured as logical channel 0 is removed. Channel 1 remains connected; both soil probes and the BME280 remain connected. | Channel 0 temperature is zero and invalid; channel 1 and the other independent groups remain usable; both soil readings are 2,000–2,700 mV inclusive; the result is partial and the channel-0 diagnostic pair contains the exact backend kind and status while unaffected pairs are empty. | Verify the switched rail is off after the failed acquisition path. |
+| `missing_ds1` | The complete power, ground and data connector for the probe whose ROM is configured as logical channel 1 is removed. Channel 0 remains connected; both soil probes and the BME280 remain connected. | Channel 1 temperature is zero and invalid; channel 0 and the other independent groups remain usable; both soil readings are 2,000–2,700 mV inclusive; the result is partial and the channel-1 diagnostic pair contains the exact backend kind and status while unaffected pairs are empty. | Verify the switched rail is off after the failed acquisition path. |
+| `missing_bme280` | The complete BME280 power, ground, SDA and SCL connector is removed. Both soil probes and both DS18B20 probes remain connected. | Enclosure temperature, pressure and humidity are all zero and the single enclosure group is invalid; the other four groups remain usable; both soil readings are 2,000–2,700 mV inclusive; the result is partial and the enclosure diagnostic pair contains the exact backend kind and status while unaffected pairs are empty. | Verify that the already-disabled switched rail remains off after the independent BME280 failure. |
+| `adc_reference` | Both soil-probe connectors are removed from the ADC inputs and two distinct, safe reference voltages share DUT ground and are selected by removable jumpers. Both DS18B20 probes and the BME280 remain connected. | No unattended pass/fail case is assigned: the applied voltages are external measured quantities. Both ADC conversions succeed, both soil groups are valid, and their converted millivolt values are exposed for comparison; the air-probe range does not apply. | Measure both ADC test points immediately before acquisition, compare each reported value with the corresponding measurement, then exchange the two reference-input jumper positions and verify that only the intended logical channel follows each voltage. |
+
+`adc_reference` uses two distinguishable voltages deliberately below the
+2,000–2,700 mV air-probe range so reference injection cannot be mistaken for a
+connected probe reading. The carrier provides nominal 1.185 V and 1.650 V
+divider outputs through 1 kOhm ADC series resistors and requires each converted
+result to agree with its immediately measured test-point voltage within 75 mV.
+Measurements are recorded rather than replaced by nominal resistor values.
+
+The DS18B20 identity-mapping procedure remains in the `nominal` state because
+both configured devices stay present: create a clear temperature difference,
+record the logical-channel result, exchange their physical connector positions
+and repeat. Logical identity must continue to follow the configured ROM rather
+than connector position or enumeration order.
+
+The deferred BME280 low-power case will use `nominal` after the driver is chosen
+and hardened. Exhaustive simultaneous backend failures and power-gate fault
+injection remain host-test responsibilities and have no physical fixture state.
 
 `node_sensors_sample_all` owns immediate rail cleanup: after any path that may
 enable the shared soil/DS18B20 rail, it attempts to disable it before beginning
@@ -591,9 +639,23 @@ an unplugged probe to clear a validity bit.
 
 ### `node_sensors`: manual electrical cases
 
-These tests use the available multimeter and firmware stages that hold the CPU
-awake after the operation so the resulting electrical state can be measured:
+These tests use the available AN8008 multimeter for stable DC observations. The
+complete preflight, test points, settling times and voltage limits are defined
+in `test_apps/on_device/SENSOR_CARRIER.md`. They do not use the meter to infer
+transient timing.
 
+The test application provides separate power-on and power-off holds through the
+production gate-control implementation. Each hold remains stable for at least
+60 seconds or until host acknowledgement. A separate sample-return hold calls
+the unchanged `node_sensors_sample_all`, reports its result only after the call
+returns, and then keeps the CPU awake without another sensor or gate-control
+operation. In particular, it does not call `node_sensors_force_power_off`
+before the observation. No hold is inserted into the production sampling path.
+
+- **Unpowered gate preflight:** before USB power is applied, verify Q1
+  source/drain routing, the 100 ohm GPIO-to-gate path, the approximately 47 kOhm
+  source-to-gate path, common ground and absence of direct rail shorts. This is
+  required after initial assembly and after any carrier wiring change.
 - **Soil ADC conversion:** apply or measure safe known voltages at both soil
   inputs and compare `soil_0_mv` and `soil_1_mv` against the multimeter within
   the configured ESP32 ADC calibration tolerance.
@@ -604,16 +666,20 @@ awake after the operation so the resulting electrical state can be measured:
   order, determines channel 0 and channel 1. Confirm the textual ROM byte order
   against the library's enumerated `uint64_t`, then repeat after reconnecting or
   reversing their physical order on the bus.
-- **Immediate successful shutdown:** after `node_sensors_sample_all` returns
-  while the ESP32 remains awake, the shared rail measures off. This proves that
-  cleanup occurs inside sampling rather than being deferred until final wake
-  cleanup.
-- **Active-low gate states:** while sampling is deliberately paused, verify the
-  GPIO/P-MOSFET gate is low and the switched rail is on. After cleanup, verify
-  the external 47 kOhm source-to-gate resistor has pulled the released gate to
-  3.3 V and the switched rail is off.
+- **Sampling-owned successful shutdown:** in the sample-return hold, verify the
+  gate is released and the shared rail has settled to off. Because no operation
+  runs between the sampling return and the held observation, this proves that
+  cleanup occurred inside sampling rather than being deferred until final wake
+  cleanup. It does not measure the exact shutdown instant.
+- **Stable active-low gate states:** in the dedicated production gate-on hold,
+  verify the GPIO/P-MOSFET gate is low and the switched rail is on. In the
+  dedicated gate-off hold, verify the external 47 kOhm source-to-gate resistor
+  has pulled the released gate to the always-on rail and the switched rail has
+  settled off. These holds do not alter production sampling timing.
 - **Shutdown after acquisition failure:** repeat with a detectable DS18B20 or
-  BME280 failure and verify that the shared rail still measures off.
+  BME280 failure using the corresponding declared fixture state and verify in
+  the sample-return hold that the shared rail still settles off without an
+  additional cleanup call.
 - **Final cleanup:** after repeated `node_sensors_force_power_off` calls, the
   shared rail remains off.
 - **Reset and deep-sleep default:** enable the rail in a dedicated test stage,
@@ -623,13 +689,20 @@ awake after the operation so the resulting electrical state can be measured:
   shutdown path.
 - **Back-power check:** in the real post-sampling and deep-sleep pin states,
   measure the disabled rail for voltage fed through ADC, 1-Wire, pull-up or
-  protection-diode paths. A low gate-control GPIO alone is not sufficient
-  evidence that the sensors are unpowered.
+  protection-diode paths. Measure it open-circuit first. If it remains above
+  0.1 V after 10 seconds, repeat with a temporary 100 kOhm TP_SW-to-ground load
+  and record both readings for diagnosis; the temporary load cannot change the
+  original observation into a pass. A gate-control voltage alone is not
+  sufficient evidence that the sensors are unpowered.
 
-The devkit and multimeter cannot establish the final microamp sleep budget or
-capture short rail transients. Those require current instrumentation on the
-custom board; these pilot tests establish functional switching, stable channel
-identity and absence of obvious steady-state back-power.
+The devkit and multimeter cannot establish the 200 ms rail-rise waveform, the
+exact shutdown instant, brief boot/reset/deep-sleep glitches, MOSFET switching
+edges or inrush, digital-bus waveforms, or the final microamp sleep budget.
+Those require an oscilloscope or current instrumentation on the custom board;
+these pilot tests establish functional switching, stable channel identity and
+absence of obvious steady-state back-power. Successful acquisition after the
+unchanged production delay is indirect functional evidence, not a waveform
+measurement.
 
 ### Platform ports
 

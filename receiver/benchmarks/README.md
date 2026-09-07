@@ -17,3 +17,7 @@ with their units, a versioned result format, source-file hashes, platform
 metadata and a human-readable summary. Machine-specific observations do not
 become protocol requirements or golden test thresholds merely by being checked
 in.
+
+The [ordinary persistence benchmark](ordinary_persistence/README.md) records
+FULL/NORMAL commit and checkpoint latency, accepted throughput, queue pressure
+and WAL growth on isolated target databases.

@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-
 RECEIVER_ROOT = Path(__file__).resolve().parents[2]
 PRODUCTION_ROOT = RECEIVER_ROOT / "cura_receiver"
 SUPPORT_MODELS_ROOT = RECEIVER_ROOT / "tests" / "support" / "models"
@@ -37,9 +36,7 @@ def _import_bindings(tree: ast.AST) -> dict[str, str]:
         elif isinstance(node, ast.ImportFrom) and node.module is not None:
             for alias in node.names:
                 if alias.name != "*":
-                    bindings[alias.asname or alias.name] = (
-                        f"{node.module}.{alias.name}"
-                    )
+                    bindings[alias.asname or alias.name] = f"{node.module}.{alias.name}"
     return bindings
 
 
@@ -133,8 +130,13 @@ def test_reference_models_never_import_production_algorithms() -> None:
         source.relative_to(SUPPORT_MODELS_ROOT): tuple(
             module
             for module in imported_modules(source)
-            if module.startswith("cura_receiver")
-            and module not in allowed_production_imports
+            if (
+                module.startswith("cura_receiver")
+                and module not in allowed_production_imports
+            )
+            or module.startswith(
+                ("tests.support.builders", "tests.support.fakes", "protocol_v2_lora")
+            )
         )
         for source in sorted(SUPPORT_MODELS_ROOT.rglob("*.py"))
     }

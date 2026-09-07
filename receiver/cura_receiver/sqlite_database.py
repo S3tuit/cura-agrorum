@@ -21,7 +21,7 @@ SQLITE_BUSY_TIMEOUT_MS = 250
 
 @dataclass(frozen=True, slots=True)
 class DatabaseFailure:
-    """Bounded startup failure evidence; never an exception or SQL error string."""
+    """Bounded database failure evidence; never an exception or SQL error string."""
 
     admission_state: PersistenceAdmissionState
     sqlite_primary_code: int | None = None
@@ -43,16 +43,25 @@ class _ValidationFailure(Exception):
 
 
 def database_failure(error: sqlite3.Error | OSError) -> DatabaseFailure:
-    """Classify global startup/SQL failures, without poison or retry policy."""
+    """Classify global SQLite/host results; see sqlite.org/rescode.html.
+
+    IOERR_DATA is a page-checksum failure and IOERR_CORRUPTFS indicates
+    filesystem corruption. Their primary IOERR code must not hide corruption.
+    """
 
     extended = getattr(error, "sqlite_errorcode", None)
-    if type(extended) is not int:
+    if type(extended) is not int or not -(1 << 31) <= extended < (1 << 31):
         extended = None
     primary = None if extended is None else extended & 0xFF
-    os_errno = error.errno if isinstance(error, OSError) else None
+    os_errno = getattr(error, "errno", None)
+    if type(os_errno) is not int or not -(1 << 31) <= os_errno < (1 << 31):
+        os_errno = None
     if primary == sqlite3.SQLITE_FULL or os_errno == errno.ENOSPC:
         state = PersistenceAdmissionState.UNAVAILABLE_DISK_FULL
-    elif primary in (sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB):
+    elif primary in (sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB) or extended in (
+        sqlite3.SQLITE_IOERR_DATA,
+        sqlite3.SQLITE_IOERR_CORRUPTFS,
+    ):
         state = PersistenceAdmissionState.UNAVAILABLE_CORRUPT
     else:
         state = PersistenceAdmissionState.UNAVAILABLE_IO
@@ -194,3 +203,80 @@ def open_receiver_database(
             except sqlite3.Error:
                 pass  # Preserve the original validation failure; never delete files.
     return DatabaseOpenResult(failure=failure)
+
+
+def validate_receiver_connection(
+    connection: sqlite3.Connection, group_id: bytes
+) -> DatabaseFailure | None:
+    """Revalidate an idle owner connection before retained work may recover."""
+    from .generated import receiver_entities_generated as rows
+
+    if connection.in_transaction:
+        raise ValueError("connection validation requires a safe transaction boundary")
+    try:
+        _validate_identity(connection, group_id)
+        _validate_integrity(connection)
+        for table, columns in (
+            (rows.CLOCK_OBSERVATION_V1_TABLE, rows.CLOCK_OBSERVATION_V1_COLUMNS),
+            (rows.DIAGNOSTIC_V1_TABLE, rows.DIAGNOSTIC_V1_COLUMNS),
+            (rows.RECEIVER_HEALTH_V1_TABLE, rows.RECEIVER_HEALTH_V1_COLUMNS),
+            (rows.MESSAGE_PROFILE_ROW_V1_TABLE, rows.MESSAGE_PROFILE_ROW_V1_COLUMNS),
+            (rows.READING_MESSAGE_ROW_V1_TABLE, rows.READING_MESSAGE_ROW_V1_COLUMNS),
+            (
+                rows.QUARANTINED_ENTITY_ROW_V1_TABLE,
+                rows.QUARANTINED_ENTITY_ROW_V1_COLUMNS,
+            ),
+        ):
+            try:
+                connection.execute(f"SELECT {', '.join(columns)} FROM {table} LIMIT 0")
+            except sqlite3.Error as error:
+                if getattr(error, "sqlite_errorcode", None) in (
+                    sqlite3.SQLITE_ERROR,
+                    sqlite3.SQLITE_SCHEMA,
+                ):
+                    raise _ValidationFailure(
+                        PersistenceAdmissionState.UNAVAILABLE_INCOMPATIBLE_SCHEMA
+                    ) from None
+                raise
+        if (
+            connection.execute("PRAGMA journal_mode").fetchone() != ("wal",)
+            or connection.execute("PRAGMA synchronous").fetchone() != (2,)
+            or connection.execute("PRAGMA foreign_keys").fetchone() != (1,)
+            or connection.execute("PRAGMA busy_timeout").fetchone()
+            != (SQLITE_BUSY_TIMEOUT_MS,)
+            or connection.execute("PRAGMA wal_autocheckpoint").fetchone() != (0,)
+            or not connection.getconfig(sqlite3.SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE)
+        ):
+            raise _ValidationFailure(PersistenceAdmissionState.UNAVAILABLE_IO)
+    except _ValidationFailure as error:
+        return DatabaseFailure(error.state)
+    except (sqlite3.Error, OSError) as error:
+        return database_failure(error)
+    return None
+
+
+class StorageUnavailable(Exception):
+    """Internal transport for already classified storage inspection evidence."""
+
+    def __init__(self, failure: DatabaseFailure) -> None:
+        super().__init__("storage unavailable")
+        self.failure = failure
+
+
+def inspect_receiver_storage(
+    path: Path, *, minimum_free_bytes: int
+) -> DatabaseFailure | None:
+    """Check preventive capacity and access on the receiver's actual filesystem."""
+    try:
+        filesystem = os.statvfs(path.parent)
+        if filesystem.f_flag & os.ST_RDONLY:
+            raise OSError(errno.EROFS, "database filesystem is read-only")
+        if not os.access(path, os.R_OK | os.W_OK, effective_ids=True) or not os.access(
+            path.parent, os.W_OK | os.X_OK, effective_ids=True
+        ):
+            raise OSError(errno.EACCES, "database storage is not writable")
+        if filesystem.f_bavail * filesystem.f_frsize < minimum_free_bytes:
+            return DatabaseFailure(PersistenceAdmissionState.UNAVAILABLE_LOW_SPACE)
+    except OSError as error:
+        return database_failure(error)
+    return None

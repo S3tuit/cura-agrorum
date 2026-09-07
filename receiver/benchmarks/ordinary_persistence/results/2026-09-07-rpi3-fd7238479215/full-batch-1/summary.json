@@ -1,0 +1,41 @@
+{
+  "mode": "FULL",
+  "maximum_batch_entities": 1,
+  "offered_entities_per_second": 1000,
+  "offered": 10000,
+  "accepted": 1663,
+  "queue_full": 8337,
+  "acknowledged": 1663,
+  "elapsed_us": 15550292.975,
+  "entities_per_second": 106.94332271897277,
+  "transactions_per_second": 106.94332271897277,
+  "commit_latency_us": {
+    "50": 3293.631,
+    "95": 8175.562,
+    "99": 35292.299,
+    "100": 52356.947
+  },
+  "attempt_duration_us": {
+    "50": 7033.449,
+    "95": 12256.729,
+    "99": 38419.736,
+    "100": 55319.23
+  },
+  "checkpoint_duration_us": {
+    "50": 28878,
+    "95": 86235,
+    "99": 95656,
+    "100": 95656
+  },
+  "checkpoint_count": 52,
+  "queue_max_entities": 500,
+  "wal_max_bytes": 597432,
+  "actual_batch_mean": 1.0,
+  "table_counts": {
+    "clock_observations": 93,
+    "message_profiles": 1407,
+    "reading_messages": 1318,
+    "diagnostics": 82,
+    "receiver_health": 81
+  }
+}

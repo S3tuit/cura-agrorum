@@ -1590,7 +1590,9 @@ On a low-space or disk-full condition, the persistence thread:
 2. publishes the corresponding unavailable state;
 3. avoids a tight retry loop by using bounded retry backoff while observing free space;
 4. retries the original immutable units without reconstruction when space is available; and
-5. returns to `AVAILABLE` only after the required database checks and a transaction succeed.
+5. returns to `AVAILABLE` only after the required database checks and pending
+   transaction work succeed, or the explicit checkpoint recovery rule below is
+   satisfied when a checkpoint failed without a pending transaction.
 
 Disk-full failure is not a poisoned-entity classification and must not cause a queued unit to be dropped or quarantined.
 
@@ -1613,7 +1615,8 @@ ordinary transaction has such a failure, the persistence thread:
 6. reopens and revalidates SQLite when required, then retries or reconciles the
    original pending batch without reconstruction; and
 7. resets the backoff and returns to `AVAILABLE` only after the required checks
-   and the pending transaction commit or exact reconciliation succeed.
+   and the pending transaction commit or exact reconciliation succeed, with no
+   failed checkpoint still pending.
 
 There is no maximum retry count for this recoverable state. At the cap the
 persistence thread continues low-frequency attempts so an operator-corrected
@@ -1625,7 +1628,22 @@ schema remain operator-recovery states under their separate policies.
 The same unavailable state and retry scheduler pace a transient/global failure
 while reconciling an unknown ordinary outcome or committing quarantine; those
 paths retain the active lease and frozen intended rows required by their
-existing reconciliation contracts.
+existing reconciliation contracts. The same closed failure classifier applies
+to ordinary transactions, reconciliation, quarantine and checkpoints. Capacity,
+corruption and incompatibility keep their distinct states and recovery rules;
+quarantine does not override them with a generic I/O state.
+
+A recoverable explicit checkpoint failure remains pending persistence work even
+when `PersistQueue` is empty. Ordinary admission stays closed. At each existing
+retry deadline, persistence revalidates storage and retries that checkpoint at
+a safe boundary; it never creates an application row or queue entity to probe
+recovery. A confirmed non-error checkpoint result permits `AVAILABLE` only
+after required validation and any pending ordinary/quarantine effects have
+also been confirmed or exactly reconciled. Only then does recovery reset its
+backoff. A successful `PASSIVE` checkpoint may report incomplete progress
+because of readers; this is a bounded checkpoint result, not data loss or
+permission to discard the remaining WAL. Corrupt or incompatible checkpoint
+results still require operator recovery.
 
 On SQLite corruption or a failed configured integrity check, the persistence thread rolls back when possible, publishes `UNAVAILABLE_CORRUPT`, closes the database and preserves the database, WAL and shared-memory files together. It must not automatically delete, replace, truncate or rebuild them. Radio RX may continue with all new ordinary `PersistQueue` admission closed so nodes retain their readings. Operator recovery must preserve the corrupt artifacts for diagnosis, restore or recover the database through an explicit maintenance procedure, and pass startup validation before persistence returns to `AVAILABLE`.
 
@@ -1819,8 +1837,9 @@ claimed FIFO prefix or leaves it at the head for a later transaction.
 
 All queue units are complete immutable typed values when published. A poisoned
 unit is an admitted unit that reproducibly fails while isolated because of an
-entity-specific binding, derivation, range, schema-version or unexpected
-schema-constraint defect. Malformed radio input, duplicate classification,
+entity-specific binding, derivation, range or unexpected
+schema-constraint defect. Unsupported queue specifications are rejected before reservation, so the pilot
+never emits `UNSUPPORTED_ENTITY_SCHEMA` as poison. Malformed radio input, duplicate classification,
 expected uniqueness conflicts, disk full, locking, database corruption and
 transient or global I/O failures are not poison.
 
@@ -1859,7 +1878,7 @@ WAL/`FULL` transaction. Only a confirmed or reconciled quarantine commit
 permits the batch to acknowledge that unit as `QUARANTINED`. If evidence cannot
 be encoded or quarantine cannot be durably committed, the complete batch
 remains queue-owned, persistence closes new ordinary admission and reports the
-applicable incompatible or I/O state. Infinite retry of the same failing batch
+state selected by the closed storage-failure classifier. Infinite retry of the same failing batch
 is not acceptable, but neither is removing an already-ACKed unit without
 durable evidence. Quarantining is successful failure isolation, not successful
 canonical measurement persistence; the retained evidence exists for diagnosis

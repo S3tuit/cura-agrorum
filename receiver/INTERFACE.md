@@ -952,7 +952,9 @@ reason.
 
 The initial state is `UNAVAILABLE_STARTING`. A controlled shutdown stops
 communicator admission directly and does not require another persistence
-state. A failed quarantine write uses `UNAVAILABLE_IO`.
+state. Quarantine failures use the same closed classifier below as ordinary
+transactions, reconciliation and checkpoints; capacity, corruption and
+incompatibility retain their distinct states and recovery requirements.
 
 The published snapshot is:
 
@@ -1101,8 +1103,11 @@ Rewrapping an unaccepted current reading as backlog is therefore
 
 ### `QuarantineFailureReason`
 
-These values describe why an otherwise admitted immutable queue unit was
-classified as an item-specific poison. They are persistence provenance, not a
+These values identify item-specific poison provenance. `UNSUPPORTED_ENTITY_SCHEMA`
+retains its existing numeric assignment but is not emitted by the pilot: the
+queue rejects unsupported specifications before reservation, so an admitted
+unsupported schema cannot reach persistence. The remaining values describe why
+an otherwise admitted immutable queue unit was classified as poison. They are persistence provenance, not a
 second diagnostic record.
 
 | Value | Name |
@@ -1910,7 +1915,9 @@ recovery attempt to a five-second cap using
 the persistence thread continues low-frequency recovery attempts so an
 operator-corrected mount, access or contention condition can recover without a
 process restart. The backoff resets only after the pending batch transaction
-commits or exact reconciliation proves its complete durable effect.
+commits or exact reconciliation proves its complete durable effect, and no
+failed checkpoint remains pending. A failed checkpoint with no pending batch
+uses the completion rule below.
 
 Every SQLite connection uses a finite 250-millisecond pilot busy timeout for
 ordinary, reconciliation and quarantine lock acquisition. A control operation
@@ -1922,7 +1929,7 @@ At each retry deadline persistence reopens the database when required,
 re-establishes and verifies the applicable connection, durability, schema and
 metadata invariants, and retries the original FIFO head with its frozen work.
 It returns to `AVAILABLE` only after those checks and the pending transaction
-succeeds. `OUTCOME_UNKNOWN` retains its active lease and frozen values and must
+succeeds, with no failed checkpoint still pending. `OUTCOME_UNKNOWN` retains its active lease and frozen values and must
 complete exact reconciliation before this ordinary retry path may run. If a
 reconciliation attempt encounters another classified global transient failure,
 persistence remains `UNAVAILABLE_IO`, retains that active lease and uses the
@@ -1936,6 +1943,19 @@ quarantine commit retains those values and reconciles the exact row under the
 same paced scheduler. `release_for_retry()` above applies to a definitely
 uncommitted ordinary batch only, not to these active reconciliation or
 quarantine dispositions.
+
+An explicit checkpoint failure uses the same closed storage-failure classifier.
+Persistence retains a checkpoint-pending condition independently of queue slots
+or batch leases, and closes new ordinary admission. A recoverable failure uses
+the same retry deadlines and capped backoff even when the queue is empty. At a
+due safe boundary, revalidate storage and retry the checkpoint; do not insert a
+synthetic entity or application row as a recovery probe. Clear the pending
+condition only after a confirmed non-error checkpoint result. Required database
+validation, all pending ordinary/quarantine effects, and the pending checkpoint
+must be resolved before resetting backoff and publishing `AVAILABLE`. A
+non-error `PASSIVE` result with incomplete progress because of readers counts
+as a successful bounded attempt; retain the remaining WAL for later
+checkpointing. Corrupt and incompatible results require operator recovery.
 
 The shared wakeup event interrupts this backoff for a control command or
 shutdown. After any such wake, persistence checks all work predicates but does
@@ -3184,7 +3204,7 @@ shutdown was not durably confirmed.
 
 A poisoned unit is a complete immutable typed queue unit that reproducibly
 fails persistence when isolated because of an entity-specific binding,
-derivation, range, schema-version or unexpected schema-constraint defect. It is
+derivation, range or unexpected schema-constraint defect. It is
 not malformed radio input, a duplicate classification, disk full, database
 corruption, locking or a transient/global I/O failure.
 
@@ -3311,8 +3331,13 @@ the append-only contract.
 
 Only after the quarantine transaction commits may the batch disposition be
 `QUARANTINED`. An ambiguous commit is reconciled by selecting and comparing the
-row. Failure to make quarantine durable retains the complete queue batch,
-publishes `UNAVAILABLE_IO` and closes new ordinary admission.
+row. Failure to make quarantine durable retains the active lease, complete
+queue batch and frozen quarantine row, and closes new ordinary admission using
+the same closed storage-failure classifier as ordinary transactions. Capacity
+failures retain their low-space/full state; corruption and incompatible rows
+require operator recovery; other global/transient failures use
+`UNAVAILABLE_IO` and paced recovery. No failed quarantine loses its evidence
+or permits acknowledgement.
 
 Quarantine carries minimal failure provenance because asynchronous persistence
 cannot return an entity-specific error to the communicator and therefore no

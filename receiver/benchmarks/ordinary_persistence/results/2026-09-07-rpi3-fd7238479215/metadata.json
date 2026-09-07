@@ -1,0 +1,39 @@
+{
+  "format_version": 1,
+  "source_manifest_sha256": "fd7238479215f7a55f4994772373c5559061a76deb4d715eef9d9b47119d866a",
+  "model": "Raspberry Pi 3 Model B Rev 1.2",
+  "platform": "Linux-6.18.39+rpt-rpi-v8-aarch64-with-glibc2.41",
+  "python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+  "sqlite": "3.46.1",
+  "load_start": [
+    0.080078125,
+    0.091796875,
+    0.07373046875
+  ],
+  "filesystem": {
+    "filesystems": [
+      {
+        "fstype": "ext4",
+        "source": "/dev/mmcblk0p2",
+        "target": "/"
+      }
+    ]
+  },
+  "seconds": 10,
+  "rate": 1000,
+  "batch_sizes": [
+    1,
+    16,
+    64
+  ],
+  "checkpoint_every_batches": 32,
+  "checkpoint_minimum_wal_bytes": 262144,
+  "batch_flush_limit_us": 100000,
+  "queue_capacity_entities": 500,
+  "workload": "80% current/backlog readings; 5% each rejected profile, clock, health, diagnostic",
+  "load_end": [
+    0.951171875,
+    0.35693359375,
+    0.17041015625
+  ]
+}

@@ -254,7 +254,7 @@ def test_database_lock_failure(tmp_path: Path) -> None:
         other.close()
 
 
-# Every binding-exposed error result fails closed unless its documented primary code is full/corrupt.
+# Every binding-exposed result preserves full/corrupt paths, including corruption-specific IOERR extensions.
 @pytest.mark.parametrize(
     "code",
     sorted(
@@ -298,6 +298,7 @@ def test_startup_sqlite_error_classification(code: int) -> None:
         else (
             State.UNAVAILABLE_CORRUPT
             if code & 255 in (sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB)
+            or code in (sqlite3.SQLITE_IOERR_DATA, sqlite3.SQLITE_IOERR_CORRUPTFS)
             else State.UNAVAILABLE_IO
         )
     )

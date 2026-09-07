@@ -36,7 +36,7 @@ def _unsigned(value: int, bits: int) -> int:
     return value
 
 
-def _check_parameters(columns: tuple[str, ...], parameters: SqliteRow) -> None:
+def validate_sqlite_parameters(columns: tuple[str, ...], parameters: SqliteRow) -> None:
     for column, value in zip(columns, parameters, strict=True):
         if value is None or type(value) is bytes:
             continue
@@ -63,7 +63,7 @@ class SqliteRepository:
     def _insert(
         self, table: str, columns: tuple[str, ...], parameters: SqliteRow
     ) -> None:
-        _check_parameters(columns, parameters)
+        validate_sqlite_parameters(columns, parameters)
         if not self._connection.in_transaction:
             raise RuntimeError("repository inserts require a caller-owned transaction")
         self._connection.execute(

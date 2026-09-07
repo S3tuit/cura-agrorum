@@ -31,8 +31,14 @@ The protocol contract remains under
   owner, while `receiver_startup.py` creates process identities and commits
   lifecycle start rows. `sqlite_database.py` opens and validates existing
   databases, and `sqlite_repository.py` supplies explicit row operations within
-  caller-owned transactions. These modules do not implement the persistence
-  worker, transaction replay, recovery scheduler or complete radio startup.
+  caller-owned transactions. `ordinary_persistence.py` adds caller-driven queue
+  transactions, immutable health enrichment, exact replay, poison quarantine,
+  recovery deadlines and explicit checkpoint recovery; `reading_persistence.py`
+  owns reading classification
+  and canonical evidence checks. `sqlite_transactions.py` is the concrete
+  SQLite transaction/checkpoint fault boundary. The caller supplies dispatch;
+  the persistence worker, control scheduler, automatic checkpoint scheduling
+  and complete radio startup remain later components.
   [`ports/`](cura_receiver/ports/) defines narrow production capabilities, and
   [`platform/`](cura_receiver/platform/) contains their deployed Linux adapters.
 - [`schemas/`](schemas/) contains machine-readable receiver sources of truth for

@@ -29,6 +29,22 @@ detection for the queue's real-thread tests. Chrony, DS3231, SX1262, host-
 health, filesystem and persistence fakes wait for their production interfaces
 and component tests.
 
+The ordinary-persistence suites now share reviewed literal entity inputs in
+`builders/persistence.py`. Their real-file host fixture is local to the host
+suite. Fault cases subclass the concrete production `SqliteTransactions`
+begin/commit/rollback/checkpoint boundary locally; they do not emulate SQL.
+The host and Pi crash families share
+`coordination/persistence_crash.py` for named child readiness, bounded
+termination/join and pre-recovery database/WAL/SHM preservation. Only the
+parent-written test input file is deserialized; production never restores a
+volatile queue from it.
+`models/ordinary_persistence.py` is shared by reviewed model examples and the
+generated state-machine suite. It uses primitive inputs, copied dictionaries
+and FIFO lists, with no production classifier, binder, codec or builder.
+The model covers mixed clock/profile/reading work, commit uncertainty, poison,
+identity collisions and volatile-state loss on restart; exhaustive health and
+quarantine byte contracts remain in their deterministic suites.
+
 ## Builders
 
 A shared builder creates valid test input with reviewed literal defaults and

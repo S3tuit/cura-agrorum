@@ -3,7 +3,11 @@
 Status: this document defines the pilot receiver test suite. Generated
 contracts, initialization, clocks, queue, ingress, configuration/boot identity,
 database opening, lifecycle start and SQLite row primitives have host coverage.
-Pi component coverage includes queue/ingress and the startup/database boundary;
+Caller-driven ordinary transactions, immutable enrichment, reading classification,
+exact replay, poison isolation, recovery deadlines, explicit checkpoints,
+process-kill boundaries and model-based sequences also have host coverage.
+Pi component coverage includes queue/ingress, startup, ordinary transactions,
+process-kill recovery and isolated capacity/access/corruption recovery;
 the remaining runtime tests below arrive with their production components.
 
 ## Purpose and authority
@@ -301,8 +305,28 @@ WAL/FULL enforcement, durable lifecycle insertion, concrete row projection and
 SQLite integer boundaries using real temporary databases. Its Pi tests verify
 the production connection and record deployed SQLite capabilities. Raw
 singleton reads do not perform communicator-state classification or recovery.
-The transaction policy, replay, worker, checkpoint scheduling and recovery
-obligations below remain required for their owning later components.
+The caller-driven ordinary component now has deterministic transaction,
+classification, enrichment, replay, storage-failure and poison/recovery coverage.
+Explicit checkpoint recovery, bounded process-kill tests and an independent
+persistence model also have host coverage. Pi tests exercise mixed ordinary
+transactions, named crash boundaries, a bounded full filesystem, permissions,
+read-only remounts and corrupt-file maintenance. The
+[FULL/NORMAL storage benchmark](benchmarks/ordinary_persistence/README.md)
+retains raw target evidence separately from correctness tests.
+
+The component runs no worker or control scheduler. Interruptible waiting,
+automatic threshold dispatch, control fairness, communicator-state recovery,
+service lifecycle and physical power interruption remain with their owning
+later components/fixtures; the obligations below remain in force.
+
+The ordinary storage destructive fixture mounts only a dedicated 4 MiB tmpfs
+below the marked test root, retains its bounded artifacts and unmounts in
+teardown. It requires sudo authorization for `mount` and `umount`; an optional
+`CURA_RECEIVER_TEST_SUDO_PASSWORD` environment value is passed on stdin and
+never written to evidence. Permission tests use the unprivileged receiver
+account. The read-only fixture closes its SQLite handles before remounting,
+then verifies a real reopen after restoring write access. Normal transaction
+measurements and the benchmark use the deployed storage filesystem.
 
 ### Host tests
 
@@ -323,12 +347,13 @@ obligations below remain required for their owning later components.
 - **Corrupt-state recovery:** Preserve every exact rejected singleton row and install the synthetic worst-case generation-one ledger atomically before TX can become eligible.
 - **Unsupported/policy recovery:** Enforce the complete conservative rolling-window wait, restart-reset wait and atomic archive plus empty generation-one replacement without decoding or repairing the rejected state.
 - **Closed storage-failure classifier:** Map low space, disk full, corruption, incompatibility, global/transient I/O, entity-specific reproducible faults and unrecognized errors to their exact distinct paths, with unknown results failing closed as `UNAVAILABLE_IO`.
-- **Retry scheduler:** Verify finite per-attempt SQLite waits and interruptible 250 ms doubling backoff capped at 5 seconds, no maximum retry count, no early retry after unrelated wakeup and recovery only after validation plus commit/reconciliation.
+- **Retry scheduler:** Verify finite per-attempt SQLite waits and interruptible 250 ms doubling backoff capped at 5 seconds, no maximum retry count, no early retry after unrelated wakeup and recovery only after validation plus pending commit/reconciliation and any failed checkpoint retry.
+- **Explicit checkpoint recovery:** Exercise an empty queue and pending ordinary/quarantine effects when a checkpoint fails. Verify the closed classifier, retained checkpoint-pending condition independent of queue slots, closed new admission, exact retry deadlines through the cap, required revalidation and recovery only after both the checkpoint and pending entity effects succeed. Distinguish a non-error incomplete PASSIVE result caused by a real reader from an I/O failure, retain remaining WAL, and require operator recovery for corruption/incompatibility. No synthetic entity or application-row recovery probe is allowed.
 - **Retained frozen batch:** On global failure, retain original immutable units and every derived classification/enrichment value without reconstruction or poison classification.
 - **Corruption preservation:** On corruption, close admission and preserve database, WAL and shared-memory files together without delete, truncate, rebuild or silent epoch replacement. For corrupt or incompatible startup rejection, require unchanged database/WAL bytes and retained identities and sizes of all existing artifacts; permit SQLite-managed shared-memory WAL-index and coordination bookkeeping as defined in `ARCHITECTURE.md`.
-- **Poison isolation:** Require an entity-specific failure to reproduce alone before quarantine, then store exact canonical `QuarantineEvidenceV1` bytes and provenance durably before later valid units proceed.
+- **Poison isolation:** Require an entity-specific failure to reproduce alone before quarantine, then store exact canonical `QuarantineEvidenceV1` bytes and provenance durably before later valid units proceed. `UNSUPPORTED_ENTITY_SCHEMA` is non-emittable by the pilot; test unsupported-spec rejection at the queue boundary without fabricating admission.
 - **Non-quarantinable clock boundary:** Reproduce an isolated `ClockObservationV1` failure and require retained queue head plus incompatible admission, with no bypass or quarantine.
-- **Quarantine reconciliation:** Cover confirmed, definite-failure and ambiguous quarantine commits, accepting only an exactly matching frozen row and retaining the active lease otherwise.
+- **Quarantine reconciliation:** Cover confirmed, definite-failure and ambiguous quarantine commits, accepting only an exactly matching frozen row and retaining the active lease otherwise. Apply the closed classifier to quarantine too: low space/full retain their states, corruption preserves artifacts and requires maintenance, incompatible rows require operator recovery, and other global/transient faults use paced I/O recovery.
 - **No automatic retention:** Populate every retained table and prove normal operation and checkpointing never delete active-epoch canonical, profile, health, diagnostic or quarantine history.
 - **Integer storage boundaries:** Persist every queue-bound unsigned value at `INT64_MAX` and reject the next value before SQL silently changes its meaning.
 - **Subprocess crash matrix:** Terminate a child before transaction, during writes, before commit, after commit may have run and after acknowledgement and verify startup recovery/reconciliation for each durable outcome.

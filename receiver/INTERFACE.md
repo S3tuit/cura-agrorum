@@ -1844,7 +1844,7 @@ fields remain separate work data and never mutate a claimed entity.
 Python cannot revoke a retained entry-view or payload alias after the lease
 ends; using either beyond the active lease is an interface violation.
 
-### Durable batch disposition
+### Durable FIFO completion
 
 SQLite execution first produces an internal `OrdinaryBatchCommitOutcome`:
 
@@ -1861,37 +1861,36 @@ the batch. Once an entity's `COMMIT` may have succeeded, a later existing
 identity is handled by the idempotent replay contract below rather than as an
 unexpected uniqueness failure.
 
-`PersistQueueBatchDisposition` is process-local and is not encoded in queue
-entities:
-
-| Value | Name | Meaning |
-|---:|---|---|
-| `1` | `SQLITE_COMMITTED` | The entity's required SQLite effects committed successfully |
-| `2` | `QUARANTINED` | The exact entity and required failure metadata were durably quarantined |
-
 The batch lease exposes:
 
 ```python
 batch.acknowledge_durable(
-    dispositions: tuple[PersistQueueBatchDisposition, ...],
+    *,
+    completed_entities: int,
 ) -> None
 
 batch.release_for_retry() -> None
 ```
 
-`acknowledge_durable()` requires exactly one disposition per entry in order. The
-persistence thread may acknowledge only after every entry has reached the
-reported durable outcome. For example, a batch containing valid `X`, poisoned
-`Y` and valid `Z` may be removed only after `X` and `Z` commit to SQLite and
-`Y` is durably quarantined. Failure of either durable operation retains the
-complete batch. Persistence must retain completed per-entry work or make it
-idempotent so retry does not invalidate an already durable disposition.
+`completed_entities` must be an exact positive integer no greater than the
+lease's remaining entry count. The persistence owner asserts that every entry
+in that FIFO prefix has its complete ordinary SQLite effects committed or
+exactly reconciled, or its complete poison evidence durably quarantined. The
+queue does not receive or store the distinction between these outcomes.
+
+For valid `X`, poisoned `Y` and valid `Z`, persistence removes `X` as soon as its
+transaction commits, removes `Y` after its quarantine commits, then processes
+`Z`. A measurement/profile pair remains one indivisible entity. Failed or
+uncertain work and all following entries remain owned; earlier completed
+entries do not occupy queue slots or need a completed-disposition ledger.
 
 Acknowledgement atomically validates that the lease still names the claimed
-queue-head prefix, removes the entire prefix, releases its entity slots,
-invalidates the lease and wakes any shutdown waiter. The queue trusts
-the persistence thread's durability assertion; it does not perform I/O to
-verify it.
+queue-head prefix and removes exactly `completed_entities` entries. A partial
+acknowledgement keeps the same live lease with `entries` naming its remaining
+suffix. Previously borrowed entry tuples/views must not be reused; read the
+updated `entries` after acknowledgement. Full completion invalidates the lease
+and wakes any shutdown waiter. The queue trusts the persistence owner's
+durability assertion and performs no I/O to verify it.
 
 `release_for_retry()` removes nothing. It clears the active claim, invalidates
 the lease and leaves every entry in its original FIFO position so persistence
@@ -1936,13 +1935,29 @@ persistence remains `UNAVAILABLE_IO`, retains that active lease and uses the
 same capped backoff for the next reconciliation attempt; it does not release or
 blindly retry the batch.
 
+The opener and startup transfer a concrete validated database handle containing
+the connection, canonical resolved path, configured group and file identity.
+Ordinary persistence accepts this handle, not a separately supplied connection
+and path. Inspection and reopen use the same bound storage context. A changed
+file identity is incompatible with same-process recovery; it must not silently
+switch a pending FIFO to another database.
+
+An operator may restore older history only through stop, preserve the rejected
+database/WAL/SHM set and available failure evidence, restore, then restart with
+a new receiver instance and normal startup validation. This last resort loses
+the remaining volatile queue and all history missing from the selected backup.
+Commit/replay guarantees do not reconstruct history removed by that maintenance
+operation. There is no automatic restoration or storage-generation proof model.
+Best-effort external evidence capture never writes into the damaged database,
+changes its originals, or replaces the primary failure with a capture error.
+
 A definite transient/global failure while committing a frozen quarantine row
 uses the same unavailable state and backoff but retains the active batch lease,
 the isolation result and the exact intended quarantine row. An ambiguous
 quarantine commit retains those values and reconciles the exact row under the
 same paced scheduler. `release_for_retry()` above applies to a definitely
 uncommitted ordinary batch only, not to these active reconciliation or
-quarantine dispositions.
+quarantine attempts.
 
 An explicit checkpoint failure uses the same closed storage-failure classifier.
 Persistence retains a checkpoint-pending condition independently of queue slots
@@ -1979,7 +1994,7 @@ The primary durable identity for each queue entity is:
 For an absent identity, persistence executes normal insertion. For an existing
 identity, every stored column must equal the frozen intended value, using exact
 byte equality for BLOBs and null-safe equality for optional values. Exact
-equality is successful `SQLITE_COMMITTED` reconciliation and leaves the row
+equality is successful durable reconciliation and leaves the row
 unchanged. Any difference is a correctness-critical identity collision:
 persistence retains the lease, performs no update or quarantine, publishes
 `UNAVAILABLE_INCOMPATIBLE_SCHEMA` and requires operator or implementation
@@ -2044,7 +2059,7 @@ acknowledgement.
 
 Invalid entity specifications or capacities, stale or foreign tokens, use
 after publication or cancellation, double publication or cancellation,
-overlapping batch claims, disposition-count mismatch and
+overlapping batch claims, invalid completed-prefix counts and
 acknowledgement of a stale queue prefix are implementation invariant failures.
 They do not become `AdmissionResult` values and must not trigger another
 capacity attempt after a response may have been sent.
@@ -3329,10 +3344,10 @@ quarantine row from the ambiguous attempt. Otherwise it is a
 database/invariant failure. Rows are never updated or deleted; triggers protect
 the append-only contract.
 
-Only after the quarantine transaction commits may the batch disposition be
-`QUARANTINED`. An ambiguous commit is reconciled by selecting and comparing the
-row. Failure to make quarantine durable retains the active lease, complete
-queue batch and frozen quarantine row, and closes new ordinary admission using
+Only after the quarantine transaction commits may its entity be acknowledged
+and removed from the FIFO. An ambiguous commit is reconciled by selecting and comparing the
+row. Failure to make quarantine durable retains the active suffix lease,
+pending queue entries and frozen quarantine row, and closes new ordinary admission using
 the same closed storage-failure classifier as ordinary transactions. Capacity
 failures retain their low-space/full state; corruption and incompatible rows
 require operator recovery; other global/transient failures use

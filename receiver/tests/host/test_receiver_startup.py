@@ -40,7 +40,7 @@ def _connection(tmp_path: Path) -> tuple[Path, sqlite3.Connection]:
     initialize_database(path, GROUP)
     result = open_receiver_database(path, GROUP, minimum_free_bytes=0)
     assert result.failure is None
-    return path, result.connection
+    return path, result.database.connection
 
 
 def _reader(tmp_path: Path) -> ReceiverConfigurationReader:
@@ -245,7 +245,7 @@ def test_startup_composition(tmp_path: Path) -> None:
         finally:
             observer.close()
     finally:
-        result.connection.close()
+        result.database.close()
 
 
 # Rollback failure preserves the original reason/codes and the actual commit boundary.
@@ -379,7 +379,7 @@ def test_startup_closes_connection_after_rollback_failure(
         minimum_free_bytes=0,
     )
     assert not result.started
-    assert result.connection is None
+    assert result.database is None
     assert result.instance_start.disposition is Disposition.NOT_STARTED
     assert (
         result.instance_start.failure.admission_state
@@ -435,7 +435,7 @@ from cura_receiver.receiver_startup import ReceiverInstanceStart, insert_receive
 from cura_receiver.sqlite_database import open_receiver_database
 opened = open_receiver_database(Path(sys.argv[1]), bytes.fromhex('0102030405060708'), minimum_free_bytes=0)
 assert opened.failure is None
-result = insert_receiver_instance_start(opened.connection, ReceiverInstanceStart(bytes.fromhex('00112233445546778899aabbccddeeff'), 12), bytes(16))
+result = insert_receiver_instance_start(opened.database.connection, ReceiverInstanceStart(bytes.fromhex('00112233445546778899aabbccddeeff'), 12), bytes(16))
 assert result.disposition is ReceiverInstanceStartDisposition.STARTED
 print('durable-start', flush=True)
 sys.stdin.buffer.read(1)
@@ -466,11 +466,11 @@ sys.stdin.buffer.read(1)
     opened = open_receiver_database(path, GROUP, minimum_free_bytes=0)
     assert opened.failure is None
     try:
-        assert opened.connection.execute(
+        assert opened.database.connection.execute(
             "SELECT * FROM receiver_instances"
         ).fetchall() == [(1, INSTANCE, bytes(16), 12, None, None)]
     finally:
-        opened.connection.close()
+        opened.database.close()
 
 
 # The last SQLite-compatible monotonic start value is durable without conversion to REAL.

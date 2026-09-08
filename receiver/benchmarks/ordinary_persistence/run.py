@@ -99,7 +99,8 @@ def _case(output, units, mode, batch_size, rate, checkpoint_every):
     output.mkdir()
     path = output / "receiver.db"
     initialize_database(path, GROUP)
-    connection = open_receiver_database(path, GROUP, minimum_free_bytes=0).connection
+    database = open_receiver_database(path, GROUP, minimum_free_bytes=0).database
+    connection = database.connection
     instance = ReceiverInstanceStart(INSTANCE, 0)
     insert_receiver_instance_start(connection, instance, b"b" * 16)
     wake = threading.Event()
@@ -119,11 +120,9 @@ def _case(output, units, mode, batch_size, rate, checkpoint_every):
             commits.append((time.perf_counter_ns() - started) / 1000)
 
     owner = OrdinaryPersistence(
-        connection,
+        database,
         queue,
         instance=instance,
-        database_path=path,
-        group_id=GROUP,
         clock=LinuxOsClock(),
         transactions=TimedTransactions(),
     )

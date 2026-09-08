@@ -7,6 +7,7 @@ import sqlite3
 import subprocess
 import tempfile
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,7 @@ from cura_receiver.platform.linux_clocks import LinuxOsClock
 from cura_receiver.platform.linux_host_observations import LinuxHostObservations
 from cura_receiver.receiver_startup import (
     ReceiverInstanceStart,
+    create_receiver_instance,
     insert_receiver_instance_start,
 )
 from cura_receiver.sqlite_database import open_receiver_database
@@ -49,16 +51,15 @@ pytestmark = pytest.mark.hardware
 
 def _create(path, *, minimum_free_bytes=0, host_observations=None):
     initialize_database(path, GROUP)
-    connection = open_receiver_database(path, GROUP, minimum_free_bytes=0).connection
+    database = open_receiver_database(path, GROUP, minimum_free_bytes=0).database
+    connection = database.connection
     instance = ReceiverInstanceStart(INSTANCE, 0)
     insert_receiver_instance_start(connection, instance, b"b" * 16)
     queue = PersistQueue()
     owner = OrdinaryPersistence(
-        connection,
+        database,
         queue,
         instance=instance,
-        database_path=path,
-        group_id=GROUP,
         clock=LinuxOsClock(),
         minimum_free_bytes=minimum_free_bytes,
         host_observations=host_observations,
@@ -382,7 +383,38 @@ def test_target_corrupt_artifacts_and_maintenance(tmp_path):
         shutil.copytree(backup, active)
         assert owner.attempt(max_entities=1) is None
         owner.request_operator_recovery()
-        assert owner.attempt(max_entities=1).acknowledged_entities == 1
-        assert queue.snapshot().admission_snapshot.state is State.AVAILABLE
+        assert (
+            owner.attempt(max_entities=1).failure.admission_state
+            is State.UNAVAILABLE_INCOMPATIBLE_SCHEMA
+        )
+        assert queue.snapshot().published_entities == 1
+        owner.close()
+        # A replacement starts a new instance with an empty volatile queue.
+        database = open_receiver_database(path, GROUP, minimum_free_bytes=0).database
+        instance = create_receiver_instance(LinuxOsClock())
+        insert_receiver_instance_start(database.connection, instance, b"b" * 16)
+        restarted_queue = PersistQueue()
+        restarted = OrdinaryPersistence(
+            database, restarted_queue, instance=instance, clock=LinuxOsClock()
+        )
+        try:
+            restarted.enable_admission()
+            assert restarted_queue.snapshot().published_entities == 0
+            assert database.connection.execute(
+                "SELECT count(*) FROM clock_observations"
+            ).fetchone() == (0,)
+            _publish(
+                restarted_queue,
+                replace(
+                    _observation(), receiver_instance_id=instance.receiver_instance_id
+                ),
+                CLOCK_OBSERVATION_V1_SPEC,
+            )
+            assert restarted.attempt(max_entities=1).acknowledged_entities == 1
+            assert (
+                restarted_queue.snapshot().admission_snapshot.state is State.AVAILABLE
+            )
+        finally:
+            restarted.close()
     finally:
         owner.close()

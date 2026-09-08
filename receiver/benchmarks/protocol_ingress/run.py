@@ -36,7 +36,6 @@ from cura_receiver.generated.receiver_enums_generated import (
 )
 from cura_receiver.persist_queue import (
     PersistQueue,
-    PersistQueueBatchDisposition,
     PersistenceAdmissionSnapshot,
 )
 from cura_receiver.platform.linux_clocks import LinuxOsClock
@@ -557,7 +556,7 @@ def _measure_one(
     lease = persist_queue.claim_batch(max_entities=1)
     if lease is None or len(lease.entries) != 1:
         raise RuntimeError("terminal ingress publication was not claimable")
-    lease.acknowledge_durable((PersistQueueBatchDisposition.SQLITE_COMMITTED,))
+    lease.acknowledge_durable(completed_entities=1)
     return elapsed_ns
 
 

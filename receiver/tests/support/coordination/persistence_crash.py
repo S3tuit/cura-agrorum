@@ -36,15 +36,14 @@ DURABLE_BOUNDARIES = frozenset(BOUNDARIES[4:])
 
 
 def _owner(path, *, transactions=None):
-    connection = open_receiver_database(path, GROUP, minimum_free_bytes=0).connection
+    database = open_receiver_database(path, GROUP, minimum_free_bytes=0).database
+    connection = database.connection
     assert connection is not None
     queue = PersistQueue()
     owner = OrdinaryPersistence(
-        connection,
+        database,
         queue,
         instance=ReceiverInstanceStart(INSTANCE, 0),
-        database_path=path,
-        group_id=GROUP,
         clock=FakeOsClock(monotonic_us=100),
         transactions=transactions,
     )
@@ -91,9 +90,9 @@ def _child(path: Path, boundary: str, intended_path: Path):
         )
     original_acknowledge = PersistQueueBatchLease.acknowledge_durable
 
-    def acknowledge(self, dispositions):
+    def acknowledge(self, *, completed_entities):
         arrive("before_acknowledgement")
-        original_acknowledge(self, dispositions)
+        original_acknowledge(self, completed_entities=completed_entities)
         arrive("after_acknowledgement")
 
     PersistQueueBatchLease.acknowledge_durable = acknowledge
@@ -168,9 +167,9 @@ def exercise_pair_crash(tmp_path, boundary):
     initialize_database(path, GROUP)
     opened = open_receiver_database(path, GROUP, minimum_free_bytes=0)
     insert_receiver_instance_start(
-        opened.connection, ReceiverInstanceStart(INSTANCE, 0), b"b" * 16
+        opened.database.connection, ReceiverInstanceStart(INSTANCE, 0), b"b" * 16
     )
-    opened.connection.close()
+    opened.database.close()
     intended = _measurement()
     _kill_at(path, boundary, intended)
     connection, queue, owner = _owner(path)

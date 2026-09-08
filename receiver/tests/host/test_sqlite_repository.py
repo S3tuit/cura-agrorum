@@ -333,7 +333,7 @@ def database(tmp_path: Path):
     initialize_database(path, NODE)
     result = open_receiver_database(path, NODE, minimum_free_bytes=0)
     assert result.failure is None
-    connection = result.connection
+    connection = result.database.connection
     insert_receiver_instance_start(
         connection, ReceiverInstanceStart(INSTANCE, 0), bytes(16)
     )

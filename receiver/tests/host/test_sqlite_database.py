@@ -20,6 +20,54 @@ from cura_receiver.sqlite_database import database_failure, open_receiver_databa
 GROUP = bytes.fromhex("0102030405060708")
 
 
+# Resolving an alias at open binds later inspection and reopen to that same file.
+def test_handle_binds_alias_and_reopens_same_file(tmp_path):
+    first = tmp_path / "first.db"
+    second = tmp_path / "second.db"
+    initialize_database(first, GROUP)
+    initialize_database(second, GROUP)
+    alias = tmp_path / "alias.db"
+    alias.symlink_to(first.name)
+    database = open_receiver_database(alias, GROUP, minimum_free_bytes=0).database
+    original = database.connection
+    try:
+        assert database.path == first.resolve()
+        assert database.group_id == GROUP
+        alias.unlink()
+        alias.symlink_to(second.name)
+        assert database.inspect_storage(minimum_free_bytes=0) is None
+        database.close()
+        assert database.revalidate(minimum_free_bytes=0) is None
+        assert database.connection is not original
+        assert database.connection.execute("PRAGMA database_list").fetchone()[2] == str(
+            first
+        )
+        with pytest.raises(AttributeError):
+            database.path = second
+    finally:
+        database.close()
+
+
+# A valid replacement must not become the storage of an already active handle.
+def test_handle_rejects_replaced_database(tmp_path):
+    first = tmp_path / "first.db"
+    replacement = tmp_path / "replacement.db"
+    initialize_database(first, GROUP)
+    initialize_database(replacement, GROUP)
+    database = open_receiver_database(first, GROUP, minimum_free_bytes=0).database
+    database.close()
+    first.rename(tmp_path / "original.db")
+    replacement.rename(first)
+    before = first.read_bytes()
+    for failure in (
+        database.inspect_storage(minimum_free_bytes=0),
+        database.revalidate(minimum_free_bytes=0),
+    ):
+        assert failure.admission_state is State.UNAVAILABLE_INCOMPATIBLE_SCHEMA
+    assert first.read_bytes() == before
+    assert (tmp_path / "original.db").exists()
+
+
 def _database(tmp_path: Path) -> Path:
     path = tmp_path / "receiver ?# database.sqlite3"
     initialize_database(path, GROUP)
@@ -31,7 +79,7 @@ def test_open_usable_database(tmp_path: Path) -> None:
     path = _database(tmp_path)
     result = open_receiver_database(path, GROUP, minimum_free_bytes=1)
     assert result.failure is None
-    connection = result.connection
+    connection = result.database.connection
     assert connection is not None
     try:
         for pragma, expected in (
@@ -111,7 +159,7 @@ def test_identity_rejection_preserves_database(tmp_path: Path, case: str) -> Non
     connection.close()
     before = path.read_bytes()
     result = open_receiver_database(path, GROUP, minimum_free_bytes=0)
-    assert result.connection is None
+    assert result.database is None
     assert result.failure.admission_state is State.UNAVAILABLE_INCOMPATIBLE_SCHEMA
     assert path.read_bytes() == before
     assert not Path(str(path) + "-wal").exists()
@@ -166,7 +214,7 @@ def test_real_corruption_is_preserved(tmp_path: Path, case: str) -> None:
             stream.write(b"\xff" * 32)
     before = path.read_bytes()
     result = open_receiver_database(path, GROUP, minimum_free_bytes=0)
-    assert result.connection is None
+    assert result.database is None
     assert result.failure.admission_state is State.UNAVAILABLE_CORRUPT
     assert path.read_bytes() == before
 
@@ -178,7 +226,7 @@ def test_unusable_database_path(tmp_path: Path, case: str) -> None:
     if case == "missing-parent":
         path /= "receiver.db"
     result = open_receiver_database(path, GROUP, minimum_free_bytes=0)
-    assert result.connection is None
+    assert result.database is None
     assert result.failure.admission_state is State.UNAVAILABLE_IO
     assert list(tmp_path.iterdir()) == []
 
@@ -236,7 +284,7 @@ def test_pragma_refusal(
 
     monkeypatch.setattr(sqlite_database.sqlite3, "connect", connect)
     result = open_receiver_database(path, GROUP, minimum_free_bytes=0)
-    assert result.connection is None
+    assert result.database is None
     assert result.failure.admission_state is State.UNAVAILABLE_IO
 
 

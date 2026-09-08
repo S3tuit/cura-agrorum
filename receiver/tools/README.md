@@ -14,3 +14,9 @@ The offline initializer lives in `cura_receiver/database_initializer.py`. It
 has different authority: it verifies and executes the exact packaged
 `schema.sql`, inserts deployment-specific metadata, and installs only a fresh
 database. It never regenerates schemas or enum assignments on the Pi.
+
+`capture_database_evidence.py` is an operator-only best-effort raw copy tool.
+Use it after stopping all database users, as described in the
+[last-resort restoration workflow](../db/README.md#last-resort-operator-restoration).
+It preserves the full database/WAL/SHM context in a new incident directory and
+reports capture errors; it never opens SQLite, repairs storage or restores a backup.

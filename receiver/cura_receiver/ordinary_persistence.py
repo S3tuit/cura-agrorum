@@ -10,7 +10,6 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass, fields, replace
 from enum import Enum, auto
-from pathlib import Path
 
 from .elapsed_duration import (
     MONOTONIC_ELAPSED_RATE_BOUND_PPM,
@@ -20,6 +19,14 @@ from .elapsed_duration import (
 from .generated import receiver_entities_generated as rows
 from .generated.receiver_enums_generated import (
     DATABASE_SCHEMA_VERSION,
+    AckSelection,
+    AckTxResult,
+    DiagnosticErrorDomain,
+    DiagnosticSeverity,
+    ProcessingResult,
+    RadioState,
+    RtcHealth,
+    SystemTimeQuality,
 )
 from .generated.receiver_enums_generated import (
     DiagnosticOperation as Operation,
@@ -37,9 +44,6 @@ from .persist_queue import (
     PersistenceAdmissionSnapshot,
     PersistQueue,
     PersistQueueBatchLease,
-)
-from .persist_queue import (
-    PersistQueueBatchDisposition as Disposition,
 )
 from .persist_queue_entities import (
     MeasurementProfileUnitV1,
@@ -67,14 +71,32 @@ from .receiver_startup import ReceiverInstanceStart
 from .sqlite_database import (
     DatabaseFailure,
     StorageUnavailable,
-    inspect_receiver_storage,
-    open_receiver_database,
+    ReceiverDatabase,
     validate_receiver_connection,
 )
 from .sqlite_repository import SqliteRepository, validate_sqlite_parameters
 from .sqlite_transactions import SqliteTransactions
 
 _INT64_MAX = (1 << 63) - 1
+
+
+def _require_enum_fields(entity: object, **expected_types: type[Enum]) -> None:
+    # Projection extracts .value; check the logical type before that information
+    # is lost, including before a reading replay compares its projected profile.
+    for name, expected in expected_types.items():
+        if type(getattr(entity, name)) is not expected:
+            raise TypeError(f"{name} must be a {expected.__name__}")
+
+
+def _validate_profile_enums(profile: rows.MessageProfilingV1) -> None:
+    if type(profile) is not rows.MessageProfilingV1:
+        raise TypeError("invalid profiling record")
+    _require_enum_fields(
+        profile,
+        processing_result=ProcessingResult,
+        ack_selected=AckSelection,
+        ack_tx_result=AckTxResult,
+    )
 
 
 class OrdinaryBatchCommitOutcome(Enum):
@@ -136,12 +158,10 @@ class OrdinaryPersistence:
 
     def __init__(
         self,
-        connection: sqlite3.Connection,
+        database: ReceiverDatabase,
         queue: PersistQueue,
         *,
         instance: ReceiverInstanceStart,
-        database_path: Path,
-        group_id: bytes,
         clock: MonotonicClock,
         transactions: SqliteTransactions | None = None,
         host_observations: HostObservationSource | None = None,
@@ -150,17 +170,18 @@ class OrdinaryPersistence:
     ) -> None:
         if type(instance) is not ReceiverInstanceStart:
             raise TypeError("instance must be a ReceiverInstanceStart")
-        if not isinstance(database_path, Path):
-            raise TypeError("database_path must be a Path")
-        if type(group_id) is not bytes or len(group_id) != 8:
-            raise ValueError("group_id must contain exactly eight bytes")
+        if type(database) is not ReceiverDatabase:
+            raise TypeError("database must be a validated ReceiverDatabase")
+        connection = database.connection
         if type(minimum_free_bytes) is not int or minimum_free_bytes < 0:
             raise ValueError("minimum_free_bytes must be a non-negative integer")
         if connection.in_transaction:
             raise ValueError(
                 "ordinary persistence requires a transaction-free connection"
             )
-        failure = validate_receiver_connection(connection, group_id)
+        failure = database.inspect_storage(minimum_free_bytes=0)
+        if failure is None:
+            failure = validate_receiver_connection(connection, database.group_id)
         if failure is not None:
             raise StorageUnavailable(failure)
         repository = SqliteRepository(connection)
@@ -177,16 +198,13 @@ class OrdinaryPersistence:
             raise ValueError(
                 "ordinary persistence requires ownership before admission publication"
             )
-        self._connection = connection
+        self._database = database
         self._repository = repository
         self._queue = queue
         self._instance = instance
-        self._path = database_path
-        self._group_id = group_id
         self._minimum_free_bytes = minimum_free_bytes
         minimum_wait_monotonic_us(0, rate_bound_ppm=monotonic_rate_bound_ppm)
         self._rate_bound = monotonic_rate_bound_ppm
-        self._file_identity = (database_path.stat().st_dev, database_path.stat().st_ino)
         self._clock = clock
         self._transactions = (
             transactions if transactions is not None else SqliteTransactions()
@@ -199,14 +217,13 @@ class OrdinaryPersistence:
         self._host = (
             host_observations
             if host_observations is not None
-            else LinuxHostObservations(database_path)
+            else LinuxHostObservations(database.path)
         )
         self._counters = PersistenceCounters()
         self._transitions = [0] * len(State)
         self._suspected = {}
         self._isolation_attempts = {}
         self._isolating = False
-        self._dispositions = []
         self._quarantine = {}
         self._unknown_indices = ()
         self._unknown_quarantine = False
@@ -275,12 +292,14 @@ class OrdinaryPersistence:
         try:
             if self._needs_validation or self._checkpoint_pending:
                 self._revalidate()
-            failure = inspect_receiver_storage(
-                self._path, minimum_free_bytes=self._minimum_free_bytes
+            failure = self._database.inspect_storage(
+                minimum_free_bytes=self._minimum_free_bytes
             )
             if failure is not None:
                 raise StorageUnavailable(failure)
-            busy, total, completed = self._transactions.checkpoint(self._connection)
+            busy, total, completed = self._transactions.checkpoint(
+                self._database.connection
+            )
             if busy:
                 raise StorageUnavailable(
                     DatabaseFailure(
@@ -340,33 +359,10 @@ class OrdinaryPersistence:
             )
 
     def _revalidate(self) -> None:
-        failure = inspect_receiver_storage(
-            self._path, minimum_free_bytes=self._minimum_free_bytes
-        )
+        failure = self._database.revalidate(minimum_free_bytes=self._minimum_free_bytes)
         if failure is not None:
             raise StorageUnavailable(failure)
-        metadata = self._path.stat()
-        current_identity = (metadata.st_dev, metadata.st_ino)
-        if current_identity != self._file_identity:
-            self.close()
-        if self._connection is not None:
-            failure = validate_receiver_connection(self._connection, self._group_id)
-            if failure is not None and failure.admission_state is State.UNAVAILABLE_IO:
-                self.close()
-            elif failure is not None:
-                raise StorageUnavailable(failure)
-        if self._connection is None:
-            opened = open_receiver_database(
-                self._path, self._group_id, minimum_free_bytes=self._minimum_free_bytes
-            )
-            if opened.failure is not None:
-                raise StorageUnavailable(opened.failure)
-            self._connection = opened.connection
-            self._repository = SqliteRepository(self._connection)
-            self._file_identity = current_identity
-            failure = validate_receiver_connection(self._connection, self._group_id)
-            if failure is not None:
-                raise StorageUnavailable(failure)
+        self._repository = SqliteRepository(self._database.connection)
         start = self._repository.find_receiver_instance(
             self._instance.receiver_instance_id
         )
@@ -412,7 +408,6 @@ class OrdinaryPersistence:
             if not self._tokens:
                 self._tokens = tokens
                 self._prepared = [None] * len(tokens)
-                self._dispositions = [None] * len(tokens)
         return True
 
     def _prepare(self, entity: object, kind: Kind) -> _PreparedUnit:
@@ -420,6 +415,7 @@ class OrdinaryPersistence:
             kind is Kind.MEASUREMENT_PROFILE
             and type(entity) is MeasurementProfileUnitV1
         ):
+            _validate_profile_enums(entity.profile)
             existing = self._repository.find_message_profile(
                 entity.profile.receiver_instance_id, entity.profile.occurrence_sequence
             )
@@ -430,14 +426,24 @@ class OrdinaryPersistence:
             )
             return _PreparedUnit(reading.profile, reading, entity)
         if kind is Kind.CLOCK_OBSERVATION and type(entity) is rows.ClockObservationV1:
+            _require_enum_fields(
+                entity, system_time_quality=SystemTimeQuality, rtc_health=RtcHealth
+            )
             return _PreparedUnit(entity)
         if kind is Kind.DIAGNOSTIC and type(entity) is rows.DiagnosticV1:
+            _require_enum_fields(
+                entity,
+                severity=DiagnosticSeverity,
+                error_domain=DiagnosticErrorDomain,
+                operation=Operation,
+            )
             return _PreparedUnit(entity)
         if (
             kind is Kind.PROFILE_ONLY
             and type(entity) is ProfileOnlyUnitV1
             and type(entity.profile) is rows.MessageProfilingV1
         ):
+            _validate_profile_enums(entity.profile)
             return _PreparedUnit(
                 rows.MessageProfileRowV1(entity.profile, Classification.NOT_APPLICABLE)
             )
@@ -445,6 +451,12 @@ class OrdinaryPersistence:
             kind is Kind.RECEIVER_HEALTH_REQUEST
             and type(entity) is ReceiverHealthRequestV1
         ):
+            _require_enum_fields(
+                entity,
+                radio_state=RadioState,
+                system_time_quality=SystemTimeQuality,
+                rtc_health=RtcHealth,
+            )
             for array in (
                 entity.radio_recovery_attempts_by_reason,
                 entity.chrony_step_command_results,
@@ -577,8 +589,7 @@ class OrdinaryPersistence:
         self, failure: DatabaseFailure, *, item_failure: bool = False
     ) -> tuple[DatabaseFailure, bool]:
         try:
-            if self._connection is not None:
-                self._transactions.rollback(self._connection)
+            self._transactions.rollback(self._database.connection)
             return failure, True
         except (sqlite3.Error, OSError) as error:
             cleanup = classify_global_failure(error)
@@ -610,18 +621,15 @@ class OrdinaryPersistence:
     def _finish(
         self, indices: tuple[int, ...], *, quarantine: bool, duration: int
     ) -> PersistenceAttemptResult:
-        disposition = (
-            Disposition.QUARANTINED if quarantine else Disposition.SQLITE_COMMITTED
-        )
-        new_count = sum(self._dispositions[index] is None for index in indices)
-        for index in indices:
-            self._dispositions[index] = disposition
+        count = len(indices)
+        if indices != tuple(range(count)):
+            raise RuntimeError("durable completion must name the pending FIFO prefix")
         if quarantine:
-            self._increment(durable_quarantine_successes=new_count)
+            self._increment(durable_quarantine_successes=count)
         else:
             self._increment(
                 batch_transaction_commits=1,
-                batch_entities_committed=new_count,
+                batch_entities_committed=count,
                 batch_commit_duration_total_us=duration,
             )
             self._counters = replace(
@@ -635,18 +643,27 @@ class OrdinaryPersistence:
         self._unknown_indices = ()
         self._unknown_quarantine = False
         self._needs_validation = False
-        count = 0
-        if all(value is not None for value in self._dispositions):
-            count = len(self._tokens)
-            self._lease.acknowledge_durable(tuple(self._dispositions))
+        self._lease.acknowledge_durable(completed_entities=count)
+        self._tokens = self._tokens[count:]
+        self._prepared = self._prepared[count:]
+        self._suspected = {
+            index - count: value
+            for index, value in self._suspected.items()
+            if index >= count
+        }
+        self._isolation_attempts = {
+            index - count: value
+            for index, value in self._isolation_attempts.items()
+            if index >= count
+        }
+        self._quarantine = {
+            index - count: value
+            for index, value in self._quarantine.items()
+            if index >= count
+        }
+        if not self._tokens:
             self._lease = None
-            self._tokens = ()
-            self._prepared = []
-            self._dispositions = []
-            self._suspected = {}
-            self._isolation_attempts = {}
             self._isolating = False
-            self._quarantine = {}
             self._complete_recovery()
         return PersistenceAttemptResult(
             OrdinaryBatchCommitOutcome.COMMITTED, acknowledged_entities=count
@@ -678,13 +695,13 @@ class OrdinaryPersistence:
         try:
             if self._needs_validation:
                 self._revalidate()
-            failure = inspect_receiver_storage(
-                self._path, minimum_free_bytes=self._minimum_free_bytes
+            failure = self._database.inspect_storage(
+                minimum_free_bytes=self._minimum_free_bytes
             )
             if failure is not None:
                 raise StorageUnavailable(failure)
             intended = self._quarantine[index]
-            self._transactions.begin(self._connection)
+            self._transactions.begin(self._database.connection)
             existing = self._repository.find_quarantined_entity(intended.quarantine_id)
             if existing is None:
                 self._repository.insert_quarantined_entity(intended)
@@ -694,7 +711,7 @@ class OrdinaryPersistence:
                 raise PersistenceIdentityCollision("quarantine identity collision")
             commit_started = self._clock.now_monotonic_us()
             may_have_committed = True
-            self._transactions.commit(self._connection)
+            self._transactions.commit(self._database.connection)
         except (
             sqlite3.Error,
             OSError,
@@ -731,8 +748,8 @@ class OrdinaryPersistence:
     def attempt(self, *, max_entities: int) -> PersistenceAttemptResult | None:
         """Run at most one transaction, or one rolled-back isolation boundary.
 
-        A committed isolation prefix remains claimed until every disposition is
-        durable. None means idle, not yet due, or awaiting operator recovery.
+        Each completed FIFO prefix is removed immediately. None means idle,
+        not yet due, or awaiting operator recovery.
         """
         if type(max_entities) is not int or max_entities < 1:
             raise ValueError("max_entities must be positive")
@@ -741,9 +758,7 @@ class OrdinaryPersistence:
         if not self._claim(max_entities):
             return None
         self._operator_recovery_requested = False
-        pending = tuple(
-            index for index, value in enumerate(self._dispositions) if value is None
-        )
+        pending = tuple(range(len(self._tokens)))
         indices = (
             self._unknown_indices
             if self._unknown
@@ -775,12 +790,12 @@ class OrdinaryPersistence:
                     operation = Operation.VALIDATE
                     self._prepared[index] = self._prepare(entry.entity, entry.spec.kind)
             entity_operation = False
-            failure = inspect_receiver_storage(
-                self._path, minimum_free_bytes=self._minimum_free_bytes
+            failure = self._database.inspect_storage(
+                minimum_free_bytes=self._minimum_free_bytes
             )
             if failure is not None:
                 raise StorageUnavailable(failure)
-            self._transactions.begin(self._connection)
+            self._transactions.begin(self._database.connection)
             for index in indices:
                 entry = self._lease.entries[index]
                 entity_operation = True
@@ -795,7 +810,7 @@ class OrdinaryPersistence:
             operation = Operation.SYNC
             commit_started = self._clock.now_monotonic_us()
             commit_may_have_run = True
-            self._transactions.commit(self._connection)
+            self._transactions.commit(self._database.connection)
         except (
             sqlite3.Error,
             OSError,
@@ -870,8 +885,4 @@ class OrdinaryPersistence:
 
     def close(self) -> None:
         """Close SQLite without acknowledging pending volatile work."""
-        if self._connection is not None:
-            try:
-                self._connection.close()
-            finally:
-                self._connection = None
+        self._database.close()

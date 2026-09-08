@@ -10,7 +10,6 @@ from cura_receiver.generated.receiver_enums_generated import (
 )
 from cura_receiver.persist_queue import (
     PersistQueue,
-    PersistQueueBatchDisposition,
     PersistenceAdmissionSnapshot,
 )
 from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC
@@ -129,7 +128,7 @@ def test_publication_and_claim_have_one_visibility_order(publication_first: bool
         lease = queue.claim_batch(max_entities=1)
         assert lease is not None
     assert lease.entries[0].entity is payload
-    lease.acknowledge_durable((PersistQueueBatchDisposition.SQLITE_COMMITTED,))
+    lease.acknowledge_durable(completed_entities=1)
 
 
 # Covers capacity observation immediately before and after durable acknowledgement.
@@ -160,7 +159,7 @@ def test_acknowledgement_and_new_reservation_have_one_capacity_order(
         _arrive(both_workers_ready)
         if not acknowledgement_first:
             _wait(first_operation_completed)
-        lease.acknowledge_durable((PersistQueueBatchDisposition.SQLITE_COMMITTED,))
+        lease.acknowledge_durable(completed_entities=1)
         if acknowledgement_first:
             first_operation_completed.set()
 
@@ -183,9 +182,10 @@ def test_acknowledgement_and_new_reservation_have_one_capacity_order(
         retry.reservation.cancel()
 
 
-# Retry release preserves the head while the producer publishes at the tail.
-def test_release_for_retry_and_tail_publication_preserve_fifo() -> None:
-    queue = PersistQueue(capacity_entities=3)
+# Retry release and durable prefix removal preserve ownership during tail publication.
+@pytest.mark.parametrize("complete_prefix", [False, True])
+def test_release_for_retry_and_tail_publication_preserve_fifo(complete_prefix) -> None:
+    queue = PersistQueue(capacity_entities=2 if complete_prefix else 3)
     _make_available(queue)
     for value in (0, 1):
         result = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
@@ -208,9 +208,16 @@ def test_release_for_retry_and_tail_publication_preserve_fifo() -> None:
 
     def persistence() -> None:
         _arrive(both_workers_ready)
-        first_lease.release_for_retry()
+        if complete_prefix:
+            first_lease.acknowledge_durable(completed_entities=1)
+            assert tuple(entry.entity for entry in first_lease.entries) == (1,)
+        else:
+            first_lease.release_for_retry()
         prefix_released.set()
         _wait(tail_published)
+        if complete_prefix:
+            assert queue.snapshot().claimed_entities == 1
+            first_lease.release_for_retry()
         retried.append(queue.claim_batch(max_entities=3))
 
     threads = start_checked_threads(
@@ -221,10 +228,9 @@ def test_release_for_retry_and_tail_publication_preserve_fifo() -> None:
 
     retry_lease = retried[0]
     assert retry_lease is not None
-    assert tuple(entry.entity for entry in retry_lease.entries) == (0, 1, 2)
-    retry_lease.acknowledge_durable(
-        (PersistQueueBatchDisposition.SQLITE_COMMITTED,) * 3
-    )
+    expected = (1, 2) if complete_prefix else (0, 1, 2)
+    assert tuple(entry.entity for entry in retry_lease.entries) == expected
+    retry_lease.acknowledge_durable(completed_entities=len(expected))
 
 
 # Closure permits the producer's existing reservation to publish and the consumer to drain it.
@@ -249,9 +255,7 @@ def test_closure_publication_and_drain_do_not_lose_the_reserved_entity() -> None
         lease = queue.claim_batch(max_entities=1)
         assert lease is not None
         assert lease.entries[0].entity == "final"
-        lease.acknowledge_durable(
-            (PersistQueueBatchDisposition.SQLITE_COMMITTED,)
-        )
+        lease.acknowledge_durable(completed_entities=1)
 
     threads = start_checked_threads(
         (("communicator-close", communicator), ("persistence-drain", persistence))
@@ -283,9 +287,7 @@ def test_clear_then_recheck_prevents_lost_wakeup_when_publication_precedes_clear
         wake_event.clear()
         lease = queue.claim_batch(max_entities=1)
         assert lease is not None
-        lease.acknowledge_durable(
-            (PersistQueueBatchDisposition.SQLITE_COMMITTED,)
-        )
+        lease.acknowledge_durable(completed_entities=1)
 
     threads = start_checked_threads(
         (("communicator-wakeup", communicator), ("persistence-recheck", persistence))
@@ -316,9 +318,7 @@ def test_clear_then_recheck_prevents_lost_wakeup_when_publication_follows_clear(
         assert wake_event.is_set()
         lease = queue.claim_batch(max_entities=1)
         assert lease is not None
-        lease.acknowledge_durable(
-            (PersistQueueBatchDisposition.SQLITE_COMMITTED,)
-        )
+        lease.acknowledge_durable(completed_entities=1)
 
     threads = start_checked_threads(
         (("communicator-wakeup", communicator), ("persistence-recheck", persistence))
@@ -372,15 +372,15 @@ def test_sustained_spsc_wraparound_has_stable_entity_accounting() -> None:
                 assert entry.entity == next_expected
                 received.append(entry.entity)  # type: ignore[arg-type]
                 next_expected += 1
-            lease.acknowledge_durable(
-                (PersistQueueBatchDisposition.SQLITE_COMMITTED,)
-                * len(lease.entries)
-            )
+            lease.acknowledge_durable(completed_entities=len(lease.entries))
             space_available.set()
         assert next_expected == item_count
 
     threads = start_checked_threads(
-        (("communicator-sustained", communicator), ("persistence-sustained", persistence))
+        (
+            ("communicator-sustained", communicator),
+            ("persistence-sustained", persistence),
+        )
     )
     join_checked_threads(threads, timeout_seconds=10.0)
 

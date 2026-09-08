@@ -35,7 +35,7 @@ it never initializes, migrates or repairs the supplied database.
 
 `cura_receiver.receiver_startup.start_receiver_instance()` combines the
 persistence owner's configuration load, database open and durable lifecycle
-start transaction. Success transfers the connection to that owner, while an
+start transaction. Success transfers the validated database handle to that owner, while an
 uncertain start commit remains unsuccessful. State-policy reconciliation,
 initial clock observation and radio readiness are separate later obligations.
 `cura_receiver.sqlite_repository.SqliteRepository` exposes explicit insert and
@@ -44,8 +44,58 @@ transaction, use the generated binders and never commit or suppress conflicts.
 Lookups return complete stored tuples; raw state reads retain every envelope
 row for the later semantic validator.
 
+The handle binds the live connection, canonical path, configured group and file
+identity. Ordinary persistence takes this single handle; it never accepts a
+separate database path beside a connection. Storage checks, health observations
+and same-file reopen follow that binding. A replaced file requires offline
+operator maintenance and a new startup context.
+
 Runtime connections disable automatic and close-time checkpoints so closing
 a rejected connection preserves WAL evidence and later worker scheduling owns
 checkpoint work. A caller closing a usable connection must retain its database,
 WAL and shared-memory files together. The primitives do not implement the
 worker's bounded checkpoint or shutdown policy.
+
+## Last-resort operator restoration
+
+Restoring a backup is an operator action. Ordinary persistence never chooses or
+installs a backup automatically. Normal same-file retry/revalidation remains
+available for transient storage faults; replacing history requires this offline
+workflow:
+
+1. Record the original failure codes, time, receiver/source revision and relevant
+   logs. Stop the receiver and all other users of its database. Pending RAM queue
+   entries are lost when the process stops; a radio ACK does not guarantee their
+   persistence. Confirm that no process can reopen these files during maintenance.
+2. Preserve the **complete** original database, `-wal` and `-shm` file set. Do not
+   use SQL writes, checkpointing, salvage or integrity repair on these originals.
+   A damaged portion cannot reliably be isolated from the surviving context.
+   From the repository root, an optional best-effort raw capture is:
+
+   ```sh
+   python3 receiver/tools/capture_database_evidence.py /path/receiver.db /external/incidents/new-incident --note 'Original failure codes, time, source revision and log location'
+   ```
+
+   The destination must be new and its parent must exist. Prefer storage outside
+   the affected filesystem. The command does not open SQLite or restore anything;
+   it attempts each file independently and reports missing/failed/partial copies.
+   Missing WAL/SHM files can be normal. Review `capture.json` and the printed
+   report; command completion alone does not prove that evidence was captured.
+   Capture errors do not replace the original storage failure or prevent the
+   operator from continuing recovery. Retain the original file set even when
+   capture fails.
+3. Move the stopped original file set together to a separate incident location
+   without overwriting it. Install an operator-selected, consistent backup as a
+   new active file set, with the configured group/schema and correct ownership.
+   Never mix a restored database with the damaged database's WAL/SHM. Keep backup
+   sources intact. If originals cannot be moved aside, use a new active location;
+   do not overwrite the only remaining evidence to make room for restoration.
+4. Restart through normal startup with a new receiver instance and an empty
+   volatile queue. Validation must succeed before admission resumes. An existing
+   handle rejects a replacement file even after an operator recovery request.
+   All history missing from the chosen backup is lost, including previously
+   committed work and acknowledged entries. No replay or storage-generation
+   mechanism reconstructs that history.
+
+Keep the incident evidence for investigation even after service resumes, so
+successful restoration does not conceal a recurring code or storage defect.

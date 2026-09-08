@@ -14,7 +14,6 @@ from cura_receiver.generated.receiver_enums_generated import (
 )
 from cura_receiver.persist_queue import (
     PersistQueue,
-    PersistQueueBatchDisposition,
     PersistenceAdmissionSnapshot,
 )
 from cura_receiver.persist_queue_entities import (
@@ -107,7 +106,7 @@ def test_accepted_reading_owns_one_slot_before_ack_and_publishes_without_readmis
     assert lease is not None
     assert lease.entries[0].spec is MEASUREMENT_PROFILE_V1_SPEC
     assert lease.entries[0].entity is finalized.published_entity
-    lease.acknowledge_durable((PersistQueueBatchDisposition.SQLITE_COMMITTED,))
+    lease.acknowledge_durable(completed_entities=1)
 
 
 # Reserves a profile-only slot before a permanent authenticated rejection response.

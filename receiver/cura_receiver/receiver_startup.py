@@ -15,7 +15,12 @@ from .receiver_configuration import (
     ReceiverConfigurationLoadStatus,
     ReceiverConfigurationReader,
 )
-from .sqlite_database import DatabaseFailure, database_failure, open_receiver_database
+from .sqlite_database import (
+    DatabaseFailure,
+    ReceiverDatabase,
+    database_failure,
+    open_receiver_database,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,12 +136,12 @@ class ReceiverStartupResult:
     configuration_load: ReceiverConfigurationLoadResult
     database_failure: DatabaseFailure | None = None
     instance_start: ReceiverInstanceStartResult | None = None
-    connection: sqlite3.Connection | None = field(default=None, repr=False)
+    database: ReceiverDatabase | None = field(default=None, repr=False)
 
     @property
     def started(self) -> bool:
         """Persistence startup completed; this does not assert radio/TX readiness."""
-        return self.connection is not None
+        return self.database is not None
 
 
 def start_receiver_instance(
@@ -148,7 +153,7 @@ def start_receiver_instance(
 ) -> ReceiverStartupResult:
     """Run the actual startup prerequisites on the persistence owner's thread.
 
-    The successful caller owns the returned SQLite connection. Configuration
+    The successful caller owns the returned validated database handle. Configuration
     failure stops before database access; database/start failure closes the
     connection without checkpointing or changing admission. State policy,
     initial time observations and radio startup belong to later components.
@@ -164,24 +169,24 @@ def start_receiver_instance(
         configuration.configuration.group_id,
         minimum_free_bytes=minimum_free_bytes,
     )
-    if opened.connection is None:
+    if opened.database is None:
         return ReceiverStartupResult(configuration, database_failure=opened.failure)
-    connection = opened.connection
+    database = opened.database
     try:
         start = insert_receiver_instance_start(
-            connection, instance, configuration.linux_boot_id
+            database.connection, instance, configuration.linux_boot_id
         )
         if start.disposition is ReceiverInstanceStartDisposition.STARTED:
             result = ReceiverStartupResult(
-                configuration, instance_start=start, connection=connection
+                configuration, instance_start=start, database=database
             )
-            connection = None
+            database = None
             return result
         return ReceiverStartupResult(configuration, instance_start=start)
     finally:
-        if connection is not None:
+        if database is not None:
             try:
-                connection.close()
+                database.close()
             except (sqlite3.Error, OSError):
                 # Startup already failed. Retain its bounded result and evidence;
                 # cleanup cannot turn it into success or an unstructured error.

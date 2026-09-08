@@ -16,7 +16,6 @@ from cura_receiver.generated.receiver_enums_generated import (
 )
 from cura_receiver.persist_queue import (
     PersistQueue,
-    PersistQueueBatchDisposition,
     PersistenceAdmissionSnapshot,
 )
 from cura_receiver.persist_queue_entities import (
@@ -212,7 +211,7 @@ def test_retry_later_is_not_cached_after_queue_capacity_returns() -> None:
     ingress.finalize(retry, _tx_done_terminal())
     lease = queue.claim_batch(max_entities=1)
     assert lease is not None
-    lease.acknowledge_durable((PersistQueueBatchDisposition.SQLITE_COMMITTED,))
+    lease.acknowledge_durable(completed_entities=1)
 
     accepted = ingress.begin(
         ingress_packet(frame=REVIEWED_CURRENT_FRAME, occurrence_sequence=2)

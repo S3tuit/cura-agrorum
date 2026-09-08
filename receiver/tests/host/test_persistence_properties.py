@@ -67,18 +67,17 @@ class PersistenceMachine(RuleBasedStateMachine):
     def _open(self):
         self.epoch += 1
         self.instance = bytes.fromhex(f"00112233445546778899{self.epoch:012x}")
-        self.connection = open_receiver_database(
+        self.database = open_receiver_database(
             self.path, GROUP, minimum_free_bytes=0
-        ).connection
+        ).database
+        self.connection = self.database.connection
         instance = ReceiverInstanceStart(self.instance, 0)
         insert_receiver_instance_start(self.connection, instance, b"b" * 16)
         self.queue = PersistQueue()
         self.owner = OrdinaryPersistence(
-            self.connection,
+            self.database,
             self.queue,
             instance=instance,
-            database_path=self.path,
-            group_id=GROUP,
             clock=self.clock,
             transactions=self.fault,
         )

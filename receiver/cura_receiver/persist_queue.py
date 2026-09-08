@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum, unique
 from threading import Event, Lock
 from typing import Final
 
@@ -125,14 +124,8 @@ class PersistQueueEntryView:
     entity: object
 
 
-@unique
-class PersistQueueBatchDisposition(Enum):
-    SQLITE_COMMITTED = 1
-    QUARANTINED = 2
-
-
 class PersistQueueBatchLease:
-    """Single-use consumer lease over the current published FIFO prefix."""
+    """Consumer lease over the remaining claimed FIFO prefix."""
 
     __slots__ = ("_active", "_entries", "_queue")
 
@@ -151,9 +144,10 @@ class PersistQueueBatchLease:
 
     def acknowledge_durable(
         self,
-        dispositions: tuple[PersistQueueBatchDisposition, ...],
+        *,
+        completed_entities: int,
     ) -> None:
-        self._queue._acknowledge_lease(self, dispositions)
+        self._queue._acknowledge_lease(self, completed_entities)
 
     def release_for_retry(self) -> None:
         self._queue._release_lease(self)
@@ -373,21 +367,18 @@ class PersistQueue:
     def _acknowledge_lease(
         self,
         lease: PersistQueueBatchLease,
-        dispositions: tuple[PersistQueueBatchDisposition, ...],
+        completed_entities: int,
     ) -> None:
-        if type(dispositions) is not tuple or any(
-            type(disposition) is not PersistQueueBatchDisposition
-            for disposition in dispositions
-        ):
+        if type(completed_entities) is not int or completed_entities < 1:
             raise PersistQueueInterfaceError(
-                "PersistQueue dispositions must be a tuple of known values"
+                "PersistQueue completion count must be a positive integer"
             )
         should_wake = False
         with self._lock:
             self._require_live_lease(lease)
-            if len(dispositions) != self._claimed_entities:
+            if completed_entities > self._claimed_entities:
                 raise PersistQueueInterfaceError(
-                    "PersistQueue disposition count does not match the lease"
+                    "PersistQueue completion count exceeds the lease"
                 )
             for offset, view in enumerate(lease._entries):
                 slot_index = (self._head + offset) % self.capacity_entities
@@ -400,16 +391,21 @@ class PersistQueue:
                         "PersistQueue batch no longer names the queue-head prefix"
                     )
 
-            removed = self._claimed_entities
+            removed = completed_entities
+            remaining = lease._entries[removed:]
             for offset in range(removed):
                 self._clear_slot((self._head + offset) % self.capacity_entities)
             self._head = (self._head + removed) % self.capacity_entities
             self._published_entities -= removed
-            self._claimed_entities = 0
-            self._active_lease = None
-            lease._active = False
-            should_wake = self._closed and self._reservation is None and (
-                self._published_entities == 0
+            self._claimed_entities -= removed
+            lease._entries = remaining
+            if not remaining:
+                self._active_lease = None
+                lease._active = False
+            should_wake = (
+                self._closed
+                and self._reservation is None
+                and (self._published_entities == 0)
             )
         if should_wake:
             self._wake_event.set()
@@ -519,7 +515,6 @@ __all__ = [
     "PersistQueueReservation",
     "PersistQueueReserveResult",
     "PersistQueueEntryView",
-    "PersistQueueBatchDisposition",
     "PersistQueueBatchLease",
     "PersistQueue",
 ]

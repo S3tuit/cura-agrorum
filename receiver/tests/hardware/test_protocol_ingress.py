@@ -11,7 +11,6 @@ from cura_receiver.generated.receiver_enums_generated import (
 )
 from cura_receiver.persist_queue import (
     PersistQueue,
-    PersistQueueBatchDisposition,
     PersistenceAdmissionSnapshot,
 )
 from cura_receiver.platform.linux_clocks import LinuxOsClock
@@ -85,7 +84,7 @@ def test_target_runtime_processes_reviewed_readings_without_radio(frame: bytes) 
     lease = queue.claim_batch(max_entities=1)
     assert lease is not None
     assert lease.entries[0].entity is finalized.published_entity
-    lease.acknowledge_durable((PersistQueueBatchDisposition.SQLITE_COMMITTED,))
+    lease.acknowledge_durable(completed_entities=1)
 
 
 # Rejects a reviewed-frame tag mutation on target without touching radio hardware.

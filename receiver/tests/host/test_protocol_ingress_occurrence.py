@@ -15,7 +15,6 @@ from cura_receiver.generated.receiver_enums_generated import (
 )
 from cura_receiver.persist_queue import (
     PersistQueue,
-    PersistQueueBatchDisposition,
     PersistenceAdmissionSnapshot,
 )
 from cura_receiver.persist_queue_entities import (
@@ -191,7 +190,7 @@ def test_active_occurrence_blocks_begin_until_completion(
     assert ingress._active_occurrence is None
     lease = queue.claim_batch(max_entities=1)
     if lease is not None:
-        lease.acknowledge_durable((PersistQueueBatchDisposition.SQLITE_COMMITTED,))
+        lease.acknowledge_durable(completed_entities=1)
     following = ingress.begin(ingress_packet(occurrence_sequence=2))
     before = queue.snapshot()
     with pytest.raises(ProtocolIngressInterfaceError, match="foreign or stale"):

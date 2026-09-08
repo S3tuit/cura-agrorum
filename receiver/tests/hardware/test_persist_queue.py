@@ -13,7 +13,6 @@ from cura_receiver.generated.receiver_enums_generated import (
 from cura_receiver.persist_queue import (
     PERSIST_QUEUE_MAX_ENTITIES,
     PersistQueue,
-    PersistQueueBatchDisposition,
     PersistenceAdmissionSnapshot,
 )
 from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC
@@ -45,9 +44,7 @@ def _ack_all(queue: PersistQueue, max_entities: int) -> tuple[object, ...]:
     lease = queue.claim_batch(max_entities=max_entities)
     assert lease is not None
     entities = tuple(entry.entity for entry in lease.entries)
-    lease.acknowledge_durable(
-        (PersistQueueBatchDisposition.SQLITE_COMMITTED,) * len(lease.entries)
-    )
+    lease.acknowledge_durable(completed_entities=len(lease.entries))
     return entities
 
 
@@ -105,9 +102,7 @@ def test_target_queue_pressure_recovers_after_consumer_acknowledgement() -> None
         assert tuple(entry.entity for entry in lease.entries) == tuple(range(250))
         consumer_ready.set()
         _wait(allow_acknowledgement)
-        lease.acknowledge_durable(
-            (PersistQueueBatchDisposition.SQLITE_COMMITTED,) * 250
-        )
+        lease.acknowledge_durable(completed_entities=250)
         capacity_released.set()
 
     threads = start_checked_threads((("persistence-pressure", persistence),))
@@ -192,10 +187,7 @@ def test_target_sustained_handoff_wraparound_latency_and_close_drain(
                 received.append(entry.entity)  # type: ignore[arg-type]
                 next_expected += 1
             started = perf_counter_ns()
-            lease.acknowledge_durable(
-                (PersistQueueBatchDisposition.SQLITE_COMMITTED,)
-                * len(lease.entries)
-            )
+            lease.acknowledge_durable(completed_entities=len(lease.entries))
             acknowledgement_call_ns.append(perf_counter_ns() - started)
             capacity_released.set()
         assert next_expected == item_count

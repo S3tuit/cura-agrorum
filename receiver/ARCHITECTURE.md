@@ -1530,6 +1530,14 @@ incompatible database.
 
 The pilot database uses `PRAGMA journal_mode=WAL` and verifies that SQLite actually entered WAL mode. Every database connection sets `PRAGMA synchronous=FULL`; a connection that cannot establish the required journal or synchronization mode is not usable for persistence. The database, WAL and shared-memory files must remain together on the same local filesystem.
 
+The database opener transfers one concrete validated handle through startup to
+ordinary persistence. That handle binds the connection to its canonical path,
+configured group and opened file identity. Storage inspection, host database/WAL
+observations and reopen use this bound path; callers cannot separately pair an
+ordinary-persistence connection with another path. Reopen may recover the same
+file after transient failure. Replacing its file requires the offline
+maintenance/startup boundary below.
+
 WAL checkpointing uses a configurable page or byte threshold and records checkpoint duration and result. Checkpoint work must not make the persistence thread ignore queue growth or state-commit requests indefinitely. A bounded checkpoint is also attempted during controlled shutdown before the database connection closes.
 
 Implementation benchmarking must compare `synchronous=FULL` with `synchronous=NORMAL` on the deployed Pi and storage medium using realistic entity mixes, batch sizes and checkpoint behavior. Record at least transaction throughput, commit-latency percentiles, queue growth, WAL growth and checkpoint stalls. `FULL` remains the pilot deployment setting regardless of benchmark results; changing it requires an explicit architecture decision accepting weaker power-loss durability.
@@ -1645,7 +1653,25 @@ because of readers; this is a bounded checkpoint result, not data loss or
 permission to discard the remaining WAL. Corrupt or incompatible checkpoint
 results still require operator recovery.
 
-On SQLite corruption or a failed configured integrity check, the persistence thread rolls back when possible, publishes `UNAVAILABLE_CORRUPT`, closes the database and preserves the database, WAL and shared-memory files together. It must not automatically delete, replace, truncate or rebuild them. Radio RX may continue with all new ordinary `PersistQueue` admission closed so nodes retain their readings. Operator recovery must preserve the corrupt artifacts for diagnosis, restore or recover the database through an explicit maintenance procedure, and pass startup validation before persistence returns to `AVAILABLE`.
+On SQLite corruption or a failed configured integrity check, the persistence thread rolls back when possible, publishes `UNAVAILABLE_CORRUPT`, closes the database and preserves the database, WAL and shared-memory files together. It must not automatically delete, replace, truncate or rebuild them. Radio RX may continue with all new ordinary `PersistQueue` admission closed so nodes retain their readings.
+
+Restoring an older database is an operator-controlled last resort: stop the
+receiver, preserve the rejected file set and available failure evidence outside
+the active database, restore the chosen consistent backup, then restart through
+normal startup validation with a new receiver instance. Evidence capture is
+best-effort; a capture failure must not overwrite the primary failure or alter
+the rejected originals. Attempting to insert evidence into the damaged database
+or guessing a recoverable subset is not the preservation procedure. There is
+no automatic backup selection, restoration or in-process continuation against
+replaced history.
+
+This maintenance operation explicitly accepts loss of all remaining volatile
+queue entries and all history absent from the selected backup, including
+previously committed and acknowledged entries. Ordinary commit/reconciliation
+guarantees apply to the current database history; they do not promise to undo
+an operator's restoration of older history. This last resort restores service
+availability without claiming that the preceding corruption was repaired or
+its cause understood. Keep rejected originals for subsequent diagnosis.
 
 Startup inspection that rejects a corrupt or incompatible database must leave
 the database and WAL contents unchanged and retain the identities and sizes of
@@ -1763,7 +1789,11 @@ NOT_COMMITTED
 OUTCOME_UNKNOWN
 ```
 
-`COMMITTED` permits the final per-entry durable disposition.
+`COMMITTED` permits immediate removal of the completed FIFO prefix. During
+isolation each complete entity can leave after its ordinary or quarantine
+transaction succeeds; later failed work does not retain earlier completed
+slots. A partial acknowledgement leaves the original lease active for its
+remaining suffix. No completed-disposition ledger is retained.
 `NOT_COMMITTED` is used only when failure is known to precede durable commit;
 the entries remain pending for retry. Once `COMMIT` may have executed without
 confirmation, the outcome is `OUTCOME_UNKNOWN`: the persistence thread retains
@@ -1875,8 +1905,8 @@ only after every stored value is verified.
 
 After the normal batch transaction rolls back, quarantine uses a separate
 WAL/`FULL` transaction. Only a confirmed or reconciled quarantine commit
-permits the batch to acknowledge that unit as `QUARANTINED`. If evidence cannot
-be encoded or quarantine cannot be durably committed, the complete batch
+permits the batch to acknowledge and remove that unit. If evidence cannot
+be encoded or quarantine cannot be durably committed, the remaining batch suffix
 remains queue-owned, persistence closes new ordinary admission and reports the
 state selected by the closed storage-failure classifier. Infinite retry of the same failing batch
 is not acceptable, but neither is removing an already-ACKed unit without

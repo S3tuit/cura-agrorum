@@ -98,13 +98,13 @@ class ReferencePersistQueue:
     def acknowledge(self, tokens: tuple[int, ...]) -> None:
         if not self._claimed_entities:
             raise ReferenceQueueViolation("no active claim")
-        expected = tuple(
-            entry.token for entry in self._published[: self._claimed_entities]
-        )
+        if not 1 <= len(tokens) <= self._claimed_entities:
+            raise ReferenceQueueViolation("invalid completion count")
+        expected = tuple(entry.token for entry in self._published[: len(tokens)])
         if tokens != expected:
             raise ReferenceQueueViolation("stale prefix")
-        del self._published[: self._claimed_entities]
-        self._claimed_entities = 0
+        del self._published[: len(tokens)]
+        self._claimed_entities -= len(tokens)
 
     def release(self) -> None:
         if not self._claimed_entities:

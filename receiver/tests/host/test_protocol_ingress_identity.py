@@ -8,7 +8,6 @@ from cura_receiver.generated.receiver_enums_generated import (
 )
 from cura_receiver.persist_queue import (
     PersistQueue,
-    PersistQueueBatchDisposition,
     PersistenceAdmissionSnapshot,
 )
 from cura_receiver.protocol_ingress import (
@@ -64,7 +63,7 @@ def _finish_and_drain(
     )
     lease = queue.claim_batch(max_entities=1)
     assert lease is not None
-    lease.acknowledge_durable((PersistQueueBatchDisposition.SQLITE_COMMITTED,))
+    lease.acknowledge_durable(completed_entities=1)
 
 
 def _reading_body_with_sample(sample_id: int) -> bytes:

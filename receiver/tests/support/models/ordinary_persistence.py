@@ -28,7 +28,6 @@ class DurableModel:
         self.rows = {"clocks": {}, "profiles": {}, "readings": {}, "quarantine": {}}
         self.queue = []
         self.batch = []
-        self.done = set()
         self.prepared = {}
         self.isolating = False
         self.seen_poison = set()
@@ -40,7 +39,6 @@ class DurableModel:
     def restart(self):
         self.queue.clear()
         self.batch.clear()
-        self.done.clear()
         self.prepared.clear()
         self.isolating = False
         self.seen_poison.clear()
@@ -100,7 +98,7 @@ class DurableModel:
         if not self.batch:
             self.batch = list(self.queue[:count])
         self.claimed = len(self.batch)
-        selected = [work for work in self.batch if work.uid not in self.done]
+        selected = self.batch[:]
         if self.isolating:
             selected = selected[:1]
         if fault == "begin":
@@ -140,11 +138,14 @@ class DurableModel:
             self.unknown = True
             return "unknown"
         self.unknown = False
-        self.done.update(work.uid for work in selected)
-        if all(work.uid in self.done for work in self.batch):
-            del self.queue[: len(self.batch)]
-            self.batch.clear()
-            self.done.clear()
+        del self.queue[: len(selected)]
+        del self.batch[: len(selected)]
+        self.claimed = len(self.batch)
+        for work in selected:
+            self.prepared.pop(work.uid, None)
+            self.seen_poison.discard(work.uid)
+            self.ready_poison.discard(work.uid)
+        if not self.batch:
             self.prepared.clear()
             self.isolating = False
             self.seen_poison.clear()

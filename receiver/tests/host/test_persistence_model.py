@@ -16,7 +16,7 @@ def test_model_commit_certainty():
     assert model.queue == [] and model.claimed == 0
 
 
-# Reviewed FIFO examples require complete durable dispositions before removing any batch slot.
+# Reviewed FIFO examples remove each durably completed prefix immediately.
 def test_model_poison_and_valid_prefix():
     model = DurableModel()
     model.queue.extend(
@@ -25,7 +25,7 @@ def test_model_poison_and_valid_prefix():
     assert model.attempt(2) == "failed"
     assert model.rows["clocks"] == {}
     assert model.attempt(2) == "committed"
-    assert model.claimed == 2 and len(model.queue) == 2
+    assert model.claimed == 1 and len(model.queue) == 1
     assert model.attempt(2) == "failed"
     assert model.rows["quarantine"] == {}
     assert model.attempt(2) == "committed"

@@ -48,8 +48,8 @@ def _drain(persistence, queue, clock, bound=20):
     pytest.fail("bounded isolation did not finish")
 
 
-# A mixed FIFO batch is acknowledged only after both valid units and exact poison evidence are durable.
-def test_mixed_batch_quarantine_and_full_lease(setup):
+# Each valid unit or exact quarantine row durably completes its own FIFO slot.
+def test_mixed_batch_quarantine_and_remaining_lease(setup):
     path, connection, queue, clock, create = setup
     persistence = create()
     persistence.enable_admission()
@@ -66,22 +66,24 @@ def test_mixed_batch_quarantine_and_full_lease(setup):
         0,
     )
     assert queue.snapshot().claimed_entities == 3
-    # The valid prefix commits, but its slot is still part of the original lease.
-    assert persistence.attempt(max_entities=3).acknowledged_entities == 0
+    # The valid prefix leaves the queue while the remaining lease stays owned.
+    assert persistence.attempt(max_entities=3).acknowledged_entities == 1
     assert connection.execute("SELECT count(*) FROM message_profiles").fetchone() == (
         1,
     )
-    assert queue.snapshot().published_entities == 3
+    assert queue.snapshot().published_entities == 2
+    assert queue.snapshot().claimed_entities == 2
     assert persistence.attempt(max_entities=3).outcome is Outcome.NOT_COMMITTED
     assert connection.execute(
         "SELECT count(*) FROM quarantined_entities"
     ).fetchone() == (0,)
-    assert persistence.attempt(max_entities=3).acknowledged_entities == 0
-    assert queue.snapshot().published_entities == 3
+    assert persistence.attempt(max_entities=3).acknowledged_entities == 1
+    assert queue.snapshot().published_entities == 1
+    assert queue.snapshot().claimed_entities == 1
     assert connection.execute(
         "SELECT count(*) FROM quarantined_entities"
     ).fetchone() == (1,)
-    assert persistence.attempt(max_entities=3).acknowledged_entities == 3
+    assert persistence.attempt(max_entities=3).acknowledged_entities == 1
     evidence = encode_quarantine_evidence_v1(poison, spec=PROFILE_ONLY_V1_SPEC)
     assert connection.execute("SELECT * FROM quarantined_entities").fetchone() == (
         quarantine_evidence_sha256(evidence),

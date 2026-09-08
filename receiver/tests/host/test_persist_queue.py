@@ -15,7 +15,6 @@ from cura_receiver.generated.receiver_enums_generated import (
 from cura_receiver.persist_queue import (
     PERSIST_QUEUE_MAX_ENTITIES,
     PersistQueue,
-    PersistQueueBatchDisposition,
     PersistQueueConfigurationError,
     PersistQueueInterfaceError,
     PersistQueueSnapshot,
@@ -101,19 +100,22 @@ def test_constructor_preallocates_fixed_parallel_backing_arrays(capacity: int) -
         _publish(queue, index, spec=ALL_SPECS[index % len(ALL_SPECS)])
     batch = queue.claim_batch(max_entities=capacity)
     assert batch is not None
-    batch.acknowledge_durable(
-        (PersistQueueBatchDisposition.SQLITE_COMMITTED,) * capacity
-    )
+    batch.acknowledge_durable(completed_entities=capacity)
 
-    assert tuple(
-        id(storage)
-        for storage in (
-            queue._payload_slots,
-            queue._spec_slots,
-            queue._token_slots,
+    assert (
+        tuple(
+            id(storage)
+            for storage in (
+                queue._payload_slots,
+                queue._spec_slots,
+                queue._token_slots,
+            )
         )
-    ) == identities
-    assert tuple(map(len, (queue._payload_slots, queue._spec_slots, queue._token_slots))) == (
+        == identities
+    )
+    assert tuple(
+        map(len, (queue._payload_slots, queue._spec_slots, queue._token_slots))
+    ) == (
         capacity,
         capacity,
         capacity,
@@ -331,12 +333,7 @@ def test_every_kind_costs_one_slot_and_fifo_wraparound_preserves_identity() -> N
     first = queue.claim_batch(max_entities=2)
     assert first is not None
     assert [entry.entity for entry in first.entries] == objects[:2]
-    first.acknowledge_durable(
-        (
-            PersistQueueBatchDisposition.SQLITE_COMMITTED,
-            PersistQueueBatchDisposition.SQLITE_COMMITTED,
-        )
-    )
+    first.acknowledge_durable(completed_entities=2)
 
     _publish(queue, objects[3], spec=ALL_SPECS[3])
     _publish(queue, objects[4], spec=ALL_SPECS[4])
@@ -439,7 +436,7 @@ def test_production_queue_matches_independent_model_for_basic_sequence() -> None
     assert [entry.entity for entry in batch.entries] == [
         entry.entity for entry in modeled_batch
     ]
-    batch.acknowledge_durable((PersistQueueBatchDisposition.SQLITE_COMMITTED,))
+    batch.acknowledge_durable(completed_entities=1)
     model.acknowledge((model_tokens[0],))
 
     snapshot = queue.snapshot()
@@ -523,8 +520,8 @@ def test_batch_context_releases_for_retry_after_exception() -> None:
     assert tuple(entry.entity for entry in retry.entries) == payloads
 
 
-# Invalid dispositions retain the complete active prefix; mixed durable results remove it.
-def test_durable_acknowledgement_is_all_or_nothing() -> None:
+# Invalid counts retain ownership; each valid completion removes exactly a prefix.
+def test_durable_acknowledgement_removes_completed_prefix() -> None:
     queue = PersistQueue(capacity_entities=2)
     _make_available(queue)
     _publish(queue, object())
@@ -532,32 +529,27 @@ def test_durable_acknowledgement_is_all_or_nothing() -> None:
     lease = queue.claim_batch(max_entities=2)
     assert lease is not None
 
-    invalid_dispositions = (
-        (PersistQueueBatchDisposition.SQLITE_COMMITTED,),
-        [
-            PersistQueueBatchDisposition.SQLITE_COMMITTED,
-            PersistQueueBatchDisposition.QUARANTINED,
-        ],
-        (1, 2),
-    )
-    for invalid in invalid_dispositions:
+    original = lease.entries
+    for invalid in (0, -1, 3, True, None, [1, 2], (1, 2), "1"):
         with pytest.raises(PersistQueueInterfaceError):
-            lease.acknowledge_durable(invalid)  # type: ignore[arg-type]
+            lease.acknowledge_durable(completed_entities=invalid)  # type: ignore[arg-type]
         assert queue.snapshot().published_entities == 2
         assert queue.snapshot().claimed_entities == 2
 
-    lease.acknowledge_durable(
-        (
-            PersistQueueBatchDisposition.SQLITE_COMMITTED,
-            PersistQueueBatchDisposition.QUARANTINED,
-        )
-    )
+    lease.acknowledge_durable(completed_entities=1)
+    assert queue.snapshot().published_entities == 1
+    assert queue.snapshot().claimed_entities == 1
+    assert lease.entries == original[1:]
+    assert lease.entries[0] is original[1]
+    with pytest.raises(PersistQueueInterfaceError, match="active batch"):
+        queue.claim_batch(max_entities=1)
+    lease.acknowledge_durable(completed_entities=1)
     assert queue.snapshot().published_entities == 0
     assert queue.snapshot().claimed_entities == 0
     with pytest.raises(PersistQueueInterfaceError, match="stale"):
         lease.release_for_retry()
     with pytest.raises(PersistQueueInterfaceError, match="stale"):
-        lease.acknowledge_durable(())
+        lease.acknowledge_durable(completed_entities=1)
 
 
 # A foreign lease and a corrupted head identity cannot release queue ownership.
@@ -580,15 +572,13 @@ def test_batch_lease_rejects_foreign_and_stale_prefix_transitions() -> None:
     original_token = first_queue._token_slots[first_queue._head]
     first_queue._token_slots[first_queue._head] = second_lease.entries[0].token
     with pytest.raises(PersistQueueInterfaceError, match="queue-head prefix"):
-        first_lease.acknowledge_durable(
-            (PersistQueueBatchDisposition.SQLITE_COMMITTED,)
-        )
+        first_lease.acknowledge_durable(completed_entities=1)
     assert first_queue.snapshot().claimed_entities == 1
     first_queue._token_slots[first_queue._head] = original_token
     first_lease.release_for_retry()
 
 
-# Evidence failure is not a queue disposition and therefore retains the poisoned head.
+# Evidence failure cannot complete an entity and therefore retains the poisoned head.
 def test_unencodable_poison_retains_the_claimed_head_and_following_entries() -> None:
     queue = PersistQueue(capacity_entities=2)
     _make_available(queue)
@@ -678,7 +668,7 @@ def test_close_and_drain_cover_empty_reserved_and_published_states() -> None:
     lease = published.claim_batch(max_entities=1)
     assert lease is not None
     published_event.clear()
-    lease.acknowledge_durable((PersistQueueBatchDisposition.SQLITE_COMMITTED,))
+    lease.acknowledge_durable(completed_entities=1)
     assert published_event.is_set()
     assert published.snapshot().closed_and_drained
 
@@ -712,9 +702,7 @@ def test_close_and_drain_cover_empty_reserved_and_published_states() -> None:
     assert final_lease is not None
     assert final_lease.entries[0].entity is payload
     publish_after_close_event.clear()
-    final_lease.acknowledge_durable(
-        (PersistQueueBatchDisposition.SQLITE_COMMITTED,)
-    )
+    final_lease.acknowledge_durable(completed_entities=1)
     assert publish_after_close_event.is_set()
     assert publish_after_close.snapshot().closed_and_drained
 
@@ -835,16 +823,19 @@ def test_queue_state_machine_matches_independent_model(
         elif action == "resolve" and model.snapshot().claimed_entities:
             assert active_lease is not None and modeled_claim is not None
             if choice:
-                active_lease.acknowledge_durable(
-                    (PersistQueueBatchDisposition.SQLITE_COMMITTED,)
-                    * len(active_lease.entries)
+                count = min(amount, len(modeled_claim))
+                active_lease.acknowledge_durable(completed_entities=count)
+                model.acknowledge(tuple(entry.token for entry in modeled_claim[:count]))
+                modeled_claim = modeled_claim[count:]
+                assert tuple(entry.entity for entry in active_lease.entries) == tuple(
+                    entry.entity for entry in modeled_claim
                 )
-                model.acknowledge(tuple(entry.token for entry in modeled_claim))
             else:
                 active_lease.release_for_retry()
                 model.release()
-            active_lease = None
-            modeled_claim = None
+            if not model.snapshot().claimed_entities:
+                active_lease = None
+                modeled_claim = None
         elif action == "close":
             queue.close()
             model.close()

@@ -128,17 +128,27 @@ def test_unknown_commit_keeps_active_lease(setup):
 def test_requires_durable_instance(setup):
     path, connection, queue, clock, create = setup
     with pytest.raises(ValueError, match="durable active instance"):
-        OrdinaryPersistence(
-            connection,
-            queue,
+        create(
             instance=ReceiverInstanceStart(
                 bytes.fromhex("11112233445546778899aabbccddeeff"), 0
-            ),
-            database_path=path,
-            group_id=GROUP,
-            clock=clock,
+            )
         )
     assert queue.snapshot().admission_snapshot.generation == 0
+
+
+# A raw connection cannot be independently paired with another database path.
+def test_raw_connection_is_not_a_database_handoff(setup):
+    path, connection, queue, clock, create = setup
+    with pytest.raises(TypeError, match="validated ReceiverDatabase"):
+        OrdinaryPersistence(
+            connection, queue, instance=ReceiverInstanceStart(INSTANCE, 0), clock=clock
+        )
+    with pytest.raises(TypeError, match="database_path"):
+        create(database_path=path.with_name("another.db"))
+    assert queue.snapshot().admission_snapshot.generation == 0
+    assert connection.execute("SELECT count(*) FROM clock_observations").fetchone() == (
+        0,
+    )
 
 
 # Ordinary profile and diagnostic rows retain all queued columns and receive no UTC enrichment.
@@ -479,6 +489,84 @@ def _kind_case(kind):
         "message_profiles",
         row.MESSAGE_PROFILE_ROW_V1_COLUMNS,
     )
+
+
+# F-003: wrong enum classes become exact poison evidence, never ordinary rows.
+@pytest.mark.parametrize(
+    "kind,field,foreign_enum",
+    [
+        ("clock", "system_time_quality", enum.RadioState.INITIALIZING),
+        ("clock", "rtc_health", enum.SystemTimeQuality.RTC_HOLDOVER),
+        ("diagnostic", "severity", enum.DiagnosticOperation.READ),
+        ("diagnostic", "error_domain", enum.ProcessingResult.WRONG_DIRECTION),
+        ("diagnostic", "operation", enum.SystemTimeQuality.NETWORK_SYNCED),
+        ("profile", "processing_result", enum.DiagnosticOperation.RECOVER),
+        ("profile", "ack_selected", enum.SystemTimeQuality.UNTRUSTED),
+        ("profile", "ack_tx_result", enum.RtcHealth.PRESENT),
+        ("measurement", "processing_result", enum.DiagnosticOperation.RECEIVE),
+        ("measurement", "ack_selected", enum.DiagnosticSeverity.FATAL),
+        ("measurement", "ack_tx_result", enum.SystemTimeQuality.NETWORK_SYNCED),
+        ("health", "radio_state", enum.SystemTimeQuality.NETWORK_SYNCED),
+        ("health", "system_time_quality", enum.RadioState.INITIALIZING),
+        ("health", "rtc_health", enum.SystemTimeQuality.RTC_HOLDOVER),
+    ],
+)
+@pytest.mark.parametrize("replacement_type", ["enum", "int", "bool"])
+def test_component_enum_types(setup, kind, field, foreign_enum, replacement_type):
+    from cura_receiver.quarantine_evidence import encode_quarantine_evidence_v1
+
+    path, connection, queue, clock, create = setup
+    persistence = create()
+    persistence.enable_admission()
+    entity, spec, table, _ = _kind_case(kind)
+    logical = entity.profile if kind in ("profile", "measurement") else entity
+    declared_type = type(getattr(logical, field))
+    assert type(foreign_enum) is not declared_type
+    assert declared_type(foreign_enum.value).value == foreign_enum.value
+    value = {
+        "enum": foreign_enum,
+        "int": foreign_enum.value,
+        "bool": bool(foreign_enum.value),
+    }[replacement_type]
+    invalid = replace(logical, **{field: value})
+    entity = (
+        replace(entity, profile=invalid)
+        if kind in ("profile", "measurement")
+        else invalid
+    )
+    _publish(queue, entity, spec)
+
+    assert persistence.attempt(max_entities=1).outcome is Outcome.NOT_COMMITTED
+    assert queue.snapshot().claimed_entities == 1
+    assert connection.execute(f"SELECT count(*) FROM {table}").fetchone() == (0,)
+    assert connection.execute(
+        "SELECT count(*) FROM quarantined_entities"
+    ).fetchone() == (0,)
+    result = persistence.attempt(max_entities=1)
+    assert result.acknowledged_entities == 0
+    assert queue.snapshot().published_entities == 1
+    if kind == "clock":
+        assert (
+            result.failure.admission_state
+            is enum.PersistenceAdmissionState.UNAVAILABLE_INCOMPATIBLE_SCHEMA
+        )
+        assert persistence.attempt(max_entities=1) is None
+        assert queue.snapshot().claimed_entities == 1
+        assert connection.execute(
+            "SELECT count(*) FROM quarantined_entities"
+        ).fetchone() == (0,)
+    else:
+        assert persistence.attempt(max_entities=1).acknowledged_entities == 1
+        assert queue.snapshot().published_entities == 0
+        assert connection.execute(
+            "SELECT entity_bytes FROM quarantined_entities"
+        ).fetchone() == (encode_quarantine_evidence_v1(entity, spec=spec),)
+        assert persistence.counters.durable_quarantine_successes == 1
+    assert connection.execute(f"SELECT count(*) FROM {table}").fetchone() == (0,)
+    assert connection.execute("SELECT count(*) FROM reading_messages").fetchone() == (
+        0,
+    )
+    assert persistence.counters.batch_entities_committed == 0
 
 
 # Every identity reconciles an actual durable lost-reply commit without altering or resampling it.
@@ -1115,15 +1203,11 @@ def test_constructor_checks_database_handoff(setup, change):
     path, connection, queue, clock, create = setup
     if change == "durability":
         connection.execute("PRAGMA synchronous=NORMAL")
+    else:
+        connection.execute("DROP TRIGGER database_metadata_no_update")
+        connection.execute("UPDATE database_metadata SET group_id=?", (b"x" * 8,))
     with pytest.raises(StorageUnavailable) as failure:
-        OrdinaryPersistence(
-            connection,
-            queue,
-            instance=ReceiverInstanceStart(INSTANCE, 0),
-            database_path=path,
-            group_id=b"x" * 8 if change == "group" else GROUP,
-            clock=clock,
-        )
+        create()
     assert failure.value.failure.admission_state is (
         enum.PersistenceAdmissionState.UNAVAILABLE_INCOMPATIBLE_SCHEMA
         if change == "group"

@@ -58,7 +58,7 @@ def test_target_sqlite_capabilities(tmp_path: Path) -> None:
     initialize_database(path, GROUP)
     opened = open_receiver_database(path, GROUP, minimum_free_bytes=1)
     assert opened.failure is None
-    connection = opened.connection
+    connection = opened.database.connection
     try:
         pragmas = {
             name: connection.execute(f"PRAGMA {name}").fetchone()[0]
@@ -176,7 +176,7 @@ instance = create_receiver_instance(LinuxOsClock())
 result = start_receiver_instance(instance, configuration_reader=ReceiverConfigurationReader(Path(sys.argv[1])), database_path=Path(sys.argv[2]), minimum_free_bytes=1)
 assert result.started, repr(result)
 print(json.dumps({'instance': instance.receiver_instance_id.hex(), 'boot': result.configuration_load.linux_boot_id.hex(), 'ordinal': result.instance_start.instance_ordinal}))
-result.connection.close()
+result.database.close()
 """
     results = []
     for _ in range(2):
@@ -199,8 +199,8 @@ result.connection.close()
     opened = open_receiver_database(path, GROUP, minimum_free_bytes=1)
     assert opened.failure is None
     try:
-        assert opened.connection.execute(
+        assert opened.database.connection.execute(
             "SELECT instance_ordinal, clean_stopped_at_monotonic_us, clean_stop_state_generation FROM receiver_instances ORDER BY instance_ordinal"
         ).fetchall() == [(1, None, None), (2, None, None)]
     finally:
-        opened.connection.close()
+        opened.database.close()

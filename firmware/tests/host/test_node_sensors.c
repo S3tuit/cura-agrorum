@@ -9,6 +9,7 @@
 #include "node_common.h"
 #include "node_sensors.h"
 #include "node_sensors_power_gate.h"
+#include "node_sensors_ds18b20_gpio.h"
 #include "sdkconfig.h"
 
 #define TEST_ASSERT(expression)                                                \
@@ -723,6 +724,29 @@ static bool test_power_gate_off_attempts_all_steps_and_keeps_first_error(void) {
   return true;
 }
 
+static bool test_ds_release_disconnects_pad_without_back_power_pull(void) {
+  fake_esp_gpio_reset();
+  TEST_ASSERT(node_sensors_ds18b20_release_gpio() == ESP_OK);
+  TEST_ASSERT_EQ_U32(1U, fake_esp_gpio_call_count());
+  const fake_esp_gpio_call_t *call = fake_esp_gpio_call_at(0U);
+  TEST_ASSERT_EQ_U32(FAKE_ESP_GPIO_CONFIG, call->operation);
+  TEST_ASSERT_EQ_U32(UINT64_C(1) << CONFIG_CURA_DS18B20_GPIO,
+                    call->configuration.pin_bit_mask);
+  TEST_ASSERT(call->configuration.mode == GPIO_MODE_DISABLE);
+  TEST_ASSERT(call->configuration.pull_up_en == GPIO_PULLUP_DISABLE);
+  TEST_ASSERT(call->configuration.pull_down_en == GPIO_PULLDOWN_DISABLE);
+  TEST_ASSERT(call->configuration.intr_type == GPIO_INTR_DISABLE);
+  return true;
+}
+
+static bool test_ds_release_preserves_gpio_failure(void) {
+  fake_esp_gpio_reset();
+  const esp_err_t failure = (esp_err_t)-301;
+  fake_esp_gpio_fail_call(0U, failure);
+  TEST_ASSERT(node_sensors_ds18b20_release_gpio() == failure);
+  return true;
+}
+
 int main(void) {
   static const test_case_t cases[] = {
       {"success sequence and values", test_success_sequence_and_values},
@@ -769,6 +793,9 @@ int main(void) {
        test_power_gate_on_never_asserts_after_setup_failure},
       {"power gate best-effort off",
        test_power_gate_off_attempts_all_steps_and_keeps_first_error},
+      {"DS release without back-power pull",
+       test_ds_release_disconnects_pad_without_back_power_pull},
+      {"DS release error", test_ds_release_preserves_gpio_failure},
   };
 
   size_t failures = 0U;

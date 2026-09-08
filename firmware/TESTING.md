@@ -4,8 +4,12 @@ Status: the `node_core`, `node_persistence`, `node_sensors`, `sx1262_radio` and
 platform-port host matrices are implemented. The on-device implementation now
 includes the `node_persistence` matrix, the complete bare-board RTC suite, the
 receiver-free `node_core` integration suite, and platform clock, randomness,
-software-reset-reason and timer-deep-sleep cases. Sensor and SX1262 hardware,
-the shared-radio-clock case and physical power-loss injection remain deferred.
+software-reset-reason and timer-deep-sleep cases. A sibling sensor-carrier app
+implements setup discovery, nominal identity preflight, production gate holds
+and one real acquisition with a sample-return hold; its hardware acceptance
+requires the configured fixture and operator measurements. The remaining sensor
+matrix, SX1262 hardware, shared-radio-clock case and physical power-loss
+injection remain deferred.
 
 ## Philosophy and build
 
@@ -320,6 +324,11 @@ progress to the enabling low assertion, and shutdown attempts every safety
 step while returning the first failure. The fakes do not model ADC, I2C or
 1-Wire electrically; those behaviors remain in the on-device plan below.
 
+The GPIO boundary tests also exercise production DS18B20 pad release: disable
+input/output and both internal pulls before switched-rail shutdown, and
+propagate a GPIO configuration failure. `gpio_reset_pin` alone does not satisfy
+this condition because ESP-IDF enables the internal pull-up.
+
 ## On-device hardware tests
 
 ### Strategy and harness
@@ -551,8 +560,16 @@ recorded with every run.
 
 Missing-device and reference-input cases are selected explicitly from pytest.
 A state mismatch is a failed precondition rather than a skipped or reclassified
-test. The exact runner option and preflight mechanism are chosen when the sensor
-hardware suite is implemented.
+test. The first runnable slice is the sibling
+[`test_apps/sensor_carrier`](test_apps/sensor_carrier/README.md) Unity app. Its
+pytest runner selects `discover`, `gate-on`, `gate-off` or `acquire` using
+`--sensor-operation`; observation/acquisition requires `--sensor-fixture nominal`.
+Discovery is setup, permits one probe and omits fixture acceptance. Acquisition
+preflight requires both distinct configured ROMs and the BME280 at `0x76`, then
+releases resources and resets the C6 before the single production sampler call.
+The sample-return hold performs no later sensor/gate call. Each of the three
+holds lasts 60 seconds; host timeout means failed/incomplete operation, not BME
+recovery. This slice does not yet implement the rest of the matrix below.
 
 The two soil probes are sampled in air with the production 200 ms switched-rail
 stabilization and ADC averaging path. Whenever a sensor hardware case expects a

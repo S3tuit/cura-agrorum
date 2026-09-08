@@ -16,6 +16,7 @@
 #include "i2c_bus.h"
 #include "node_sensors.h"
 #include "node_sensors_ds18b20_identity.h"
+#include "node_sensors_ds18b20_gpio.h"
 #include "node_sensors_power_gate.h"
 #include "onewire_bus.h"
 #include "onewire_device.h"
@@ -143,8 +144,7 @@ void node_sensors_backend_sample_ds18b20(
     if (bus != NULL) {
       retain_cleanup_error(onewire_bus_del(bus), &cleanup_result);
     }
-    retain_cleanup_error(gpio_reset_pin((gpio_num_t)CONFIG_CURA_DS18B20_GPIO),
-                         &cleanup_result);
+    retain_cleanup_error(node_sensors_ds18b20_release_gpio(), &cleanup_result);
     if (cleanup_result != ESP_OK) {
       out_result->cleanup = result_esp(CURAG_OP_CLEANUP, cleanup_result);
     }
@@ -245,8 +245,7 @@ void node_sensors_backend_sample_ds18b20(
     retain_cleanup_error(onewire_del_device_iter(iterator), &cleanup_result);
   }
   retain_cleanup_error(onewire_bus_del(bus), &cleanup_result);
-  retain_cleanup_error(gpio_reset_pin((gpio_num_t)CONFIG_CURA_DS18B20_GPIO),
-                       &cleanup_result);
+  retain_cleanup_error(node_sensors_ds18b20_release_gpio(), &cleanup_result);
 
   if (cleanup_result != ESP_OK) {
     out_result->cleanup = result_esp(CURAG_OP_CLEANUP, cleanup_result);

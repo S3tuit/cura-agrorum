@@ -192,6 +192,7 @@ add_executable(
   ${FIRMWARE_ROOT}/components/node_common/node_common.c
   ${FIRMWARE_ROOT}/components/node_sensors/node_sensors.c
   ${FIRMWARE_ROOT}/components/node_sensors/node_sensors_power_gate_esp.c
+  ${FIRMWARE_ROOT}/components/node_sensors/node_sensors_ds18b20_gpio_esp.c
 )
 
 target_include_directories(
@@ -209,6 +210,7 @@ target_compile_definitions(
   PRIVATE
     NODE_SENSORS_TESTING=1
     CONFIG_CURA_SENSOR_POWER_STABILIZATION_MS=200
+    CONFIG_CURA_DS18B20_GPIO=3
 )
 target_compile_options(
   test_node_sensors

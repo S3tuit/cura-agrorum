@@ -333,14 +333,25 @@ display is stable over three consecutive updates.
 
 | Stable condition | Record | Acceptance |
 |---|---|---|
-| Production gate-on hold in `nominal` | TP_3V3, TP_GATE, TP_SW, TP_DQ, TP_ADC0 and TP_ADC1 | TP_GATE <= 0.2 V; `abs(TP_SW - TP_3V3) <= 0.1 V`; `abs(TP_DQ - TP_SW) <= 0.1 V`; both ADC test points are 2.0-2.7 V. |
-| Production gate-off hold in `nominal` | TP_3V3, TP_GATE, TP_SW and TP_DQ | TP_GATE >= 3.0 V and `abs(TP_GATE - TP_3V3) <= 0.1 V`; TP_SW and TP_DQ are each <= 0.1 V after 10 seconds. |
-| Sample-return hold in `nominal` | TP_3V3, TP_GATE, TP_SW and TP_DQ | The sample succeeded; the gate and off-rail targets above hold without any post-return cleanup call. |
+| Production gate-on hold in `nominal` | TP_3V3: 3.298V, TP_GATE: 0.0mV, TP_SW: 3.295V, TP_DQ: 3.286V, TP_ADC0: 2.569V, TP_ADC1: 2.581V | TP_GATE <= 0.2 V; `abs(TP_SW - TP_3V3) <= 0.1 V`; `abs(TP_DQ - TP_SW) <= 0.1 V`; both ADC test points are 2.0-2.7 V. |
+| Production gate-off hold in `nominal` | TP_3V3: 3.298V, TP_GATE: 3.283V, TP_SW: 0.3mV, TP_DQ: 0.0mV | TP_GATE >= 3.0 V and `abs(TP_GATE - TP_3V3) <= 0.1 V`; TP_SW and TP_DQ are each <= 0.1 V after 10 seconds. |
+| Sample-return hold in `nominal` | TP_3V3: 3.298V, TP_GATE: 3.283V, TP_SW: 0.3mV, TP_DQ: 0.0mV | The sample succeeded; the gate and off-rail targets above hold without any post-return cleanup call. |
 | Sample-return hold in `missing_ds0`, `missing_ds1` and `missing_bme280` | TP_GATE, TP_SW and TP_DQ | The declared partial result and diagnostic are returned; the gate and off-rail targets above still hold without any post-return cleanup call. |
 | Hold after at least two `node_sensors_force_power_off` calls | TP_GATE, TP_SW and TP_DQ | Both calls succeeded and the gate and off-rail targets above still hold. |
 | ESP32 held in reset in `nominal` | TP_3V3, TP_GATE, TP_SW and TP_DQ | The external R2 default alone satisfies the gate and off-rail targets above. |
 | ESP32 in a deep-sleep interval long enough to measure all points | TP_3V3, TP_GATE, TP_SW and TP_DQ | The gate and off-rail targets above hold throughout the stable observation window. |
-| `adc_reference` position A, then position B | TP_3V3, TP_ADC0 and TP_ADC1 immediately before each acquisition; both firmware-reported ADC values | VREF_A is nominally 1.185 V and VREF_B 1.650 V; each reported value is within 75 mV of its measured test point and follows the selected reference after the swap. |
+| `adc_reference` position A, then position B | TP_3V3: 3.298V, TP_ADC0: 1.180V, TP_ADC1: 1.641V; both firmware-reported ADC values | VREF_A is nominally 1.185 V and VREF_B 1.650 V; each reported value is within 75 mV of its measured test point and follows the selected reference after the swap. |
+| DS0/DS1 ROM identities | DS0: A7000000BF9D1628, DS1: 7E000000540FA728 | |
+
+The nominal sample-return values above were supplied by the operator on
+2026-09-08 for [run-meter-qGe3hI](../sensor_carrier/build/run-meter-qGe3hI/report.xml),
+after the specified settling interval during the 60-second hold. Both identity
+preflight and the acquisition from a fresh boot passed; sampling returned
+`CURAG_OK`, validity `0x1f` and empty diagnostics. These are sample-return
+measurements, separate from the dedicated gate-off observations. The corrected
+I2C wiring uses direct SDA/GPIO21 and SCL/GPIO22 connections with separate
+pull-ups; the earlier 4.7 kohm series signal connections were removed before
+this accepted run. Raw results are local ignored build artifacts.
 
 For every off-state row, first measure TP_SW without adding a load. If it is
 above 0.1 V after 10 seconds, power down, temporarily connect 100 kohm from

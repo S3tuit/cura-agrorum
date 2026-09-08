@@ -3,6 +3,7 @@ idf_component_register(
         "node_sensors.c"
         "node_sensors_backend_esp.c"
         "node_sensors_ds18b20_identity.c"
+        "node_sensors_ds18b20_gpio_esp.c"
         "node_sensors_power_gate_esp.c"
         "soil_sensor.c"
     INCLUDE_DIRS

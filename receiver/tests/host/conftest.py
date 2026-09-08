@@ -12,6 +12,7 @@ from cura_receiver.sqlite_database import open_receiver_database
 
 from tests.support.builders.persistence import GROUP, INSTANCE
 from tests.support.fakes.os_clock import FakeOsClock
+from tests.support.coordination.persistence_worker import prepare_worker_files
 
 
 @pytest.fixture
@@ -42,3 +43,13 @@ def setup(tmp_path):
     for persistence in instances:
         persistence.close()
     database.close()
+
+
+@pytest.fixture
+def worker_files(tmp_path):
+    return prepare_worker_files(tmp_path)
+
+
+@pytest.fixture
+def worker_file_factory():
+    return prepare_worker_files

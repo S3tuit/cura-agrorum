@@ -151,6 +151,15 @@ digest-protected format version, complete supported-version structure, then
 deployment policy. A malformed, digest-invalid, unsupported, policy-incompatible
 or otherwise unverifiable row is not partially recovered.
 
+The state SQL relation is a raw envelope of five nullable STRICT-table `ANY`
+columns. Handwritten persistence validation owns its singleton, type, range,
+digest and version invariants. This allows malformed application state to be
+read and archived without disabling whole-database integrity checks. Every
+normal state transaction validates and installs exactly one canonical row;
+replacement of rejected rows follows the atomic recovery contract. Generated
+code supplies the shared representations and binary grammar, never the state
+classifier or recovery policy.
+
 At startup, the persistence thread loads and validates the singleton before the
 communicator is allowed to transmit. A missing or corrupt row means:
 
@@ -1501,7 +1510,7 @@ It:
 
 The five-second interval, entity-count wake threshold and entity-count batch
 limit are pilot defaults and should remain configurable. Choosing their runtime
-values belongs to the later persistence worker rather than `PersistQueue`.
+values belongs to the persistence worker rather than `PersistQueue`.
 
 ### SQLite durability and retention
 
@@ -1652,6 +1661,23 @@ backoff. A successful `PASSIVE` checkpoint may report incomplete progress
 because of readers; this is a bounded checkpoint result, not data loss or
 permission to discard the remaining WAL. Corrupt or incompatible checkpoint
 results still require operator recovery.
+
+Ordinary transactions, control commands and checkpoints share one persistence
+recovery component on the persistence thread. It owns admission transitions,
+validation requirements and the single retry deadline/backoff; ordinary
+persistence retains ownership of FIFO leases, frozen work and exact
+reconciliation. A global control storage failure closes ordinary admission and
+requires storage validation plus an explicit `PASSIVE` checkpoint even with an
+empty queue. An already scheduled deadline is preserved; only a failed due
+recovery attempt advances backoff. Resolve retained ordinary/quarantine effects
+before this checkpoint and publish `AVAILABLE` only after all requirements
+succeed. This permits another real persistence attempt; it does not establish
+that a fresh application write can commit. A non-error partial checkpoint, or
+one with no fresh WAL work, is sufficient under this policy. No checkpoint mode
+provides a hard kernel-I/O duration bound. Successful control reads alone do not
+clear recovery requirements, and failed or timed-out mutating controls are
+never automatically replayed. Corruption and incompatibility keep their
+operator-only recovery rules.
 
 On SQLite corruption or a failed configured integrity check, the persistence thread rolls back when possible, publishes `UNAVAILABLE_CORRUPT`, closes the database and preserves the database, WAL and shared-memory files together. It must not automatically delete, replace, truncate or rebuild them. Radio RX may continue with all new ordinary `PersistQueue` admission closed so nodes retain their readings.
 

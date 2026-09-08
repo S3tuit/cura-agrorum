@@ -6,9 +6,14 @@ database opening, lifecycle start and SQLite row primitives have host coverage.
 Caller-driven ordinary transactions, immutable enrichment, reading classification,
 exact replay, poison isolation, recovery deadlines, explicit checkpoints,
 process-kill boundaries and model-based sequences also have host coverage.
+The sole persistence worker, synchronous controls, state validation/recovery,
+shared storage recovery, concurrency boundaries and component shutdown also
+have host coverage, including worker SIGKILL and generated schedule tests.
 Pi component coverage includes queue/ingress, startup, ordinary transactions,
-process-kill recovery and isolated capacity/access/corruption recovery;
-the remaining runtime tests below arrive with their production components.
+worker control/checkpoint scheduling, a seeded CPU/storage-load soak,
+process-kill recovery and isolated capacity/access/corruption recovery.
+Communicator, live time/radio policy and complete service lifecycle coverage
+still arrive with their owning production components.
 
 ## Purpose and authority
 
@@ -314,10 +319,17 @@ read-only remounts and corrupt-file maintenance. The
 [FULL/NORMAL storage benchmark](benchmarks/ordinary_persistence/README.md)
 retains raw target evidence separately from correctness tests.
 
-The component runs no worker or control scheduler. Interruptible waiting,
-automatic threshold dispatch, control fairness, communicator-state recovery,
-service lifecycle and physical power interruption remain with their owning
-later components/fixtures; the obligations below remain in force.
+The caller-driven component is now integrated into the sole persistence worker.
+Its host suites exercise interruptible waiting, automatic threshold dispatch,
+control fairness/cancellation, raw communicator-state classification and atomic
+recovery, shared storage recovery, and persistence-owned shutdown. Target
+cases measure control latency and checkpoint stalls, run a seeded mixed-work
+soak with CPU/fsync load, and kill/restart the real worker at named boundaries.
+The bounded test caller does not implement the production communicator. Full
+service signals, radio safe-state/airtime settlement, live time policy and
+physical power interruption remain with their owning components/fixtures.
+See the [worker evidence](tests/hardware/evidence/persistence_worker/README.md)
+for source identity, commands, timing limits and retained raw results.
 
 The ordinary storage destructive fixture mounts only a dedicated 4 MiB tmpfs
 below the marked test root, retains its bounded artifacts and unmounts in
@@ -346,6 +358,7 @@ measurements and the benchmark use the deployed storage filesystem.
 - **Measurement replay side effects:** Validate each stored persistence classification against its required reading-message and canonical-sample relation, including impossible partial ownership.
 - **Frozen health enrichment:** Sample a complete `ReceiverHealthV1` once, force retry and ambiguous commit, and prove host fields and both sampling timestamps are never resampled.
 - **Communicator-state precedence:** Cover missing row, SQL envelope/digest corruption, valid-digest unknown version, supported structural corruption and pure policy mismatch in the normative exclusive order.
+- **Raw state envelope:** Using the production schema and opener, store wrong SQL classes, NULLs, invalid singleton IDs, multiple rows, malformed digest lengths and digest-valid unknown versions. Require whole-database integrity to pass and exact raw values to survive for handwritten state classification/archival. Do not bypass integrity or constraints to manufacture these application-state cases; physical database corruption still fails startup.
 - **Communicator-state generations:** Test generation-one creation, next generation, exact idempotent replay, stale generation, generation gap, conflicting bytes and unknown commit reconciliation.
 - **Corrupt-state recovery:** Preserve every exact rejected singleton row and install the synthetic worst-case generation-one ledger atomically before TX can become eligible.
 - **Unsupported/policy recovery:** Enforce the complete conservative rolling-window wait, restart-reset wait and atomic archive plus empty generation-one replacement without decoding or repairing the rejected state.
@@ -353,6 +366,7 @@ measurements and the benchmark use the deployed storage filesystem.
 - **Retry scheduler:** Verify finite per-attempt SQLite waits and interruptible 250 ms doubling backoff capped at 5 seconds, no maximum retry count, no early retry after unrelated wakeup and recovery only after validation plus pending commit/reconciliation and any failed checkpoint retry.
 - **Explicit checkpoint recovery:** Exercise an empty queue and pending ordinary/quarantine effects when a checkpoint fails. Verify the closed classifier, retained checkpoint-pending condition independent of queue slots, closed new admission, exact retry deadlines through the cap, required revalidation and recovery only after both the checkpoint and pending entity effects succeed. Distinguish a non-error incomplete PASSIVE result caused by a real reader from an I/O failure, retain remaining WAL, and require operator recovery for corruption/incompatibility. No synthetic entity or application-row recovery probe is allowed.
 - **Retained frozen batch:** On global failure, retain original immutable units and every derived classification/enrichment value without reconstruction or poison classification.
+- **Shared control storage recovery:** Fail a control operation with an empty queue and no failed checkpoint; require closed admission and independent validation-plus-PASSIVE work. Interleave ordinary/quarantine failures and successful controls, preserving the existing deadline and frozen values, immediate durable-prefix removal and all outstanding recovery requirements. Only failed due recovery attempts advance backoff. Cover non-error partial/no-fresh-work checkpoints, actual checkpoint counters, rejected replacement and operator-only corruption/incompatibility. Never replay a failed/timed-out mutating control automatically or use an application-row recovery probe.
 - **Corruption preservation:** On corruption, close admission and preserve database, WAL and shared-memory files together without delete, truncate, rebuild or silent epoch replacement. For corrupt or incompatible startup rejection, require unchanged database/WAL bytes and retained identities and sizes of all existing artifacts; permit SQLite-managed shared-memory WAL-index and coordination bookkeeping as defined in `ARCHITECTURE.md`.
 - **Poison isolation:** Require an entity-specific failure to reproduce alone before quarantine, then store exact canonical `QuarantineEvidenceV1` bytes and provenance durably before later valid units proceed. `UNSUPPORTED_ENTITY_SCHEMA` is non-emittable by the pilot; test unsupported-spec rejection at the queue boundary without fabricating admission.
 - **Non-quarantinable clock boundary:** Reproduce an isolated `ClockObservationV1` failure and require retained queue head plus incompatible admission, with no bypass or quarantine.

@@ -45,6 +45,16 @@ The model covers mixed clock/profile/reading work, commit uncertainty, poison,
 identity collisions and volatile-state loss on restart; exhaustive health and
 quarantine byte contracts remain in their deterministic suites.
 
+The state validator and control-transaction tests share reviewed immutable
+inputs in `builders/persistence_control.py`; semantic expectations remain in
+their tests. `coordination/persistence_worker.py` prepares dedicated component
+files and propagates failures from actual worker threads with bounded joins.
+`coordination/worker_crash.py` serves the host and Pi worker SIGKILL families,
+preserving the file set before restart validation. Scheduling/race barriers
+remain local to the test that names their safe boundary. The worker schedule
+oracle remains local to `host/test_persistence_worker_schedules.py`, where two
+reviewed primitive examples precede deterministic Hypothesis sequences.
+
 ## Builders
 
 A shared builder creates valid test input with reviewed literal defaults and

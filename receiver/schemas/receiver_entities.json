@@ -989,9 +989,8 @@
         "mode": "canonical_blob",
         "table": "communicator_state",
         "write_policy": "controlled_singleton",
-        "primary_key": [
-          "singleton_id"
-        ],
+        "raw_envelope": true,
+        "primary_key": [],
         "without_rowid": false
       },
       "fields": [

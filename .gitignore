@@ -78,6 +78,9 @@ __pycache__/
 .env
 .venv
 
+# Raw hardware test runs; keep curated summaries and manifests outside dated directories.
+/receiver/tests/hardware/evidence/**/20??-??-??/
+
 # Fuzzing
 protocol/protocol-v2-lora/.fuzz-corpus/
 

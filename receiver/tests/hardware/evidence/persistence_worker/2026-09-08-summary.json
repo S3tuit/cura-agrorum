@@ -1,0 +1,62 @@
+{
+  "fixture_mounts_after_teardown": [],
+  "percentiles": "nearest rank",
+  "metrics": {
+    "target-tests-v2/test_target_control_latency_ba0/worker-evidence.json": {
+      "phase": "backoff",
+      "control_latency_us": [
+        1333
+      ]
+    },
+    "target-tests-v2/test_target_control_latency_co0/worker-evidence.json": {
+      "phase": "commit",
+      "control_latency_us": [
+        13938
+      ]
+    },
+    "target-tests-v2/test_target_control_latency_id0/worker-evidence.json": {
+      "phase": "idle",
+      "control_latency_us": [
+        1482
+      ]
+    },
+    "target-tests-v2/test_target_threshold_checkpoi0/worker-evidence.json": {
+      "publication_64_entities_us": 7467,
+      "checkpoint_us": {
+        "count": 2,
+        "min": 22522,
+        "p50": 22522,
+        "p95": 23049,
+        "max": 23049
+      }
+    },
+    "target-tests-v2/test_target_worker_mixed_race_0/worker-evidence.json": {
+      "seed": 805031,
+      "accepted": 830,
+      "rejected": 1175,
+      "iterations": 2005,
+      "injected_failures": 52,
+      "commit_us": {
+        "count": 2191,
+        "min": 2050,
+        "p50": 2526,
+        "p95": 7168,
+        "max": 242012
+      },
+      "checkpoint_us": {
+        "count": 118,
+        "min": 2383,
+        "p50": 12623,
+        "p95": 27684,
+        "max": 66790
+      },
+      "control_pair_latency_us": {
+        "count": 2005,
+        "min": 5564,
+        "p50": 10926,
+        "p95": 32170,
+        "max": 250928
+      }
+    }
+  }
+}

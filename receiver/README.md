@@ -33,12 +33,16 @@ The protocol contract remains under
   databases, and `sqlite_repository.py` supplies explicit row operations within
   caller-owned transactions. `ordinary_persistence.py` adds caller-driven queue
   transactions, immutable health enrichment, exact replay, poison quarantine,
-  recovery deadlines and explicit checkpoint recovery; `reading_persistence.py`
-  owns reading classification
-  and canonical evidence checks. `sqlite_transactions.py` is the concrete
-  SQLite transaction/checkpoint fault boundary. The caller supplies dispatch;
-  the persistence worker, control scheduler, automatic checkpoint scheduling
-  and complete radio startup remain later components.
+  and exact reconciliation; `reading_persistence.py` owns reading classification
+  and canonical evidence checks. `persistence_recovery.py` owns the shared
+  admission, retry and checkpoint policy. `persistence_worker.py` supplies the
+  sole disk-owning thread, startup, queue/control scheduling and bounded final
+  shutdown handoff. `persistence_control_channel.py` implements the four
+  synchronous operations; handwritten state validation and transactions live
+  in `communicator_state_persistence.py` and `persistence_control_operations.py`.
+  `sqlite_transactions.py` remains the concrete SQLite transaction/checkpoint
+  fault boundary. The communicator, live time policy and radio integration
+  remain later components.
   [`ports/`](cura_receiver/ports/) defines narrow production capabilities, and
   [`platform/`](cura_receiver/platform/) contains their deployed Linux adapters.
 - [`schemas/`](schemas/) contains machine-readable receiver sources of truth for
@@ -83,3 +87,19 @@ path so tests exercise the current checkout. Production imports the installed
 `cura_protocol_v2_lora` package directly. Deployment supplies explicit private
 configuration and database paths; the default configuration path is only the
 development `receiver/receiver-group.json`.
+
+The worker takes an already-created immutable `ReceiverInstanceStart` and
+explicit database/configuration paths. Call `start()` before using its
+`control` channel; `wait_started()` exposes immutable startup facts without a
+database handle. The caller closes `queue`, waits for closed-and-drained within
+its budget and requests the clean-stop marker after its own shutdown
+preconditions hold. `request_stop(deadline_monotonic_us=...)` is the final
+handoff: it closes submissions, drains within the remaining budget and attempts
+checkpoint/close when eligible. It cannot preempt kernel I/O or manufacture a
+clean marker.
+
+The raw communicator-state envelope advances the pilot schema to epoch 10.
+Existing epoch databases require the documented offline fresh-database
+deployment boundary; there is no automatic migration or restoration.
+Worker validation evidence is recorded under
+[`tests/hardware/evidence/persistence_worker/`](tests/hardware/evidence/persistence_worker/README.md).

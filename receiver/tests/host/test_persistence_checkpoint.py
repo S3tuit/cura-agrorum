@@ -246,7 +246,7 @@ def test_checkpoint_low_space(setup):
     result = persistence.checkpoint()
     assert result.failure.admission_state is State.UNAVAILABLE_LOW_SPACE
     assert persistence.checkpoint_pending
-    persistence._minimum_free_bytes = 0
+    persistence.recovery.minimum_free_bytes = 0
     clock.advance_elapsed_us(250925)
     assert persistence.checkpoint().failure is None
     assert queue.snapshot().admission_snapshot.state is State.AVAILABLE

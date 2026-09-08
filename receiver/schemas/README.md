@@ -67,8 +67,12 @@ variable-length array.
 
 The canonical SQL row uses `write_policy: controlled_singleton`. Generation
 therefore emits neither append-only nor immutable triggers for that table;
-handwritten persistence may atomically install or replace its one constant-key
-row under the communicator-state control contract.
+handwritten persistence may atomically install or replace the state under the
+communicator-state control contract. Its `raw_envelope: true` storage declaration
+uses nullable STRICT-table `ANY` columns, an empty SQL `primary_key`, and no
+indexes, foreign keys or `WITHOUT ROWID`. Field types/constants still describe
+the canonical binder output; the handwritten persistence validator enforces
+them on load and before writes. Generation does not emit semantic validators.
 
 Every other generated SQL row uses `write_policy: append_only`. Generation
 emits update/delete rejection plus a pre-insert conflict guard for its primary

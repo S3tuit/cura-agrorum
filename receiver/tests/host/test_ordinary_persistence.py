@@ -1176,7 +1176,7 @@ def test_persistence_counters_saturate(setup):
     persistence = create()
     persistence.enable_admission()
     maximum = (1 << 63) - 1
-    persistence._counters = replace(
+    persistence.recovery.counters = replace(
         persistence.counters,
         **{field.name: maximum - 1 for field in fields(persistence.counters)},
     )
@@ -1193,6 +1193,26 @@ def test_persistence_counters_saturate(setup):
         0 <= getattr(persistence.counters, field.name) <= maximum
         for field in fields(persistence.counters)
     )
+
+
+# A handle closed for maintenance fails inside the ordinary classifier and reopens the same file on its retry deadline.
+def test_closed_handle_before_attempt_uses_storage_recovery(setup):
+    path, _, queue, clock, create = setup
+    persistence = create()
+    persistence.enable_admission()
+    _publish(queue, _observation())
+    persistence.close()
+    failed = persistence.attempt(max_entities=1)
+    assert failed.outcome is Outcome.NOT_COMMITTED
+    assert failed.failure.admission_state is enum.PersistenceAdmissionState.UNAVAILABLE_IO
+    assert queue.snapshot().published_entities == 1
+    assert queue.snapshot().claimed_entities == 0
+    assert persistence.retry_deadline_monotonic_us == 251025
+    clock.advance_elapsed_us(250925)
+    assert persistence.attempt(max_entities=1).acknowledged_entities == 1
+    assert queue.snapshot().published_entities == 0
+    with sqlite3.connect(path) as observer:
+        assert observer.execute("SELECT observation_sequence FROM clock_observations").fetchall() == [(1,)]
 
 
 # The ordinary owner verifies the supplied group/durability handoff before it can publish admission.

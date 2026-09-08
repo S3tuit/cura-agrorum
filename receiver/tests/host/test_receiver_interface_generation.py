@@ -222,7 +222,7 @@ def test_schema_fingerprint_is_exact_schema_sql_sha256() -> None:
     assert hashlib.sha256(schema_bytes).hexdigest() == generated.DATABASE_SCHEMA_SHA256
     assert hashlib.sha256(schema_bytes).digest() == generated.DATABASE_SCHEMA_FINGERPRINT
     assert generated.SQLITE_APPLICATION_ID == 0x43555252
-    assert generated.DATABASE_SCHEMA_VERSION == 9
+    assert generated.DATABASE_SCHEMA_VERSION == 10
 
 
 # Requires every declared catalogue, entity table, and trigger in assembled SQL.
@@ -1137,6 +1137,59 @@ def test_communicator_state_codec_enforces_only_canonical_structure() -> None:
     struct.pack_into("<H", reserved_presence_bit, 14, 2)
     with pytest.raises(ValueError, match="reserved bits set"):
         generated_entities.decode_communicator_state_v1(bytes(reserved_presence_bit))
+
+
+# Raw application-state defects survive actual startup integrity without SQL coercion.
+@pytest.mark.parametrize("raw_rows", [
+    ((1, 2, 1, b"\x02\x00", hashlib.sha256(b"\x02\x00").digest()),),
+    ((1, 1, 0, b"bad", b"short"),),
+    ((None, "2", 1.5, 42, None),),
+    ((1, 1, 1, b"a", b"b"), (1, 1, 2, b"c", b"d")),
+    ((2, 1, 1, None, bytes(32)),),
+])
+def test_raw_state_envelope_passes_database_integrity(tmp_path, raw_rows):
+    from cura_receiver.database_initializer import initialize_database
+    from cura_receiver.sqlite_database import open_receiver_database
+
+    path = tmp_path / "raw-state.db"
+    group = b"test0001"
+    initialize_database(path, group)
+    with sqlite3.connect(path) as connection:
+        connection.executemany(
+            "INSERT INTO communicator_state VALUES (?, ?, ?, ?, ?)", raw_rows
+        )
+    opened = open_receiver_database(path, group, minimum_free_bytes=0)
+    assert opened.failure is None
+    try:
+        assert tuple(opened.database.connection.execute(
+            "SELECT * FROM communicator_state"
+        )) == raw_rows
+        assert opened.database.connection.execute("PRAGMA integrity_check").fetchall() == [("ok",)]
+        assert [(row[2], row[3], row[5]) for row in opened.database.connection.execute(
+            "PRAGMA table_info(communicator_state)"
+        )] == [("ANY", 0, 0)] * 5
+    finally:
+        opened.database.close()
+
+
+# Raw storage is explicit, restricted to canonical envelopes, and never carries SQL keys.
+@pytest.mark.parametrize("change", ["false", "integer", "key", "without_rowid", "noncanonical"])
+def test_raw_envelope_manifest_rejects_incompatible_storage(tmp_path, change):
+    manifest = load_entity_manifest()
+    state = next(entity for entity in manifest["entities"] if entity["name"] == "COMMUNICATOR_STATE_V1")
+    if change == "false":
+        state["persistence"]["raw_envelope"] = False
+    elif change == "integer":
+        state["persistence"]["raw_envelope"] = 1
+    elif change == "key":
+        state["persistence"]["primary_key"] = ["singleton_id"]
+    elif change == "without_rowid":
+        state["persistence"]["without_rowid"] = True
+    else:
+        manifest["entities"][0]["persistence"]["raw_envelope"] = True
+    result = validate_entity_manifest_fixture(tmp_path, manifest)
+    assert result.returncode != 0
+    assert "raw" in result.stderr.lower()
 
 
 # Keeps representation-only validity masks out of relational tables.

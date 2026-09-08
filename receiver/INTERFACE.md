@@ -1972,6 +1972,23 @@ non-error `PASSIVE` result with incomplete progress because of readers counts
 as a successful bounded attempt; retain the remaining WAL for later
 checkpointing. Corrupt and incompatible results require operator recovery.
 
+A global control storage failure joins this same recovery episode and retains
+an independent validation-plus-checkpoint requirement, including when no queue
+or quarantine work exists and no checkpoint has failed. Preserve any existing
+retry deadline; only an unsuccessful due recovery attempt advances backoff.
+At a due safe boundary validate/reopen the same bound database file, resolve
+retained ordinary/quarantine effects and execute an explicit `PASSIVE`
+checkpoint. Reset backoff and publish `AVAILABLE` only after all requirements
+are satisfied. Count real checkpoint attempts/results without fabricating a
+preceding checkpoint failure. No synthetic entity or application-row probe is
+permitted. Non-error partial progress counts, including no fresh WAL work:
+this is permission to resume attempts, not proof of a fresh durable write or
+absence of contention. PASSIVE avoids contention waits but imposes no hard
+kernel-I/O duration bound. A successful control read alone cannot clear this
+requirement. Control outcomes and cancellation remain unchanged; reconciliation
+is caller-driven over the serialized channel, never automatic mutation replay.
+Corruption/incompatibility still require operator recovery.
+
 The shared wakeup event interrupts this backoff for a control command or
 shutdown. After any such wake, persistence checks all work predicates but does
 not run the ordinary retry before its stored retry deadline merely because the
@@ -2138,6 +2155,14 @@ priority without allowing sequential submissions from the communicator to
 starve FIFO persistence, and it prevents continuous ordinary work from starving
 a pending control command.
 
+The concrete persistence worker's configurable scheduling defaults are a
+5,000,000-microsecond monotonic flush interval, a 64-entity wake threshold,
+a 64-entity batch limit and a 4,194,304-byte WAL checkpoint threshold. A
+successful checkpoint of an unchanged, still-large WAL is reconsidered after
+the flush interval; observed WAL-file growth can trigger earlier work. This
+prevents a reader-limited checkpoint or retained file allocation from creating
+a tight loop. Pending recovery instead follows its existing retry deadline.
+
 ### Control-command deadlines and cancellation
 
 Each private command has a lock-protected process-local execution state:
@@ -2282,22 +2307,42 @@ state load and accepted by `commit_communicator_state()`. The communicator owns
 clock and airtime policy; persistence validates and durably stores the exact
 value without editing it.
 
-SQLite holds at most one active state row:
+The persistence validator accepts at most one active state row. SQLite stores
+the raw envelope without coercion or application-state constraints:
 
 ```sql
 CREATE TABLE communicator_state (
-    singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
-    state_format_version INTEGER NOT NULL CHECK (state_format_version = 1),
-    generation INTEGER NOT NULL
-        CHECK (generation BETWEEN 1 AND 9223372036854775807),
-    state_blob BLOB NOT NULL,
-    state_sha256 BLOB NOT NULL CHECK (length(state_sha256) = 32)
+    singleton_id ANY,
+    state_format_version ANY,
+    generation ANY,
+    state_blob ANY,
+    state_sha256 ANY
 ) STRICT;
 ```
 
-No row represents generation zero. Generation zero is conservative runtime
-state and is never inserted. `state_sha256` covers the complete `state_blob`.
+These nullable `ANY` columns preserve every SQLite storage class and value,
+including rejected values and extra rows. There is no SQL primary key,
+singleton, version, generation or digest-length constraint on this envelope.
+The handwritten persistence validator reads every row and enforces the
+state-row decision tree below. An unsupported application version or malformed
+envelope can therefore be classified while whole-database integrity succeeds.
+Failed SQLite integrity and foreign-key checks retain the whole-database
+corruption policy and are never bypassed for application-state recovery.
+
+Every normal state write validates a complete canonical request and installs
+exactly one row: integer `singleton_id = 1`, integer supported
+`state_format_version = 1`, integer `generation` in `1..INT64_MAX`, BLOB
+`state_blob` and its 32-byte BLOB `state_sha256`. An invalid existing relation
+may be replaced only through atomic archival/recovery. No valid row represents
+generation zero. Generation zero is conservative runtime state and is never
+intentionally inserted. `state_sha256` covers the complete `state_blob`.
 The version and generation encoded inside the blob must equal the SQL columns.
+
+Generation defines the raw storage shape and the existing canonical V1
+entities, codecs and binders. Classification, semantic validation and recovery
+remain handwritten. This storage change starts database schema epoch 10;
+the 1120-byte V1 encoding is unchanged. An older database requires the normal
+offline epoch transition, never an in-process migration.
 
 The communicator never mutates a loaded value. It creates a complete new
 snapshot, normally with `dataclasses.replace`, and advances generation exactly

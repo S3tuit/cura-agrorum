@@ -1209,11 +1209,23 @@ def validate_row_layout(
     table_names: set[str],
 ) -> None:
     if mode != "transaction_target":
-        require_exact_keys(
+        required = {"mode", "table", "write_policy", "primary_key", "without_rowid"}
+        require_allowed_keys(
             persistence,
-            {"mode", "table", "write_policy", "primary_key", "without_rowid"},
+            required | ({"raw_envelope"} if mode == "canonical_blob" else set()),
+            required,
             context + ".persistence",
         )
+    raw_envelope = persistence.get("raw_envelope", False)
+    if "raw_envelope" in persistence and raw_envelope is not True:
+        raise ManifestError(f"{context}.raw_envelope must be true when supplied")
+    if raw_envelope and (
+        persistence.get("primary_key") != []
+        or persistence.get("without_rowid") is not False
+        or row.get("indexes", [])
+        or row.get("foreign_keys", [])
+    ):
+        raise ManifestError(f"{context} raw envelope must have no keys or indexes")
     table = require_sql_identifier(persistence, "table", context + ".persistence")
     if table in table_names:
         raise ManifestError(f"entity manifest repeats table {table}")
@@ -1256,7 +1268,8 @@ def validate_row_layout(
     validate_length_field_relationships(fields, context)
 
     primary_key = persistence.get("primary_key")
-    validate_identifier_list(primary_key, context + ".primary_key")
+    if not raw_envelope:
+        validate_identifier_list(primary_key, context + ".primary_key")
     assert isinstance(primary_key, list)
     for column in primary_key:
         if column not in columns:
@@ -1989,6 +2002,7 @@ def iter_row_layouts(entity_manifest: EntityManifest) -> tuple[dict[str, Any], .
                 "write_policy": persistence["write_policy"],
                 "primary_key": persistence["primary_key"],
                 "without_rowid": persistence["without_rowid"],
+                "raw_envelope": persistence.get("raw_envelope", False),
                 "fields": entity["fields"],
                 "indexes": entity.get("indexes", []),
                 "foreign_keys": entity["foreign_keys"],
@@ -2039,6 +2053,17 @@ def expand_field(
 def render_entity_table(
     row: dict[str, Any], entity_manifest: EntityManifest
 ) -> list[str]:
+    if row.get("raw_envelope", False):
+        # Canonical binders still produce typed values. Raw storage retains bad
+        # rows for the handwritten persistence classifier and atomic archival.
+        columns = [column for _, column, _ in sqlite_bound_fields(row, entity_manifest)]
+        return [
+            f"CREATE TABLE {row['table']} (",
+            *[f"    {column} ANY" + ("," if index < len(columns) - 1 else "")
+              for index, column in enumerate(columns)],
+            ") STRICT;",
+            "",
+        ]
     definitions: list[str] = []
     for field in row["fields"]:
         for _, column, expanded_field in expand_field(field, entity_manifest):

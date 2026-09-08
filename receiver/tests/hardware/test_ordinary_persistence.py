@@ -261,7 +261,7 @@ def test_target_bounded_full_recovery(bounded_storage):
             is State.UNAVAILABLE_LOW_SPACE
         )
         assert queue.snapshot().published_entities == 1
-        owner._minimum_free_bytes = 0
+        owner.recovery.minimum_free_bytes = 0
         _wait_due(owner)
         assert owner.attempt(max_entities=64).acknowledged_entities == 1
         committed = 1

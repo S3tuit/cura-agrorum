@@ -107,3 +107,43 @@ def test_load_field_presence():
 def test_clean_stop_request_bounds(changes):
     with pytest.raises((TypeError, ValueError)):
         replace(ReceiverCleanStopV1(bytes(16), 1, 0), **changes)
+
+
+# F-004: every database-result family rejects impossible linked-SQLite evidence relationships.
+@pytest.mark.parametrize(
+    "result",
+    [
+        Load(Status.DATABASE_ERROR, Op.READ),
+        Result(D.NOT_INSTALLED, F.DATABASE_ERROR, Op.WRITE),
+        Result(D.OUTCOME_UNKNOWN, F.DATABASE_ERROR, Op.WRITE),
+        Stop(StopD.NOT_COMMITTED, StopF.DATABASE_ERROR, Op.CLEANUP),
+        Stop(StopD.OUTCOME_UNKNOWN, StopF.DATABASE_ERROR, Op.CLEANUP),
+    ],
+)
+@pytest.mark.parametrize(
+    "primary,extended,valid",
+    [
+        (None, 266, False),
+        (5, 266, False),
+        (None, None, True),
+        (10, None, True),
+        (10, 266, True),
+        (5, 5, True),
+    ],
+)
+def test_sqlite_evidence_relationships(result, primary, extended, valid):
+    evidence = dict(
+        sqlite_primary_code=primary,
+        sqlite_extended_code=extended,
+        os_errno=5,
+    )
+    if not valid:
+        with pytest.raises(ValueError):
+            replace(result, **evidence)
+    else:
+        checked = replace(result, **evidence)
+        assert (
+            checked.sqlite_primary_code,
+            checked.sqlite_extended_code,
+            checked.os_errno,
+        ) == (primary, extended, 5)

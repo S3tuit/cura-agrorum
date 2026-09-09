@@ -160,6 +160,12 @@ replacement of rejected rows follows the atomic recovery contract. Generated
 code supplies the shared representations and binary grammar, never the state
 classifier or recovery policy.
 
+Validation reads immutable projections of every row's storage classes and
+values of the expected classes. Rejected TEXT need not decode as UTF-8 to be
+classified. Recovery preserves the original values directly inside SQLite
+with INSERT ... SELECT in the same transaction as replacement, so rejected
+evidence never depends on a Python text conversion or rebinding round trip.
+
 At startup, the persistence thread loads and validates the singleton before the
 communicator is allowed to transmit. A missing or corrupt row means:
 
@@ -1529,6 +1535,14 @@ a migration ledger or in-place upgrades. Startup checks the application ID and
 one metadata row rather than querying every generated catalogue. The complete
 generation, initialization and enum contracts are defined in
 [`INTERFACE.md`](INTERFACE.md) and [`db/README.md`](db/README.md).
+
+Startup and recovery also use one shared inventory of the required ordinary,
+lifecycle, state and quarantine table/column projections. Read-only preflight,
+the actual startup write connection and recovery all check these projections
+without reading application rows. A missing required table or column is
+incompatible storage and cannot reopen admission. This checks required SQL
+access; metadata remains the schema version/fingerprint authority, without
+live DDL or catalogue attestation.
 
 Any pilot schema change starts a new database schema epoch. Deployment is an
 explicit offline procedure that stops the receiver, preserves the preceding

@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 import json
 import sqlite3
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 
 import pytest
@@ -16,7 +16,7 @@ from cura_receiver.receiver_startup import (
     insert_receiver_instance_start,
 )
 from cura_receiver.sqlite_database import open_receiver_database
-from cura_receiver.sqlite_repository import SqliteRepository
+from cura_receiver.sqlite_repository import CommunicatorStateRow, SqliteRepository
 from tests.support.builders.protocol_ingress import (
     REVIEWED_CURRENT_FRAME,
     REVIEWED_ACCEPTED_ACK,
@@ -433,19 +433,55 @@ def test_lifecycle_lookups(database) -> None:
             connection.execute(sql)
 
 
-# Raw state reads retain every SQL storage class and malformed row for later validation.
+# State projections retain every row/class without decoding or exporting rejected evidence.
 def test_state_envelope_is_not_decoded_or_filtered(database) -> None:
     connection, repository, _ = database
     assert repository.read_communicator_state_rows() == ()
-    connection.execute("DROP TABLE communicator_state")
-    connection.execute(
-        "CREATE TABLE communicator_state (singleton_id, state_format_version, generation, state_blob, state_sha256)"
-    )
     observed = ((1, 99, 1, b"unknown", bytes(32)), (2, "invalid", None, 7.5, None))
     connection.executemany(
         "INSERT INTO communicator_state VALUES (?, ?, ?, ?, ?)", observed
     )
-    assert repository.read_communicator_state_rows() == observed
+    projected = repository.read_communicator_state_rows()
+    assert projected == (
+        CommunicatorStateRow(
+            1, ("integer", "integer", "integer", "blob", "blob"), observed[0]
+        ),
+        CommunicatorStateRow(
+            2, ("integer", "text", "null", "real", "null"), (2, None, None, None, None)
+        ),
+    )
+    assert (
+        tuple(connection.execute("SELECT * FROM communicator_state ORDER BY rowid"))
+        == observed
+    )
+    with pytest.raises(FrozenInstanceError):
+        projected[0].row_id = 99
+    with pytest.raises(TypeError):
+        projected[0].values[0] = 99
+
+
+# F-002: even canonical blob bytes stored as TEXT are not exposed as a legitimate BLOB.
+def test_state_projection_does_not_coerce_text_to_blob(database):
+    from tests.support.builders.persistence_control import state
+
+    connection, repository, _ = database
+    parameters = row.communicator_state_v1_parameters(state())
+    connection.execute(
+        "INSERT INTO communicator_state VALUES (?, ?, ?, CAST(? AS TEXT), ?)",
+        parameters,
+    )
+    (projected,) = repository.read_communicator_state_rows()
+    assert projected.storage_classes == (
+        "integer",
+        "integer",
+        "integer",
+        "text",
+        "blob",
+    )
+    assert projected.values == (*parameters[:3], None, parameters[4])
+    assert connection.execute(
+        "SELECT CAST(state_blob AS BLOB) FROM communicator_state"
+    ).fetchone() == (parameters[3],)
 
 
 # Real foreign keys forbid a reading's missing profile and a profile's missing instance.

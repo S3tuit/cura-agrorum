@@ -117,6 +117,134 @@ def test_corrupt_relation_archive(controls):
     ).fetchone() == (2,)
 
 
+# F-002: each invalid-TEXT envelope field and every duplicate row survives SQL-side archival exactly.
+@pytest.mark.parametrize(
+    "column",
+    [
+        "singleton_id",
+        "state_format_version",
+        "generation",
+        "state_blob",
+        "state_sha256",
+    ],
+)
+@pytest.mark.parametrize("invalid_text", [b"\x80", b"\x00\xff", b"\xed\xa0\x80"])
+def test_invalid_text_archive_preserves_exact_values(controls, column, invalid_text):
+    operations, connection, _, command = controls
+    original = communicator_state_v1_parameters(state())
+    connection.execute(
+        "INSERT INTO communicator_state VALUES (?, ?, ?, ?, ?)", original
+    )
+    connection.execute(
+        f"UPDATE communicator_state SET {column} = CAST(? AS TEXT)", (invalid_text,)
+    )
+    connection.execute(
+        "INSERT INTO communicator_state SELECT * FROM communicator_state"
+    )
+    assert connection.execute(
+        f"SELECT typeof({column}), hex({column}) FROM communicator_state"
+    ).fetchall() == [
+        ("text", invalid_text.hex().upper()),
+        ("text", invalid_text.hex().upper()),
+    ]
+    assert connection.execute("PRAGMA integrity_check").fetchall() == [("ok",)]
+    columns = (
+        "singleton_id",
+        "state_format_version",
+        "generation",
+        "state_blob",
+        "state_sha256",
+    )
+    before = connection.execute(
+        "SELECT "
+        + ", ".join(f"typeof({name}), hex({name})" for name in columns)
+        + " FROM communicator_state ORDER BY rowid"
+    ).fetchall()
+    assert (
+        operations.load_state(command(Kind.LOAD_STATE)).state_condition
+        is Condition.CORRUPT
+    )
+    assert operations.commit_state(synthetic(), command()).disposition is D.COMMITTED
+    after = connection.execute(
+        "SELECT "
+        + ", ".join(
+            f"typeof(observed_{name}), hex(observed_{name})" for name in columns
+        )
+        + " FROM quarantined_communicator_states ORDER BY quarantined_state_id"
+    ).fetchall()
+    assert after == before
+    expected_digest = (
+        None if column == "state_blob" else hashlib.sha256(original[3]).digest()
+    )
+    assert (
+        connection.execute(
+            "SELECT calculated_blob_sha256, preserved_by_receiver_instance_id, preserved_at_monotonic_us, database_schema_version "
+            "FROM quarantined_communicator_states ORDER BY quarantined_state_id"
+        ).fetchall()
+        == [(expected_digest, INSTANCE, 100, 10)] * 2
+    )
+    assert operations.load_state(command(Kind.LOAD_STATE)).state == synthetic()
+
+
+# F-002: actual rejection after SQL archival rolls back invalid TEXT and every archive row together.
+def test_invalid_text_archive_rolls_back(controls):
+    operations, connection, _, command = controls
+    connection.execute(
+        "INSERT INTO communicator_state VALUES (1, 1, 1, CAST(X'80' AS TEXT), NULL)"
+    )
+    connection.execute(
+        "CREATE TRIGGER reject_replacement BEFORE INSERT ON communicator_state "
+        "BEGIN SELECT RAISE(ABORT, 'test replacement boundary'); END"
+    )
+    result = operations.commit_state(synthetic(), command())
+    assert (result.disposition, result.failure_kind) == (
+        D.NOT_INSTALLED,
+        F.DATABASE_ERROR,
+    )
+    assert connection.execute(
+        "SELECT count(*) FROM quarantined_communicator_states"
+    ).fetchone() == (0,)
+    assert connection.execute(
+        "SELECT typeof(state_blob), hex(state_blob) FROM communicator_state"
+    ).fetchall() == [("text", "80")]
+    assert not operations.database.connection.in_transaction
+
+
+# F-002: unknown archival commits reconcile exact state and never duplicate preserved TEXT rows.
+@pytest.mark.parametrize("committed", [False, True])
+def test_invalid_text_archive_unknown_outcome(controls, committed):
+    operations, connection, _, command = controls
+    connection.execute(
+        "INSERT INTO communicator_state VALUES (1, 1, 1, CAST(X'80' AS TEXT), NULL)"
+    )
+
+    class Unknown(SqliteTransactions):
+        def commit(self, db):
+            if committed:
+                super().commit(db)
+            raise sqlite3.OperationalError("lost archival commit confirmation")
+
+    operations.transactions = Unknown()
+    assert (
+        operations.commit_state(synthetic(), command()).disposition is D.OUTCOME_UNKNOWN
+    )
+    loaded = operations.load_state(command(Kind.LOAD_STATE))
+    assert loaded.state == (synthetic() if committed else None)
+    assert loaded.state_condition is (
+        Condition.NONE if committed else Condition.CORRUPT
+    )
+    assert connection.execute(
+        "SELECT count(*) FROM quarantined_communicator_states"
+    ).fetchone() == (int(committed),)
+    operations.transactions = SqliteTransactions()
+    assert operations.commit_state(synthetic(), command()).disposition is (
+        D.ALREADY_COMMITTED if committed else D.COMMITTED
+    )
+    assert connection.execute(
+        "SELECT typeof(observed_state_blob), hex(observed_state_blob), calculated_blob_sha256 FROM quarantined_communicator_states"
+    ).fetchall() == [("text", "80", None)]
+
+
 # A real SQL failure after archival rolls back both archive rows and singleton replacement.
 def test_archive_and_install_are_atomic(controls):
     operations, connection, _, command = controls

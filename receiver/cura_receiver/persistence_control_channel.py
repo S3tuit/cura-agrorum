@@ -1,6 +1,6 @@
 """Synchronous in-memory control mailbox; all filesystem work stays with its worker."""
 
-from threading import current_thread
+from threading import TIMEOUT_MAX, current_thread
 
 from .generated.receiver_enums_generated import DiagnosticOperation as Op
 from .persistence_control_execution import (
@@ -78,7 +78,17 @@ class PersistenceControlChannel:
             self._worker._wake.set()
 
     def _wait_for_completion(self, command, remaining_seconds):
-        return command.completion.wait(remaining_seconds)
+        # A valid u64 deadline can exceed the interpreter's single-wait limit.
+        # Completing a platform-sized segment does not expire the command.
+        while True:
+            if command.completion.wait(min(remaining_seconds, TIMEOUT_MAX)):
+                return True
+            remaining_us = (
+                command.request.deadline_monotonic_us - command.clock.now_monotonic_us()
+            )
+            if remaining_us <= 0:
+                return False
+            remaining_seconds = remaining_us / 1_000_000
 
     def _call(self, kind, payload, deadline):
         worker = self._worker

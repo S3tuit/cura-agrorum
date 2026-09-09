@@ -7,8 +7,17 @@ from cura_receiver.generated.receiver_enums_generated import (
     PersistenceAdmissionState as State,
 )
 from cura_receiver.persistence_worker import PersistenceWorker
+from cura_receiver.persistence_control_values import (
+    CommunicatorStateCommitDisposition,
+    CommunicatorStateCondition,
+)
+from cura_receiver.generated.receiver_entities_generated import (
+    communicator_state_v1_parameters,
+)
 from cura_receiver.receiver_startup import ReceiverInstanceStart
 from tests.support.builders.persistence import INSTANCE
+from tests.support.builders.persistence_control import state, synthetic
+from tests.support.coordination.persistence_worker import CheckedPersistenceWorker
 from tests.support.fakes.os_clock import FakeOsClock
 
 
@@ -101,6 +110,97 @@ def test_failed_worker_startup(worker_files, case):
                 )
     finally:
         stop_worker(worker)
+
+
+# F-002: invalid UTF-8 is recoverable application state through real worker startup and controls.
+@pytest.mark.parametrize(
+    "column",
+    [
+        "singleton_id",
+        "state_format_version",
+        "generation",
+        "state_blob",
+        "state_sha256",
+    ],
+)
+def test_worker_recovers_invalid_text_state(worker_files, column):
+    database, configuration, boot = worker_files
+    with sqlite3.connect(database) as db:
+        db.execute(
+            "INSERT INTO communicator_state VALUES (?, ?, ?, ?, ?)",
+            communicator_state_v1_parameters(state()),
+        )
+        db.execute(f"UPDATE communicator_state SET {column} = CAST(X'80' AS TEXT)")
+    worker = CheckedPersistenceWorker(
+        instance=ReceiverInstanceStart(INSTANCE, 0),
+        database_path=database,
+        configuration_path=configuration,
+        boot_id_path=boot,
+        clock=FakeOsClock(monotonic_us=100),
+    )
+    worker.start()
+    try:
+        startup = worker.wait_started(deadline_monotonic_us=5_000_100)
+        assert startup.database_failure is None
+        assert startup.state_load.state_condition is CommunicatorStateCondition.CORRUPT
+        assert worker.queue.snapshot().admission_snapshot.state is State.AVAILABLE
+        assert (
+            worker.control.load_communicator_state(
+                deadline_monotonic_us=5_000_100
+            ).state_condition
+            is CommunicatorStateCondition.CORRUPT
+        )
+        assert (
+            worker.control.commit_communicator_state(
+                synthetic(), deadline_monotonic_us=5_000_100
+            ).disposition
+            is CommunicatorStateCommitDisposition.COMMITTED
+        )
+        assert (
+            worker.control.load_communicator_state(
+                deadline_monotonic_us=5_000_100
+            ).state
+            == synthetic()
+        )
+        with sqlite3.connect(database) as observer:
+            assert observer.execute(
+                f"SELECT typeof(observed_{column}), hex(observed_{column}) FROM quarantined_communicator_states"
+            ).fetchall() == [("text", "80")]
+    finally:
+        worker.finish_test()
+
+
+# F-001: missing control schema rejects worker startup before inserting its lifecycle row.
+@pytest.mark.parametrize(
+    "table", ["communicator_state", "quarantined_communicator_states"]
+)
+def test_worker_rejects_missing_control_schema(worker_files, table):
+    database, configuration, boot = worker_files
+    with sqlite3.connect(database) as db:
+        db.execute(f"DROP TABLE {table}")
+    worker = CheckedPersistenceWorker(
+        instance=ReceiverInstanceStart(INSTANCE, 0),
+        database_path=database,
+        configuration_path=configuration,
+        boot_id_path=boot,
+        clock=FakeOsClock(monotonic_us=100),
+    )
+    worker.start()
+    try:
+        startup = worker.wait_started(deadline_monotonic_us=5_000_100)
+        assert (
+            startup.database_failure.admission_state
+            is State.UNAVAILABLE_INCOMPATIBLE_SCHEMA
+        )
+        assert startup.instance_start is None
+        assert (
+            worker.queue.snapshot().admission_snapshot.state
+            is State.UNAVAILABLE_INCOMPATIBLE_SCHEMA
+        )
+        with sqlite3.connect(database) as observer:
+            assert observer.execute("SELECT * FROM receiver_instances").fetchall() == []
+    finally:
+        worker.finish_test()
 
 
 # An undersized publication retains its flush deadline across unrelated wakeups.

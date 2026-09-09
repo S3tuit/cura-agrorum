@@ -109,6 +109,11 @@ def _evidence(result, *, failure: str, operation: Operation) -> None:
                 raise ValueError("failure evidence must be an i32 or absent")
             if failure != "DATABASE_ERROR":
                 raise ValueError("database evidence requires a database failure")
+    if result.sqlite_extended_code is not None and (
+        result.sqlite_primary_code is None
+        or result.sqlite_primary_code != (result.sqlite_extended_code & 0xFF)
+    ):
+        raise ValueError("SQLite extended evidence requires its matching primary code")
 
 
 @dataclass(frozen=True, slots=True)

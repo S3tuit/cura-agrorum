@@ -41,8 +41,13 @@ initial clock observation and radio readiness are separate later obligations.
 `cura_receiver.sqlite_repository.SqliteRepository` exposes explicit insert and
 lookup methods over that connection. Inserts require a caller-owned open
 transaction, use the generated binders and never commit or suppress conflicts.
-Lookups return complete stored tuples; raw state reads retain every envelope
-row for the later semantic validator.
+Ordinary lookups return complete stored tuples. State reads return immutable
+projections of every row's storage classes and values of the expected classes,
+allowing invalid UTF-8 TEXT to reach the semantic classifier without decoding.
+Rejected original values stay in SQLite and are archived by INSERT ... SELECT
+inside the replacement transaction. Startup and recovery share one inventory
+of required ordinary, lifecycle, state and quarantine table/column projections;
+missing required SQL access is incompatible storage even if metadata matches.
 
 The handle binds the live connection, canonical path, configured group and file
 identity. Ordinary persistence takes this single handle; it never accepts a

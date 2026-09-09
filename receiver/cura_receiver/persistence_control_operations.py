@@ -263,20 +263,27 @@ class PersistenceControlOperations:
         observed_at = self.clock.now_monotonic_us()
         for row in raw:
             command.check(self.database.connection)
-            self.database.connection.execute(
+            archived = self.database.connection.execute(
                 "INSERT INTO quarantined_communicator_states "
                 "(observed_singleton_id, observed_state_format_version, observed_generation, "
                 "observed_state_blob, observed_state_sha256, calculated_blob_sha256, "
                 "preserved_by_receiver_instance_id, preserved_at_monotonic_us, database_schema_version) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "SELECT singleton_id, state_format_version, generation, state_blob, state_sha256, "
+                "?, ?, ?, ? FROM communicator_state WHERE rowid = ?",
                 (
-                    *row,
-                    hashlib.sha256(row[3]).digest() if type(row[3]) is bytes else None,
+                    hashlib.sha256(row.values[3]).digest()
+                    if type(row.values[3]) is bytes
+                    else None,
                     self.instance.receiver_instance_id,
                     observed_at,
                     DATABASE_SCHEMA_VERSION,
+                    row.row_id,
                 ),
             )
+            if archived.rowcount != 1:
+                raise sqlite3.IntegrityError(
+                    "observed communicator state row was not archived"
+                )
 
     def commit_state(self, state, command: ControlCommand):
         self.last_failure = None
@@ -300,7 +307,7 @@ class PersistenceControlOperations:
                 if state.generation == generation:
                     self.transactions.rollback(self.database.connection)
                     command.check()
-                    if blob == raw[0][3]:
+                    if blob == raw[0].values[3]:
                         return StateResult(
                             StateDisposition.ALREADY_COMMITTED,
                             StateFailure.NONE,

@@ -1,10 +1,15 @@
 import sqlite3
 from queue import Queue
-from threading import Event
+from threading import Event, TIMEOUT_MAX
 
 import pytest
 
-from cura_receiver.persistence_control_execution import ControlCommandKind as Kind
+from cura_receiver import persistence_control_channel
+from cura_receiver.persistence_control_execution import (
+    ControlCommand,
+    ControlRequest,
+    ControlCommandKind as Kind,
+)
 from cura_receiver.persistence_control_values import (
     CommunicatorStateCommitDisposition as D,
     CommunicatorStateCommitFailureKind as F,
@@ -27,6 +32,7 @@ from tests.support.coordination.threads import (
     start_checked_threads,
     join_checked_threads,
 )
+from tests.support.coordination.persistence_worker import CheckedPersistenceWorker
 
 
 def worker(paths, cls=PersistenceWorker, **kwargs):
@@ -416,3 +422,116 @@ def test_channel_closure_of_queued_command(worker_files):
     finally:
         release.set()
         stop(owner)
+
+
+# F-003: accepted deadlines around the platform wait ceiling and u64 maximum retain their result.
+@pytest.mark.parametrize("kind", [Kind.COMMIT_STATE, Kind.CLEAN_STOP])
+@pytest.mark.parametrize(
+    "deadline",
+    [int(TIMEOUT_MAX) * 1_000_000, (int(TIMEOUT_MAX) + 1) * 1_000_000, (1 << 64) - 1],
+)
+def test_large_deadline_during_ordinary_commit(worker_files, kind, deadline):
+    arrived, release, waiting = Event(), Event(), Event()
+
+    class Gated(SqliteTransactions):
+        def commit(self, connection):
+            arrived.set()
+            assert release.wait(5), "ordinary commit was not released"
+            super().commit(connection)
+
+    owner = worker(
+        worker_files,
+        CheckedPersistenceWorker,
+        transactions=Gated(),
+        wake_threshold_entities=1,
+    )
+    original_wait = owner.control._wait_for_completion
+
+    def completion(command, remaining):
+        event_wait = command.completion.wait
+
+        def checked_wait(timeout):
+            waiting.set()
+            assert 0 <= timeout <= TIMEOUT_MAX
+            return event_wait(timeout)
+
+        command.completion.wait = checked_wait
+        return original_wait(command, remaining)
+
+    owner.control._wait_for_completion = completion
+    owner.start()
+    results = []
+
+    def caller():
+        if kind is Kind.COMMIT_STATE:
+            results.append(
+                owner.control.commit_communicator_state(
+                    synthetic(),
+                    deadline_monotonic_us=deadline,
+                )
+            )
+        else:
+            owner.queue.close()
+            results.append(
+                owner.control.commit_receiver_clean_stop(
+                    ReceiverCleanStopV1(INSTANCE, 100, 0),
+                    deadline_monotonic_us=deadline,
+                )
+            )
+        results.append(
+            owner.control.load_communicator_state(deadline_monotonic_us=deadline)
+        )
+
+    try:
+        assert owner.wait_started(deadline_monotonic_us=5_000_100)
+        owner.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
+            ProfileOnlyUnitV1(_profile())
+        )
+        assert arrived.wait(5)
+        threads = start_checked_threads([("large-deadline-caller", caller)])
+        assert waiting.wait(5)
+        assert not results
+        release.set()
+        join_checked_threads(threads)
+        if kind is Kind.COMMIT_STATE:
+            assert results[0].disposition is D.COMMITTED
+            assert results[1].state == synthetic()
+        else:
+            assert results[0].disposition is SD.COMMITTED
+            assert results[1].state_condition is Condition.MISSING
+            with sqlite3.connect(worker_files[0]) as observer:
+                assert observer.execute(
+                    "SELECT clean_stopped_at_monotonic_us, clean_stop_state_generation "
+                    "FROM receiver_instances"
+                ).fetchall() == [(100, 0)]
+    finally:
+        release.set()
+        owner.finish_test()
+
+
+# F-003: a platform-sized wait segment cannot expire the command before its absolute deadline.
+@pytest.mark.parametrize("completed", [False, True])
+def test_completion_wait_segments_preserve_absolute_deadline(
+    worker_files,
+    monkeypatch,
+    completed,
+):
+    owner = worker(worker_files)
+    command = ControlCommand(ControlRequest(Kind.LOAD_STATE, 2_500_100), owner._clock)
+    waits = []
+    # Only the platform wait is controlled; receiver time advances explicitly.
+    monkeypatch.setattr(persistence_control_channel, "TIMEOUT_MAX", 1.0)
+
+    def wait(timeout):
+        waits.append(timeout)
+        assert timeout == (1.0 if len(waits) < 3 else 0.5)
+        if completed and len(waits) == 3:
+            command.completion.set()
+            return True
+        owner._clock.advance_elapsed_us(int(timeout * 1_000_000))
+        return False
+
+    monkeypatch.setattr(command.completion, "wait", wait)
+    assert owner.control._wait_for_completion(command, 2.5) is completed
+    assert waits == [1.0, 1.0, 0.5]
+    assert owner._clock.now_monotonic_us() == (2_000_100 if completed else 2_500_100)

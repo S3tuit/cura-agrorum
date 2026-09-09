@@ -71,6 +71,44 @@ def due(worker):
     return worker.waits.get(timeout=5)
 
 
+# F-001: missing control schema cannot clear the recovery gate after a real control failure.
+@pytest.mark.parametrize(
+    "table", ["communicator_state", "quarantined_communicator_states"]
+)
+def test_missing_control_schema_requires_operator(owner, worker_files, table):
+    worker = owner(SqliteTransactions())
+    with sqlite3.connect(worker_files[0]) as db:
+        if table == "quarantined_communicator_states":
+            db.execute("INSERT INTO communicator_state VALUES (1, 1, 1, X'80', NULL)")
+        db.execute(f"DROP TABLE {table}")
+    result = (
+        worker.control.load_communicator_state(deadline_monotonic_us=5_000_100)
+        if table == "communicator_state"
+        else worker.control.commit_communicator_state(
+            synthetic(), deadline_monotonic_us=5_000_100
+        )
+    )
+    assert result.sqlite_primary_code == sqlite3.SQLITE_ERROR
+    assert worker.waits.get(timeout=5) == 0.250925
+    assert worker.queue.snapshot().admission_snapshot.state is State.UNAVAILABLE_IO
+    assert due(worker) is None
+    assert (
+        worker.queue.snapshot().admission_snapshot.state
+        is State.UNAVAILABLE_INCOMPATIBLE_SCHEMA
+    )
+    assert worker._recovery.counters.wal_checkpoint_successes == 0
+    assert worker._recovery.retry_deadline_monotonic_us is None
+    assert (
+        worker.control.load_communicator_state(deadline_monotonic_us=5_000_100).status
+        is L.DATABASE_ERROR
+    )
+    assert worker.waits.get(timeout=5) is None
+    assert (
+        worker.queue.snapshot().admission_snapshot.state
+        is State.UNAVAILABLE_INCOMPATIBLE_SCHEMA
+    )
+
+
 # Empty-queue control errors establish real recovery work without replaying a failed mutation.
 def test_control_only_recovery_preserves_deadlines_and_counts(owner, worker_files):
     class Faults(SqliteTransactions):

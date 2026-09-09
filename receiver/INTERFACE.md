@@ -2329,6 +2329,12 @@ envelope can therefore be classified while whole-database integrity succeeds.
 Failed SQLite integrity and foreign-key checks retain the whole-database
 corruption policy and are never bypassed for application-state recovery.
 
+The repository supplies immutable validation projections containing each row's
+SQLite storage classes and values only where the expected classes match.
+Unexpected TEXT, including invalid UTF-8, is classified as envelope corruption
+without decoding it. The rejected original values remain in SQLite for exact
+archival; the projection is not an evidence serialization.
+
 Every normal state write validates a complete canonical request and installs
 exactly one row: integer `singleton_id = 1`, integer supported
 `state_format_version = 1`, integer `generation` in `1..INT64_MAX`, BLOB
@@ -2872,8 +2878,15 @@ successful database installation into failure.
 
 Existing-database startup checks `application_id`, the one metadata row, exact
 configured `group_id`, exact generated schema version and exact generated
-fingerprint. It does not issue one validation query per enum table. A mismatch
-publishes `UNAVAILABLE_INCOMPATIBLE_SCHEMA` without modifying the database;
+fingerprint. Read-only preflight, the actual writable startup connection and
+recovery use one shared inventory to prepare zero-row projections of every
+required ordinary, lifecycle, communicator-state and quarantine table/column
+set. Missing required tables or columns publish
+`UNAVAILABLE_INCOMPATIBLE_SCHEMA`, even when metadata still matches. These
+checks do not attest live DDL, constraints or catalogue contents; metadata
+remains the schema version/fingerprint authority, and no per-enum validation
+queries are added. Identity or required-projection rejection does not modify
+the database;
 structural SQLite corruption publishes `UNAVAILABLE_CORRUPT` and follows the
 whole-database preservation policy.
 
@@ -3441,6 +3454,15 @@ append-only and is inserted in the same transaction that replaces the corrupt
 singleton, so a separate archive idempotency token is unnecessary: after an
 ambiguous successful commit, reconciliation sees the valid replacement rather
 than the corrupt baseline.
+
+Preservation copies all five rejected values with INSERT ... SELECT inside the
+same BEGIN IMMEDIATE transaction that read the validation projections and
+installs the replacement. Each observed row is identified within that
+transaction, including duplicate singleton IDs. TEXT retains its exact bytes
+and storage class even if it is not valid UTF-8; it is never rebound through a
+Python string or changed into a BLOB. The calculated digest is derived only
+from an observed BLOB, and archive and replacement roll back together on a
+definite pre-commit failure.
 
 This table is used only when SQLite itself is structurally healthy but
 `CommunicatorStateV1` validation fails. SQLite corruption preserves the entire

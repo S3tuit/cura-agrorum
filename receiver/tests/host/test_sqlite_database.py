@@ -399,3 +399,94 @@ def test_corrupt_database_keeps_wal_and_shared_memory(tmp_path: Path) -> None:
         (metadata.st_dev, metadata.st_ino, metadata.st_size)
         for metadata in (artifact.stat() for artifact in (path, wal, shm))
     ] == identities
+
+
+# F-001: all startup/recovery paths reject absent required SQL access and preserve the rejected files.
+@pytest.mark.parametrize("phase", ["preflight", "write_connection", "recovery"])
+@pytest.mark.parametrize("defect", ["table", "column"])
+@pytest.mark.parametrize(
+    "table,column",
+    [
+        ("clock_observations", "observation_sequence"),
+        ("diagnostics", "diagnostic_sequence"),
+        ("receiver_health", "health_sequence"),
+        ("message_profiles", "occurrence_sequence"),
+        ("reading_messages", "message_id"),
+        ("quarantined_entities", "quarantine_id"),
+        ("receiver_instances", "started_at_monotonic_us"),
+        ("communicator_state", "state_blob"),
+        ("quarantined_communicator_states", "observed_state_blob"),
+    ],
+)
+def test_required_projections_preserve_rejected_storage(
+    tmp_path,
+    monkeypatch,
+    phase,
+    defect,
+    table,
+    column,
+):
+    path = _database(tmp_path)
+    database = (
+        open_receiver_database(path, GROUP, minimum_free_bytes=0).database
+        if phase == "recovery"
+        else None
+    )
+    artifacts = (path, Path(str(path) + "-wal"), Path(str(path) + "-shm"))
+
+    def snapshot():
+        return (
+            tuple(artifact.read_bytes() for artifact in artifacts[:2]),
+            tuple(
+                (stat.st_dev, stat.st_ino, stat.st_size)
+                for stat in (artifact.stat() for artifact in artifacts)
+            ),
+        )
+
+    def damage():
+        connection = sqlite3.connect(path, isolation_level=None)
+        try:
+            connection.setconfig(sqlite3.SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, True)
+            connection.execute("PRAGMA journal_mode = WAL")
+            if defect == "table":
+                connection.execute(f"DROP TABLE {table}")
+            else:
+                connection.execute(
+                    f"ALTER TABLE {table} RENAME COLUMN {column} TO removed_column"
+                )
+            assert connection.execute("PRAGMA integrity_check").fetchall() == [("ok",)]
+            assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        finally:
+            connection.close()
+        return snapshot()
+
+    before = []
+    modes = []
+    connect = sqlite_database._connect
+
+    def observed_connect(destination, *, mode):
+        modes.append(mode)
+        if phase == "write_connection" and mode == "rw":
+            before.append(
+                damage()
+            )  # Change schema after successful read-only preflight.
+        return connect(destination, mode=mode)
+
+    monkeypatch.setattr(sqlite_database, "_connect", observed_connect)
+    try:
+        if phase != "write_connection":
+            before.append(damage())
+        if database is not None:
+            failure = database.revalidate(minimum_free_bytes=0)
+        else:
+            result = open_receiver_database(path, GROUP, minimum_free_bytes=0)
+            if result.database is not None:
+                result.database.close()
+            assert result.database is None
+            failure = result.failure
+            assert modes == (["ro"] if phase == "preflight" else ["ro", "rw"])
+        assert failure.admission_state is State.UNAVAILABLE_INCOMPATIBLE_SCHEMA
+        assert snapshot() == before[0]
+    finally:
+        if database is not None:
+            database.close()

@@ -3,10 +3,27 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass
 
 from .generated import receiver_entities_generated as rows
 
 SqliteRow = tuple[object, ...]
+COMMUNICATOR_STATE_STORAGE_CLASSES = ("integer", "integer", "integer", "blob", "blob")
+
+
+@dataclass(frozen=True, slots=True)
+class CommunicatorStateRow:
+    """Immutable validation input; rejected evidence remains inside SQLite.
+
+    Values of unexpected storage classes are absent. row_id identifies the
+    original row only inside the transaction that reads and archives it.
+    """
+
+    row_id: int
+    storage_classes: tuple[str, ...]
+    values: SqliteRow
+
+
 RECEIVER_INSTANCE_COLUMNS = (
     "instance_ordinal",
     "receiver_instance_id",
@@ -14,6 +31,31 @@ RECEIVER_INSTANCE_COLUMNS = (
     "started_at_monotonic_us",
     "clean_stopped_at_monotonic_us",
     "clean_stop_state_generation",
+)
+QUARANTINED_COMMUNICATOR_STATE_COLUMNS = (
+    "quarantined_state_id",
+    "observed_singleton_id",
+    "observed_state_format_version",
+    "observed_generation",
+    "observed_state_blob",
+    "observed_state_sha256",
+    "calculated_blob_sha256",
+    "preserved_by_receiver_instance_id",
+    "preserved_at_monotonic_us",
+    "database_schema_version",
+)
+# One inventory of the row access required by startup and storage recovery.
+# Metadata is validated separately as the version/fingerprint authority.
+REQUIRED_TABLE_PROJECTIONS = (
+    (rows.CLOCK_OBSERVATION_V1_TABLE, rows.CLOCK_OBSERVATION_V1_COLUMNS),
+    (rows.DIAGNOSTIC_V1_TABLE, rows.DIAGNOSTIC_V1_COLUMNS),
+    (rows.RECEIVER_HEALTH_V1_TABLE, rows.RECEIVER_HEALTH_V1_COLUMNS),
+    (rows.MESSAGE_PROFILE_ROW_V1_TABLE, rows.MESSAGE_PROFILE_ROW_V1_COLUMNS),
+    (rows.READING_MESSAGE_ROW_V1_TABLE, rows.READING_MESSAGE_ROW_V1_COLUMNS),
+    (rows.QUARANTINED_ENTITY_ROW_V1_TABLE, rows.QUARANTINED_ENTITY_ROW_V1_COLUMNS),
+    ("receiver_instances", RECEIVER_INSTANCE_COLUMNS),
+    (rows.COMMUNICATOR_STATE_V1_TABLE, ("rowid", *rows.COMMUNICATOR_STATE_V1_COLUMNS)),
+    ("quarantined_communicator_states", QUARANTINED_COMMUNICATOR_STATE_COLUMNS),
 )
 _BOOLEAN_COLUMNS = frozenset(
     {
@@ -218,9 +260,20 @@ class SqliteRepository:
             (_unsigned(instance_ordinal, 63),),
         )
 
-    def read_communicator_state_rows(self) -> tuple[SqliteRow, ...]:
-        """Retain every raw envelope row so later validation cannot miss defects."""
-        cursor = self._connection.execute(
-            f"SELECT {', '.join(rows.COMMUNICATOR_STATE_V1_COLUMNS)} FROM {rows.COMMUNICATOR_STATE_V1_TABLE}"
+    def read_communicator_state_rows(self) -> tuple[CommunicatorStateRow, ...]:
+        """Inspect every row without decoding rejected TEXT, even invalid UTF-8."""
+        columns = rows.COMMUNICATOR_STATE_V1_COLUMNS
+        classes = ", ".join(f"typeof({column})" for column in columns)
+        values = ", ".join(
+            f"CASE WHEN typeof({column}) = '{expected}' THEN {column} END"
+            for column, expected in zip(
+                columns, COMMUNICATOR_STATE_STORAGE_CLASSES, strict=True
+            )
         )
-        return tuple(tuple(row) for row in cursor.fetchall())
+        cursor = self._connection.execute(
+            f"SELECT rowid, {classes}, {values} FROM {rows.COMMUNICATOR_STATE_V1_TABLE} ORDER BY rowid"
+        )
+        return tuple(
+            CommunicatorStateRow(row[0], tuple(row[1:6]), tuple(row[6:]))
+            for row in cursor.fetchall()
+        )

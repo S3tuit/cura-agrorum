@@ -210,6 +210,23 @@ def _validate_integrity(connection: sqlite3.Connection) -> None:
         raise _ValidationFailure(PersistenceAdmissionState.UNAVAILABLE_CORRUPT)
 
 
+def _validate_required_projections(connection: sqlite3.Connection) -> None:
+    from .sqlite_repository import REQUIRED_TABLE_PROJECTIONS
+
+    for table, columns in REQUIRED_TABLE_PROJECTIONS:
+        try:
+            connection.execute(f"SELECT {', '.join(columns)} FROM {table} LIMIT 0")
+        except sqlite3.Error as error:
+            if getattr(error, "sqlite_errorcode", None) in (
+                sqlite3.SQLITE_ERROR,
+                sqlite3.SQLITE_SCHEMA,
+            ):
+                raise _ValidationFailure(
+                    PersistenceAdmissionState.UNAVAILABLE_INCOMPATIBLE_SCHEMA
+                ) from None
+            raise
+
+
 def open_receiver_database(
     path: Path,
     group_id: bytes,
@@ -253,6 +270,7 @@ def open_receiver_database(
         connection = _connect(destination, mode="ro")
         _validate_identity(connection, group_id)
         _validate_integrity(connection)
+        _validate_required_projections(connection)
         connection.close()
         connection = None
 
@@ -260,6 +278,7 @@ def open_receiver_database(
         # Recheck the actual write connection; never trust a previous path open.
         _validate_identity(connection, group_id)
         _validate_integrity(connection)
+        _validate_required_projections(connection)
         if connection.execute("PRAGMA journal_mode = WAL").fetchone() != ("wal",):
             raise _ValidationFailure(PersistenceAdmissionState.UNAVAILABLE_IO)
         if connection.execute("PRAGMA synchronous").fetchone() != (2,):
@@ -303,35 +322,12 @@ def validate_receiver_connection(
     connection: sqlite3.Connection, group_id: bytes
 ) -> DatabaseFailure | None:
     """Revalidate an idle owner connection before retained work may recover."""
-    from .generated import receiver_entities_generated as rows
-
     if connection.in_transaction:
         raise ValueError("connection validation requires a safe transaction boundary")
     try:
         _validate_identity(connection, group_id)
         _validate_integrity(connection)
-        for table, columns in (
-            (rows.CLOCK_OBSERVATION_V1_TABLE, rows.CLOCK_OBSERVATION_V1_COLUMNS),
-            (rows.DIAGNOSTIC_V1_TABLE, rows.DIAGNOSTIC_V1_COLUMNS),
-            (rows.RECEIVER_HEALTH_V1_TABLE, rows.RECEIVER_HEALTH_V1_COLUMNS),
-            (rows.MESSAGE_PROFILE_ROW_V1_TABLE, rows.MESSAGE_PROFILE_ROW_V1_COLUMNS),
-            (rows.READING_MESSAGE_ROW_V1_TABLE, rows.READING_MESSAGE_ROW_V1_COLUMNS),
-            (
-                rows.QUARANTINED_ENTITY_ROW_V1_TABLE,
-                rows.QUARANTINED_ENTITY_ROW_V1_COLUMNS,
-            ),
-        ):
-            try:
-                connection.execute(f"SELECT {', '.join(columns)} FROM {table} LIMIT 0")
-            except sqlite3.Error as error:
-                if getattr(error, "sqlite_errorcode", None) in (
-                    sqlite3.SQLITE_ERROR,
-                    sqlite3.SQLITE_SCHEMA,
-                ):
-                    raise _ValidationFailure(
-                        PersistenceAdmissionState.UNAVAILABLE_INCOMPATIBLE_SCHEMA
-                    ) from None
-                raise
+        _validate_required_projections(connection)
         if (
             connection.execute("PRAGMA journal_mode").fetchone() != ("wal",)
             or connection.execute("PRAGMA synchronous").fetchone() != (2,)

@@ -17,7 +17,11 @@ from .persistence_control_values import (
     CommunicatorStateLoadStatus as LoadStatus,
     require_immutable_state,
 )
-from .sqlite_repository import SqliteRepository
+from .sqlite_repository import (
+    COMMUNICATOR_STATE_STORAGE_CLASSES,
+    CommunicatorStateRow,
+    SqliteRepository,
+)
 
 _I64_MIN = -(1 << 63)
 _I64_MAX = (1 << 63) - 1
@@ -140,14 +144,14 @@ def validate_communicator_state(
 
 
 def classify_communicator_state_rows(
-    raw_rows: tuple[tuple[object, ...], ...],
+    raw_rows: tuple[CommunicatorStateRow, ...],
     repository: SqliteRepository,
     policy: CommunicatorStatePolicy,
 ) -> LoadResult:
     """Apply the exclusive envelope/digest/version/structure/policy decision tree.
 
-    The caller has already validated the database itself. Every raw row remains
-    with the caller for any explicit atomic archive-and-replace transaction.
+    The caller has already validated the database itself. Original SQL values
+    remain in the database for explicit atomic archive-and-replace transactions.
     SQLite errors propagate to that caller's control transaction boundary.
     """
 
@@ -158,9 +162,13 @@ def classify_communicator_state_rows(
 
     if not raw_rows:
         return unavailable(Condition.MISSING)
-    if len(raw_rows) != 1 or len(raw_rows[0]) != 5:
+    if (
+        len(raw_rows) != 1
+        or raw_rows[0].storage_classes != COMMUNICATOR_STATE_STORAGE_CLASSES
+        or len(raw_rows[0].values) != 5
+    ):
         return unavailable(Condition.CORRUPT)
-    singleton, version, generation, blob, digest = raw_rows[0]
+    singleton, version, generation, blob, digest = raw_rows[0].values
     if (
         type(singleton) is not int
         or singleton != 1

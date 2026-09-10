@@ -55,6 +55,13 @@ remain local to the test that names their safe boundary. The worker schedule
 oracle remains local to `host/test_persistence_worker_schedules.py`, where two
 reviewed primitive examples precede deterministic Hypothesis sequences.
 
+Pure time analysis keeps its merged-stream correlation oracle local to
+`host/test_time_analysis_properties.py` and its independent per-anchor walk
+local to `host/test_logical_timestamps.py`. Each has reviewed primitive examples
+before generated comparisons. Observation/reading constructors also remain
+local, while realtime-step tests reuse the existing `FakeOsClock`. This stage
+adds no shared time model or helper and no Chrony/DS3231 port or fake.
+
 ## Builders
 
 A shared builder creates valid test input with reviewed literal defaults and

@@ -1064,7 +1064,16 @@ timestamped from a newer anchor, but the receiver must not cross from it to its
 predecessor because the intervening reset or power-off duration is unknown.
 
 Once analysis writes an estimated timestamp to non-volatile output, it is
-immutable. The analysis output also stores:
+immutable. For samples not yet materialized, analysis first uses the sample's
+own eligible direct anchor when available. Otherwise it selects the reachable
+direct anchor with the fewest consecutive-sample hops, choosing the newer
+(greater sample ID) anchor on a tie. The continuity conditions above apply to
+each hop in either direction; no anchor can cross a broken chain or an identity
+lifetime boundary. The tie-break is a deterministic convention, not a claim
+that a newer anchor has lower uncertainty. Selection uses the currently
+available history; later anchors never replace already materialized output.
+
+The analysis output also stores:
 
 ```text
 timestamp_source    DIRECT or EXTRAPOLATED

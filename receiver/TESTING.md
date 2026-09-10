@@ -9,6 +9,9 @@ process-kill boundaries and model-based sequences also have host coverage.
 The sole persistence worker, synchronous controls, state validation/recovery,
 shared storage recovery, concurrency boundaries and component shutdown also
 have host coverage, including worker SIGKILL and generated schedule tests.
+Pure time arithmetic, normalized trust decisions, candidate observations/RTC
+provenance, clock correlation and logical timestamp analysis also have host
+coverage, including independent generated history and anchor-selection models.
 Pi component coverage includes queue/ingress, startup, ordinary transactions,
 worker control/checkpoint scheduling, a seeded CPU/storage-load soak,
 process-kill recovery and isolated capacity/access/corruption recovery.
@@ -417,6 +420,47 @@ measurements and the benchmark use the deployed storage filesystem.
 
 ## Time policy and timestamp analysis
 
+The pure implementation consumes supplied immutable values and performs no
+Chrony, kernel-clock sampling, DS3231, queue or output-storage operations.
+`time_policy.py` separates tracking candidates from accepted observations;
+`time_observations.py` returns bounded candidate samples, provenance proposals
+and upper due-time bounds. These values do not acknowledge publication or
+durable RTC provenance. Callers still own generation rechecks at actual I/O
+boundaries, scheduling lead time and side-effect ordering.
+
+Current host coverage is mapped as follows. The required families below remain
+the full pilot obligations; partial coverage here does not remove their later
+integration requirements.
+
+| Required family | Current pure coverage | Remaining owning-component coverage |
+|---|---|---|
+| Independent quality axes | `test_time_policy.py`: meaningful combinations, present-RTC holdover requirement, startup probe and rejection of persisted snapshots as current authority | Startup orchestration with loaded state and fresh probes |
+| Conservative duration conversions | `test_elapsed_duration.py`: normative values, unit boundaries, checked scalar/intermediate overflow and generated integer inequalities | Use by later radio/time-service callers |
+| Chrony result validation | `test_time_policy.py`: normalized fields, unavailable input, source/skew, freshness and arithmetic rejection | Local socket/version contract, parser and fractional-unit normalization |
+| Network-error arithmetic | `test_time_policy.py`: integral root-delay/dispersion inputs and sign-independent complete error | Conservative conversion of real chrony output |
+| Trust hysteresis | `test_time_policy.py`: every current quality at all 35/40-second boundaries; observation tests enforce the separate strict UTC budget | Live boundary publication |
+| Poll and observation deadlines | `test_time_observations.py`: caps, zero rate, shortened strict horizon and refresh due times | Earlier scheduling with bounded operation lead time and missed-deadline transitions |
+| Network observation bracket | `test_time_observations.py`: generation, complete ordering/span, freshness and normalized kernel verdict | `adjtimex()` and raw metadata classification, including expected `TIME_ERROR`/`STA_UNSYNC` |
+| Quality ABA rejection | `test_time_policy.py`, `test_time_observations.py`: away-and-back generation mismatch | Checks after each real fallible operation and before publication/commit |
+| Direct RTC observation | `test_time_observations.py`: exact midpoint, half-bracket, fixed margin, durable uncertainty and stored pre-read drift | DS3231 read adapter and live state/publication |
+| Holdover age limits | `test_time_observations.py`: exact abstract age limits, adjacent representable whole-second ages, nonzero brackets and no age reset on reread | Offline deployment behavior |
+| RTC refresh ordering | `test_time_observations.py`: ordered supplied timestamps and provenance proposal arithmetic only | Derive/write/read-back/commit execution, failures/crashes and acknowledgement ordering |
+| RTC source threshold | `test_time_observations.py`: inclusive five-second start/commit predicates, growth, poll expiry and generation invalidation | Actual refresh episode rechecks |
+| Clock-step state machine | Pure tracking decision distinguishes required step from ordinary trust expiry; recorded-history model tests permanent gaps for every command outcome | Boundary admission, command execution, stable polling, deadline and retry state machine |
+| Step-boundary FIFO | Correlation tests consume recorded non-bypassable boundaries; existing persistence tests remain authoritative for storage handling | Communicator boundary-publication ordering against real queue admission and commands |
+| UTC correlation segments | `test_clock_correlation.py`: preceding/later selection, zero UTC, ties, step gaps, immutable inputs, scalar limits and instance/boot fences | Loading analysis inputs from an application-owned database snapshot |
+| Process-start boundary | `test_clock_correlation.py`: durable instance projections and same-boot/reboot fences | Complete service restart integration |
+| Realtime-step immunity | `test_time_observations.py`: existing manual OS clock, fixed monotonic waits/deadlines/intervals under forward/backward realtime steps | Target clock behavior and maximum-slew evidence |
+| Logical direct anchors | `test_logical_timestamps.py`: earliest eligible accepted current occurrence, classifications, RX_DONE provenance and exact scalar interval/representable pilot run_ms limits | Application-owned history loading and output materialization |
+| Logical extrapolation and competing anchors | `test_logical_timestamps.py`: both directions, continuity/identity fences, direct priority, nearest/newer selection, immutable output and independent generated chain walks | Output-storage adapter, when introduced |
+| Time-policy state-machine properties | `test_time_analysis_properties.py`: independent merged-stream oracle against generated recorded network/RTC observations, quality loss, steps, starts and events | Generated runtime command/RTC/persistence episode schedules |
+
+The reference models and input constructors remain local to their test files;
+no new shared helper or production port is introduced. Raspberry Pi execution
+for this stage is pending target availability. No new hardware placeholder
+tests were added: the hardware families below require their production adapters
+and deployment fixtures.
+
 ### Host tests
 
 - **Independent quality axes:** Exercise every meaningful `SystemTimeQuality`/`RtcHealth` combination, including `NETWORK_SYNCED + MISSING`, and prove persisted last-observed values never become current startup authority.
@@ -438,6 +482,7 @@ measurements and the benchmark use the deployed storage filesystem.
 - **Realtime-step immunity:** Step the fake realtime clock forward and backward while monotonic deadlines, retry waits and live event intervals continue unchanged; bounded slew affects only conservative elapsed-rate calculations.
 - **Logical direct anchors:** Choose the earliest anchor-eligible accepted current occurrence with derived `RX_DONE` UTC, enforce `run_ms + Tair <= 30,000 ms` at the exact boundary and reject conflict classifications.
 - **Logical extrapolation:** Exercise consecutive sample, deep-sleep, previous-metric and identity-lifetime requirements in both directions, break invalid chains and never replace already materialized analysis output.
+- **Competing logical anchors:** Prefer a sample's own direct anchor, otherwise the reachable anchor with the fewest valid sample hops and the newer anchor on ties; preserve materialized output when new anchors arrive.
 - **Time-policy state-machine properties:** Generate quality changes, observations, steps, RTC operations, process starts and events against an independent correlation model and shrink any unsafe UTC assignment.
 
 ### Hardware tests

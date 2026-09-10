@@ -579,6 +579,9 @@ including:
   classification for direct-anchor eligibility;
 - preserving reception time at `RX_DONE`, not database-write time;
 - crossing between consecutive samples only when the required deep-sleep, previous-cycle-metrics and identity-lifetime conditions hold;
+- preferring a sample's own direct anchor, otherwise selecting the reachable
+  direct anchor with the fewest valid sample hops, with the newer anchor winning
+  a tie;
 - storing `timestamp_source`, `anchor_sample_id` and the trusted clock
   observation behind the direct anchor when analysis materializes output; and
 - never replacing an estimated timestamp after it has been written to that

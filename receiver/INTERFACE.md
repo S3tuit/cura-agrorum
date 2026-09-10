@@ -393,13 +393,18 @@ is:
 remaining_budget_us =
     receiver_utc_error_budget_us - observation_utc_error_bound_us
 
-maximum_interval_us = floor(
-    remaining_budget_us * (1_000_000 - rate_bound_ppm)
+last_trusted_distance_us = floor(
+    (remaining_budget_us - 1) * (1_000_000 - rate_bound_ppm)
     / rate_bound_ppm
 )
+maximum_interval_us = last_trusted_distance_us + 1
 ```
 
-The interval ends at an exclusive trust boundary. If
+The interval ends at the exclusive trust boundary `maximum_interval_us`.
+The subtraction of one microsecond exactly accounts for upward-rounded error
+growth and the strict budget: distances through `last_trusted_distance_us`
+remain trusted, while the next microsecond exhausts the budget. Every
+intermediate operation, including the final addition, is checked. If
 `observation_utc_error_bound_us >= receiver_utc_error_budget_us`, if the
 applicable rate bound is invalid, or if checked calculation fails, no positive
 trusted interval exists. The communicator transitions to `UNTRUSTED` and
@@ -3202,6 +3207,15 @@ earliest occurrence that has derivable UTC, satisfies
 `RETRANSMISSION` or `DUPLICATE_SAME_CONTENT`. Authentication without successful
 queue admission, either conflict classification, and a step-gap occurrence are
 not anchor-eligible.
+
+For an unmaterialized sample, an eligible direct anchor for that sample takes
+precedence over extrapolation. Otherwise analysis selects the reachable direct
+anchor with the fewest valid consecutive-sample hops, choosing the newer
+(greater sample ID) anchor on a tie. Reachability uses the protocol's identity,
+deep-sleep and previous-cycle-metric conditions in either direction. Already
+materialized output is preserved even if a later analysis has a new direct or
+closer anchor. These selection rules belong to the protocol's timestamp
+reconstruction contract; analysis does not store a hop count in output.
 
 ### Receiver instances
 

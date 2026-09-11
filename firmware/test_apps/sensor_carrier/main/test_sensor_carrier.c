@@ -1,9 +1,16 @@
 #include <inttypes.h>
+#include <errno.h>
+#include <stdlib.h>
+#include "carrier_observer.h"
+#include "carrier_hold.h"
+#include "node_platform_esp.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "esp_err.h"
+#include "esp_sleep.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -212,26 +219,28 @@ TEST_CASE("carrier nominal preflight", "[sensor_carrier]") {
 }
 
 static void observation_hold(const char *name) {
-  printf("CARRIER_HOLD_READY %s seconds=60\n", name);
-  fflush(stdout);
-  delay_ms(60000U);
-  printf("CARRIER_HOLD_END %s\n", name);
-  fflush(stdout);
+  TEST_ASSERT_TRUE(carrier_hold_wait(name, false));
 }
 
 TEST_CASE("carrier production gate-on hold", "[sensor_carrier]") {
+  const int mode = carrier_hold_select();
+  TEST_ASSERT_TRUE_MESSAGE(mode >= 0, "missing/invalid hold mode");
+  bool held = false;
   s_hardware_used = true;
   const esp_err_t on = node_sensors_power_gate_on();
   if (on == ESP_OK) {
     delay_ms(CONFIG_CURA_SENSOR_POWER_STABILIZATION_MS);
-    observation_hold("gate-on");
+    held = carrier_hold_wait("gate-on", mode);
   }
   const esp_err_t off = node_sensors_power_gate_off();
   TEST_ASSERT_EQUAL_MESSAGE(ESP_OK, on, "production gate-on failed");
   TEST_ASSERT_EQUAL_MESSAGE(ESP_OK, off, "production gate-off cleanup failed");
+  TEST_ASSERT_TRUE_MESSAGE(held, "guided hold incomplete: valid acknowledgement required");
 }
 
 TEST_CASE("carrier production gate-off hold", "[sensor_carrier]") {
+  const int mode = carrier_hold_select();
+  TEST_ASSERT_TRUE_MESSAGE(mode >= 0, "missing/invalid hold mode");
   s_hardware_used = true;
   const esp_err_t on = node_sensors_power_gate_on();
   if (on == ESP_OK) {
@@ -240,22 +249,12 @@ TEST_CASE("carrier production gate-off hold", "[sensor_carrier]") {
   const esp_err_t off = node_sensors_power_gate_off();
   TEST_ASSERT_EQUAL_MESSAGE(ESP_OK, on, "production gate-on setup failed");
   TEST_ASSERT_EQUAL_MESSAGE(ESP_OK, off, "production gate-off failed");
-  observation_hold("gate-off");
+  TEST_ASSERT_TRUE_MESSAGE(carrier_hold_wait("gate-off", mode),
+                           "guided hold incomplete: valid acknowledgement required");
 }
 
-TEST_CASE("carrier nominal acquisition and sample-return hold",
-          "[sensor_carrier]") {
-  TEST_ASSERT_FALSE_MESSAGE(
-      s_hardware_used, "fresh boot required; no preinitialization allowed");
-  uint64_t configured[2];
-  require_configured_roms(configured); /* Pure parsing, no hardware access. */
-  s_hardware_used = true;
-  node_sensor_sample_t sample;
-  diagn_context_t diagnostic;
-  memset(&diagnostic, 0xa5, sizeof(diagnostic));
-  const int64_t start_us = esp_timer_get_time();
-  const err_curag_t result = node_sensors_sample_all(&sample, &diagnostic);
-  const int64_t elapsed_us = esp_timer_get_time() - start_us;
+static void print_sample(node_sensor_sample_t sample, diagn_context_t diagnostic,
+                         err_curag_t result, int64_t elapsed_us) {
   printf("CARRIER_SAMPLE result=%08" PRIx32 " duration_us=%" PRId64
          " validity=%02x soil0_mv=%u soil1_mv=%u temp0_centi_c=%d "
          "temp1_centi_c=%d enclosure_centi_c=%d pressure_pa=%" PRIu32
@@ -272,21 +271,216 @@ TEST_CASE("carrier nominal acquisition and sample-return hold",
   }
   putchar('\n');
 
-  /* No sensor or gate operation follows sampling, including teardown. Keep
-   * the observation available even on a failed/partial returned sample. */
-  observation_hold("sample-return");
+}
+
+static void assert_sample(const node_sensor_sample_t *sample,
+                          const diagn_context_t *diagnostic, err_curag_t result,
+                          bool nominal) {
   TEST_ASSERT_EQUAL_HEX32(CURAG_OK, result);
-  TEST_ASSERT_EQUAL_HEX8(NODE_SENSOR_VALIDITY_ALL, sample.validity);
-  TEST_ASSERT_TRUE_MESSAGE(sample.soil_0_mv >= 2000U &&
-                               sample.soil_0_mv <= 2700U,
+  TEST_ASSERT_EQUAL_HEX8(NODE_SENSOR_VALIDITY_ALL, sample->validity);
+  if (nominal) {
+  TEST_ASSERT_TRUE_MESSAGE(sample->soil_0_mv >= 2000U &&
+                               sample->soil_0_mv <= 2700U,
                            "soil0 outside nominal air-probe range");
-  TEST_ASSERT_TRUE_MESSAGE(sample.soil_1_mv >= 2000U &&
-                               sample.soil_1_mv <= 2700U,
+  TEST_ASSERT_TRUE_MESSAGE(sample->soil_1_mv >= 2000U &&
+                               sample->soil_1_mv <= 2700U,
                            "soil1 outside nominal air-probe range");
-  TEST_ASSERT_EQUAL(CURAG_OP_NONE, diagnostic.operation);
-  TEST_ASSERT_EQUAL(0, diagnostic.context_schema);
-  TEST_ASSERT_EQUAL(0, diagnostic.context_length);
-  for (size_t index = 0; index < sizeof(diagnostic.context); ++index) {
-    TEST_ASSERT_EQUAL_HEX8(0, diagnostic.context[index]);
+  }
+  TEST_ASSERT_EQUAL(CURAG_OP_NONE, diagnostic->operation);
+  TEST_ASSERT_EQUAL(0, diagnostic->context_schema);
+  TEST_ASSERT_EQUAL(0, diagnostic->context_length);
+  for (size_t index = 0; index < sizeof(diagnostic->context); ++index) {
+    TEST_ASSERT_EQUAL_HEX8(0, diagnostic->context[index]);
   }
 }
+
+static void fresh_acquisition(uint64_t configured[2]) {
+  TEST_ASSERT_FALSE_MESSAGE(s_hardware_used,
+                           "fresh boot required; no preinitialization allowed");
+  require_configured_roms(configured); /* Pure parsing; no hardware access. */
+  s_hardware_used = true;
+}
+
+static err_curag_t acquire_sample(node_sensor_sample_t *sample,
+                                 diagn_context_t *diagnostic) {
+  memset(diagnostic, 0xa5, sizeof(*diagnostic));
+  const int64_t start_us = esp_timer_get_time();
+  const err_curag_t result = node_sensors_sample_all(sample, diagnostic);
+  print_sample(*sample, *diagnostic, result, esp_timer_get_time() - start_us);
+  return result;
+}
+
+TEST_CASE("carrier nominal acquisition and sample-return hold", "[sensor_carrier]") {
+  uint64_t configured[2];
+  fresh_acquisition(configured);
+  const int mode = carrier_hold_select();
+  TEST_ASSERT_TRUE_MESSAGE(mode >= 0, "missing/invalid hold mode");
+  node_sensor_sample_t sample;
+  diagn_context_t diagnostic;
+  const err_curag_t result = acquire_sample(&sample, &diagnostic);
+  /* No sensor/gate operation after return, including on a failed sample. */
+  TEST_ASSERT_TRUE_MESSAGE(carrier_hold_wait("sample-return", mode),
+                           "guided hold incomplete: valid acknowledgement required");
+  assert_sample(&sample, &diagnostic, result, true);
+}
+
+TEST_CASE("carrier repeated nominal acquisition", "[sensor_carrier]") {
+  uint64_t configured[2];
+  fresh_acquisition(configured);
+  puts("CARRIER_REPEAT_COUNT");
+  fflush(stdout);
+  char text[24];
+  unity_gets(text, sizeof(text));
+  char *end = NULL;
+  errno = 0;
+  unsigned long long requested = strtoull(text, &end, 10);
+  TEST_ASSERT_TRUE_MESSAGE(errno == 0 && end != text && *end == '\0' &&
+                               text[0] != '-' && requested >= 100 && requested <= UINT32_MAX,
+                           "complete requested repetition count must be >=100");
+  for (uint64_t index = 1; index <= requested; ++index) {
+    node_sensor_sample_t sample;
+    diagn_context_t diagnostic;
+    carrier_observer_begin(configured[0], configured[1]);
+    const err_curag_t result = acquire_sample(&sample, &diagnostic);
+    assert_sample(&sample, &diagnostic, result, true);
+    const carrier_observation_t seen = carrier_observer_snapshot();
+    printf("CARRIER_OBSERVER conversions=%u reads=%u wait_us=%" PRId64
+           " adc=%u/%u onewire=%u/%u ds=%u/%u bme=%u invalid=%u\n",
+           seen.conversions, seen.reads, seen.minimum_wait_us,
+           seen.adc_new, seen.adc_del, seen.bus_new, seen.bus_del,
+           seen.ds_new, seen.ds_del, seen.bme_forced, seen.invalid_sequence);
+    TEST_ASSERT_TRUE_MESSAGE(carrier_observer_sample_valid(),
+                             "fresh conversion/resource observer failed");
+    printf("CARRIER_ITERATION index=%" PRIu64 " total=%llu\n", index, requested);
+    fflush(stdout);
+  }
+  printf("CARRIER_REPEAT_DONE total=%llu\n", requested);
+  fflush(stdout);
+}
+
+TEST_CASE("carrier final cleanup hold", "[sensor_carrier]") {
+  uint64_t configured[2];
+  fresh_acquisition(configured);
+  const int mode = carrier_hold_select();
+  TEST_ASSERT_TRUE_MESSAGE(mode >= 0, "missing/invalid hold mode");
+  node_sensor_sample_t sample, retained;
+  diagn_context_t diagnostic, cleanup[2];
+  const err_curag_t result = acquire_sample(&sample, &diagnostic);
+  assert_sample(&sample, &diagnostic, result, true);
+  memcpy(&retained, &sample, sizeof(sample));
+  carrier_observer_begin(configured[0], configured[1]);
+  err_curag_t results[2];
+  bool unchanged[2];
+  for (size_t i = 0; i < 2; ++i) {
+    memset(&cleanup[i], 0xa5, sizeof(cleanup[i]));
+    results[i] = node_sensors_force_power_off(&cleanup[i]);
+    unchanged[i] = memcmp(&sample, &retained, sizeof(sample)) == 0;
+    printf("CARRIER_CLEANUP index=%u result=%08" PRIx32 " unchanged=%u\n",
+           (unsigned)i + 1, (uint32_t)results[i], unchanged[i]);
+  }
+  const bool observed = carrier_observer_cleanup_valid(2);
+  printf("CARRIER_CLEANUP_OBSERVER valid=%u\n", observed);
+  /* No further sensor/gate calls; this is independent of sample-return. */
+  TEST_ASSERT_TRUE_MESSAGE(carrier_hold_wait("final-cleanup", mode),
+                           "guided hold incomplete: valid acknowledgement required");
+  for (size_t i = 0; i < 2; ++i) {
+    TEST_ASSERT_TRUE(unchanged[i]);
+    assert_sample(&sample, &cleanup[i], results[i], true);
+  }
+  TEST_ASSERT_TRUE_MESSAGE(observed, "cleanup initialized a bus or enabled the rail");
+}
+
+TEST_CASE("carrier reference acquisition and sample-return hold", "[sensor_carrier]") {
+  uint64_t configured[2];
+  fresh_acquisition(configured);
+  node_sensor_sample_t sample;
+  diagn_context_t diagnostic;
+  const err_curag_t result = acquire_sample(&sample, &diagnostic);
+  /* External references bypass the air-probe range only. Production acquisition
+   * still performs its real gate stabilization and calibrated ADC averaging. */
+  observation_hold("sample-return");
+  assert_sample(&sample, &diagnostic, result, false);
+}
+
+static int transition_mode(void) {
+  const int mode = carrier_hold_select();
+  TEST_ASSERT_TRUE_MESSAGE(mode == CARRIER_HOLD_GUIDED || mode == CARRIER_HOLD_EXPLORATION,
+                           "transition requires guided or exploration mode");
+  return mode;
+}
+
+static void enabled_transition(const char *name, int mode) {
+  TEST_ASSERT_FALSE_MESSAGE(s_hardware_used, "fresh transition boot required");
+  s_hardware_used = true;
+  TEST_ASSERT_EQUAL(ESP_OK, node_sensors_power_gate_on());
+  delay_ms(CONFIG_CURA_SENSOR_POWER_STABILIZATION_MS);
+  const bool held = carrier_hold_wait("transition-on", mode);
+  if (!held) {
+    /* No reset/sleep transition follows a failed hold. Release the enabled
+     * rail on this failure path only; successful transitions keep it on. */
+    TEST_ASSERT_EQUAL(ESP_OK, node_sensors_power_gate_off());
+  }
+  TEST_ASSERT_TRUE_MESSAGE(held, "transition hold requires valid acknowledgement");
+  printf("CARRIER_TRANSITION %s\n", name);
+  fflush(stdout);
+}
+static bool s_observe_restart;
+static unsigned s_restart_off_calls;
+err_curag_t __real_node_sensors_force_power_off(diagn_context_t *diagnostic);
+err_curag_t __wrap_node_sensors_force_power_off(diagn_context_t *diagnostic) {
+  const err_curag_t result = __real_node_sensors_force_power_off(diagnostic);
+  if (s_observe_restart) {
+    ++s_restart_off_calls;
+    bool empty = diagnostic && diagnostic->operation == CURAG_OP_NONE &&
+                 diagnostic->context_schema == 0 && diagnostic->context_length == 0;
+    if (diagnostic) {
+      for (size_t i = 0; i < sizeof(diagnostic->context); ++i) empty &= diagnostic->context[i] == 0;
+    }
+    printf("CARRIER_RESTART_CLEANUP calls=%u result=%08" PRIx32 " diagnostic_empty=%u observer_valid=%u\n",
+           s_restart_off_calls, (uint32_t)result, empty, carrier_observer_cleanup_valid(1));
+    fflush(stdout);
+  }
+  return result;
+}
+
+static void reset_stage_1(void) {
+  enabled_transition("reset", transition_mode());
+  carrier_observer_begin(0, 0);
+  s_observe_restart = true;
+  node_platform_esp_restart();
+  TEST_FAIL_MESSAGE("restart returned");
+}
+static void reset_stage_2(void) {
+  TEST_ASSERT_FALSE(s_hardware_used);
+  TEST_ASSERT_EQUAL(ESP_RST_SW, esp_reset_reason());
+  TEST_ASSERT_TRUE_MESSAGE(carrier_hold_wait("reset-off", transition_mode()),
+                           "reset observation requires valid acknowledgement");
+}
+static void held_stage_1(void) {
+  enabled_transition("held-reset", transition_mode());
+  while (true) delay_ms(1000); /* Operator asserts EN; no software cleanup. */
+}
+static void held_stage_2(void) {
+  TEST_ASSERT_FALSE(s_hardware_used);
+  TEST_ASSERT_EQUAL(ESP_RST_POWERON, esp_reset_reason()); /* C6 EN reset. */
+}
+static void sleep_stage_1(void) {
+  const int mode = transition_mode();
+  /* Fresh boot: no wake sources. Guided measurements/YES precede EN/reset;
+   * exploration ends with /done and EN/reset. Neither needs a timer dwell. */
+  enabled_transition(mode == CARRIER_HOLD_EXPLORATION ?
+                     "deep-sleep seconds=unlimited" : "deep-sleep end=operator-reset", mode);
+  esp_deep_sleep_start();
+  TEST_FAIL_MESSAGE("deep sleep returned");
+}
+static void sleep_stage_2(void) {
+  TEST_ASSERT_FALSE(s_hardware_used);
+  (void)transition_mode();
+  TEST_ASSERT_EQUAL(ESP_RST_POWERON, esp_reset_reason()); /* C6 EN reset. */
+}
+TEST_CASE_MULTIPLE_STAGES("carrier production restart cleanup", "[sensor_carrier][reset=SW_CPU_RESET]",
+                         reset_stage_1, reset_stage_2);
+TEST_CASE_MULTIPLE_STAGES("carrier enabled rail held reset", "[sensor_carrier][reset=POWERON_RESET]",
+                         held_stage_1, held_stage_2);
+TEST_CASE_MULTIPLE_STAGES("carrier enabled rail deep sleep", "[sensor_carrier][reset=POWERON_RESET]",
+                         sleep_stage_1, sleep_stage_2);

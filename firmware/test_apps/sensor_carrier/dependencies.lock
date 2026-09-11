@@ -72,10 +72,18 @@ dependencies:
     source:
       type: idf
     version: 6.1.0
+  joltwallet/littlefs:
+    dependencies: []
+    source:
+      path: ../../managed_components/joltwallet__littlefs
+      type: local
+    version: 1.22.1
 direct_dependencies:
 - espressif/bme280
 - espressif/ds18b20
 - espressif/onewire_bus
-manifest_hash: 225d7a02b48ce1c53c670f1604b1a277bc28fc2f2b71d8cce791f4ec958a99fd
+- idf
+- joltwallet/littlefs
+manifest_hash: 05c4624d0d15ce98f93fe1289df640c68658afe0ddd80a8343989c5f7348061b
 target: esp32c6
 version: 3.0.0

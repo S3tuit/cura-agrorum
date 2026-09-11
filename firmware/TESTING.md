@@ -5,11 +5,15 @@ platform-port host matrices are implemented. The on-device implementation now
 includes the `node_persistence` matrix, the complete bare-board RTC suite, the
 receiver-free `node_core` integration suite, and platform clock, randomness,
 software-reset-reason and timer-deep-sleep cases. A sibling sensor-carrier app
-implements setup discovery, nominal identity preflight, production gate holds
-and one real acquisition with a sample-return hold; its hardware acceptance
-requires the configured fixture and operator measurements. The remaining sensor
-matrix, SX1262 hardware, shared-radio-clock case and physical power-loss
-injection remain deferred.
+implements setup discovery, strict identity preflight, production gate holds,
+fresh single and repeated real acquisitions, separate final cleanup, guided DS
+identity/ADC-reference A/B checks, and real reset/held-reset/operator-ended deep-sleep
+observations. The implemented nominal/reference cases have
+[retained operator results](test_apps/on_device/SENSOR_CARRIER.md#september-11-revised-carrier-results);
+the app README defines their [evidence retention](test_apps/sensor_carrier/README.md#retained-acceptance-evidence).
+Guided acceptance requires complete operator evidence for the recorded build/fixture. Missing
+sensor fixtures, BME hardening/low-power, sensor-to-reading integration, SX1262
+hardware, shared-radio-clock and physical power-loss injection remain deferred.
 
 ## Philosophy and build
 
@@ -560,16 +564,54 @@ recorded with every run.
 
 Missing-device and reference-input cases are selected explicitly from pytest.
 A state mismatch is a failed precondition rather than a skipped or reclassified
-test. The first runnable slice is the sibling
-[`test_apps/sensor_carrier`](test_apps/sensor_carrier/README.md) Unity app. Its
-pytest runner selects `discover`, `gate-on`, `gate-off` or `acquire` using
-`--sensor-operation`; observation/acquisition requires `--sensor-fixture nominal`.
-Discovery is setup, permits one probe and omits fixture acceptance. Acquisition
-preflight requires both distinct configured ROMs and the BME280 at `0x76`, then
-releases resources and resets the C6 before the single production sampler call.
-The sample-return hold performs no later sensor/gate call. Each of the three
-holds lasts 60 seconds; host timeout means failed/incomplete operation, not BME
-recovery. This slice does not yet implement the rest of the matrix below.
+test. The sibling
+[`test_apps/sensor_carrier`](test_apps/sensor_carrier/README.md) Unity app selects
+only implemented operations explicitly. `nominal` supports discovery-independent
+acquisition, repetition, final cleanup, DS identity and electrical/reset/sleep
+checks; `adc_reference` selects guided A/B conversion/mapping. Discovery remains
+setup and permits unknown identities. Acquisition preflight requires exactly the
+two configured ROMs and BME280 at 0x76, releases resources, and resets before
+sampling. Full ELF/configuration and factory-MAC checks apply on every boot.
+Missing/ignored/zero cases, an incomplete repetition count, fixture mismatch or
+missing operator measurements cannot become a passing requested case.
+
+The sample-return and separate final-cleanup holds remain untouched after their
+respective operations. Automatic holds last 60 seconds. All guided awake
+electrical holds, including separate final cleanup and the on/off stages of
+reset/sleep operations, allow 180 seconds or early acknowledgement after valid
+readings. Held-reset measurements also allow 180 seconds and prompt EN release
+immediately after valid readings. Guided acceptance records independent
+meter observations; paired A/B procedures cannot accept only one position. A
+600-second maximum deep-sleep observation allowance permits all four off-state
+readings after settling and a separate YES attestation, then the operator ends
+sleep by pressing EN/reset when prompted. No timer wake is configured for this case.
+Host deadlines are orchestration policies, not BME recovery guarantees. App-only
+forwarding observers monitor the real production driver calls without supplying
+values or adding hardware operations. See the app README for exact stage-05
+commands, measurement prompts and incomplete-result handling.
+
+`--exploration` is an explicitly non-accepting alternative to `--sensor-guided`
+for gate-on/off, acquire, final-cleanup, reset, held-reset and deep-sleep. It
+records a description of actual wiring and arbitrary live text with entry UTC,
+phase and elapsed time, saving every entry immediately. `/done` advances the
+current observation or finishes the final one. Observation waits have no time
+limit; active acquisition, boot and command handshakes retain their deadlines.
+Awake waits yield to the idle task. Unexpected reboot, disconnect or test failure
+ends the observation; subsequent notes cannot be attributed to the old state.
+Interrupted records remain distinct from explicitly completed exploration.
+
+Pure electrical exploration permits declared disconnected sensor branches and
+does not run nominal inventory preflight. Build/configuration/DUT checks remain
+mandatory. Acquire/final-cleanup still require the configured identities and
+full preflight, production sampling and their software assertions. Exploration
+introduces no missing-device sampling cases. Free text is not interpreted as
+validated voltages or stable-display attestations and cannot grant acceptance
+or serve as an A/B acceptance prerequisite. Completed exploration remains a
+non-passing pytest orchestration result labeled `exploration_complete_not_acceptance`.
+Exploration deep sleep has no configured timer wakeup: after `/done` the operator
+presses EN/reset, and the runner verifies that reset rather than timer wakeup.
+Guided deep sleep uses the same real sleep/reset path, with a bounded observation,
+validated meter readings and explicit attestation required for acceptance.
 
 The two soil probes are sampled in air with the production 200 ms switched-rail
 stabilization and ADC averaging path. Whenever a sensor hardware case expects a
@@ -586,7 +628,7 @@ plausibility policy to `node_sensors`.
 
 | Fixture state | Physical configuration | Automated mapping | Manual or host-guided mapping |
 |---|---|---|---|
-| `nominal` | Both soil probes, both externally powered DS18B20 probes with their configured ROM identities, and the BME280 are connected. | All groups acquired; every soil reading is 2,000–2,700 mV inclusive; atomic enclosure group; at least 100 repeated switched-rail acquisitions; idempotent final cleanup; successful diagnostic slots remain empty; the corresponding node reading sets all seven sensor validity bits. | DS18B20 identity mapping; sampling-owned successful shutdown; stable active-low gate states; final cleanup; reset and deep-sleep default-off behavior; post-sampling and deep-sleep back-power check. |
+| `nominal` | Both soil probes, both externally powered DS18B20 probes with their configured ROM identities, and the BME280 are connected. | All groups acquired; every soil reading is 2,000–2,700 mV inclusive; atomic enclosure group; at least 100 repeated switched-rail acquisitions; idempotent final cleanup; successful diagnostic slots remain empty; the corresponding node reading sets all seven sensor validity bits (stage 10 integration remains pending). | DS18B20 identity mapping; sampling-owned successful shutdown; stable active-low gate states; final cleanup; intentional restart cleanup; held-reset and deep-sleep default-off behavior; post-sampling and deep-sleep back-power check. |
 | `missing_ds0` | The complete power, ground and data connector for the probe whose ROM is configured as logical channel 0 is removed. Channel 1 remains connected; both soil probes and the BME280 remain connected. | Channel 0 temperature is zero and invalid; channel 1 and the other independent groups remain usable; both soil readings are 2,000–2,700 mV inclusive; the result is partial and the channel-0 diagnostic pair contains the exact backend kind and status while unaffected pairs are empty. | Verify the switched rail is off after the failed acquisition path. |
 | `missing_ds1` | The complete power, ground and data connector for the probe whose ROM is configured as logical channel 1 is removed. Channel 0 remains connected; both soil probes and the BME280 remain connected. | Channel 1 temperature is zero and invalid; channel 0 and the other independent groups remain usable; both soil readings are 2,000–2,700 mV inclusive; the result is partial and the channel-1 diagnostic pair contains the exact backend kind and status while unaffected pairs are empty. | Verify the switched rail is off after the failed acquisition path. |
 | `missing_bme280` | The complete BME280 power, ground, SDA and SCL connector is removed. Both soil probes and both DS18B20 probes remain connected. | Enclosure temperature, pressure and humidity are all zero and the single enclosure group is invalid; the other four groups remain usable; both soil readings are 2,000–2,700 mV inclusive; the result is partial and the enclosure diagnostic pair contains the exact backend kind and status while unaffected pairs are empty. | Verify that the already-disabled switched rail remains off after the independent BME280 failure. |
@@ -628,9 +670,17 @@ the same private gate-off primitive.
   node-generated sample to set only a subset of the three enclosure protocol
   bits.
 - **Repeated switched-rail acquisition:** perform at least 100 consecutive
-  calls. Both DS18B20 identities remain stable, no previous conversion is
-  mistaken for the current one and every call completes within the configured
-  sensor timing bound.
+  calls in one boot and require the complete requested count. Both configured
+  DS18B20 identities remain stable. App-only observers forward real driver
+  calls unchanged and verify a successful bus-wide Skip ROM/Convert T command,
+  at least 750 ms before temperature scratchpad reads, and successful reads
+  addressed to both configured ROMs. The 750 ms criterion comes from the
+  DS18B20 datasheet maximum 12-bit conversion time; production retains its
+  existing driver wait. Equal temperatures do not establish or refute freshness.
+  Record every acquisition duration and enforce a 30-second host deadline per
+  iteration. Whole-acquisition runtime boundedness remains an explicit stage-08
+  acceptance requirement: the current BME interface does not guarantee it, and
+  a host timeout means failed/incomplete operation, not target recovery.
 - **BME280 returns to low power (deferred):** after the BME280 driver path is
   chosen and hardened, inspect its mode bits after sampling and verify that it
   is back in sleep mode without changing the already returned enclosure values.
@@ -661,9 +711,40 @@ complete preflight, test points, settling times and voltage limits are defined
 in `test_apps/on_device/SENSOR_CARRIER.md`. They do not use the meter to infer
 transient timing.
 
+The approved carrier includes permanent R12, 100 kOhm from `+3V3_SW` to ground,
+in all fixture states. The 100 mV maximum off-state voltage and 10-second
+settling interval are engineering choices for repeatable stable DC observation,
+not sensor-datasheet power-on-reset guarantees or a sleep-current budget.
+Retain both criteria and the three-stable-display-updates rule. Earlier
+measurements without R12 remain historical evidence; acceptance of the revised
+assembled fixture requires fresh operator measurements.
+
 The test application provides separate power-on and power-off holds through the
 production gate-control implementation. Each hold remains stable for at least
-60 seconds or until host acknowledgement. A separate sample-return hold calls
+60 seconds or until host acknowledgement. Every guided awake electrical hold
+allows up to 180 seconds, with a 195-second host observation/result deadline,
+and finishes as soon as complete valid operator readings trigger an explicit
+host acknowledgement. This includes `acquire`, `gate-on`, `gate-off`,
+`final-cleanup`, transition-on before reset/sleep, and reset-off after restart.
+Held-reset observations allow 180 seconds, with release prompted immediately
+after valid readings and the same 195-second budget for release/boot. Guided
+deep sleep allows at most 600 seconds for readings and a separate YES attestation
+that they were measured while the MCU remained asleep. Save readings immediately;
+only complete valid readings plus YES permit the EN/reset prompt. Keep USB
+connected and press/release EN only after that prompt. Reject a boot, failure or
+UART loss observed before attestation completes. Verify the same DUT/image after
+reset and the C6 EN/POWERON reset reason. Reset/boot has the existing 30-second
+active deadline, capped by the 615-second overall observation/boot deadline.
+Missing readings, attestation or reset remain incomplete. This replaces the
+carrier's earlier compulsory 600-second dwell and timer-wakeup assertions;
+the separate bare-C6 one-minute timer-deep-sleep case remains unchanged. It
+establishes the measured electrical observation, not a ten-minute dwell or
+timer wakeup. ADC reference meter input before sampling allows
+180 seconds and starts acquisition on complete input. DS/ADC post-sample holds
+have no live meter prompt and retain their automatic 60 seconds, as do unguided
+runs. Preparation/wiring/thermal confirmations are not observation windows. Missing or
+invalid measurements/acknowledgement remain incomplete or failed. Settling and
+voltage criteria are unchanged. A separate sample-return hold calls
 the unchanged `node_sensors_sample_all`, reports its result only after the call
 returns, and then keeps the CPU awake without another sensor or gate-control
 operation. In particular, it does not call `node_sensors_force_power_off`
@@ -671,18 +752,23 @@ before the observation. No hold is inserted into the production sampling path.
 
 - **Unpowered gate preflight:** before USB power is applied, verify Q1
   source/drain routing, the 100 ohm GPIO-to-gate path, the approximately 47 kOhm
-  source-to-gate path, common ground and absence of direct rail shorts. This is
-  required after initial assembly and after any carrier wiring change.
+  source-to-gate path, fitted R12 from the switched rail to ground, common ground
+  and absence of direct rail shorts. This is required after initial assembly
+  and after any carrier wiring change.
 - **Soil ADC conversion:** apply or measure safe known voltages at both soil
-  inputs and compare `soil_0_mv` and `soil_1_mv` against the multimeter within
-  the configured ESP32 ADC calibration tolerance.
-- **Soil channel mapping:** change one input voltage at a time and verify that
-  only the expected logical channel follows it.
+  inputs and compare `soil_0_mv` and `soil_1_mv` against the freshly measured test points within
+  the carrier's 75 mV fixture comparison allowance.
+- **Soil channel mapping:** use the carrier's reference positions A and B,
+  remove power before exchanging the two leads, measure both inputs again and
+  verify each logical channel follows its connected reference within 75 mV.
 - **DS18B20 identity mapping:** create a clear temperature difference between
   the probes and verify configured ROM identity, rather than 1-Wire enumeration
   order, determines channel 0 and channel 1. Confirm the textual ROM byte order
   against the library's enumerated `uint64_t`, then repeat after reconnecting or
-  reversing their physical order on the bus.
+  reversing their physical order on the bus with power removed. Predeclare the
+  warmed physical ROM and require its logical result to be at least 2 C above
+  the other probe in both arrangements. This is an identity discrimination
+  criterion, not a thermal-response or accuracy measurement.
 - **Sampling-owned successful shutdown:** in the sample-return hold, verify the
   gate is released and the shared rail has settled to off. Because no operation
   runs between the sampling return and the held observation, this proves that
@@ -699,18 +785,30 @@ before the observation. No hold is inserted into the production sampling path.
   additional cleanup call.
 - **Final cleanup:** after repeated `node_sensors_force_power_off` calls, the
   shared rail remains off.
-- **Reset and deep-sleep default:** enable the rail in a dedicated test stage,
-  then reset or enter deep sleep and verify that the board returns the rail to
-  off when the MCU no longer actively enables it. Repeat while holding the MCU
-  in reset to exercise the external 47 kOhm default rather than a firmware
-  shutdown path.
+- **Intentional restart cleanup:** enable the rail, then call production
+  `node_platform_esp_restart`, which attempts unconditional sensor force-off
+  before ESP-IDF restart. Verify the successful off attempt and empty diagnostic,
+  no sensor initialization or gate-on during that cleanup, the software reset
+  reason and an untouched post-restart electrical off observation. This tests
+  restart-owned cleanup, not hardware default-off for a CPU-only restart.
+- **Hardware reset and deep-sleep default:** enable the rail in a dedicated test stage,
+  then assert EN/reset or enter deep sleep and verify that the board returns the rail to
+  off when the MCU no longer actively enables it. Sensor-carrier deep sleep
+  has no timer wake; within 600 seconds enter all four readings and attest YES,
+  then press EN/reset when prompted to finish early. The 615-second overall
+  observation/boot and 30-second active boot ceilings above apply. Repeat while holding the MCU
+  in reset to exercise the external 47 kOhm gate pull-up and R12 rail discharge
+  without a firmware shutdown path.
 - **Back-power check:** in the real post-sampling and deep-sleep pin states,
   measure the disabled rail for voltage fed through ADC, 1-Wire, pull-up or
-  protection-diode paths. Measure it open-circuit first. If it remains above
-  0.1 V after 10 seconds, repeat with a temporary 100 kOhm TP_SW-to-ground load
-  and record both readings for diagnosis; the temporary load cannot change the
-  original observation into a pass. A gate-control voltage alone is not
-  sufficient evidence that the sensors are unpowered.
+  protection-diode paths with permanent R12 fitted and no additional test load.
+  If it remains above 0.1 V after 10 seconds, retain the failure and investigate
+  using separately declared exploratory wiring. Do not add another 100 kOhm
+  resistor in parallel or remove R12 for acceptance. The earlier no-resistor
+  versus temporary-load comparison remains diagnostic evidence only. A low
+  voltage with R12 fitted can mask weak back-power; it does not establish the
+  sleep-current budget. A gate-control voltage alone is not sufficient
+  evidence of the switched-rail voltage.
 
 The devkit and multimeter cannot establish the 200 ms rail-rise waveform, the
 exact shutdown instant, brief boot/reset/deep-sleep glitches, MOSFET switching

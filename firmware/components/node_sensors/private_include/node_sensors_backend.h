@@ -40,7 +40,3 @@ void node_sensors_backend_sample_ds18b20(
 
 node_sensors_backend_result_t node_sensors_backend_sample_bme280(
     node_sensors_backend_enclosure_t *out_enclosure);
-
-#ifdef NODE_SENSORS_TESTING
-void node_sensors_test_reset_state(void);
-#endif

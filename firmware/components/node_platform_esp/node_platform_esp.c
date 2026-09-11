@@ -1,6 +1,7 @@
 #include "node_platform_esp.h"
 
 #include <stddef.h>
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -13,6 +14,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "protocol_v2_lora_schema_generated.h"
+#include "node_sensors.h"
 
 #define NODE_PLATFORM_ESP_FATAL_RESTART_DELAY_MS UINT32_C(60000)
 
@@ -94,6 +96,17 @@ static uint8_t get_reset_reason(void *context) {
   return CURA_LORA_V2_RESET_REASON_ESP_RST_UNKNOWN;
 }
 
+void node_platform_esp_restart(void) {
+  diagn_context_t diagnostic;
+  const err_curag_t result = node_sensors_force_power_off(&diagnostic);
+  if (result != CURAG_OK) {
+    ESP_LOGE(TAG, "sensor force-off before restart failed: 0x%08" PRIx32,
+             (uint32_t)result);
+  }
+  esp_restart();
+  abort();
+}
+
 static void enter_deep_sleep_for(void *context, uint64_t duration_us) {
   (void)context;
   const esp_err_t status = esp_sleep_enable_timer_wakeup(duration_us);
@@ -105,8 +118,7 @@ static void enter_deep_sleep_for(void *context, uint64_t duration_us) {
   ESP_LOGE(TAG, "timer wakeup configuration failed: %s (%d)",
            esp_err_to_name(status), (int)status);
   vTaskDelay(pdMS_TO_TICKS(NODE_PLATFORM_ESP_FATAL_RESTART_DELAY_MS));
-  esp_restart();
-  abort();
+  node_platform_esp_restart();
 }
 
 static const node_platform_ports_t PORTS = {

@@ -337,37 +337,49 @@ static bool test_power_cleanup_and_sensor_failure_are_both_retained(void) {
   return true;
 }
 
-static bool test_force_power_off_is_untouched_noop_then_idempotent(void) {
+static bool test_force_power_off_is_unconditional_then_idempotent(void) {
   fake_node_sensors_reset();
   diagn_context_t diagnostic;
   TEST_ASSERT_EQ_U32(CURAG_OK, node_sensors_force_power_off(&diagnostic));
-  TEST_ASSERT_EQ_U32(0U, fake_node_sensors_trace_count());
+  TEST_ASSERT_EQ_U32(1U, fake_node_sensors_trace_count());
+  TEST_ASSERT_EQ_U32(1U, fake_node_sensors_operation_count(FAKE_SENSOR_OP_POWER_OFF));
+  TEST_ASSERT_EQ_U32(CURAG_OP_NONE, diagnostic.operation);
+  TEST_ASSERT_EQ_U32(0U, diagnostic.context_schema);
+  TEST_ASSERT_EQ_U32(0U, diagnostic.context_length);
+  for (size_t i = 0; i < sizeof(diagnostic.context); ++i) {
+    TEST_ASSERT_EQ_U32(0U, diagnostic.context[i]);
+  }
 
   node_sensor_sample_t sample;
   TEST_ASSERT_EQ_U32(CURAG_OK, node_sensors_sample_all(&sample, NULL));
   TEST_ASSERT_EQ_U32(CURAG_OK, node_sensors_force_power_off(&diagnostic));
   TEST_ASSERT_EQ_U32(CURAG_OK, node_sensors_force_power_off(&diagnostic));
   TEST_ASSERT_EQ_U32(
-      3U, fake_node_sensors_operation_count(FAKE_SENSOR_OP_POWER_OFF));
+      4U, fake_node_sensors_operation_count(FAKE_SENSOR_OP_POWER_OFF));
   TEST_ASSERT_EQ_U32(
       1U, fake_node_sensors_operation_count(FAKE_SENSOR_OP_POWER_ON));
   return true;
 }
 
 static bool test_force_power_off_failure_has_component_diagnostic(void) {
-  fake_node_sensors_reset();
-  node_sensor_sample_t sample;
-  TEST_ASSERT_EQ_U32(CURAG_OK, node_sensors_sample_all(&sample, NULL));
-  const node_sensors_backend_result_t failure = fake_node_sensors_result(
-      NODE_SENSOR_BACKEND_STATUS_ESP_ERR, -80, CURAG_OP_POWER_OFF);
-  fake_node_sensors_set_power_off(failure);
+  for (unsigned sampled = 0; sampled < 2; ++sampled) {
+    fake_node_sensors_reset();
+    node_sensor_sample_t sample;
+    if (sampled) {
+      TEST_ASSERT_EQ_U32(CURAG_OK, node_sensors_sample_all(&sample, NULL));
+    }
+    const node_sensors_backend_result_t failure = fake_node_sensors_result(
+        NODE_SENSOR_BACKEND_STATUS_ESP_ERR, -80, CURAG_OP_POWER_OFF);
+    fake_node_sensors_set_power_off(failure);
 
-  diagn_context_t diagnostic;
-  const err_curag_t result = node_sensors_force_power_off(&diagnostic);
-  TEST_ASSERT(assert_error(result, CURAG_ESENSORS_EPOWER_CONTROL));
-  TEST_ASSERT(assert_diagnostic_header(&diagnostic, CURAG_OP_POWER_OFF));
-  TEST_ASSERT(assert_pair(&diagnostic, NODE_SENSOR_CONTEXT_COMPONENT,
-                          failure.kind, failure.status));
+    diagn_context_t diagnostic;
+    const err_curag_t result = node_sensors_force_power_off(&diagnostic);
+    TEST_ASSERT(assert_error(result, CURAG_ESENSORS_EPOWER_CONTROL));
+    TEST_ASSERT(assert_diagnostic_header(&diagnostic, CURAG_OP_POWER_OFF));
+    TEST_ASSERT(assert_pair(&diagnostic, NODE_SENSOR_CONTEXT_COMPONENT,
+                            failure.kind, failure.status));
+    TEST_ASSERT_EQ_U32(sampled + 1U, fake_node_sensors_operation_count(FAKE_SENSOR_OP_POWER_OFF));
+  }
   return true;
 }
 
@@ -763,7 +775,7 @@ int main(void) {
       {"cleanup and sensor diagnostics",
        test_power_cleanup_and_sensor_failure_are_both_retained},
       {"force power off idempotent",
-       test_force_power_off_is_untouched_noop_then_idempotent},
+       test_force_power_off_is_unconditional_then_idempotent},
       {"force power off failure",
        test_force_power_off_failure_has_component_diagnostic},
       {"null diagnostic", test_null_diagnostic_is_supported_on_failure},

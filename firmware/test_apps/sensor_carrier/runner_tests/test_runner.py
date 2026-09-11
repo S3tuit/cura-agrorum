@@ -92,6 +92,8 @@ def scripted_dut(build_dir, tmp_path, monkeypatch):
     def feed(text):
         os.write(write_fd, text.encode())
 
+    state.feed = feed
+
     def boot():
         values = " ".join(f"{key}={value}" for key, value in build.boot_values.items())
         feed(f"CARRIER_BOOT dut=001122334455 elf={state.elf} {values}\n"
@@ -119,12 +121,17 @@ def scripted_dut(build_dir, tmp_path, monkeypatch):
         elif command == "2":
             result("carrier nominal preflight", state.preflight)
         elif command == "5":
+            feed("CARRIER_HOLD_MODE\n")
+        elif command == "auto":
             if state.omit_ready:
                 return
             feed("CARRIER_HOLD_READY sample-return seconds=60\n")
             if not state.omit_end:
                 feed("CARRIER_HOLD_END sample-return\n")
                 result("carrier nominal acquisition and sample-return hold", state.sample)
+
+    state.boot = boot
+    state.result = result
 
     def reset():
         state.resets += 1
@@ -147,7 +154,7 @@ def run(script):
 def test_acquisition_preflight_then_fresh_boot_then_exactly_one_sample(scripted_dut):
     run(scripted_dut)
     dut, _, state = scripted_dut
-    assert state.commands == ["", "2", "", "5"]
+    assert state.commands == ["", "2", "", "5", "auto"]
     assert state.resets == 1
     assert [case.result for case in dut.testsuite.testcases] == ["PASS", "PASS"]
 

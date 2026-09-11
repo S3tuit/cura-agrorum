@@ -4,11 +4,22 @@ from pathlib import Path
 import pytest
 
 from carrier_runner import APP, load_build, run_operation
+from carrier_evidence import Evidence, verify_build
+from carrier_guided import Guided, IncompleteCase, prior_position, backpower_original
+from carrier_exploration import Exploration, OPERATIONS as EXPLORATION_OPERATIONS
 
 
 def test_sensor_carrier(request, record_property):
     config = request.config
     operation = config.getoption("sensor_operation")
+    exploration = config.getoption("exploration")
+    if exploration and (operation not in EXPLORATION_OPERATIONS or
+                        config.getoption("sensor_guided") or
+                        config.getoption("sensor_diagnostic_load") or
+                        config.getoption("sensor_backpower_original") or
+                        config.getoption("sensor_position") or config.getoption("sensor_prior_evidence")):
+        raise pytest.UsageError('--exploration requires an electrical operation and cannot combine with '
+                                'guided acceptance, diagnostic pairing or A/B options')
     # Validate before requesting dut: its fixture opens and flashes hardware.
     if Path(config.getoption("app_path") or "").resolve() != APP:
         raise pytest.UsageError(f"--app-path must be {APP}")
@@ -27,8 +38,18 @@ def test_sensor_carrier(request, record_property):
     if not build_dir.is_absolute():
         build_dir = APP / build_dir
     build = load_build(build_dir, operation)
+    expected_dut = config.getoption("sensor_dut")
+    if not expected_dut or len(expected_dut) != 12 or any(c not in "0123456789abcdef" for c in expected_dut):
+        raise pytest.UsageError("--sensor-dut must be the confirmed 12-digit factory MAC")
+    count = config.getoption("sensor_repeat_count")
+    if not isinstance(count, int) or not 100 <= count <= 0xffffffff:
+        raise pytest.UsageError("--sensor-repeat-count must be 100..4294967295")
+    manifest = verify_build(build_dir, build)
     metadata = {
         "operation": operation,
+        "exploration": bool(exploration),
+        "expected_dut": expected_dut,
+        "requested_count": count if operation == "repeat" else 1,
         "fixture": config.getoption("sensor_fixture") or "discovery_setup",
         "carrier_revision": config.getoption("carrier_revision"),
         "port": port,
@@ -41,5 +62,51 @@ def test_sensor_carrier(request, record_property):
     for key, value in metadata.items():
         record_property(key, value)
     print("CARRIER_RUN " + json.dumps(metadata, sort_keys=True), flush=True)
-    dut = request.getfixturevalue("dut")
-    run_operation(dut, build, operation, record_property)
+    root_logdir = config.getoption("root_logdir")
+    if not root_logdir:
+        raise pytest.UsageError("--root-logdir must identify a new run directory")
+    paired = operation in {"ds-identity", "adc-reference"}
+    position = config.getoption("sensor_position")
+    guided_requested = config.getoption("sensor_guided")
+    if (paired or operation in {"reset", "held-reset", "deep-sleep"}) and not (guided_requested or exploration):
+        raise pytest.UsageError("this operation requires --sensor-guided and live operator input")
+    if not paired and (position or config.getoption("sensor_prior_evidence")):
+        raise pytest.UsageError("position/prior evidence apply only to paired identity/reference cases")
+    if paired and position not in {"A", "B"}:
+        raise pytest.UsageError("select --sensor-position A or B")
+    diagnostic_load = config.getoption("sensor_diagnostic_load")
+    original_path = config.getoption("sensor_backpower_original")
+    if bool(diagnostic_load) != bool(original_path) or (diagnostic_load and (not guided_requested or paired)):
+        raise pytest.UsageError("loaded diagnostic requires guided off-state operation and --sensor-backpower-original")
+    if guided_requested and operation in {"repeat", "discover"}:
+        raise pytest.UsageError("guided measurements are not assigned to repeat/discover")
+    original = backpower_original(original_path, metadata) if diagnostic_load else None
+    prior = prior_position(config.getoption("sensor_prior_evidence"), metadata, position) if paired else None
+    evidence = Evidence(Path(root_logdir) / "carrier-evidence.json", metadata, manifest)
+    record_property("carrier_evidence", str(evidence.path))
+    guided = Guided(evidence, operation, position, prior, diagnostic_original=original) if guided_requested else None
+    if exploration:
+        guided = Exploration(evidence, operation)
+    try:
+        if guided:
+            guided.wiring()
+        dut = request.getfixturevalue("dut")
+        run_operation(dut, build, operation, record_property, expected_dut=expected_dut,
+                      repeat_count=count, evidence=evidence, guided=guided)
+        if guided:
+            guided.complete()
+        else:
+            evidence.finish("software_passed_operator_acceptance_pending")
+    except IncompleteCase as exc:
+        if exploration and evidence.data['status'] != 'exploration_complete_not_acceptance':
+            evidence.finish('exploration_interrupted')
+        evidence.add("incomplete", message=str(exc))
+        raise
+    except KeyboardInterrupt:
+        evidence.finish('exploration_interrupted' if exploration else 'incomplete')
+        evidence.add('interrupted', message='operator interrupted the run')
+        raise
+    except BaseException as exc:
+        evidence.finish("failed")
+        evidence.add("failure", message=str(exc))
+        raise

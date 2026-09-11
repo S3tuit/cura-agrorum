@@ -942,6 +942,13 @@ off changes the direction, every later power-on configures open-drain output
 again. Reset, deep sleep or an unconfigured MCU therefore leaves the rail off
 without relying on firmware execution.
 
+The pilot board includes a permanent passive discharge resistor from the
+switched rail to ground. It drains retained charge when Q1 is off without
+depending on sensor loading or firmware execution; it does not replace gate
+release or prevent a separate signal from feeding power into the rail. The
+approved carrier wiring and electrical acceptance procedure are in
+`test_apps/on_device/SENSOR_CARRIER.md`.
+
 The backend waits 200 ms after enabling the rail. The two DS18B20 probes are
 externally powered and use one bus-wide 12-bit conversion. Their 1-Wire pull-up
 must connect to the switched rail rather than the always-on 3.3 V rail; the
@@ -1063,6 +1070,12 @@ From the controller's perspective `enter_deep_sleep_for` is terminal and cannot
 fail. Production configures timer wakeup and enters deep sleep; if wakeup
 configuration fails, the system adapter reports to the development console,
 waits 60 seconds without a tight busy-spin and restarts instead of returning.
+Intentional restart uses `node_platform_esp_restart`, which attempts the public
+sensor force-off operation before calling ESP-IDF restart. Force-off always
+attempts gate release, even before sampling in this wake; it initializes no
+sensor bus. A failed off attempt is reported to the development console and
+restart still proceeds. This does not add radio/persistence cleanup or guarantee
+default-off for arbitrary reset causes; those responsibilities remain distinct.
 A host fake may return only to terminate the test invocation, after which
 `node_core` performs no more operations. The complete callable contracts are in
 [`INTERFACE.md`](INTERFACE.md#platform-ports).

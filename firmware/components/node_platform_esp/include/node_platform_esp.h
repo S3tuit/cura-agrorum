@@ -12,6 +12,10 @@ extern "C" {
  */
 const node_platform_ports_t *node_platform_esp_ports(void);
 
+/* Attempts sensor rail off, logs failure if any, and restarts without returning.
+ * Adds no delay or bus initialization; callers own radio/persistence cleanup. */
+void node_platform_esp_restart(void) __attribute__((noreturn));
+
 #ifdef __cplusplus
 }
 #endif

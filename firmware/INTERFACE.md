@@ -886,9 +886,9 @@ Best-effort enforcement of the shared soil/DS18B20 rail's off state.
 **Outputs and side effects**
 
 The operation is idempotent, never enables the rail and does not initialize
-ADC, I2C, 1-Wire or any sensor driver. If the component never touched the gate
-this wake, the board's hardware-default-off design makes this a successful
-no-op. Otherwise it releases the open-drain gate control and returns the GPIO
+ADC, I2C, 1-Wire or any sensor driver. Every call attempts to release the gate,
+including before any sampling in this wake and when its state was retained
+across a software restart. It releases the open-drain gate control and returns the GPIO
 to floating input mode with both internal pulls disabled. It does not use GPIO
 hold, power-cycle or initialize the always-powered BME280.
 
@@ -987,6 +987,9 @@ loads level 1 so configuration cannot produce an unintended low pulse. To turn
 the rail off it writes level 1, which means high impedance in open-drain mode,
 then selects floating input mode. Every power-on reconfigures the output after
 that transition; no cached output-mode assumption is permitted.
+
+A permanent 100 kOhm resistor connects the switched sensor rail (`+3V3_SW`)
+to ground, in parallel with its loads and bypass capacitance.
 
 The two DS18B20 ROM strings default to all zeroes, which deliberately makes
 those groups invalid until identities are provisioned. Enumeration order never
@@ -1562,7 +1565,7 @@ returns. The production implementation:
 1. configures timer wakeup with `esp_sleep_enable_timer_wakeup(duration_us)`;
 2. on success, calls the non-returning `esp_deep_sleep_start()`; and
 3. on configuration failure, emits a development-console error, waits 60
-   seconds without a tight busy-spin, and calls `esp_restart()`.
+   seconds without a tight busy-spin, and calls `node_platform_esp_restart()`.
 
 The failure path is deliberately contained here. It does not reopen
 persistence or attempt a late persistent diagnostic after `sync_all`. Both the
@@ -1575,3 +1578,22 @@ function-pointer type is not. A host fake records the requested duration and
 may return. `node_core` treats the invocation as terminal in either case: if a
 test fake or broken adapter returns, it immediately returns to its caller and
 must invoke no clock, randomness, component or system operation afterward.
+
+### `node_platform_esp_restart`
+
+```text
+void node_platform_esp_restart(void) /* does not return */
+```
+
+This concrete ESP-IDF operation prepares the switched sensor rail for an
+intentional restart. It calls `node_sensors_force_power_off` exactly once, then
+calls `esp_restart`. A failed off attempt is reported to the development console;
+restart still proceeds. It neither initializes sensor buses nor enables the
+rail, adds no delay, and performs no persistence or radio operation. Callers
+remain responsible for any earlier radio/persistence cleanup. If `esp_restart`
+unexpectedly returns, the operation aborts rather than returning to its caller.
+
+This is best-effort cleanup before intentional restart, not a guarantee of
+electrical off after a GPIO failure or protection against other reset causes.
+The sleep-configuration failure path retains its existing 60-second delay before
+calling this operation. The generic `node_platform_ports_t` interface is unchanged.

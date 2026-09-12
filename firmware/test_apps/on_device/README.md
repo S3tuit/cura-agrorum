@@ -49,3 +49,12 @@ cause.
 Each target builds and flashes this test image, replacing the firmware already
 on the board. Build output, generated configuration and managed-component links
 are intentionally ignored by Git.
+
+The repeated-RTC runner also has a host regression for delayed Unity submenus
+and discarded early stage selectors. It requires the runner dependencies above
+but does not access a board:
+
+```sh
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest \
+    firmware/test_apps/on_device/runner_tests -q
+```

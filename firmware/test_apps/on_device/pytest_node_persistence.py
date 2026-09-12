@@ -75,19 +75,24 @@ def _run_repeated_rtc_round_trip_case(
     assert case.type == "multi_stage"
     assert len(case.subcases) == 2
 
+    final_subcase = case.subcases[-1]
+    final_menu_line = (
+        f'\t({final_subcase["index"]})\t"{final_subcase["name"]}"'
+    )
     dut.serial.hard_reset()
     dut.expect_exact(UNITY_READY_PROMPT, timeout=timeout)
     dut.confirm_write(case.index, expect_str=f"Running {case.name}...")
+    # Unity flushes queued UART input after printing the stage submenu.
+    dut.expect_exact(final_menu_line, timeout=timeout)
     dut.write(str(case.subcases[0]["index"]))
 
     for iteration in range(RTC_REPEATED_ROUND_TRIPS):
         dut.expect_exact(UNITY_READY_PROMPT, timeout=timeout)
         dut.confirm_write(case.index, expect_str=f"Running {case.name}...")
+        dut.expect_exact(final_menu_line, timeout=timeout)
+        dut.write(str(case.subcases[1]["index"]))
         if iteration + 1 == RTC_REPEATED_ROUND_TRIPS:
-            dut.write(str(case.subcases[1]["index"]))
             dut.expect_unity_test_output(timeout=timeout)
-        else:
-            dut.write(str(case.subcases[1]["index"]))
 
 
 def _run_rtc_consumption_restart_case(

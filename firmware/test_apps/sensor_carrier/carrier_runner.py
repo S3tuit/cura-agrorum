@@ -23,6 +23,7 @@ SLEEP_DEADLINE_SECONDS = 615
 ACQUISITIONS = {"acquire", "repeat", "final-cleanup", "ds-identity", "adc-reference"}
 OPERATIONS = {"discover", "gate-on", "gate-off", *ACQUISITIONS,
               "reset", "held-reset", "deep-sleep"}
+MISSING_FIXTURES = {"missing_ds0", "missing_ds1"}
 CASES = {
     "discover": "carrier setup discovery",
     "preflight": "carrier nominal preflight",
@@ -54,6 +55,8 @@ def validate_selection(operation, fixture, revision, ready):
     if operation == "discover":
         if fixture is not None:
             raise ValueError("discovery is setup; omit --sensor-fixture")
+    elif operation == "acquire" and fixture in MISSING_FIXTURES:
+        pass
     elif fixture != ("adc_reference" if operation == "adc-reference" else "nominal"):
         raise ValueError("operation and --sensor-fixture do not match")
     if not revision or not revision.strip():
@@ -153,8 +156,14 @@ def boot_menu(dut, build, *, reset=False, expected_dut=None, deadline=None, boot
         return identity, dut._parse_unity_menu_from_str(menu.decode().strip())
 
 
-def select_case(menu, operation):
-    selected = [case for case in menu if case.name == CASES[operation]]
+def select_case(menu, operation, fixture="nominal"):
+    name = CASES[operation]
+    if fixture in MISSING_FIXTURES:
+        if operation not in {"preflight", "acquire"}:
+            raise ValueError("missing DS fixtures support only acquire and its preflight")
+        name = (f"carrier {fixture} preflight" if operation == "preflight" else
+                f"carrier {fixture} acquisition and sample-return hold")
+    selected = [case for case in menu if case.name == name]
     if len(selected) != 1:
         raise ValueError(f"{operation} selected {len(selected)} Unity cases; expected exactly one")
     case = selected[0]
@@ -210,6 +219,9 @@ def execute_case(dut, case, operation, *, repeat_count=100, evidence=None, on_ho
             match = dut.expect([re.escape(marker).encode(), UNITY_SUMMARY_LINE_REGEX],
                                timeout=remaining(deadline))
             prefix = dut.pexpect_proc.before + match.group(0)
+            if evidence:
+                evidence.add("observation_ready", operation=operation, case=case.name,
+                             serial=prefix.decode(errors="replace"))
             if match.group(0) != marker.encode():
                 dut.testsuite.add_unity_test_cases(prefix)
                 raise AssertionError(f"{operation} ended before its required observation hold")
@@ -225,10 +237,14 @@ def execute_case(dut, case, operation, *, repeat_count=100, evidence=None, on_ho
             dut.expect_unity_test_output(timeout=remaining(deadline), extra_before=prefix)
         else:
             dut.expect_unity_test_output(timeout=remaining(deadline))
+            if evidence and operation == "preflight":
+                evidence.add("preflight", case=case.name,
+                             serial=dut.pexpect_proc.before.decode(errors="replace"))
         require_pass(dut, before, case.name)
 
 
-def run_operation(dut, build, operation, record, *, expected_dut=None, repeat_count=100, evidence=None, guided=None):
+def run_operation(dut, build, operation, record, *, fixture="nominal", expected_dut=None,
+                  repeat_count=100, evidence=None, guided=None):
     identity, menu = boot_menu(dut, build, expected_dut=expected_dut)
     record("dut_identity", identity)
     exploring = bool(getattr(guided, 'exploration', False))
@@ -236,8 +252,8 @@ def run_operation(dut, build, operation, record, *, expected_dut=None, repeat_co
         guided.bind(dut)
     if operation in ACQUISITIONS or (not exploring and operation in {"reset", "held-reset", "deep-sleep"}):
         # Verify both selections before doing preflight work on the carrier.
-        select_case(menu, operation)
-        execute_case(dut, select_case(menu, "preflight"), "preflight")
+        select_case(menu, operation, fixture)
+        execute_case(dut, select_case(menu, "preflight", fixture), "preflight", evidence=evidence)
         identity, menu = boot_menu(dut, build, reset=True, expected_dut=identity)
     if operation in {"reset", "held-reset", "deep-sleep"}:
         execute_transition(dut, build, menu, operation, identity, guided, evidence)
@@ -247,7 +263,7 @@ def run_operation(dut, build, operation, record, *, expected_dut=None, repeat_co
         return
     if guided:
         guided.before_sample()
-    execute_case(dut, select_case(menu, operation), operation,
+    execute_case(dut, select_case(menu, operation, fixture), operation,
                  repeat_count=repeat_count, evidence=evidence,
                  on_hold=guided.hold if guided else None, exploration=exploring)
     if evidence:

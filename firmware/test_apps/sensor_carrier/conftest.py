@@ -43,7 +43,7 @@ def pytest_sessionfinish(session, exitstatus):
 def pytest_addoption(parser):
     group = parser.getgroup("sensor-carrier")
     group.addoption("--sensor-operation", choices=sorted(OPERATIONS))
-    group.addoption("--sensor-fixture", choices=["nominal", "adc_reference"])
+    group.addoption("--sensor-fixture", choices=["nominal", "adc_reference", "missing_ds0", "missing_ds1"])
     group.addoption("--carrier-revision")
     group.addoption("--sensor-dut", default="cc8da2fc0224")
     group.addoption("--sensor-repeat-count", type=int, default=100)
@@ -52,8 +52,6 @@ def pytest_addoption(parser):
                     help="non-accepting, operator-ended free-text electrical observations")
     group.addoption("--sensor-position", choices=["A", "B"])
     group.addoption("--sensor-prior-evidence")
-    group.addoption("--sensor-diagnostic-load", action="store_true")
-    group.addoption("--sensor-backpower-original")
     group.addoption("--sensor-fixture-ready", action="store_true")
 
 

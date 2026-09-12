@@ -3,23 +3,23 @@ from pathlib import Path
 
 import pytest
 
-from carrier_runner import APP, load_build, run_operation
+from carrier_runner import APP, MISSING_FIXTURES, load_build, run_operation
 from carrier_evidence import Evidence, verify_build
-from carrier_guided import Guided, IncompleteCase, prior_position, backpower_original
+from carrier_guided import Guided, IncompleteCase, prior_position
 from carrier_exploration import Exploration, OPERATIONS as EXPLORATION_OPERATIONS
 
 
 def test_sensor_carrier(request, record_property):
     config = request.config
     operation = config.getoption("sensor_operation")
+    fixture = config.getoption("sensor_fixture")
     exploration = config.getoption("exploration")
     if exploration and (operation not in EXPLORATION_OPERATIONS or
+                        fixture in MISSING_FIXTURES or
                         config.getoption("sensor_guided") or
-                        config.getoption("sensor_diagnostic_load") or
-                        config.getoption("sensor_backpower_original") or
                         config.getoption("sensor_position") or config.getoption("sensor_prior_evidence")):
         raise pytest.UsageError('--exploration requires an electrical operation and cannot combine with '
-                                'guided acceptance, diagnostic pairing or A/B options')
+                                'guided acceptance or A/B options')
     # Validate before requesting dut: its fixture opens and flashes hardware.
     if Path(config.getoption("app_path") or "").resolve() != APP:
         raise pytest.UsageError(f"--app-path must be {APP}")
@@ -50,7 +50,7 @@ def test_sensor_carrier(request, record_property):
         "exploration": bool(exploration),
         "expected_dut": expected_dut,
         "requested_count": count if operation == "repeat" else 1,
-        "fixture": config.getoption("sensor_fixture") or "discovery_setup",
+        "fixture": fixture or "discovery_setup",
         "carrier_revision": config.getoption("carrier_revision"),
         "port": port,
         "elf_sha256": build.elf_sha256,
@@ -74,17 +74,12 @@ def test_sensor_carrier(request, record_property):
         raise pytest.UsageError("position/prior evidence apply only to paired identity/reference cases")
     if paired and position not in {"A", "B"}:
         raise pytest.UsageError("select --sensor-position A or B")
-    diagnostic_load = config.getoption("sensor_diagnostic_load")
-    original_path = config.getoption("sensor_backpower_original")
-    if bool(diagnostic_load) != bool(original_path) or (diagnostic_load and (not guided_requested or paired)):
-        raise pytest.UsageError("loaded diagnostic requires guided off-state operation and --sensor-backpower-original")
     if guided_requested and operation in {"repeat", "discover"}:
         raise pytest.UsageError("guided measurements are not assigned to repeat/discover")
-    original = backpower_original(original_path, metadata) if diagnostic_load else None
     prior = prior_position(config.getoption("sensor_prior_evidence"), metadata, position) if paired else None
     evidence = Evidence(Path(root_logdir) / "carrier-evidence.json", metadata, manifest)
     record_property("carrier_evidence", str(evidence.path))
-    guided = Guided(evidence, operation, position, prior, diagnostic_original=original) if guided_requested else None
+    guided = Guided(evidence, operation, position, prior) if guided_requested else None
     if exploration:
         guided = Exploration(evidence, operation)
     try:
@@ -92,7 +87,7 @@ def test_sensor_carrier(request, record_property):
             guided.wiring()
         dut = request.getfixturevalue("dut")
         run_operation(dut, build, operation, record_property, expected_dut=expected_dut,
-                      repeat_count=count, evidence=evidence, guided=guided)
+                      fixture=fixture, repeat_count=count, evidence=evidence, guided=guided)
         if guided:
             guided.complete()
         else:

@@ -112,13 +112,11 @@ def test_late_or_missing_meter_input_is_incomplete(monkeypatch):
     ('final-cleanup', 'final-cleanup'), ('reset', 'reset-off'),
     ('held-reset', 'held-reset'), ('deep-sleep', 'deep-sleep'),
 ])
-@pytest.mark.parametrize('legacy_diagnostic', [False, True])
 def test_failed_off_measurement_retains_evidence_without_adding_load(
-        tmp_path, monkeypatch, capsys, operation, hold, legacy_diagnostic):
+        tmp_path, monkeypatch, capsys, operation, hold):
     import carrier_guided as guided
     evidence = Evidence(tmp_path/'failed-meter.json', {}, {})
-    case = guided.Guided(evidence, operation, None, None,
-                         diagnostic_original={'run_id': 'prior'} if legacy_diagnostic else None)
+    case = guided.Guided(evidence, operation, None, None)
     clock = [100.0]
     monkeypatch.setattr(guided, 'time', SimpleNamespace(monotonic=lambda: clock[0]))
 
@@ -137,7 +135,6 @@ def test_failed_off_measurement_retains_evidence_without_adding_load(
     assert meter['kind'] == 'meter' and meter['hold'] == hold
     assert meter['volts']['TP_SW'] == '0.101'
     assert meter['settling_seconds'] == 10 and meter['stable_updates'] == 3
-    assert meter['loaded'] is legacy_diagnostic
     message = capsys.readouterr().out
     assert 'Keep this failure' in message
     assert 'keep permanent R12' in message
@@ -145,7 +142,6 @@ def test_failed_off_measurement_retains_evidence_without_adding_load(
     assert '--exploration' in message
     assert 'remove power before any wiring change' in message
     assert 'Open-circuit' not in message
-    assert '--sensor-diagnostic-load' not in message
 
 
 def test_manual_sequence_cannot_complete_without_all_holds(tmp_path):

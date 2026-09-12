@@ -946,8 +946,10 @@ The pilot board includes a permanent passive discharge resistor from the
 switched rail to ground. It drains retained charge when Q1 is off without
 depending on sensor loading or firmware execution; it does not replace gate
 release or prevent a separate signal from feeding power into the rail. The
-approved carrier wiring and electrical acceptance procedure are in
-`test_apps/on_device/SENSOR_CARRIER.md`.
+approved carrier wiring is in
+[`test_apps/on_device/SENSOR_CARRIER.md`](test_apps/on_device/SENSOR_CARRIER.md);
+the electrical acceptance procedure is in
+[`TESTING.md`](TESTING.md#node_sensors-manual-electrical-cases).
 
 The backend waits 200 ms after enabling the rail. The two DS18B20 probes are
 externally powered and use one bus-wide 12-bit conversion. Their 1-Wire pull-up

@@ -5,15 +5,7 @@ platform-port host matrices are implemented. The on-device implementation now
 includes the `node_persistence` matrix, the complete bare-board RTC suite, the
 receiver-free `node_core` integration suite, and platform clock, randomness,
 software-reset-reason and timer-deep-sleep cases. A sibling sensor-carrier app
-implements setup discovery, strict identity preflight, production gate holds,
-fresh single and repeated real acquisitions, separate final cleanup, guided DS
-identity/ADC-reference A/B checks, and real reset/held-reset/operator-ended deep-sleep
-observations. The implemented nominal/reference cases have
-[retained operator results](test_apps/on_device/SENSOR_CARRIER.md#september-11-revised-carrier-results);
-the app README defines their [evidence retention](test_apps/sensor_carrier/README.md#retained-acceptance-evidence).
-Guided acceptance requires complete operator evidence for the recorded build/fixture. Missing
-sensor fixtures, BME hardening/low-power, sensor-to-reading integration, SX1262
-hardware, shared-radio-clock and physical power-loss injection remain deferred.
+implements hardware tests that need the human operator.
 
 ## Philosophy and build
 
@@ -568,10 +560,18 @@ test. The sibling
 [`test_apps/sensor_carrier`](test_apps/sensor_carrier/README.md) Unity app selects
 only implemented operations explicitly. `nominal` supports discovery-independent
 acquisition, repetition, final cleanup, DS identity and electrical/reset/sleep
-checks; `adc_reference` selects guided A/B conversion/mapping. Discovery remains
-setup and permits unknown identities. Acquisition preflight requires exactly the
-two configured ROMs and BME280 at 0x76, releases resources, and resets before
-sampling. Full ELF/configuration and factory-MAC checks apply on every boot.
+checks; `adc_reference` selects guided A/B conversion/mapping. `missing_ds0` and
+`missing_ds1` select acquisition plus their respective preflight and
+sample-return hold using the [missing-probe commands](test_apps/sensor_carrier/README.md#missing-ds-probes-and-nominal-restoration).
+Discovery remains
+setup and permits unknown identities. Acquisition preflight requires both
+distinct configured identities in the build and checks the declared inventory:
+exactly both ROMs for `nominal` and `adc_reference`, exactly ROM1 for
+`missing_ds0`, or exactly ROM0 for `missing_ds1`. The declared missing ROM must
+be absent; additional/replacement devices and incomplete enumeration fail
+preflight. BME280 identification at 0x76 remains required. Preflight releases
+resources and resets before sampling. Full ELF/configuration and factory-MAC
+checks apply on every boot.
 Missing/ignored/zero cases, an incomplete repetition count, fixture mismatch or
 missing operator measurements cannot become a passing requested case.
 
@@ -602,8 +602,8 @@ Interrupted records remain distinct from explicitly completed exploration.
 
 Pure electrical exploration permits declared disconnected sensor branches and
 does not run nominal inventory preflight. Build/configuration/DUT checks remain
-mandatory. Acquire/final-cleanup still require the configured identities and
-full preflight, production sampling and their software assertions. Exploration
+mandatory. Acquire/final-cleanup exploration still requires both configured
+identities and nominal preflight, production sampling and its software assertions. Exploration
 introduces no missing-device sampling cases. Free text is not interpreted as
 validated voltages or stable-display attestations and cannot grant acceptance
 or serve as an A/B acceptance prerequisite. Completed exploration remains a
@@ -640,6 +640,11 @@ connected probe reading. The carrier provides nominal 1.185 V and 1.650 V
 divider outputs through 1 kOhm ADC series resistors and requires each converted
 result to agree with its immediately measured test-point voltage within 75 mV.
 Measurements are recorded rather than replaced by nominal resistor values.
+The 75 mV fixture allowance is deliberately wider than Espressif's specified
+40 mV total error for a calibrated ADC at the attenuation used by the firmware;
+it leaves margin for the meter, wiring and residual noise without accepting a
+channel swap. The two freshly measured reference intervals must remain
+disjoint, separated by more than 150 mV, with VREF_A lower than VREF_B.
 
 The DS18B20 identity-mapping procedure remains in the `nominal` state because
 both configured devices stay present: create a clear temperature difference,
@@ -704,23 +709,43 @@ and is not necessarily a detectable acquisition error. Soil hardware tests
 therefore validate voltage conversion and channel mapping rather than requiring
 an unplugged probe to clear a validity bit.
 
+For the selected onewire_bus 1.1.1 / ds18b20 0.4.0 path, enumeration ends with
+`ESP_ERR_NOT_FOUND`. The production backend marks a configured ROM without a
+device handle as `DRIVER_STATUS`, `ESP_ERR_NOT_FOUND` (`0x105`, decimal 261),
+operation `INITIALIZE`; it still converts and reads the surviving ROM.
+Consequently either single-missing fixture must return sensor
+`EPARTIAL_SAMPLE` (`0x00030002`), context V1 of length 48, with validity `0x1b`
+for `missing_ds0` or `0x17` for `missing_ds1`. Only the missing channel pair
+(offset 24 or 32) is `(2, 261)`; all other pairs, including the component pair,
+are zero. The encodings remain owned by `INTERFACE.md`. Timeout, CRC, shared
+bus and cleanup errors are failures of these requested cases, not alternative
+acceptable missing-probe outcomes.
+
+Common app-only forwarding observations check nominal and both missing states
+against the existing production soil acquisition conditions: the configured
+200 ms stabilization request, GPIO0/1 ADC channels, 12 dB attenuation, 16 reads
+per channel separated by 2000 us delay requests, and calibrated conversion of
+the rounded average. These checks observe the unchanged driver path without
+supplying values, adding delay or measuring the electrical rail-rise waveform.
+The DS observer requires the real broadcast conversion and existing freshness
+criterion, with reads addressed only to the configured ROMs expected present.
+The rail-off attempt must complete successfully before BME acquisition.
+
 ### `node_sensors`: manual electrical cases
 
-These tests use the available AN8008 multimeter for stable DC observations. The
-complete preflight, test points, settling times and voltage limits are defined
-in `test_apps/on_device/SENSOR_CARRIER.md`. They do not use the meter to infer
-transient timing.
+These tests use the available AN8008 multimeter for stable DC observations.
+This section owns the wiring preflight, measurement procedure, settling times
+and voltage limits. The schematic and fixture connections are defined in
+[SENSOR_CARRIER.md](test_apps/on_device/SENSOR_CARRIER.md); commands and retained
+results are in the [sensor-carrier README](test_apps/sensor_carrier/README.md).
+Measure DC voltage relative to an adjacent carrier ground point. The meter's
+hold function does not provide transient capture or a min/max measurement.
 
-The approved carrier includes permanent R12, 100 kOhm from `+3V3_SW` to ground,
-in all fixture states. The 100 mV maximum off-state voltage and 10-second
-settling interval are engineering choices for repeatable stable DC observation,
-not sensor-datasheet power-on-reset guarantees or a sleep-current budget.
-Retain both criteria and the three-stable-display-updates rule. Earlier
-measurements without R12 remain historical evidence; acceptance of the revised
-assembled fixture requires fresh operator measurements.
-
-The test application provides separate power-on and power-off holds through the
-production gate-control implementation. Each hold remains stable for at least
+After readiness, wait at least 5 seconds for on-state readings or 10 seconds
+for off-state readings. Record each point only after three consecutive stable
+display updates.The test application provides separate power-on and power-off holds through the
+production gate-control implementation. Power-on readiness follows at least
+the production 200 ms stabilization interval. Each hold remains stable for at least
 60 seconds or until host acknowledgement. Every guided awake electrical hold
 allows up to 180 seconds, with a 195-second host observation/result deadline,
 and finishes as soon as complete valid operator readings trigger an explicit
@@ -750,11 +775,6 @@ returns, and then keeps the CPU awake without another sensor or gate-control
 operation. In particular, it does not call `node_sensors_force_power_off`
 before the observation. No hold is inserted into the production sampling path.
 
-- **Unpowered gate preflight:** before USB power is applied, verify Q1
-  source/drain routing, the 100 ohm GPIO-to-gate path, the approximately 47 kOhm
-  source-to-gate path, fitted R12 from the switched rail to ground, common ground
-  and absence of direct rail shorts. This is required after initial assembly
-  and after any carrier wiring change.
 - **Soil ADC conversion:** apply or measure safe known voltages at both soil
   inputs and compare `soil_0_mv` and `soil_1_mv` against the freshly measured test points within
   the carrier's 75 mV fixture comparison allowance.

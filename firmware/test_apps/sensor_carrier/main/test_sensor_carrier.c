@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include "carrier_observer.h"
+#include "carrier_checks.h"
 #include "carrier_hold.h"
 #include "node_platform_esp.h"
 #include <stdbool.h>
@@ -198,24 +199,30 @@ TEST_CASE("carrier setup discovery", "[sensor_carrier]") {
                             "BME280 identification/cleanup failed");
 }
 
-TEST_CASE("carrier nominal preflight", "[sensor_carrier]") {
+static void fixture_preflight(const char *fixture, unsigned expected_ds_mask) {
   uint64_t configured[2];
   require_configured_roms(configured);
   const discovery_t found = discover_roms();
   const esp_err_t bme = identify_bme280();
   TEST_ASSERT_EQUAL(ESP_OK, found.result);
   TEST_ASSERT_EQUAL(ESP_OK, found.cleanup);
-  TEST_ASSERT_EQUAL_MESSAGE(2, found.count,
-                            "nominal requires exactly two ROMs");
-  TEST_ASSERT_EQUAL(2, found.ds18b20_count);
-  for (size_t channel = 0; channel < 2; ++channel) {
-    TEST_ASSERT_TRUE_MESSAGE(configured[channel] == found.roms[0] ||
-                                 configured[channel] == found.roms[1],
-                             "configured DS18B20 absent or replaced");
-  }
+  carrier_assert_inventory(configured, found.roms, found.count,
+                           found.ds18b20_count, expected_ds_mask);
   TEST_ASSERT_EQUAL_MESSAGE(ESP_OK, bme,
                             "BME280 identification/cleanup failed");
-  puts("CARRIER_PREFLIGHT nominal_complete_resources_released_reset_required");
+  printf("CARRIER_PREFLIGHT %s_complete_resources_released_reset_required\n", fixture);
+}
+
+TEST_CASE("carrier nominal preflight", "[sensor_carrier]") {
+  fixture_preflight("nominal", 3);
+}
+
+TEST_CASE("carrier missing_ds0 preflight", "[sensor_carrier]") {
+  fixture_preflight("missing_ds0", 2);
+}
+
+TEST_CASE("carrier missing_ds1 preflight", "[sensor_carrier]") {
+  fixture_preflight("missing_ds1", 1);
 }
 
 static void observation_hold(const char *name) {
@@ -276,22 +283,7 @@ static void print_sample(node_sensor_sample_t sample, diagn_context_t diagnostic
 static void assert_sample(const node_sensor_sample_t *sample,
                           const diagn_context_t *diagnostic, err_curag_t result,
                           bool nominal) {
-  TEST_ASSERT_EQUAL_HEX32(CURAG_OK, result);
-  TEST_ASSERT_EQUAL_HEX8(NODE_SENSOR_VALIDITY_ALL, sample->validity);
-  if (nominal) {
-  TEST_ASSERT_TRUE_MESSAGE(sample->soil_0_mv >= 2000U &&
-                               sample->soil_0_mv <= 2700U,
-                           "soil0 outside nominal air-probe range");
-  TEST_ASSERT_TRUE_MESSAGE(sample->soil_1_mv >= 2000U &&
-                               sample->soil_1_mv <= 2700U,
-                           "soil1 outside nominal air-probe range");
-  }
-  TEST_ASSERT_EQUAL(CURAG_OP_NONE, diagnostic->operation);
-  TEST_ASSERT_EQUAL(0, diagnostic->context_schema);
-  TEST_ASSERT_EQUAL(0, diagnostic->context_length);
-  for (size_t index = 0; index < sizeof(diagnostic->context); ++index) {
-    TEST_ASSERT_EQUAL_HEX8(0, diagnostic->context[index]);
-  }
+  carrier_assert_sample(sample, diagnostic, result, 3, nominal);
 }
 
 static void fresh_acquisition(uint64_t configured[2]) {
@@ -310,18 +302,57 @@ static err_curag_t acquire_sample(node_sensor_sample_t *sample,
   return result;
 }
 
-TEST_CASE("carrier nominal acquisition and sample-return hold", "[sensor_carrier]") {
+static void print_observation(void) {
+  const carrier_observation_t seen = carrier_observer_snapshot();
+  printf("CARRIER_OBSERVER conversions=%u reads=%u wait_us=%" PRId64
+         " adc=%u/%u onewire=%u/%u ds=%u/%u bme=%u invalid=%u\n",
+         seen.conversions, seen.reads, seen.minimum_wait_us,
+         seen.adc_new, seen.adc_del, seen.bus_new, seen.bus_del,
+         seen.ds_new, seen.ds_del, seen.bme_forced, seen.invalid_sequence);
+  printf("CARRIER_SOIL_OBSERVER stabilization_calls=%u stabilization_ms=%u"
+         " reads0=%u reads1=%u delays0=%u delays1=%u cali0=%u cali1=%u"
+         " mv0=%d mv1=%d power_released=%u\n",
+         seen.stabilization_calls, seen.stabilization_ms,
+         seen.soil_reads[0], seen.soil_reads[1], seen.soil_delays[0], seen.soil_delays[1],
+         seen.soil_calibrations[0], seen.soil_calibrations[1],
+         seen.soil_mv[0], seen.soil_mv[1], seen.power_released);
+}
+
+static void assert_observation(const node_sensor_sample_t *sample, unsigned expected_ds_mask) {
+  TEST_ASSERT_TRUE_MESSAGE(carrier_observer_sample_valid(expected_ds_mask),
+                           "production acquisition conditions/resource observer failed");
+  const carrier_observation_t seen = carrier_observer_snapshot();
+  TEST_ASSERT_EQUAL_INT(seen.soil_mv[0], sample->soil_0_mv);
+  TEST_ASSERT_EQUAL_INT(seen.soil_mv[1], sample->soil_1_mv);
+}
+
+static void fixture_acquisition(unsigned expected_ds_mask) {
   uint64_t configured[2];
   fresh_acquisition(configured);
   const int mode = carrier_hold_select();
   TEST_ASSERT_TRUE_MESSAGE(mode >= 0, "missing/invalid hold mode");
   node_sensor_sample_t sample;
   diagn_context_t diagnostic;
+  carrier_observer_begin(configured[0], configured[1]);
   const err_curag_t result = acquire_sample(&sample, &diagnostic);
+  print_observation();
   /* No sensor/gate operation after return, including on a failed sample. */
   TEST_ASSERT_TRUE_MESSAGE(carrier_hold_wait("sample-return", mode),
                            "guided hold incomplete: valid acknowledgement required");
-  assert_sample(&sample, &diagnostic, result, true);
+  carrier_assert_sample(&sample, &diagnostic, result, expected_ds_mask, true);
+  assert_observation(&sample, expected_ds_mask);
+}
+
+TEST_CASE("carrier nominal acquisition and sample-return hold", "[sensor_carrier]") {
+  fixture_acquisition(3);
+}
+
+TEST_CASE("carrier missing_ds0 acquisition and sample-return hold", "[sensor_carrier]") {
+  fixture_acquisition(2);
+}
+
+TEST_CASE("carrier missing_ds1 acquisition and sample-return hold", "[sensor_carrier]") {
+  fixture_acquisition(1);
 }
 
 TEST_CASE("carrier repeated nominal acquisition", "[sensor_carrier]") {
@@ -343,14 +374,8 @@ TEST_CASE("carrier repeated nominal acquisition", "[sensor_carrier]") {
     carrier_observer_begin(configured[0], configured[1]);
     const err_curag_t result = acquire_sample(&sample, &diagnostic);
     assert_sample(&sample, &diagnostic, result, true);
-    const carrier_observation_t seen = carrier_observer_snapshot();
-    printf("CARRIER_OBSERVER conversions=%u reads=%u wait_us=%" PRId64
-           " adc=%u/%u onewire=%u/%u ds=%u/%u bme=%u invalid=%u\n",
-           seen.conversions, seen.reads, seen.minimum_wait_us,
-           seen.adc_new, seen.adc_del, seen.bus_new, seen.bus_del,
-           seen.ds_new, seen.ds_del, seen.bme_forced, seen.invalid_sequence);
-    TEST_ASSERT_TRUE_MESSAGE(carrier_observer_sample_valid(),
-                             "fresh conversion/resource observer failed");
+    print_observation();
+    assert_observation(&sample, 3);
     printf("CARRIER_ITERATION index=%" PRIu64 " total=%llu\n", index, requested);
     fflush(stdout);
   }

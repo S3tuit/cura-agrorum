@@ -11,7 +11,7 @@ import time
 import pexpect
 from pytest_embedded.unity import UNITY_SUMMARY_LINE_REGEX
 
-from carrier_runner import GUIDED_HOLD_SECONDS, check_uart, uart_identity
+from carrier_runner import GUIDED_HOLD_SECONDS, MISSING_FIXTURES, check_uart, uart_identity
 
 
 class IncompleteCase(RuntimeError):
@@ -153,7 +153,7 @@ def prior_position(path, metadata, position):
 
 
 class Guided:
-    def __init__(self, evidence, operation, position, prior, *, diagnostic_original=None):
+    def __init__(self, evidence, operation, position, prior):
         self.evidence = evidence
         self.operation = operation
         self.position = position
@@ -162,10 +162,21 @@ class Guided:
         self.measurements = None
         self.sample = None
         self.holds = []
-        self.diagnostic_original = diagnostic_original
 
     def wiring(self):
-        if self.operation == 'ds-identity':
+        fixture = self.evidence.data['metadata'].get('fixture')
+        if fixture in MISSING_FIXTURES:
+            missing = 0 if fixture == 'missing_ds0' else 1
+            metadata = self.evidence.data['metadata']
+            confirm(f'The {fixture} fixture is ready: with power removed, the complete power, '
+                    f'ground and data connector of logical DS{missing}, ROM {metadata[f"rom{missing}"]}, '
+                    f'was removed. Logical DS{1-missing}, ROM {metadata[f"rom{1-missing}"]}, remains connected. '
+                    'Both air-exposed soil probes, soil shunts and BME remain connected. '
+                    'Permanent R12 is fitted, reference enable is open and reference leads are removed. '
+                    'Wiring preflight was completed after the change; the identified DUT is ready.')
+            self.evidence.add('missing_probe_fixture', missing_channel=missing,
+                              missing_rom=metadata[f'rom{missing}'], surviving_rom=metadata[f'rom{1-missing}'])
+        elif self.operation == 'ds-identity':
             arrangement = ('configured DS0 in J_DS0 and DS1 in J_DS1' if self.position == 'A'
                            else 'configured DS0 in J_DS1 and DS1 in J_DS0; same labeled probes')
             confirm('Power was removed before connector changes, wiring preflight was completed, '
@@ -182,11 +193,6 @@ class Guided:
             confirm('The nominal fixture is ready: both air-exposed soil probes, configured DS probes, '
                     'BME, soil shunts, reference enable open and reference leads removed. '
                     'Wiring preflight was completed after any wiring change.')
-        if self.diagnostic_original:
-            confirm('With carrier power removed, the temporary 100 kohm TP_SW-to-ground load was fitted. '
-                    'The original unloaded failure is retained. This run is diagnostic only; remove the load '
-                    'with power off after the run, then restore and preflight nominal wiring.')
-            self.evidence.add('diagnostic_original', reference=self.diagnostic_original)
         print('At every hold: measure DC VOLTS against carrier ground. Wait at least 5 s for ON or '
               '10 s for OFF, then require three stable display updates at each point. '
               'Enter all named points on one line, separated by SPACES without commas (TP_3V3=3.299). '
@@ -245,7 +251,7 @@ class Guided:
             raise IncompleteCase('readings supplied before required settling')
         # Supplying the readings attests the settling and stable-display procedure.
         self.evidence.add('meter', hold=name, volts=readings, settling_seconds=settling,
-                          stable_updates=3, loaded=bool(self.diagnostic_original))
+                          stable_updates=3)
         self.holds.append(name)
         try:
             validate_electrical(name, readings)
@@ -329,25 +335,5 @@ class Guided:
                 raise IncompleteCase('position A recorded successfully; complete case requires position B')
             self.evidence.add('paired_acceptance', prior=self.prior)
             self.evidence.finish('accepted')
-        elif self.diagnostic_original:
-            self.evidence.finish('diagnostic_only_original_failure_retained')
-            raise IncompleteCase('loaded diagnostic cannot grant electrical acceptance; remove load with power off')
         else:
             self.evidence.finish('accepted')
-
-
-def backpower_original(path, metadata):
-    raw = Path(path).read_bytes()
-    original = json.loads(raw)
-    if original.get('metadata', {}).get('exploration'):
-        raise ValueError('exploration cannot supply an acceptance diagnostic original')
-    for key in ('operation', 'fixture', 'expected_dut', 'elf_sha256', 'config_sha256', 'rom0', 'rom1'):
-        if original.get('metadata', {}).get(key) != metadata.get(key):
-            raise ValueError(f'back-power diagnostic mismatches original {key}')
-    measurements = [e for e in original.get('events', []) if e.get('kind') == 'meter'
-                    and not e.get('loaded') and e.get('hold') not in {'gate-on', 'transition-on'}
-                    and Decimal(e['volts']['TP_SW']) > Decimal('.1')]
-    if not measurements or original.get('status') == 'accepted':
-        raise ValueError('diagnostic requires retained unloaded TP_SW failure')
-    return {'path': str(Path(path).resolve()), 'sha256': hashlib.sha256(raw).hexdigest(),
-            'run_id': original['run_id'], 'measurements': measurements}

@@ -65,7 +65,7 @@ def test_discovery_allows_unprovisioned_build(build_dir):
 @pytest.mark.parametrize("operation,fixture,revision,ready", [
     (None, None, "rev1", True),
     ("acquire", None, "rev1", True),
-    ("acquire", "missing_ds0", "rev1", True),
+    ("repeat", "missing_ds0", "rev1", True),
     ("discover", "nominal", "rev1", True),
     ("discover", None, "", True),
     ("gate-on", "nominal", "rev1", False),
@@ -87,7 +87,7 @@ def scripted_dut(build_dir, tmp_path, monkeypatch):
               str(tmp_path / "serial.log"), "runner-test")
     state = SimpleNamespace(commands=[], resets=0, preflight="PASS", sample="PASS",
                             omit_end=False, omit_ready=False, empty_menu=False,
-                            elf=build.elf_sha256)
+                            elf=build.elf_sha256, fixture="nominal", inventory="", sample_serial="")
 
     def feed(text):
         os.write(write_fd, text.encode())
@@ -113,22 +113,24 @@ def scripted_dut(build_dir, tmp_path, monkeypatch):
             feed("Here's the test menu, pick your combo:\n")
             if not state.empty_menu:
                 feed('(1)\t"carrier setup discovery" [sensor_carrier]\n'
-                     '(2)\t"carrier nominal preflight" [sensor_carrier]\n'
+                     f'(2)\t"carrier {state.fixture} preflight" [sensor_carrier]\n'
                      '(3)\t"carrier production gate-on hold" [sensor_carrier]\n'
                      '(4)\t"carrier production gate-off hold" [sensor_carrier]\n'
-                     '(5)\t"carrier nominal acquisition and sample-return hold" [sensor_carrier]\n')
+                     f'(5)\t"carrier {state.fixture} acquisition and sample-return hold" [sensor_carrier]\n')
             feed("Enter test for running.\n")
         elif command == "2":
-            result("carrier nominal preflight", state.preflight)
+            feed(state.inventory)
+            result(f"carrier {state.fixture} preflight", state.preflight)
         elif command == "5":
             feed("CARRIER_HOLD_MODE\n")
         elif command == "auto":
             if state.omit_ready:
                 return
+            feed(state.sample_serial)
             feed("CARRIER_HOLD_READY sample-return seconds=60\n")
             if not state.omit_end:
                 feed("CARRIER_HOLD_END sample-return\n")
-                result("carrier nominal acquisition and sample-return hold", state.sample)
+                result(f"carrier {state.fixture} acquisition and sample-return hold", state.sample)
 
     state.boot = boot
     state.result = result

@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "run_id": "66eefedd71684c759387fcc84479e140",
+  "run_id": "ec464aa507ee4f3db58d08de9b611ea3",
   "metadata": {
     "operation": "acquire",
     "exploration": false,
     "expected_dut": "cc8da2fc0224",
     "requested_count": 1,
-    "fixture": "nominal",
+    "fixture": "missing_ds1",
     "carrier_revision": "nominal",
     "port": "/dev/ttyUSB0",
     "elf_sha256": "86e85b816302755280af1a3e53c08df52165e13ae843e983c493f92cd35cd211",
@@ -134,31 +134,38 @@
   "status": "accepted",
   "events": [
     {
+      "kind": "missing_probe_fixture",
+      "at": "2026-09-12T14:56:28.270378+00:00",
+      "missing_channel": 1,
+      "missing_rom": "7E000000540FA728",
+      "surviving_rom": "DF00000050F93828"
+    },
+    {
       "kind": "wiring_confirmation",
-      "at": "2026-09-12T14:58:37.593628+00:00",
+      "at": "2026-09-12T14:56:28.271597+00:00",
       "position": null
     },
     {
       "kind": "preflight",
-      "at": "2026-09-12T14:58:55.150226+00:00",
-      "case": "carrier nominal preflight",
-      "serial": "\r\n2\r\nRunning carrier nominal preflight...\r\nCARRIER_ROM value=DF00000050F93828 family=28 type=DS18B20\r\nCARRIER_ROM value=7E000000540FA728 family=28 type=DS18B20\r\nCARRIER_DISCOVERY count=2 ds18b20=2 status=0 cleanup=0\r\nE (885) i2c.master: this port has not been initialized, please initialize it first\r\nI (885) i2c_bus: i2c0 bus inited\r\nI (885) i2c_bus: I2C Bus V2 Config Succeed, Version: 1.5.2\r\nCARRIER_BME address=76 register=D0 id=60 status=0\r\nI (895) i2c_bus: i2c0 bus deinited\r\nCARRIER_PREFLIGHT nominal_complete_resources_released_reset_required\r\n./main/test_sensor_carrier.c:216:carrier nominal preflight:PASS\r\nTest ran in 70ms\r\n\r\n"
+      "at": "2026-09-12T14:56:45.775015+00:00",
+      "case": "carrier missing_ds1 preflight",
+      "serial": "\r\n4\r\nRunning carrier missing_ds1 preflight...\r\nCARRIER_ROM value=DF00000050F93828 family=28 type=DS18B20\r\nCARRIER_DISCOVERY count=1 ds18b20=1 status=0 cleanup=0\r\nE (775) i2c.master: this port has not been initialized, please initialize it first\r\nI (785) i2c_bus: i2c0 bus inited\r\nI (785) i2c_bus: I2C Bus V2 Config Succeed, Version: 1.5.2\r\nCARRIER_BME address=76 register=D0 id=60 status=0\r\nI (795) i2c_bus: i2c0 bus deinited\r\nCARRIER_PREFLIGHT missing_ds1_complete_resources_released_reset_required\r\n./main/test_sensor_carrier.c:224:carrier missing_ds1 preflight:PASS\r\nTest ran in 60ms\r\n\r\n"
     },
     {
       "kind": "observation_ready",
-      "at": "2026-09-12T14:58:57.649315+00:00",
+      "at": "2026-09-12T14:56:48.112189+00:00",
       "operation": "acquire",
-      "case": "carrier nominal acquisition and sample-return hold",
-      "serial": "\r\nE (1825) i2c.master: this port has not been initialized, please initialize it first\r\nI (1825) i2c_bus: i2c0 bus inited\r\nI (1825) i2c_bus: I2C Bus V2 Config Succeed, Version: 1.5.2\r\nCARRIER_SAMPLE result=00000000 duration_us=1733562 validity=1f soil0_mv=2593 soil1_mv=2591 temp0_centi_c=2700 temp1_centi_c=2681 enclosure_centi_c=2729 pressure_pa=96587 humidity_centi_pct=6330\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800820 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2593 mv1=2591 power_released=1\r\nCARRIER_HOLD_READY sample-return seconds=180"
+      "case": "carrier missing_ds1 acquisition and sample-return hold",
+      "serial": "\r\nE (1695) i2c.master: this port has not been initialized, please initialize it first\r\nI (1695) i2c_bus: i2c0 bus inited\r\nI (1695) i2c_bus: I2C Bus V2 Config Succeed, Version: 1.5.2\r\nCARRIER_SAMPLE result=00030002 duration_us=1593568 validity=17 soil0_mv=2592 soil1_mv=2589 temp0_centi_c=2694 temp1_centi_c=0 enclosure_centi_c=2726 pressure_pa=96599 humidity_centi_pct=6333\r\nCARRIER_DIAGNOSTIC operation=1 schema=1 length=48 context=000000000000000000000000000000000000000000000000000000000000000002000000050100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=1 wait_us=793238 adc=2/2 onewire=1/1 ds=1/1 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2589 power_released=1\r\nCARRIER_HOLD_READY sample-return seconds=180"
     },
     {
       "kind": "meter",
-      "at": "2026-09-12T14:59:56.583102+00:00",
+      "at": "2026-09-12T14:57:47.596806+00:00",
       "hold": "sample-return",
       "volts": {
-        "TP_3V3": "3.298",
+        "TP_3V3": "3.299",
         "TP_DQ": "0.001",
-        "TP_GATE": "3.283",
+        "TP_GATE": "3.282",
         "TP_SW": "0.001"
       },
       "settling_seconds": 10,
@@ -167,12 +174,12 @@
     },
     {
       "kind": "hold_acknowledged",
-      "at": "2026-09-12T14:59:56.616149+00:00",
+      "at": "2026-09-12T14:57:47.653041+00:00",
       "hold": "sample-return"
     },
     {
       "kind": "software_completed",
-      "at": "2026-09-12T14:59:56.669702+00:00",
+      "at": "2026-09-12T14:57:47.658033+00:00",
       "operation": "acquire"
     }
   ]

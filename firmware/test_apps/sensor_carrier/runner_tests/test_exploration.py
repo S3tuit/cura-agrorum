@@ -9,7 +9,7 @@ import pytest
 import carrier_exploration as exploration
 import carrier_runner as runner
 from carrier_evidence import Evidence
-from carrier_guided import IncompleteCase, prior_position, backpower_original
+from carrier_guided import IncompleteCase, prior_position
 from pytest_sensor_carrier import test_sensor_carrier as run_hardware_test
 from test_runner import build_dir, scripted_dut
 from test_hold import hold_binary
@@ -165,7 +165,7 @@ def test_exploration_transition_keeps_real_menu_reset_checks(scripted_dut, tmp_p
 
 
 @pytest.mark.parametrize('options', [dict(sensor_operation='repeat'), dict(sensor_guided=True),
-                                   dict(sensor_diagnostic_load=True), dict(sensor_position='A'),
+                                   dict(sensor_position='A'),
                                    dict(sensor_prior_evidence='old.json')])
 def test_exploration_invalid_combinations_fail_before_dut(options):
     options = dict({'sensor_operation': 'gate-off', 'exploration': True}, **options)
@@ -175,9 +175,8 @@ def test_exploration_invalid_combinations_fail_before_dut(options):
         run_hardware_test(request, lambda *a: None)
 
 
-@pytest.mark.parametrize('reader', [prior_position, backpower_original])
-def test_exploration_cannot_supply_acceptance_prerequisite(tmp_path, reader):
+def test_exploration_cannot_supply_acceptance_prerequisite(tmp_path):
     path = tmp_path/'exploration.json'
     path.write_text(json.dumps({'metadata': {'exploration': True}, 'status': 'position_A_complete_sequence_incomplete'}))
     with pytest.raises(ValueError, match='exploration cannot'):
-        reader(path, {}, *(['B'] if reader is prior_position else []))
+        prior_position(path, {}, 'B')

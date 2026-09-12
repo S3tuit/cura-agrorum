@@ -9,11 +9,16 @@ Unity console waits yield to the C6 idle task while the operator answers prompts
 The app forwards to the installed Unity parser and UART implementation; the
 task watchdog remains enabled with its original timeout.
 
-Missing-device fixtures, BME hardening/low-power and sensor-to-reading integration
+The suite includes symmetric `missing_ds0` and `missing_ds1` acquisitions,
+fixture-aware preflight and guided sample-return rail observations. Their
+physical acceptance and nominal restoration have
+[reviewed September 12 results](#retained-acceptance-evidence).
+The missing BME fixture, BME hardening/low-power and sensor-to-reading integration
 remain in their later stages in [firmware/TESTING.md](../../TESTING.md).
 
-Use the approved circuit and procedure in
-[SENSOR_CARRIER.md](../on_device/SENSOR_CARRIER.md). The user identifies the
+Use the approved circuit in [SENSOR_CARRIER.md](../on_device/SENSOR_CARRIER.md)
+and the [electrical procedure in TESTING.md](../../TESTING.md#node_sensors-manual-electrical-cases).
+The user identifies the
 DUT, confirms the fixture ready, changes wiring with power removed and performs
 the multimeter observations. Use the connector labeled **UART**, with the
 confirmed port (currently `/dev/ttyUSB0`). Every hardware invocation requires
@@ -23,11 +28,10 @@ assembled circuit and its recorded I2C pull-up-jumper choice.
 The 2026-09-11 approved carrier includes **permanent R12, 100 kohm from
 `+3V3_SW` to GND**, alongside C3, in every fixture. Include `R12=100kohm fitted`
 in the carrier revision label, together with the actual I2C pull-up choice.
-Use ordinary guided acceptance with R12 fitted; do not select
-`--sensor-diagnostic-load` for this permanent component. Earlier no-R12 runs
+Use ordinary guided acceptance with R12 fitted. Earlier no-R12 runs
 remain historical evidence. The September 11 nominal/reference results,
 including manual-completion deep sleep, are retained in [evidences/](evidences/).
-See the [recorded results](../on_device/SENSOR_CARRIER.md#september-11-revised-carrier-results).
+See the [retained acceptance evidence](#retained-acceptance-evidence).
 
 ## Retained acceptance evidence
 
@@ -49,7 +53,7 @@ A retains `position_A_complete_sequence_incomplete` and cannot establish
 acceptance alone. Repetition retains `software_passed_operator_acceptance_pending`;
 its complete requested count and software completion establish automated
 coverage, while guided electrical acceptance belongs to its separate records.
-The required cases and links are in the carrier's recorded-results table above;
+The required implemented cases and records are listed below;
 discovery is setup, and later-stage cases have no placeholder evidence files.
 
 Review the original JSON, JUnit report and UART log before replacing a record.
@@ -58,9 +62,7 @@ cannot replace successful evidence. A later failure remains unresolved even
 when an earlier passing file is retained. Missing required evidence means
 pending coverage. Update the result summary when replacing evidence; Git
 retains earlier committed versions. Documentation cites these tracked JSON
-files rather than machine-local run folders. Each record proves only its
-recorded build, fixture and identities; later changes require the applicable
-reverification in [firmware/TESTING.md](../../TESTING.md).
+files rather than machine-local run folders.
 
 ## Build and inspect configuration
 
@@ -210,8 +212,12 @@ sensor_carrier --sensor-operation gate-off --sensor-fixture nominal
 sensor_carrier --sensor-operation acquire --sensor-fixture nominal
 ```
 
-Acquisition preflight requires two distinct provisioned ROMs and exactly those
-two DS18B20s, plus the expected BME280 at `0x76`. It releases the buses, the
+Acquisition preflight always requires two distinct provisioned ROMs in the
+configuration. Nominal/reference require exactly those two DS18B20s;
+`missing_ds0` requires exactly ROM1 present and ROM0 absent, and `missing_ds1`
+requires exactly ROM0 present and ROM1 absent. Replacement, additional or
+incompletely enumerated devices fail the declared fixture. Every state also
+requires the expected BME280 at `0x76`. Preflight releases the buses, the
 1-Wire pad and switched rail, then the runner resets the C6 and checks the new
 boot's DUT identity, ELF hash and configuration. The acquisition case rejects
 a boot already used by discovery or gate operations. No hardware preflight
@@ -236,8 +242,8 @@ no live meter input and remain automatic 60-second observations.
 Gate-on readiness
 follows at least 200 ms stabilization. Wait at least 5 seconds for on-state
 measurements or 10 seconds for off-state measurements, and require three stable
-meter updates. Record the prescribed test points and voltage limits from the
-carrier procedure beside the run logs.
+meter updates. Record the prescribed test points and voltage limits from
+[TESTING.md](../../TESTING.md#node_sensors-manual-electrical-cases) beside the run logs.
 
 The sample-return hold begins only after `node_sensors_sample_all` returns.
 There is no further sensor or gate call, including no final force-off or
@@ -341,6 +347,40 @@ YES, then ends early by prompted manual EN/reset.
 Missing, nonfinite, late or out-of-limit inputs cannot pass.
 The runner stores inputs immediately, including failed observations.
 
+### Missing DS probes and nominal restoration
+
+Both missing states and nominal restoration were accepted on September 12;
+the [retained results](#retained-acceptance-evidence)
+identify the exact build, measurements and original JSON records.
+
+In both states keep the two soil probes in air, their shunts fitted, BME
+connected, reference enable open, reference leads absent, and permanent R12
+fitted.
+
+1. Remove carrier power. Unplug the **entire power/ground/data connector of
+   logical DS0**, retaining logical DS1. Restore power and confirm readiness,
+   then run:
+
+   ```sh
+   sensor_carrier --sensor-operation acquire --sensor-fixture missing_ds0 --sensor-guided
+   ```
+
+2. Remove power, reconnect logical DS0 and unplug the **entire logical DS1
+   connector**. Follow [the missing_ds1 diagram](../on_device/SENSOR_CARRIER.md#missing_ds1),
+   repeat wiring preflight, restore power and confirm readiness, then run:
+
+   ```sh
+   sensor_carrier --sensor-operation acquire --sensor-fixture missing_ds1 --sensor-guided
+   ```
+
+3. Remove power and restore both configured probes to `nominal`. Repeat wiring
+   preflight, restore power and confirm readiness, then run the restoration check:
+
+   ```sh
+   sensor_carrier --sensor-operation acquire --sensor-fixture nominal --sensor-guided
+   ```
+
+
 ### DS identity through a connector exchange
 
 This checks identity, not thermal response or acquisition speed. Keep both
@@ -434,10 +474,6 @@ The runner's off-state failure message instructs you to retain the failure,
 keep permanent R12 fitted and investigate using separately declared
 `--exploration` runs, with power removed before wiring changes. Do not add a
 second 100 kohm resistor in parallel; that would produce 50 kohm.
-`--sensor-diagnostic-load` and
-`--sensor-backpower-original` retain their legacy meaning: a temporary-load
-repeat of a matching no-R12 failure, with neither run becoming revised-carrier
-acceptance. They are not required for ordinary acceptance with permanent R12.
 The software does not detect R12; declare the actual circuit in the revision
 label and confirm its wiring physically. Neither GPIO state nor the AN8008
 establishes transients, exact shutdown timing or microamp sleep current; the
@@ -492,11 +528,10 @@ must be checked; remove power before any wiring change.
 
 Successful software completion plus explicit `/done` produces
 `exploration_complete_not_acceptance` and a deliberately nonzero pytest result.
-It cannot become acceptance or supply A/B/loaded-acceptance prerequisites.
-Do not combine `--exploration` with `--sensor-guided`, position/prior-evidence
-or diagnostic-load options. Describe R12's fitted/removed state and any
-additional load in the exploration setup. The legacy guided diagnostic flags
-above retain their original, non-accepting meaning for the pre-R12 circuit.
+It cannot become acceptance or supply position-A evidence for an A/B pair.
+Do not combine `--exploration` with `--sensor-guided` or position/prior-evidence
+options. Describe R12's fitted/removed state and any additional load in the
+exploration setup.
 
 For decay investigation, the current reference circuit has C3 (100 nF) and R12
 (100 kohm) both fitted from TP_SW to ground. Record elapsed observations, then
@@ -550,10 +585,10 @@ DS connector arrangement, repeat wiring preflight and restore `nominal`.
 
 Every run retains `carrier-evidence.json`, `report.xml` and pytest-embedded
 `dut.log`. Inspect the evidence status, not just Unity PASS: software success,
-position-A incompletion, full guided acceptance and loaded diagnostics have
-distinct states. Follow the [retained-evidence policy](#retained-acceptance-evidence)
-to copy reviewed records into `evidences/` and update the corresponding carrier
-result links; preserve historical accepted stage-03 observations.
+position-A incompletion, full guided acceptance and exploration have distinct
+states. Follow the [retained-evidence policy](#retained-acceptance-evidence)
+to copy reviewed records into `evidences/` and update the corresponding table
+links here; preserve historical accepted stage-03 observations.
 
 The app locally uses merged JUnit reporting: the Python orchestration case and
 the Unity cases are both retained, with totals reconciled from their actual

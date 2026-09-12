@@ -1,0 +1,27 @@
+● chrony.service - chrony, an NTP client/server
+     Loaded: loaded (/usr/lib/systemd/system/chrony.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-09-12 16:27:33 CEST; 1min 20s ago
+ Invocation: 0a48b60908c14e65b3a86a3be1f45b57
+       Docs: man:chronyd(8)
+             man:chronyc(1)
+             man:chrony.conf(5)
+   Main PID: 647 (chronyd)
+      Tasks: 2 (limit: 806)
+        CPU: 203ms
+     CGroup: /system.slice/chrony.service
+             ├─647 /usr/sbin/chronyd -F 1
+             └─648 /usr/sbin/chronyd -F 1
+
+Sep 12 16:27:32 cura-receiver systemd[1]: Starting chrony.service - chrony, an NTP client/server...
+Sep 12 16:27:33 cura-receiver chronyd[647]: chronyd version 4.6.1 starting (+CMDMON +NTP +REFCLOCK +RTC +PRIVDROP +SCFILTER +SIGND +ASYNCDNS +NTS +SECHASH +IPV6 -DEBUG)
+Sep 12 16:27:33 cura-receiver chronyd[647]: Frequency 5.622 +/- 0.350 ppm read from /var/lib/chrony/chrony.drift
+Sep 12 16:27:33 cura-receiver chronyd[647]: Loaded seccomp filter (level 1)
+Sep 12 16:27:33 cura-receiver systemd[1]: Started chrony.service - chrony, an NTP client/server.
+Sep 12 16:27:56 cura-receiver chronyd[647]: Selected source 212.45.144.206 (2.debian.pool.ntp.org)
+Sep 12 16:27:58 cura-receiver chronyd[647]: Selected source 204.216.214.76 (2.debian.pool.ntp.org)
+
+○ systemd-timesyncd.service
+     Loaded: masked (Reason: Unit systemd-timesyncd.service is masked.)
+     Active: inactive (dead)
+
+command_exit=3

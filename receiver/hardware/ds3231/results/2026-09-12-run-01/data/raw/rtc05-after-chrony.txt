@@ -1,0 +1,8 @@
+[   27.997934] cura-receiver systemd[1]: Starting chrony.service - chrony, an NTP client/server...
+[   29.792940] cura-receiver chronyd[641]: chronyd version 4.6.1 starting (+CMDMON +NTP +REFCLOCK +RTC +PRIVDROP +SCFILTER +SIGND +ASYNCDNS +NTS +SECHASH +IPV6 -DEBUG)
+[   30.055047] cura-receiver chronyd[641]: Frequency 3.846 +/- 9.855 ppm read from /var/lib/chrony/chrony.drift
+[   30.058792] cura-receiver chronyd[641]: Loaded seccomp filter (level 1)
+[   30.063601] cura-receiver systemd[1]: Started chrony.service - chrony, an NTP client/server.
+[   54.562754] cura-receiver chronyd[641]: Selected source 93.94.88.51 (2.debian.pool.ntp.org)
+
+command_exit=0

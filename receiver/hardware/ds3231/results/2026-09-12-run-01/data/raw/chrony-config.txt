@@ -1,0 +1,21 @@
+# Welcome to the chrony configuration file. See chrony.conf(5) for more
+# information about usable directives.
+
+# Use Debian vendor zone.
+pool 2.debian.pool.ntp.org iburst
+
+# This directive specifies the file into which chronyd will store the rate
+# information.
+driftfile /var/lib/chrony/chrony.drift
+
+leapsecmode slew
+maxslewrate 3500
+
+# Disable UPD for remote monitoring 
+cmdport 0
+
+# Unix domain socket path to which the chronyd daemon binds for listening to
+# monitoring commands issued by the chronic utility
+bindcmdaddress /run/chrony/chronyd.sock
+
+command_exit=0

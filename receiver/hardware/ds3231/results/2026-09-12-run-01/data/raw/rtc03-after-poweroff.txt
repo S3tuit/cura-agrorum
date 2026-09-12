@@ -1,0 +1,48 @@
+tracking_before
+Reference ID    : CCD8D64C (204.216.214.76)
+Stratum         : 3
+Ref time (UTC)  : Sat Sep 12 15:17:25 2026
+System time     : 0.000000000 seconds slow of NTP time
+Last offset     : +0.000461689 seconds
+RMS offset      : 0.000182010 seconds
+Frequency       : 4.099 ppm fast
+Residual freq   : +0.117 ppm
+Skew            : 7.118 ppm
+Root delay      : 0.031363036 seconds
+Root dispersion : 0.001373855 seconds
+Update interval : 64.7 seconds
+Leap status     : Normal
+before_epoch=1789226278.598631222 before_utc=2026-09-12T15:17:58.598631222+0000
+hwclock from util-linux 2.41.5
+System Time: 1789226278.602354
+Using the rtc interface to the clock.
+Assuming hardware clock is kept in UTC time.
+Waiting for clock tick...
+ioctl(4, RTC_UIE_ON, 0): Invalid argument
+Waiting in loop for time from /dev/rtc0 to change
+...got clock tick
+Time read from Hardware Clock: 2026/09/12 15:17:59
+Hw clock time : 2026/09/12 15:17:59 = 1789226279 seconds since 1969
+Time since last adjustment is 1789226279 seconds
+Calculated Hardware Clock drift is 0.000000 seconds
+2026-09-12 15:17:58.587843+00:00
+after_epoch=1789226279.017768150 after_utc=2026-09-12T15:17:59.017768150+0000
+hwclock_exit=0
+after_date_exit=0
+tracking_after
+Reference ID    : CCD8D64C (204.216.214.76)
+Stratum         : 3
+Ref time (UTC)  : Sat Sep 12 15:17:25 2026
+System time     : 0.000000000 seconds fast of NTP time
+Last offset     : +0.000461689 seconds
+RMS offset      : 0.000182010 seconds
+Frequency       : 4.099 ppm fast
+Residual freq   : +0.117 ppm
+Skew            : 7.118 ppm
+Root delay      : 0.031363036 seconds
+Root dispersion : 0.001377629 seconds
+Update interval : 64.7 seconds
+Leap status     : Normal
+tracking_after_exit=0
+
+command_exit=0

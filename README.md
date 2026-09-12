@@ -6,7 +6,10 @@ ESP32-C6 node and a Raspberry Pi receiver connected over authenticated EU868
 LoRa.
 
 This repository owns the production firmware, receiver, wire protocol, and
-server code. Experiments and their firmware, acquisition tools, datasets,
+server code, together with their test procedures and Git-tracked validation
+evidence. Component test results and reviewed raw captures stay next to the
+corresponding tests so their instructions and outcomes can be found together.
+Experiments and their firmware, acquisition tools, datasets,
 analysis, findings, reference material, and deployment records live in the
 separate
 [`cura-agrorum-logbook`](https://github.com/S3tuit/cura-agrorum-logbook)

@@ -1,0 +1,11 @@
+hwclock: ioctl(RTC_RD_NAME) to /dev/rtc0 to read the time failed: Invalid argument
+hwclock from util-linux 2.41.5
+System Time: 1789135063.633852
+Using the rtc interface to the clock.
+Assuming hardware clock is kept in UTC time.
+Waiting for clock tick...
+ioctl(4, RTC_UIE_ON, 0): Invalid argument
+Waiting in loop for time from /dev/rtc0 to change
+...synchronization failed
+
+command_exit=1

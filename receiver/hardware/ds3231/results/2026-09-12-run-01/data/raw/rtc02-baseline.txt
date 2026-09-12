@@ -1,0 +1,48 @@
+tracking_before
+Reference ID    : 25F735B2 (nettuno.ntp.irh.it)
+Stratum         : 3
+Ref time (UTC)  : Sat Sep 12 14:37:40 2026
+System time     : 0.000017148 seconds slow of NTP time
+Last offset     : -0.000074254 seconds
+RMS offset      : 0.016039994 seconds
+Frequency       : 5.454 ppm fast
+Residual freq   : -0.026 ppm
+Skew            : 4.790 ppm
+Root delay      : 0.023241859 seconds
+Root dispersion : 0.001972319 seconds
+Update interval : 1.1 seconds
+Leap status     : Normal
+before_epoch=1789223878.609064758 before_utc=2026-09-12T14:37:58.609064758+0000
+hwclock from util-linux 2.41.5
+System Time: 1789223878.612876
+Using the rtc interface to the clock.
+Assuming hardware clock is kept in UTC time.
+Waiting for clock tick...
+ioctl(4, RTC_UIE_ON, 0): Invalid argument
+Waiting in loop for time from /dev/rtc0 to change
+...got clock tick
+Time read from Hardware Clock: 2026/09/12 14:37:59
+Hw clock time : 2026/09/12 14:37:59 = 1789223879 seconds since 1969
+Time since last adjustment is 1789223879 seconds
+Calculated Hardware Clock drift is 0.000000 seconds
+2026-09-12 14:37:58.608530+00:00
+after_epoch=1789223879.007480230 after_utc=2026-09-12T14:37:59.007480230+0000
+hwclock_exit=0
+after_date_exit=0
+tracking_after
+Reference ID    : 25F735B2 (nettuno.ntp.irh.it)
+Stratum         : 3
+Ref time (UTC)  : Sat Sep 12 14:37:40 2026
+System time     : 0.000017102 seconds slow of NTP time
+Last offset     : -0.000074254 seconds
+RMS offset      : 0.016039994 seconds
+Frequency       : 5.454 ppm fast
+Residual freq   : -0.026 ppm
+Skew            : 4.790 ppm
+Root delay      : 0.023241859 seconds
+Root dispersion : 0.001974936 seconds
+Update interval : 1.1 seconds
+Leap status     : Normal
+tracking_after_exit=0
+
+command_exit=0

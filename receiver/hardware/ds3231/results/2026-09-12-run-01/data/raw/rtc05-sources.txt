@@ -1,0 +1,17 @@
+
+  .-- Source mode  '^' = server, '=' = peer, '#' = local clock.
+ / .- Source state '*' = current best, '+' = combined, '-' = not combined,
+| /             'x' = may be in error, '~' = too variable, '?' = unusable.
+||                                                 .- xxxx [ yyyy ] +/- zzzz
+||      Reachability register (octal) -.           |  xxxx = adjusted offset,
+||      Log2(Polling interval) --.      |          |  yyyy = measured offset,
+||                                \     |          |  zzzz = estimated error.
+||                                 |    |           \
+MS Name/IP address         Stratum Poll Reach LastRx Last sample               
+===============================================================================
+^- kraken2.bilink.net            3   6    77    47  -2151us[-3691us] +/-   79ms
+^- host148-74-46-89.serverd>     2   6    77    46  -1126us[-1126us] +/-   53ms
+^+ ntp2.leontp.com               1   6    77    47   -667us[-2208us] +/-   25ms
+^* nettuno.ntp.irh.it            2   6    77    46   +528ns[-1540us] +/-   13ms
+
+command_exit=0

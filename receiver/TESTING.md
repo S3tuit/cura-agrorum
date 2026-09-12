@@ -48,12 +48,22 @@ end-to-end receiver result.
 
 ## Framework and organization
 
-Both suites use `pytest`. Host property tests and model-based state-machine
+Both automated suites use `pytest`. Host property tests and model-based state-machine
 tests use Hypothesis where generated sequences add coverage beyond reviewed
 examples. The Raspberry Pi runs ordinary pytest directly because the receiver
 is a native Python program on that host. `pytest-embedded` is optional only
 when a later radio test also controls an ESP32 peer over serial; it is not the
 receiver test runner.
+
+Physical DS3231 bring-up also has a separate
+[operator acceptance procedure](hardware/ds3231/OPERATOR_TESTS.md), covering
+power removal, battery retention, oscillator-stop rejection and recovery.
+It records human actions and raw device evidence across Pi power cycles and
+is not collected by pytest or any Make target. This manual hardware evidence
+complements the production-adapter tests below; it does not satisfy their
+runtime policy, privilege, timeout or durable-provenance obligations. Dated
+bench results and raw captures are Git-tracked alongside the procedure under
+[`hardware/ds3231/results/`](hardware/ds3231/results/README.md).
 
 The implemented layout is:
 

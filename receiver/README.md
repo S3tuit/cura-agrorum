@@ -14,6 +14,12 @@ interfaces, Python package, schema sources, generators, and tests.
 - [`TESTING.md`](TESTING.md) defines the pilot host and Raspberry Pi test
   suites, their framework, fixtures, safety boundaries, and deferred
   end-to-end RF coverage.
+- [`hardware/ds3231/README.md`](hardware/ds3231/README.md) documents DS3231
+  wiring, kernel selection and bench time configuration; its
+  [operator procedure](hardware/ds3231/OPERATOR_TESTS.md) defines physical
+  retention, oscillator-stop and recovery checks with evidence requirements.
+  [Recorded results](hardware/ds3231/results/README.md) retain dated outcomes
+  and raw evidence alongside the procedure in Git.
 
 The protocol contract remains under
 [`../protocol/protocol-v2-lora/`](../protocol/protocol-v2-lora/).

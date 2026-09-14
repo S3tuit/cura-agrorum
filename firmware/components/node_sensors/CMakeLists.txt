@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "node_sensors.c"
         "node_sensors_backend_esp.c"
+        "node_sensors_bme280_esp.c"
         "node_sensors_ds18b20_identity.c"
         "node_sensors_ds18b20_gpio_esp.c"
         "node_sensors_power_gate_esp.c"
@@ -13,11 +14,12 @@ idf_component_register(
     REQUIRES
         node_common
     PRIV_REQUIRES
-        bme280
+        bosch_bme280
         ds18b20
         esp_adc
         esp_driver_gpio
         esp_driver_i2c
         esp_driver_rmt
+        esp_timer
         onewire_bus
 )

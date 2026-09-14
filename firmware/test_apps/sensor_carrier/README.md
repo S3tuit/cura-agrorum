@@ -9,12 +9,9 @@ Unity console waits yield to the C6 idle task while the operator answers prompts
 The app forwards to the installed Unity parser and UART implementation; the
 task watchdog remains enabled with its original timeout.
 
-The suite includes symmetric `missing_ds0` and `missing_ds1` acquisitions,
-fixture-aware preflight and guided sample-return rail observations. Their
-physical acceptance and nominal restoration have
-[reviewed September 12 results](#retained-acceptance-evidence).
-The missing BME fixture, BME hardening/low-power and sensor-to-reading integration
-remain in their later stages in [firmware/TESTING.md](../../TESTING.md).
+The suite includes `missing_ds0`, `missing_ds1` and `missing_bme280` acquisitions,
+fixture-aware preflight and guided sample-return rail observations. `bme-sleep`
+and nominal repetition observe the actual BME mode after sampling.
 
 Use the approved circuit in [SENSOR_CARRIER.md](../on_device/SENSOR_CARRIER.md)
 and the [electrical procedure in TESTING.md](../../TESTING.md#node_sensors-manual-electrical-cases).
@@ -25,21 +22,24 @@ confirmed port (currently `/dev/ttyUSB0`). Every hardware invocation requires
 explicit readiness confirmation and a carrier revision label describing the
 assembled circuit and its recorded I2C pull-up-jumper choice.
 
-The 2026-09-11 approved carrier includes **permanent R12, 100 kohm from
+The approved carrier includes **permanent R12, 100 kohm from
 `+3V3_SW` to GND**, alongside C3, in every fixture. Include `R12=100kohm fitted`
 in the carrier revision label, together with the actual I2C pull-up choice.
-Use ordinary guided acceptance with R12 fitted. Earlier no-R12 runs
-remain historical evidence. The September 11 nominal/reference results,
-including manual-completion deep sleep, are retained in [evidences/](evidences/).
-See the [retained acceptance evidence](#retained-acceptance-evidence).
+Use ordinary guided acceptance with R12 fitted.
 
 ## Retained acceptance evidence
+
+Inspect [evidences/](evidences/) for recorded test runs. Each JSON record contains
+the operation, fixture, DUT/build identity, timestamps, observations and outcome.
+Compare its source/configuration hashes with the build being assessed. Required
+coverage and acceptance criteria are defined in [TESTING.md](../../TESTING.md);
+this README describes how to run the cases and retain their evidence.
 
 Manually retain the latest reviewed successful `carrier-evidence.json` for
 each required implemented case in [evidences/](evidences/). Copy the original
 bytes without editing metadata, outcomes, timestamps, measurements or hashes.
 Use `<operation>-<fixture>-<mode>[-<position>]-evidence.json`, where mode is
-`sensor-guided` or `automatic` for unguided repetition. Examples:
+`sensor-guided` or `automatic` for unguided cases. Examples:
 
 ```text
 gate-on-nominal-sensor-guided-evidence.json
@@ -50,19 +50,17 @@ repeat-nominal-automatic-evidence.json
 
 Copy matching A/B records together: B binds A's run ID and exact file SHA256.
 A retains `position_A_complete_sequence_incomplete` and cannot establish
-acceptance alone. Repetition retains `software_passed_operator_acceptance_pending`;
-its complete requested count and software completion establish automated
-coverage, while guided electrical acceptance belongs to its separate records.
-The required implemented cases and records are listed below;
-discovery is setup, and later-stage cases have no placeholder evidence files.
+acceptance alone. Unguided runs retain `software_passed_operator_acceptance_pending`;
+their software completion establishes automated coverage, including the complete
+requested count for repetition. Guided electrical acceptance belongs to separate
+records. Discovery is setup; create evidence files only for implemented cases.
 
 Review the original JSON, JUnit report and UART log before replacing a record.
 Keep failed/incomplete/exploratory attempts and raw reports/logs locally; they
 cannot replace successful evidence. A later failure remains unresolved even
 when an earlier passing file is retained. Missing required evidence means
-pending coverage. Update the result summary when replacing evidence; Git
-retains earlier committed versions. Documentation cites these tracked JSON
-files rather than machine-local run folders.
+pending coverage. Git retains earlier committed versions. Keep dates, measured
+results and pass/fail history in the original evidence records.
 
 ## Build and inspect configuration
 
@@ -76,6 +74,27 @@ idf.py -C firmware/test_apps/sensor_carrier build
 .venv/bin/python firmware/test_apps/sensor_carrier/carrier_evidence.py \
     --record-build firmware/test_apps/sensor_carrier/build
 ```
+
+The driver is pinned by commit/content in
+[`bosch_bme280/source_pin.cmake`](../../components/bosch_bme280/source_pin.cmake).
+Its corrections live in the hosted Bosch fork; driver and adapter regressions
+live in Cura Agrorum's existing host suite. See the
+[cross-repository relationship](../../components/bosch_bme280/README.md).
+The corrected source is published as commit
+`5f4119ed6ee638abc573e75516ad9aa6e1cd612a`. Normal builds fetch it directly.
+An explicit clean checkout of that same pin may also be selected for development:
+
+```sh
+idf.py -C firmware/test_apps/sensor_carrier \
+    -DCURA_BME280_SOURCE_DIR=/home/s3tuit/devspace/BME280_SensorAPI build
+.venv/bin/python firmware/test_apps/sensor_carrier/carrier_evidence.py \
+    --record-build firmware/test_apps/sensor_carrier/build
+```
+
+The seal records portable fork commit/content hashes and source-selection mode,
+and verifies the compiled source and double-compensation flag. It includes the
+actual adapter and component resolver; removed managed BME/i2c_bus sources
+supply no evidence. Missing/mismatched sources or stale seals fail before DUT access.
 
 The resolved carrier settings must be:
 
@@ -94,16 +113,12 @@ Use `idf.py -C firmware/test_apps/sensor_carrier menuconfig` to correct values,
 then rebuild. Production GPIO defaults are unchanged.
 
 The app's ignored `sdkconfig` owns its local probe ROMs. Checked-in defaults contain
-`0000000000000000`, which supports discovery but prevents acquisition. The
-historically accepted pair was DS0=A7000000BF9D1628 and DS1=7E000000540FA728.
-The old physical DS0 is now **compromised, cause undetermined**, and retired
-from the nominal fixture. No code rejects its ROM; retain its identity and
-earlier results as historical evidence.
+`0000000000000000`, which supports discovery but prevents acquisition. The current
+bench assigns physical **DS2**, ROM **DF00000050F93828**, to logical channel 0,
+and physical **DS1**, ROM **7E000000540FA728**, to logical channel 1. The retired
+physical DS0, ROM `A7000000BF9D1628`, is compromised and excluded from the nominal
+fixture; no code rejects its ROM.
 
-The replacement is physically labeled **DS2**, ROM **DF00000050F93828**,
-confirmed by the operator on September 11. The current ignored configuration
-assigns DS2 to logical channel 0 and DS1 to channel 1; both connector
-arrangements passed the guided identity check in the session linked above.
 The logical interface still has two DS channels. Other builds must explicitly
 configure their actual probes, rebuild and record the build; checked-in defaults
 remain unprovisioned. The app has an app-only partition table,
@@ -216,8 +231,10 @@ Acquisition preflight always requires two distinct provisioned ROMs in the
 configuration. Nominal/reference require exactly those two DS18B20s;
 `missing_ds0` requires exactly ROM1 present and ROM0 absent, and `missing_ds1`
 requires exactly ROM0 present and ROM1 absent. Replacement, additional or
-incompletely enumerated devices fail the declared fixture. Every state also
-requires the expected BME280 at `0x76`. Preflight releases the buses, the
+incompletely enumerated devices fail the declared fixture. `missing_bme280` requires exactly both configured DS ROMs and an
+`i2c_master_probe(0x76)` result of `ESP_ERR_NOT_FOUND` (261), with successful
+preflight cleanup. A timeout, generic error or responding device fails absence.
+All other acquisition fixtures require the expected BME280 ID `0x60` at `0x76`. Preflight releases the buses, the
 1-Wire pad and switched rail, then the runner resets the C6 and checks the new
 boot's DUT identity, ELF hash and configuration. The acquisition case rejects
 a boot already used by discovery or gate operations. No hardware preflight
@@ -228,7 +245,7 @@ and validity, followed by `CARRIER_DIAGNOSTIC`. Automated nominal success
 requires result zero, all five component validity bits, both soil values in
 inclusive 2000–2700 mV and empty diagnostics. It imposes no new enclosure or
 temperature plausibility ranges. Physical temperature/connector-swap identity
-acceptance uses the guided stage-05 commands below.
+acceptance uses the [guided identity commands](#ds-identity-through-a-connector-exchange).
 
 ## Observe and record the holds
 
@@ -258,8 +275,10 @@ acquisition-to-readiness phase, 75 seconds for a 60-second hold and final Unity
 result, or 195 seconds for the three-minute guided holds. The extra 15 seconds
 is transport/result margin, not extra meter time. A timeout is a failed/incomplete operation, with the phase and
 serial log reported. It does **not** establish BME boundedness or target cleanup.
-The current BME driver has deferred polling/error/low-power risks. Retain the
-evidence and resolve a hang or wrong contract result before further acceptance;
+The Bosch adapter has the finite admission budgets and failure semantics in
+[INTERFACE.md](../../INTERFACE.md#bme280-backend-contract), verified by focused
+host tests. Target acquisition also asserts actual return within 30 seconds for
+the declared finite fixtures. Retain evidence and resolve a hang or wrong result;
 do not increase limits or repair the sample-return observation with cleanup.
 
 ## Host and build verification
@@ -295,6 +314,7 @@ JP_REF_ENABLE open, reference leads removed, both configured DS probes and BME
 connected. Preserve direct SDA/SCL wires and the recorded separate pull-ups.
 
 ```sh
+sensor_carrier --sensor-operation bme-sleep --sensor-fixture nominal
 sensor_carrier --sensor-operation repeat --sensor-fixture nominal --sensor-repeat-count 100
 sensor_carrier --sensor-operation acquire --sensor-fixture nominal --sensor-guided
 sensor_carrier --sensor-operation final-cleanup --sensor-fixture nominal --sensor-guided
@@ -307,8 +327,14 @@ all five valid component groups, empty diagnostics and soil readings within
 2000..2700 mV. It records durations; each iteration has a 30-second host deadline.
 App-only observers forward real operations and check a new CC/44 conversion,
 at least 750 ms before addressed scratchpad reads, both configured ROMs and
-resource acquisition/release. Equal temperatures are allowed. This does not
-claim whole-acquisition BME boundedness, which awaits stage 08.
+resource acquisition/release. Equal temperatures are allowed. Each returned
+sample is followed by a real read of `0xF3`/`0xF4`: measuring and im_update must
+be clear and mode must be sleep. `bme-sleep` performs the same observation once
+in a fresh acquisition boot. Neither observer resets, triggers or writes a mode;
+read failures/non-sleep fail while the returned sample remains unchanged.
+These operations have no meter hold and reject `--sensor-guided`. Mode bits
+establish mode state, without claiming a measured sleep current. The BME
+admission budgets do not impose a universal fault deadline on DS/RMT resources.
 
 `acquire` retains the original no-preinitialization guard and untouched
 sample-return hold (60 seconds automatically; up to 180 seconds when guided).
@@ -347,11 +373,33 @@ YES, then ends early by prompted manual EN/reset.
 Missing, nonfinite, late or out-of-limit inputs cannot pass.
 The runner stores inputs immediately, including failed observations.
 
-### Missing DS probes and nominal restoration
+### Missing BME280 and nominal restoration
 
-Both missing states and nominal restoration were accepted on September 12;
-the [retained results](#retained-acceptance-evidence)
-identify the exact build, measurements and original JSON records.
+Remove power and unplug the complete four-wire `J_BME` connector.
+Keep **both configured DS ROMs** and air-exposed soil
+probes connected, soil shunts and permanent R12 fitted, reference enable open and
+reference leads removed. Keep the approved I2C pull-ups fitted so the disconnected
+bus remains biased; see [the fixture](../on_device/SENSOR_CARRIER.md#missing_bme280).
+After wiring inspection and explicit DUT readiness, run:
+
+```sh
+sensor_carrier --sensor-operation acquire --sensor-fixture missing_bme280 --sensor-guided
+```
+
+The independent production chip-ID read reports the selected IDF NACK status:
+partial result `0x00030002`, validity `0x0f`, `INITIALIZE`, V1 context length 48,
+enclosure pair at offset 40 `(ESP_ERR,264)` and all other pairs zero. All three
+enclosure fields must be zero; the four independent groups must remain usable.
+The sample-return hold performs no bus or gate operation and requires the existing
+four OFF-state voltage readings/settling/limits. Attempted sleep recovery is not
+proof of sleep when the device cannot communicate.
+
+Remove power, restore `J_BME`, inspect the nominal fixture and confirm readiness.
+Then rerun guided nominal acquisition and `bme-sleep`. Retain separate original
+evidence records; neither an automatic run nor an incomplete meter prompt accepts
+the electrical check. Rerun both missing-DS fixtures with this driver too.
+
+### Missing DS probes and nominal restoration
 
 In both states keep the two soil probes in air, their shunts fitted, BME
 connected, reference enable open, reference leads absent, and permanent R12
@@ -537,10 +585,10 @@ For decay investigation, the current reference circuit has C3 (100 nF) and R12
 (100 kohm) both fitted from TP_SW to ground. Record elapsed observations, then
 remove power and change **one branch at a time**. Describe each change in a new
 run and compare at similar elapsed times with the same preceding powered-on
-duration and meter setup. A comparison with R12 removed reproduces the earlier
-unloaded circuit and is a separately declared, non-accepting exploration. Fit
+duration and meter setup. A comparison with R12 removed tests the unloaded
+circuit and is a separately declared, non-accepting exploration. Fit
 or remove R12 only with power removed and restore it before acceptance. Preserve
-the original failed observations and the retired DS0's identity; a lower
+failed observations and the retired DS0's identity; a lower
 voltage with a changed fixture does not repair an earlier failure.
 
 ### ADC reference positions A and B
@@ -575,8 +623,8 @@ sensor_carrier --sensor-operation adc-reference --sensor-fixture adc_reference \
     --sensor-guided --sensor-position B --sensor-prior-evidence="$SENSOR_ADC_A"
 ```
 
-Measure all three points again when prompted; historical 1.180/1.641 V divider
-observations supply neither the reference values nor ADC accuracy for this run.
+Measure all three points again when prompted; each position requires fresh
+reference measurements for its ADC comparison.
 B requires both positions to pass the per-channel comparison and reversed mapping
 on the same DUT/image/configuration. Missing measurements or a single position
 cannot complete the case. Finally remove power, disconnect reference leads,
@@ -587,8 +635,7 @@ Every run retains `carrier-evidence.json`, `report.xml` and pytest-embedded
 `dut.log`. Inspect the evidence status, not just Unity PASS: software success,
 position-A incompletion, full guided acceptance and exploration have distinct
 states. Follow the [retained-evidence policy](#retained-acceptance-evidence)
-to copy reviewed records into `evidences/` and update the corresponding table
-links here; preserve historical accepted stage-03 observations.
+to copy reviewed records into `evidences/` with their original contents.
 
 The app locally uses merged JUnit reporting: the Python orchestration case and
 the Unity cases are both retained, with totals reconciled from their actual

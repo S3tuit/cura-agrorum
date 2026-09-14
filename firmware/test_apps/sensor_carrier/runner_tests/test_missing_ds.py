@@ -1,4 +1,4 @@
-"""Both physical selections at the runner's serial/operator boundary."""
+"""Missing sensor selections at the runner's serial/operator boundary."""
 import importlib.util
 import json
 from types import SimpleNamespace
@@ -12,7 +12,7 @@ from pytest_sensor_carrier import test_sensor_carrier as run_hardware_test
 from test_runner import build_dir, scripted_dut
 
 
-@pytest.mark.parametrize('fixture', ['missing_ds0', 'missing_ds1'])
+@pytest.mark.parametrize('fixture', ['missing_ds0', 'missing_ds1', 'missing_bme280'])
 @pytest.mark.parametrize('operation', sorted(runner.OPERATIONS))
 def test_missing_fixture_only_selects_acquire(fixture, operation):
     if operation == 'acquire':
@@ -22,7 +22,7 @@ def test_missing_fixture_only_selects_acquire(fixture, operation):
             runner.validate_selection(operation, fixture, 'R12 fitted', True)
 
 
-@pytest.mark.parametrize('fixture', ['missing_ds0', 'missing_ds1'])
+@pytest.mark.parametrize('fixture', ['missing_ds0', 'missing_ds1', 'missing_bme280'])
 @pytest.mark.parametrize('phase,outcome', [('preflight', 'PASS'), ('preflight', 'FAIL'),
                                          ('preflight', 'IGNORE'), ('preflight', 'ZERO'),
                                          ('sample', 'FAIL'), ('sample', 'IGNORE'), ('sample', 'ZERO')])
@@ -32,6 +32,8 @@ def test_declared_preflight_fresh_boot_and_exact_acquisition(scripted_dut, tmp_p
     setattr(state, phase, outcome)
     survivor = '8877665544332228' if fixture == 'missing_ds0' else '1122334455667728'
     state.inventory = f'CARRIER_ROM value={survivor} family=28 type=DS18B20\n'
+    if fixture == 'missing_bme280':
+        state.inventory += 'CARRIER_ROM value=8877665544332228 family=28 type=DS18B20\nCARRIER_BME_ABSENT address=76 probe=261\n'
     state.sample_serial = 'CARRIER_SAMPLE result=00030002\nCARRIER_DIAGNOSTIC selected_backend_status\n'
     evidence = Evidence(tmp_path/'evidence.json', {'fixture': fixture}, {})
     def run():
@@ -53,7 +55,7 @@ def test_declared_preflight_fresh_boot_and_exact_acquisition(scripted_dut, tmp_p
     assert state.commands.count('5') == (0 if preflight_failed else 1)
 
 
-@pytest.mark.parametrize('fixture', ['missing_ds0', 'missing_ds1'])
+@pytest.mark.parametrize('fixture', ['missing_ds0', 'missing_ds1', 'missing_bme280'])
 def test_nominal_menu_cannot_substitute_for_requested_missing_case(scripted_dut, fixture):
     dut, build, state = scripted_dut
     with pytest.raises(ValueError, match='selected 0 Unity cases'):
@@ -61,7 +63,7 @@ def test_nominal_menu_cannot_substitute_for_requested_missing_case(scripted_dut,
     assert state.commands == ['']
 
 
-@pytest.mark.parametrize('fixture', ['missing_ds0', 'missing_ds1'])
+@pytest.mark.parametrize('fixture', ['missing_ds0', 'missing_ds1', 'missing_bme280'])
 def test_missing_fixture_exploration_rejected_before_dut(fixture):
     options = dict(sensor_operation='acquire', sensor_fixture=fixture, exploration=True)
     request = SimpleNamespace(config=SimpleNamespace(getoption=options.get),
@@ -86,7 +88,7 @@ def test_guided_wiring_names_both_fixed_roms_and_entire_connector(tmp_path, monk
     assert evidence.data['status'] != 'accepted'
 
 
-@pytest.mark.parametrize('fixture', ['missing_ds0', 'missing_ds1'])
+@pytest.mark.parametrize('fixture', ['missing_ds0', 'missing_ds1', 'missing_bme280'])
 @pytest.mark.parametrize('outcome', ['good', 'rail_high', 'missing', 'early', 'late'])
 def test_missing_fixture_meter_acceptance_keeps_existing_limits(tmp_path, monkeypatch, fixture, outcome):
     evidence = Evidence(tmp_path/'evidence.json', {'fixture': fixture}, {})
@@ -113,7 +115,7 @@ def test_missing_fixture_meter_acceptance_keeps_existing_limits(tmp_path, monkey
         assert evidence.data['events'][-1]['volts']['TP_SW'] == '0.1001'
 
 
-@pytest.mark.parametrize('fixture', ['missing_ds0', 'missing_ds1'])
+@pytest.mark.parametrize('fixture', ['missing_ds0', 'missing_ds1', 'missing_bme280'])
 def test_requested_operation_with_zero_selected_tests_is_error(fixture):
     spec = importlib.util.spec_from_file_location('carrier_missing_hooks', runner.APP/'conftest.py')
     hooks = importlib.util.module_from_spec(spec)
@@ -122,3 +124,15 @@ def test_requested_operation_with_zero_selected_tests_is_error(fixture):
     session = SimpleNamespace(items=[], config=SimpleNamespace(getoption=options.get))
     with pytest.raises(pytest.UsageError, match='selected no hardware test'):
         hooks.pytest_collection_finish(session)
+
+
+def test_guided_missing_bme_keeps_both_configured_ds(tmp_path, monkeypatch):
+    evidence = Evidence(tmp_path/'evidence.json', {'fixture': 'missing_bme280', 'rom0': 'fixed-DS0', 'rom1': 'fixed-DS1'}, {})
+    prompts = []
+    monkeypatch.setattr(guided, 'confirm', prompts.append)
+    procedure = guided.Guided(evidence, 'acquire', None, None)
+    procedure.wiring()
+    assert 'power removed' in prompts[0] and 'power, ground, SDA and SCL connector' in prompts[0]
+    assert 'DS0 ROM fixed-DS0 and DS1 ROM fixed-DS1' in prompts[0]
+    with pytest.raises(guided.IncompleteCase):
+        procedure.complete()

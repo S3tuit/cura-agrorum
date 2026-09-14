@@ -8,13 +8,16 @@
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_timer.h"
-#include "i2c_bus.h"
+#include "driver/i2c_master.h"
+#include "node_sensors_backend.h"
 #include "node_sensors_power_gate.h"
 #include "onewire_bus.h"
 #include "onewire_device.h"
 #include "sdkconfig.h"
 
 static carrier_observation_t observed;
+/* The production device survives per-sample observer epochs within this wake. */
+static i2c_master_dev_handle_t bme_device;
 static adc_oneshot_unit_handle_t soil_adc;
 static adc_channel_t soil_channel;
 static unsigned soil_index, soil_configured;
@@ -35,7 +38,7 @@ void carrier_observer_begin(uint64_t rom0, uint64_t rom1) {
 }
 carrier_observation_t carrier_observer_snapshot(void) { return observed; }
 
-bool carrier_observer_sample_valid(unsigned expected_ds_mask) {
+bool carrier_observer_sample_valid(unsigned expected_ds_mask, bool bme_present) {
   const unsigned expected_devices = expected_ds_mask == 3 ? 2 : 1;
   if (expected_ds_mask < 1 || expected_ds_mask > 3) return false;
   return !observed.invalid_sequence && observed.conversions == 1 &&
@@ -46,7 +49,7 @@ bool carrier_observer_sample_valid(unsigned expected_ds_mask) {
          observed.adc_del == 2 && observed.bus_new == 1 &&
          observed.bus_del == 1 && observed.iter_new == 1 &&
          observed.iter_del == 1 && observed.ds_new == expected_devices &&
-         observed.ds_del == expected_devices && observed.bme_forced == 1 &&
+         observed.ds_del == expected_devices && observed.bme_forced == (bme_present ? 1U : 0U) && observed.bme_samples == 1 &&
          observed.i2c_new <= 1 && observed.bme_new <= 1 &&
          observed.stabilization_calls == 1 && observed.stabilization_ms == 200 &&
          soil_configured == 3 && observed.power_released &&
@@ -60,7 +63,7 @@ bool carrier_observer_cleanup_valid(unsigned expected_gate_off) {
          observed.bus_new == 0 && observed.iter_new == 0 &&
          observed.ds_new == 0 && observed.i2c_new == 0 &&
          observed.bme_new == 0 && observed.bme_init == 0 && observed.bme_forced == 0 &&
-         observed.conversions == 0 && observed.reads == 0;
+         observed.conversions == 0 && observed.reads == 0 && observed.bme_samples == 0;
 }
 
 /* Counting attempts also detects a forbidden initialization that failed. */
@@ -92,11 +95,18 @@ esp_err_t __wrap_adc_oneshot_new_unit(const adc_oneshot_unit_init_cfg_t *config,
     observed.invalid_sequence = true;
   return __real_adc_oneshot_new_unit(config, out);
 }
-esp_err_t __real_bme280_default_init(bme280_handle_t sensor);
-esp_err_t __wrap_bme280_default_init(bme280_handle_t sensor) {
+int8_t __real_bme280_init(struct bme280_dev *sensor);
+int8_t __wrap_bme280_init(struct bme280_dev *sensor) {
   ++observed.bme_init;
+  return __real_bme280_init(sensor);
+}
+node_sensors_backend_result_t __real_node_sensors_backend_sample_bme280(
+    node_sensors_backend_enclosure_t *out);
+node_sensors_backend_result_t __wrap_node_sensors_backend_sample_bme280(
+    node_sensors_backend_enclosure_t *out) {
+  ++observed.bme_samples;
   if (!observed.power_released || observed.gate_off != 1) observed.invalid_sequence = true;
-  return __real_bme280_default_init(sensor);
+  return __real_node_sensors_backend_sample_bme280(out);
 }
 
 esp_err_t __real_node_sensors_power_gate_on(void);
@@ -185,23 +195,64 @@ esp_err_t __wrap_adc_cali_raw_to_voltage(adc_cali_handle_t cali, int raw, int *m
   return result;
 }
 
-esp_err_t __real_bme280_take_forced_measurement(bme280_handle_t sensor);
-esp_err_t __wrap_bme280_take_forced_measurement(bme280_handle_t sensor) {
-  ++observed.bme_forced;
-  if (!observed.power_released || observed.gate_off != 1)
-    observed.invalid_sequence = true;
-  return __real_bme280_take_forced_measurement(sensor);
-}
-
-i2c_bus_handle_t __real_i2c_bus_create(i2c_port_t port, const i2c_config_t *config);
-i2c_bus_handle_t __wrap_i2c_bus_create(i2c_port_t port, const i2c_config_t *config) {
-  ++observed.i2c_new;
-  return __real_i2c_bus_create(port, config);
-}
-bme280_handle_t __real_bme280_create(i2c_bus_handle_t bus, uint8_t address);
-bme280_handle_t __wrap_bme280_create(i2c_bus_handle_t bus, uint8_t address) {
+FORWARD(i2c_new_master_bus, i2c_new,
+        (const i2c_master_bus_config_t *config, i2c_master_bus_handle_t *out), (config, out))
+esp_err_t __real_i2c_master_bus_add_device(i2c_master_bus_handle_t bus,
+    const i2c_device_config_t *config, i2c_master_dev_handle_t *out);
+esp_err_t __wrap_i2c_master_bus_add_device(i2c_master_bus_handle_t bus,
+    const i2c_device_config_t *config, i2c_master_dev_handle_t *out) {
   ++observed.bme_new;
-  return __real_bme280_create(bus, address);
+  const esp_err_t result = __real_i2c_master_bus_add_device(bus, config, out);
+  if (result == ESP_OK && out) bme_device = *out;
+  return result;
+}
+esp_err_t __real_i2c_master_transmit(i2c_master_dev_handle_t device,
+    const uint8_t *bytes, size_t size, int timeout_ms);
+esp_err_t __wrap_i2c_master_transmit(i2c_master_dev_handle_t device,
+    const uint8_t *bytes, size_t size, int timeout_ms) {
+  if (size == 2 && bytes[0] == 0xf4 && (bytes[1] & 3) == 1) {
+    ++observed.bme_forced;
+    if (!observed.power_released || observed.gate_off != 1) observed.invalid_sequence = true;
+  }
+  return __real_i2c_master_transmit(device, bytes, size, timeout_ms);
+}
+esp_err_t __real_i2c_master_transmit_receive(i2c_master_dev_handle_t device,
+    const uint8_t *command, size_t command_size, uint8_t *data, size_t length, int timeout_ms);
+esp_err_t __wrap_i2c_master_transmit_receive(i2c_master_dev_handle_t device,
+    const uint8_t *command, size_t command_size, uint8_t *data, size_t length, int timeout_ms) {
+  const esp_err_t result = __real_i2c_master_transmit_receive(device, command, command_size,
+                                                           data, length, timeout_ms);
+  if (command_size == 1 && command && observed.bme_samples) {
+    if (result != ESP_OK && observed.bme_read_error == ESP_OK) {
+      observed.bme_read_error = result;
+      observed.bme_error_register = command[0];
+    }
+    if (command[0] == 0x88 && length == 26 && result == ESP_OK) {
+      memcpy(observed.bme_cal_t, data, sizeof(observed.bme_cal_t));
+      observed.bme_cal_read = true;
+    }
+    if (command[0] == 0xf7 && length == sizeof(observed.bme_raw)) {
+      ++observed.bme_data_reads;
+      if (result == ESP_OK) memcpy(observed.bme_raw, data, sizeof(observed.bme_raw));
+    }
+  }
+  return result;
+}
+int8_t __real_bme280_get_sensor_data(uint8_t select, struct bme280_data *data, struct bme280_dev *sensor);
+int8_t __wrap_bme280_get_sensor_data(uint8_t select, struct bme280_data *data, struct bme280_dev *sensor) {
+  const int8_t result = __real_bme280_get_sensor_data(select, data, sensor);
+  observed.bme_data_result = result;
+  if (result == BME280_OK && data) {
+    observed.bme_temperature = data->temperature;
+    observed.bme_pressure = data->pressure;
+    observed.bme_humidity = data->humidity;
+  }
+  return result;
+}
+esp_err_t carrier_observer_bme_registers(uint8_t registers[2]) {
+  if (!registers || !bme_device) return ESP_ERR_INVALID_STATE;
+  const uint8_t address = 0xf3;
+  return i2c_master_transmit_receive(bme_device, &address, 1, registers, 2, 20);
 }
 esp_err_t __real_gpio_set_level(gpio_num_t gpio, uint32_t level);
 esp_err_t __wrap_gpio_set_level(gpio_num_t gpio, uint32_t level) {

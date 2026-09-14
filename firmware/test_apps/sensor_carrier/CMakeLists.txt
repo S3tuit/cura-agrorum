@@ -14,6 +14,6 @@ foreach(setting CURA_SOIL_0_GPIO CURA_SOIL_1_GPIO
                 CURA_I2C_SDA_GPIO CURA_I2C_SCL_GPIO
                 CURA_SENSOR_POWER_STABILIZATION_MS
                 CURA_DS18B20_0_ROM CURA_DS18B20_1_ROM
-                ESP_CONSOLE_UART_NUM I2C_BUS_BACKWARD_CONFIG I2C_MS_TO_WAIT)
+                ESP_CONSOLE_UART_NUM FREERTOS_HZ)
     message(STATUS "Sensor carrier resolved CONFIG_${setting}=${CONFIG_${setting}}")
 endforeach()

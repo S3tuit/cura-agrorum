@@ -23,7 +23,7 @@ def checks_binary(tmp_path_factory):
 #define TEST_ASSERT_EQUAL_INT16(a,b) CHECK((a)==(b))
 #define TEST_ASSERT_EQUAL_UINT32(a,b) CHECK((a)==(b))
 ''')
-    (root/'esp_err.h').write_text('#define ESP_ERR_NOT_FOUND 0x105\n')
+    (root/'esp_err.h').write_text('#define ESP_ERR_NOT_FOUND 0x105\n#define ESP_ERR_INVALID_RESPONSE 0x108\n')
     harness = root/'checks.c'
     harness.write_text('''#include <assert.h>
 #include <stdlib.h>
@@ -32,7 +32,9 @@ def checks_binary(tmp_path_factory):
 int main(int argc, char **argv) {
   assert(argc >= 4);
   unsigned mask = atoi(argv[2]);
-  if (strcmp(argv[1], "inventory") == 0) {
+  if (strcmp(argv[1], "mode") == 0) {
+    carrier_assert_bme_sleep(mask, atoi(argv[3]));
+  } else if (strcmp(argv[1], "inventory") == 0) {
     const uint64_t configured[2] = {0x1128, 0x2228};
     uint64_t roms[8];
     assert(argc <= 12);
@@ -41,14 +43,14 @@ int main(int argc, char **argv) {
   } else {
     const char *mutation = argv[3];
     node_sensor_sample_t sample = {.soil_0_mv=2000, .soil_1_mv=2700,
-      .validity=mask==1 ? 0x17 : mask==2 ? 0x1b : 0x1f};
+      .validity=mask==1 ? 0x17 : mask==2 ? 0x1b : mask==4 ? 0x0f : 0x1f};
     /* Zero is allowed for valid DS/enclosure values: no plausibility oracle. */
     diagn_context_t diag = {0};
     err_curag_t result = mask==3 ? 0 : 0x00030002;
     if (mask != 3) {
       diag.operation=1; diag.context_schema=1; diag.context_length=48;
-      unsigned offset = mask==1 ? 32 : 24;
-      diag.context[offset]=2; diag.context[offset+4]=5; diag.context[offset+5]=1;
+      unsigned offset = mask==1 ? 32 : mask==4 ? 40 : 24;
+      diag.context[offset]=mask==4 ? 1 : 2; diag.context[offset+4]=mask==4 ? 8 : 5; diag.context[offset+5]=1;
     }
     if (strcmp(mutation, "result")==0) result=0;
     if (strcmp(mutation, "operation")==0) diag.operation=3;
@@ -60,7 +62,8 @@ int main(int argc, char **argv) {
     if (strcmp(mutation, "soil1_invalid")==0) sample.validity ^= 2;
     if (strcmp(mutation, "enclosure_invalid")==0) sample.validity ^= 16;
     if (strcmp(mutation, "absent_value")==0) {
-      if (mask==1) sample.soil_temp_1_centi_c=1; else sample.soil_temp_0_centi_c=1;
+      if (mask==4) sample.enclosure_centi_c=1;
+      else if (mask==1) sample.soil_temp_1_centi_c=1; else sample.soil_temp_0_centi_c=1;
     }
     if (strcmp(mutation, "soil0_low")==0) sample.soil_0_mv=1999;
     if (strcmp(mutation, "soil0_high")==0) sample.soil_0_mv=2701;
@@ -70,7 +73,9 @@ int main(int argc, char **argv) {
       assert(argc==5); unsigned byte=atoi(argv[4]); assert(byte<sizeof(diag.context));
       diag.context[byte] ^= 1;
     }
-    carrier_assert_sample(&sample, &diag, result, mask, true);
+    if (strcmp(mutation, "pressure_nonzero")==0) sample.enclosure_pressure_pa=1;
+    if (strcmp(mutation, "humidity_nonzero")==0) sample.enclosure_humidity_centi_pct=1;
+    carrier_assert_sample(&sample, &diag, result, mask==4 ? 3 : mask, true, mask!=4);
   }
 }
 ''')
@@ -107,12 +112,12 @@ def test_non_ds_inventory_cannot_pass(checks_binary, mask, roms):
     assert run.returncode == 42, run.stderr
 
 
-@pytest.mark.parametrize('mask', [1, 2, 3])
+@pytest.mark.parametrize('mask', [1, 2, 3, 4])
 def test_contract_values_and_valid_zero_groups(checks_binary, mask):
     subprocess.run([str(checks_binary), 'sample', str(mask), 'none'], check=True, capture_output=True)
 
 
-@pytest.mark.parametrize('mask', [1, 2])
+@pytest.mark.parametrize('mask', [1, 2, 4])
 @pytest.mark.parametrize('mutation', ['result', 'operation', 'schema', 'length', 'validity',
                                     'survivor', 'soil0_invalid', 'soil1_invalid', 'enclosure_invalid',
                                     'absent_value', 'soil0_low', 'soil0_high', 'soil1_low', 'soil1_high'])
@@ -121,9 +126,22 @@ def test_wrong_missing_sample_fails(checks_binary, mask, mutation):
     assert run.returncode == 42, run.stderr
 
 
-@pytest.mark.parametrize('mask', [1, 2])
+@pytest.mark.parametrize('mask', [1, 2, 4])
 @pytest.mark.parametrize('byte', [*range(48), 48, 251])
 def test_every_diagnostic_pair_byte_and_unused_tail(checks_binary, mask, byte):
     run = subprocess.run([str(checks_binary), 'sample', str(mask), 'byte', str(byte)],
                          capture_output=True, text=True)
     assert run.returncode == 42, run.stderr
+
+
+@pytest.mark.parametrize('status', [0, 1, 8, 9, 0x80])
+@pytest.mark.parametrize('control', [0, 0x24, 0x25, 0x26, 0x27])
+def test_actual_sleep_register_bits(checks_binary, status, control):
+    run = subprocess.run([str(checks_binary), 'mode', str(status), str(control)], capture_output=True)
+    assert run.returncode == (0 if status & 9 == 0 and control & 3 == 0 else 42)
+
+
+@pytest.mark.parametrize('mutation', ['pressure_nonzero', 'humidity_nonzero'])
+def test_missing_bme_atomic_invalidation(checks_binary, mutation):
+    run = subprocess.run([str(checks_binary), 'sample', '4', mutation], capture_output=True)
+    assert run.returncode == 42

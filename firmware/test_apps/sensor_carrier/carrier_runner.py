@@ -20,10 +20,10 @@ HOLD_SECONDS = 75
 GUIDED_HOLD_SECONDS = 195
 ACK_HOLDS = {"acquire", "gate-on", "gate-off", "final-cleanup"}
 SLEEP_DEADLINE_SECONDS = 615
-ACQUISITIONS = {"acquire", "repeat", "final-cleanup", "ds-identity", "adc-reference"}
+ACQUISITIONS = {"bme-sleep", "acquire", "repeat", "final-cleanup", "ds-identity", "adc-reference"}
 OPERATIONS = {"discover", "gate-on", "gate-off", *ACQUISITIONS,
               "reset", "held-reset", "deep-sleep"}
-MISSING_FIXTURES = {"missing_ds0", "missing_ds1"}
+MISSING_FIXTURES = {"missing_ds0", "missing_ds1", "missing_bme280"}
 CASES = {
     "discover": "carrier setup discovery",
     "preflight": "carrier nominal preflight",
@@ -31,6 +31,7 @@ CASES = {
     "gate-off": "carrier production gate-off hold",
     "acquire": "carrier nominal acquisition and sample-return hold",
     "repeat": "carrier repeated nominal acquisition",
+    "bme-sleep": "carrier BME280 sleep observation",
     "final-cleanup": "carrier final cleanup hold",
     "ds-identity": "carrier nominal acquisition and sample-return hold",
     "adc-reference": "carrier reference acquisition and sample-return hold",
@@ -160,7 +161,7 @@ def select_case(menu, operation, fixture="nominal"):
     name = CASES[operation]
     if fixture in MISSING_FIXTURES:
         if operation not in {"preflight", "acquire"}:
-            raise ValueError("missing DS fixtures support only acquire and its preflight")
+            raise ValueError("missing sensor fixtures support only acquire and its preflight")
         name = (f"carrier {fixture} preflight" if operation == "preflight" else
                 f"carrier {fixture} acquisition and sample-return hold")
     selected = [case for case in menu if case.name == name]
@@ -237,8 +238,8 @@ def execute_case(dut, case, operation, *, repeat_count=100, evidence=None, on_ho
             dut.expect_unity_test_output(timeout=remaining(deadline), extra_before=prefix)
         else:
             dut.expect_unity_test_output(timeout=remaining(deadline))
-            if evidence and operation == "preflight":
-                evidence.add("preflight", case=case.name,
+            if evidence and operation in {"preflight", "bme-sleep"}:
+                evidence.add("preflight" if operation == "preflight" else "bme_sleep_observation", case=case.name,
                              serial=dut.pexpect_proc.before.decode(errors="replace"))
         require_pass(dut, before, case.name)
 

@@ -132,6 +132,21 @@ def scripted_dut(build_dir, tmp_path, monkeypatch):
                 feed("CARRIER_HOLD_END sample-return\n")
                 result(f"carrier {state.fixture} acquisition and sample-return hold", state.sample)
 
+    original_write = write
+    def write_with_bme(command):
+        if command == "6":
+            state.commands.append(command)
+            feed('CARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\n')
+            result('carrier BME280 sleep observation', state.sample)
+        else:
+            original_write(command)
+    # Add the dedicated operation to this serial model's menu.
+    original_feed = feed
+    def feed(text):
+        if text == "Enter test for running.\n" and not state.empty_menu:
+            original_feed('(6)\t"carrier BME280 sleep observation" [sensor_carrier]\n')
+        original_feed(text)
+
     state.boot = boot
     state.result = result
 
@@ -139,7 +154,7 @@ def scripted_dut(build_dir, tmp_path, monkeypatch):
         state.resets += 1
         boot()
 
-    dut.write = write
+    dut.write = write_with_bme
     dut.serial = SimpleNamespace(hard_reset=reset)
     dut._parse_unity_menu_from_str = IdfDut._parse_unity_menu_from_str
     boot()
@@ -205,3 +220,34 @@ def test_wrong_flashed_elf_rejected_before_cases(scripted_dut):
     with pytest.raises(ValueError, match="DUT boot elf"):
         runner.run_operation(dut, wrong, "acquire", lambda *args: None)
     assert state.commands == []
+
+
+@pytest.mark.parametrize('outcome', ['PASS', 'FAIL', 'IGNORE', 'ZERO'])
+def test_bme_sleep_requires_preflight_and_one_passing_case(scripted_dut, outcome):
+    dut, build, state = scripted_dut
+    state.sample = outcome
+    def run():
+        runner.run_operation(dut, build, 'bme-sleep', lambda *a: None)
+    if outcome == 'PASS':
+        run()
+    else:
+        with pytest.raises((AssertionError, ValueError)):
+            run()
+    assert state.commands == ['', '2', '', '6']
+    assert state.resets == 1
+
+
+def test_bme_sleep_requires_configured_identities(build_dir):
+    change_config(build_dir, CURA_DS18B20_0_ROM='0000000000000000')
+    with pytest.raises(ValueError, match='both distinct provisioned ROMs'):
+        runner.load_build(build_dir, 'bme-sleep')
+
+
+def test_bme_sleep_register_record_is_retained(scripted_dut, tmp_path):
+    from carrier_evidence import Evidence
+    dut, build, state = scripted_dut
+    evidence = Evidence(tmp_path/'mode-evidence.json', {}, {})
+    runner.run_operation(dut, build, 'bme-sleep', lambda *a: None, evidence=evidence)
+    observed = [e for e in evidence.data['events'] if e['kind'] == 'bme_sleep_observation']
+    assert len(observed) == 1
+    assert 'CARRIER_BME_SLEEP status=00 control=24 mode=0 result=0' in observed[0]['serial']

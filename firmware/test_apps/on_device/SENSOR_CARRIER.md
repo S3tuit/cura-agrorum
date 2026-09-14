@@ -272,6 +272,15 @@ JP_REF_ENABLE [ ]               J_INJECT0/1 have no leads
 
 ### `missing_bme280`
 
+Remove power before removing the complete four-wire J_BME connector. Preserve
+both configured DS identities, both soil probes/shunts and permanent R12. Keep
+JP_I2C_PULLUPS fitted as specified above. The implemented fixture preflight
+requires a NACK-specific absence result at 0x76; an unpowered/floating or stuck
+bus timeout cannot accept this state. Run the
+[guided missing-BME acquisition](../sensor_carrier/README.md#missing-bme280-and-nominal-restoration),
+then restore nominal wiring with power removed and repeat its acquisition and
+read-only BME sleep observation. Wiring and meter observations remain operator-owned.
+
 ```text
 JP_SOIL0 [X]   J_SOIL0 [X]     air-exposed probe -> GPIO0
 JP_SOIL1 [X]   J_SOIL1 [X]     air-exposed probe -> GPIO1

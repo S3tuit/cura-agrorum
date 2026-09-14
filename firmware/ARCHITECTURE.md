@@ -923,13 +923,29 @@ remains on the always-powered rail and is intended to use its low-power
 operating mode. The board must default the switched sensor rail to off whenever
 the MCU does not actively enable it.
 
-Hardening of the current generated Espressif BME280 dependency is deferred.
-The eventual implementation must either pin a corrected fork while submitting
-the fixes upstream, or replace the dependency after evaluating another driver,
-starting with Bosch's official SensorAPI. Required fixes include bounded
-initialization and forced measurement, allocation failure handling, polling
-error propagation and reliable low-power transitions. Generated
-`managed_components` are never patched directly.
+The BME280 backend uses a commit-pinned fork of Bosch SensorAPI and a private
+ESP-IDF synchronous I2C adapter. Driver corrections live in the fork; the
+adapter and driver regression tests live in Cura Agrorum. The driver operates
+in forced mode with x1 oversampling on all channels and the filter disabled.
+Initialization configures sleep without starting normal-mode measurements.
+The adapter verifies actual channel settings after configuration, before each
+trigger and when accepting completed conversion; all three must remain at x1.
+Raw numeric codes alone do not establish that a channel was skipped.
+Each acquisition triggers one conversion, waits the datasheet maximum time,
+verifies completion and sleep, and reads the complete enclosure data together.
+Temperature and pressure compensation retain representable outliers; humidity
+retains the datasheet compensation saturation. Exact timing, conversion and
+status rules are in INTERFACE.md, under "BME280 backend contract".
+
+The adapter owns its bus/device exclusively for the wake and has finite
+initialization, polling and recovery admission budgets. It attempts sleep once
+after failure of an identified device, preserves the first acquisition error,
+and latches failure for the rest of the wake. A failed recovery cannot establish
+sleep or turn the acquisition into success. No new public cleanup operation or
+diagnostic slot is introduced. Host deadlines and watchdog reset are not
+successful target recovery. These BME bounds do not establish a universal
+whole-sample deadline for changing 1-Wire inventories or stalled SDK resources.
+Generated managed_components are never patched directly.
 
 The pilot gate is a high-side P-MOSFET: source at 3.3 V, drain at the switched
 sensor rail and gate pulled to its source by 47 kOhm. A non-strapping ESP32-C6
@@ -1039,7 +1055,7 @@ layer. The former standalone `soil_sensor` component has been folded into
 `node_sensors`; its public `soil_sensor.h` compatibility API remains available
 to calibration and maintenance applications and assumes the caller already
 powered the probe. The production backend uses pinned Espressif `ds18b20`,
-`onewire_bus` and `bme280` components. These hardware adapters do not own wake
+`onewire_bus` and the pinned Bosch BME280 driver. These hardware adapters do not own wake
 policy.
 
 ### Platform services

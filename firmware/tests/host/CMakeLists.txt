@@ -419,3 +419,63 @@ foreach(SCENARIO IN LISTS SX1262_RADIO_TEST_SCENARIOS)
                "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:halt_on_error=1:fast_unwind_on_malloc=0"
   )
 endforeach()
+
+# Test the same immutable Bosch driver used by every ESP-IDF application.
+include("${FIRMWARE_ROOT}/components/bosch_bme280/resolve_source.cmake")
+cura_bme280_resolve(BME280_SOURCE)
+add_executable(test_bme280_driver test_bme280_driver.c "${BME280_SOURCE}/bme280.c")
+add_executable(test_node_sensors_bme280 test_node_sensors_bme280.c
+    "${FIRMWARE_ROOT}/components/node_sensors/node_sensors_bme280_esp.c"
+    "${BME280_SOURCE}/bme280.c")
+foreach(target test_bme280_driver test_node_sensors_bme280)
+    target_include_directories(${target} PRIVATE "${BME280_SOURCE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/bme280_fakes" "${CMAKE_CURRENT_SOURCE_DIR}/fakes"
+        "${FIRMWARE_ROOT}/components/node_sensors/private_include"
+        "${FIRMWARE_ROOT}/components/node_sensors/include"
+        "${FIRMWARE_ROOT}/components/node_common/include")
+    target_compile_definitions(${target} PRIVATE BME280_DOUBLE_ENABLE
+        CONFIG_CURA_I2C_SDA_GPIO=21 CONFIG_CURA_I2C_SCL_GPIO=22)
+    target_compile_features(${target} PRIVATE c_std_11)
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Werror -Wformat=2 -Wshadow
+        -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_link_options(${target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_link_libraries(${target} PRIVATE m)
+endforeach()
+# Keep Cura's strict conversion checks on the adapter and regressions. Bosch's
+# register-mask macros use intentional uint8 narrowing; do not rewrite vendor
+# code merely to satisfy those additional project-source warning flags.
+set_source_files_properties(test_bme280_driver.c test_node_sensors_bme280.c
+    "${FIRMWARE_ROOT}/components/node_sensors/node_sensors_bme280_esp.c"
+    PROPERTIES COMPILE_OPTIONS "-Wpedantic;-Wconversion;-Wsign-conversion")
+set(BME_DRIVER_CASES nvm_first_error nvm_later_error nvm_bound wrong_id
+    signed_calibration combined_data temperature_outlier pressure_outlier
+    invalid_pressure humidity_saturation)
+set(BME_ADAPTER_CASES null bus_allocation device_allocation allocation_cleanup_error
+    missing transport_status wrong_id nvm_first_error nvm_later_error nvm_bound
+    initialization_late delay_short poll_first_error poll_later_error measurement_bound
+    recovery_failure data_error first_error_preserved data_late skipped_temperature
+    skipped_pressure skipped_humidity invalid_compensation pressure_unrepresentable
+    temperature_unrepresentable nominal initially_idle tick_edge outliers
+    round_positive round_negative valid_zero bus_late init_mode_error
+    configuration_mode_error init_not_sleeping trigger_error pretrigger_not_sleeping deadline_equal publication_late
+    temperature_max temperature_min temperature_above_scaled_max temperature_below_scaled_min
+    pressure_near_max pressure_above_max enabled_midpoint_temperature
+    enabled_midpoint_pressure enabled_midpoint_humidity enabled_midpoints
+    enabled_midpoint_bench_temperature)
+# Existing skipped_<channel> cases now fault actual completed-conversion
+# settings. Cover initialization and pre-trigger checks as distinct phases.
+foreach(channel temperature pressure humidity)
+    list(APPEND BME_ADAPTER_CASES skipped_${channel}_initialize
+        skipped_${channel}_pretrigger misconfigured_${channel}
+        misconfigured_${channel}_initialize misconfigured_${channel}_pretrigger)
+endforeach()
+foreach(test IN LISTS BME_DRIVER_CASES)
+    add_test(NAME "bme280_driver.${test}" COMMAND test_bme280_driver "${test}")
+    set_tests_properties("bme280_driver.${test}" PROPERTIES ENVIRONMENT
+        "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:halt_on_error=1:fast_unwind_on_malloc=0")
+endforeach()
+foreach(test IN LISTS BME_ADAPTER_CASES)
+    add_test(NAME "node_sensors_bme280.${test}" COMMAND test_node_sensors_bme280 "${test}")
+    set_tests_properties("node_sensors_bme280.${test}" PROPERTIES ENVIRONMENT
+        "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:halt_on_error=1:fast_unwind_on_malloc=0")
+endforeach()

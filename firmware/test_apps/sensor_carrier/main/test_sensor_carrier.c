@@ -15,7 +15,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "i2c_bus.h"
+#include "carrier_bme_preflight.h"
 #include "node_sensors.h"
 #include "node_sensors_ds18b20_gpio.h"
 #include "node_sensors_ds18b20_identity.h"
@@ -136,44 +136,6 @@ cleanup:
   return found;
 }
 
-static esp_err_t identify_bme280(void) {
-  s_hardware_used = true;
-  /* Identification only: no reset, driver initialization, or conversion.
-   * Bosch BME280 datasheet section 5.4.1 specifies D0 -> 60. */
-  const i2c_config_t configuration = {
-      .mode = I2C_MODE_MASTER,
-      .sda_io_num = CONFIG_CURA_I2C_SDA_GPIO,
-      .scl_io_num = CONFIG_CURA_I2C_SCL_GPIO,
-      .sda_pullup_en = GPIO_PULLUP_ENABLE,
-      .scl_pullup_en = GPIO_PULLUP_ENABLE,
-      .master.clk_speed = 100000U,
-      .clk_flags = 0,
-  };
-  i2c_bus_handle_t bus = i2c_bus_create(I2C_NUM_0, &configuration);
-  i2c_bus_device_handle_t device = NULL;
-  uint8_t id = 0;
-  esp_err_t result = ESP_FAIL;
-  if (bus != NULL) {
-    device = i2c_bus_device_create(bus, 0x76U, 100000U);
-    if (device != NULL) {
-      result = i2c_bus_read_byte(device, 0xd0U, &id);
-      if (result == ESP_OK && id != 0x60U) {
-        result = ESP_ERR_INVALID_RESPONSE;
-      }
-    } else {
-      result = ESP_ERR_NO_MEM;
-    }
-  }
-  printf("CARRIER_BME address=76 register=D0 id=%02X status=%" PRId32 "\n", id,
-         (int32_t)result);
-  if (device != NULL) {
-    retain_error(i2c_bus_device_delete(&device), &result, "i2c_device");
-  }
-  if (bus != NULL) {
-    retain_error(i2c_bus_delete(&bus), &result, "i2c_bus");
-  }
-  return result;
-}
 
 static void require_configured_roms(uint64_t roms[2]) {
   const char *const text[2] = {CONFIG_CURA_DS18B20_0_ROM,
@@ -190,7 +152,7 @@ static void require_configured_roms(uint64_t roms[2]) {
 TEST_CASE("carrier setup discovery", "[sensor_carrier]") {
   puts("CARRIER_SETUP discovery_only_no_nominal_acceptance");
   const discovery_t found = discover_roms();
-  const esp_err_t bme = identify_bme280();
+  const esp_err_t bme = carrier_bme_preflight(false);
   TEST_ASSERT_EQUAL(ESP_OK, found.result);
   TEST_ASSERT_EQUAL(ESP_OK, found.cleanup);
   TEST_ASSERT_GREATER_THAN_MESSAGE(0, found.ds18b20_count,
@@ -199,11 +161,11 @@ TEST_CASE("carrier setup discovery", "[sensor_carrier]") {
                             "BME280 identification/cleanup failed");
 }
 
-static void fixture_preflight(const char *fixture, unsigned expected_ds_mask) {
+static void fixture_preflight(const char *fixture, unsigned expected_ds_mask, bool bme_present) {
   uint64_t configured[2];
   require_configured_roms(configured);
   const discovery_t found = discover_roms();
-  const esp_err_t bme = identify_bme280();
+  const esp_err_t bme = carrier_bme_preflight(!bme_present);
   TEST_ASSERT_EQUAL(ESP_OK, found.result);
   TEST_ASSERT_EQUAL(ESP_OK, found.cleanup);
   carrier_assert_inventory(configured, found.roms, found.count,
@@ -214,15 +176,19 @@ static void fixture_preflight(const char *fixture, unsigned expected_ds_mask) {
 }
 
 TEST_CASE("carrier nominal preflight", "[sensor_carrier]") {
-  fixture_preflight("nominal", 3);
+  fixture_preflight("nominal", 3, true);
 }
 
 TEST_CASE("carrier missing_ds0 preflight", "[sensor_carrier]") {
-  fixture_preflight("missing_ds0", 2);
+  fixture_preflight("missing_ds0", 2, true);
 }
 
 TEST_CASE("carrier missing_ds1 preflight", "[sensor_carrier]") {
-  fixture_preflight("missing_ds1", 1);
+  fixture_preflight("missing_ds1", 1, true);
+}
+
+TEST_CASE("carrier missing_bme280 preflight", "[sensor_carrier]") {
+  fixture_preflight("missing_bme280", 3, false);
 }
 
 static void observation_hold(const char *name) {
@@ -283,7 +249,7 @@ static void print_sample(node_sensor_sample_t sample, diagn_context_t diagnostic
 static void assert_sample(const node_sensor_sample_t *sample,
                           const diagn_context_t *diagnostic, err_curag_t result,
                           bool nominal) {
-  carrier_assert_sample(sample, diagnostic, result, 3, nominal);
+  carrier_assert_sample(sample, diagnostic, result, 3, nominal, true);
 }
 
 static void fresh_acquisition(uint64_t configured[2]) {
@@ -298,7 +264,10 @@ static err_curag_t acquire_sample(node_sensor_sample_t *sample,
   memset(diagnostic, 0xa5, sizeof(*diagnostic));
   const int64_t start_us = esp_timer_get_time();
   const err_curag_t result = node_sensors_sample_all(sample, diagnostic);
-  print_sample(*sample, *diagnostic, result, esp_timer_get_time() - start_us);
+  const int64_t duration_us = esp_timer_get_time() - start_us;
+  print_sample(*sample, *diagnostic, result, duration_us);
+  TEST_ASSERT_TRUE_MESSAGE(duration_us >= 0 && duration_us <= 30000000,
+                           "production sample did not return within 30 seconds");
   return result;
 }
 
@@ -316,17 +285,27 @@ static void print_observation(void) {
          seen.soil_reads[0], seen.soil_reads[1], seen.soil_delays[0], seen.soil_delays[1],
          seen.soil_calibrations[0], seen.soil_calibrations[1],
          seen.soil_mv[0], seen.soil_mv[1], seen.power_released);
+  if (seen.bme_cal_read) {
+    printf("CARRIER_BME_TCAL raw=");
+    for (unsigned i = 0; i < sizeof(seen.bme_cal_t); ++i) printf("%02X", seen.bme_cal_t[i]);
+    puts("");
+  }
+  printf("CARRIER_BME_DATA reads=%u read_error=%" PRId32 " error_register=%02X raw=",
+         seen.bme_data_reads, (int32_t)seen.bme_read_error, seen.bme_error_register);
+  for (unsigned i = 0; i < sizeof(seen.bme_raw); ++i) printf("%02X", seen.bme_raw[i]);
+  printf(" driver_result=%d temperature=%.9g pressure=%.9g humidity=%.9g\n",
+         seen.bme_data_result, seen.bme_temperature, seen.bme_pressure, seen.bme_humidity);
 }
 
-static void assert_observation(const node_sensor_sample_t *sample, unsigned expected_ds_mask) {
-  TEST_ASSERT_TRUE_MESSAGE(carrier_observer_sample_valid(expected_ds_mask),
+static void assert_observation(const node_sensor_sample_t *sample, unsigned expected_ds_mask, bool bme_present) {
+  TEST_ASSERT_TRUE_MESSAGE(carrier_observer_sample_valid(expected_ds_mask, bme_present),
                            "production acquisition conditions/resource observer failed");
   const carrier_observation_t seen = carrier_observer_snapshot();
   TEST_ASSERT_EQUAL_INT(seen.soil_mv[0], sample->soil_0_mv);
   TEST_ASSERT_EQUAL_INT(seen.soil_mv[1], sample->soil_1_mv);
 }
 
-static void fixture_acquisition(unsigned expected_ds_mask) {
+static void fixture_acquisition(unsigned expected_ds_mask, bool bme_present) {
   uint64_t configured[2];
   fresh_acquisition(configured);
   const int mode = carrier_hold_select();
@@ -339,20 +318,49 @@ static void fixture_acquisition(unsigned expected_ds_mask) {
   /* No sensor/gate operation after return, including on a failed sample. */
   TEST_ASSERT_TRUE_MESSAGE(carrier_hold_wait("sample-return", mode),
                            "guided hold incomplete: valid acknowledgement required");
-  carrier_assert_sample(&sample, &diagnostic, result, expected_ds_mask, true);
-  assert_observation(&sample, expected_ds_mask);
+  carrier_assert_sample(&sample, &diagnostic, result, expected_ds_mask, true, bme_present);
+  assert_observation(&sample, expected_ds_mask, bme_present);
 }
 
 TEST_CASE("carrier nominal acquisition and sample-return hold", "[sensor_carrier]") {
-  fixture_acquisition(3);
+  fixture_acquisition(3, true);
 }
 
 TEST_CASE("carrier missing_ds0 acquisition and sample-return hold", "[sensor_carrier]") {
-  fixture_acquisition(2);
+  fixture_acquisition(2, true);
 }
 
 TEST_CASE("carrier missing_ds1 acquisition and sample-return hold", "[sensor_carrier]") {
-  fixture_acquisition(1);
+  fixture_acquisition(1, true);
+}
+
+TEST_CASE("carrier missing_bme280 acquisition and sample-return hold", "[sensor_carrier]") {
+  fixture_acquisition(3, false);
+}
+
+static void observe_bme_sleep(const node_sensor_sample_t *sample) {
+  node_sensor_sample_t retained;
+  memcpy(&retained, sample, sizeof(retained));
+  uint8_t registers[2] = {0};
+  const esp_err_t result = carrier_observer_bme_registers(registers);
+  printf("CARRIER_BME_SLEEP status=%02X control=%02X mode=%u result=%" PRId32 "\n",
+         registers[0], registers[1], registers[1] & 3, (int32_t)result);
+  TEST_ASSERT_EQUAL_MEMORY(&retained, sample, sizeof(retained));
+  TEST_ASSERT_EQUAL(ESP_OK, result);
+  carrier_assert_bme_sleep(registers[0], registers[1]);
+}
+
+TEST_CASE("carrier BME280 sleep observation", "[sensor_carrier]") {
+  uint64_t configured[2];
+  fresh_acquisition(configured);
+  node_sensor_sample_t sample;
+  diagn_context_t diagnostic;
+  carrier_observer_begin(configured[0], configured[1]);
+  const err_curag_t result = acquire_sample(&sample, &diagnostic);
+  print_observation();
+  assert_sample(&sample, &diagnostic, result, true);
+  assert_observation(&sample, 3, true);
+  observe_bme_sleep(&sample);
 }
 
 TEST_CASE("carrier repeated nominal acquisition", "[sensor_carrier]") {
@@ -373,9 +381,10 @@ TEST_CASE("carrier repeated nominal acquisition", "[sensor_carrier]") {
     diagn_context_t diagnostic;
     carrier_observer_begin(configured[0], configured[1]);
     const err_curag_t result = acquire_sample(&sample, &diagnostic);
-    assert_sample(&sample, &diagnostic, result, true);
     print_observation();
-    assert_observation(&sample, 3);
+    assert_sample(&sample, &diagnostic, result, true);
+    assert_observation(&sample, 3, true);
+    observe_bme_sleep(&sample);
     printf("CARRIER_ITERATION index=%" PRIu64 " total=%llu\n", index, requested);
     fflush(stdout);
   }

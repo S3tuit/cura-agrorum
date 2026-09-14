@@ -325,6 +325,49 @@ input/output and both internal pulls before switched-rail shutdown, and
 propagate a GPIO configuration failure. `gpio_reset_pin` alone does not satisfy
 this condition because ESP-IDF enables the internal pull-up.
 
+### BME280 driver and adapter host boundary
+
+Driver and adapter regression sources belong in firmware/tests/host; corrected
+Bosch driver sources belong in the separately hosted S3tuit/BME280_SensorAPI
+fork. Both target firmware and native tests resolve the same full commit pin.
+The fork documentation points back to these tests. The fork does not contain a
+second test harness. A standalone reproducer is deferred until the first
+upstream bug report is prepared; local regressions remain required now.
+
+Compile the real driver with scripted read/write/delay callbacks for native
+initialization, first/later polling failures, NVM limits, combined data read,
+packed signed calibration and compensation cases. Compile the
+actual production adapter plus that driver with ESP-IDF/time boundary fakes for
+bus/device allocation failures, callback error preservation, monotonic budgets,
+freshness, failure latching and sleep recovery. Exercise disabled and other
+non-x1 settings on each channel after configuration, before triggering and at
+completed conversion; assert phase-specific invalid-response errors, atomic
+output invalidation, recovery and latching. Verify that enabled raw T/P 0x80000
+and H 0x8000 can succeed, with independent compensation expectations, including
+the measured DUT temperature calibration near 25.185 C. Raw code equality alone
+is not evidence of a skipped channel. Verify expected numbers from
+datasheet calculations or independent vectors. Do not use fake Bosch functions
+or repeat the node_sensors fake-backend policy matrix as driver evidence.
+
+For the installed IDF v6.1-dev-4182-g47faecc3e4, synchronous register reads have
+six internal I2C operations and writes three. This adapter limits register reads
+to 26 bytes and complete writes to 20 bytes, fitting the C6's 32-byte FIFO.
+Thus each command advances without a multi-FIFO loop. A conservative wait
+ledger per transfer is one bus semaphore wait, up to six command semaphore
+waits, one completion-queue wait and one NACK bus-busy wait. Each uses the 20 ms
+argument; the strict `>` NACK tick check can add one 10 ms tick. At most two
+hardware bus-clear attempts add up to 60 ms each (50 ms with strict `>` at
+100 Hz). The conservative sum is 310 ms of explicit waiting per call; writes
+have fewer command waits. This is a source-derived wait allowance, not a hard
+wall-time guarantee including scheduling, logging or heap/critical-section
+latency. Bus/device setup and teardown have no device polling and operate under
+exclusive ownership; their portMAX_DELAY mutex acquisitions assume no competing
+owner. Async paths and their unrelated waits are not enabled. Reinspect this
+ledger when upgrading IDF or changing transfer sizes/ownership. Adapter phase
+admission checks cannot preempt an in-flight SDK call; reject its late success
+and do not admit another call after the budget. Retain target and host evidence
+separately; no host fake establishes the electrical bus behavior.
+
 ## On-device hardware tests
 
 ### Strategy and harness
@@ -559,17 +602,20 @@ A state mismatch is a failed precondition rather than a skipped or reclassified
 test. The sibling
 [`test_apps/sensor_carrier`](test_apps/sensor_carrier/README.md) Unity app selects
 only implemented operations explicitly. `nominal` supports discovery-independent
-acquisition, repetition, final cleanup, DS identity and electrical/reset/sleep
+acquisition, repetition, BME sleep observation, final cleanup, DS identity and electrical/reset/sleep
 checks; `adc_reference` selects guided A/B conversion/mapping. `missing_ds0` and
-`missing_ds1` select acquisition plus their respective preflight and
+`missing_ds1` and `missing_bme280` select acquisition plus their respective preflight and
 sample-return hold using the [missing-probe commands](test_apps/sensor_carrier/README.md#missing-ds-probes-and-nominal-restoration).
 Discovery remains
 setup and permits unknown identities. Acquisition preflight requires both
 distinct configured identities in the build and checks the declared inventory:
-exactly both ROMs for `nominal` and `adc_reference`, exactly ROM1 for
+exactly both ROMs for `nominal`, `adc_reference` and `missing_bme280`, exactly ROM1 for
 `missing_ds0`, or exactly ROM0 for `missing_ds1`. The declared missing ROM must
 be absent; additional/replacement devices and incomplete enumeration fail
-preflight. BME280 identification at 0x76 remains required. Preflight releases
+preflight. BME280 identification at 0x76 is required for the connected fixtures.
+`missing_bme280` instead requires a NACK-specific probe result of NOT_FOUND
+(261); responding wrong IDs, timeouts, generic errors and failed cleanup cannot
+establish absence. Preflight releases
 resources and resets before sampling. Full ELF/configuration and factory-MAC
 checks apply on every boot.
 Missing/ignored/zero cases, an incomplete repetition count, fixture mismatch or
@@ -587,7 +633,7 @@ readings after settling and a separate YES attestation, then the operator ends
 sleep by pressing EN/reset when prompted. No timer wake is configured for this case.
 Host deadlines are orchestration policies, not BME recovery guarantees. App-only
 forwarding observers monitor the real production driver calls without supplying
-values or adding hardware operations. See the app README for exact stage-05
+values or adding hardware operations. See the app README for exact implemented
 commands, measurement prompts and incomplete-result handling.
 
 `--exploration` is an explicitly non-accepting alternative to `--sensor-guided`
@@ -652,8 +698,8 @@ record the logical-channel result, exchange their physical connector positions
 and repeat. Logical identity must continue to follow the configured ROM rather
 than connector position or enumeration order.
 
-The deferred BME280 low-power case will use `nominal` after the driver is chosen
-and hardened. Exhaustive simultaneous backend failures and power-gate fault
+The BME280 low-power case uses `nominal` and observes real status/mode registers
+after sampling; it does not write a mode to obtain a passing observation. Exhaustive simultaneous backend failures and power-gate fault
 injection remain host-test responsibilities and have no physical fixture state.
 
 `node_sensors_sample_all` owns immediate rail cleanup: after any path that may
@@ -683,12 +729,17 @@ the same private gate-off primitive.
   DS18B20 datasheet maximum 12-bit conversion time; production retains its
   existing driver wait. Equal temperatures do not establish or refute freshness.
   Record every acquisition duration and enforce a 30-second host deadline per
-  iteration. Whole-acquisition runtime boundedness remains an explicit stage-08
-  acceptance requirement: the current BME interface does not guarantee it, and
-  a host timeout means failed/incomplete operation, not target recovery.
-- **BME280 returns to low power (deferred):** after the BME280 driver path is
-  chosen and hardened, inspect its mode bits after sampling and verify that it
-  is back in sleep mode without changing the already returned enclosure values.
+  iteration. The target also checks the actual returned whole-sample duration
+  against 30 seconds in every declared fixture. Stage-08 acceptance comprises
+  bounded BME behavior under injected BME faults and actual completion on the
+  declared finite fixtures. It is not a universal whole-call deadline for
+  changing 1-Wire inventories or stalled SDK resources: production enumeration
+  has no explicit attempt cap. Host timeout means failure, not target recovery.
+- **BME280 returns to low power:** the nominal `bme-sleep` case and each repeated
+  nominal sample read real 0xF3 status and 0xF4 mode without a reset, mode write
+  or new conversion. Require measuring/im_update clear and mode 0, and compare
+  the returned sample with its preserved copy. A read failure fails the case.
+  Do not insert even a BME read into the untouched sample-return electrical hold.
 - **Final cleanup is idempotent:** call `node_sensors_force_power_off` more than
   once after successful sampling. Every call succeeds without initializing a
   sensor bus, enabling the rail or changing the collected sample.
@@ -698,7 +749,10 @@ the same private gate-off primitive.
 - **Missing DS18B20 channel 1:** verify the symmetric channel-1 behavior.
 - **Missing BME280:** all three enclosure values are zero, the single enclosure
   group is invalid, its diagnostic pair reports the failure and gated groups
-  remain usable.
+  remain usable. Require partial result `0x00030002`, validity `0x0f`, INITIALIZE,
+  V1 length 48 and only the enclosure pair at offset 40 equal to `(ESP_ERR,264)`
+  for the selected IDF chip-ID NACK path. Require the untouched post-sample OFF
+  observation; preflight's NOT_FOUND is a separate fixture check.
 - **Diagnostic slot mapping:** for each detectable hardware failure above,
   unaffected pairs are `(NONE, 0)` and the failing fixed pair contains the
   exact backend kind and status. Host tests remain responsible for exhaustive
@@ -721,7 +775,7 @@ are zero. The encodings remain owned by `INTERFACE.md`. Timeout, CRC, shared
 bus and cleanup errors are failures of these requested cases, not alternative
 acceptable missing-probe outcomes.
 
-Common app-only forwarding observations check nominal and both missing states
+Common app-only forwarding observations check nominal and all three missing states
 against the existing production soil acquisition conditions: the configured
 200 ms stabilization request, GPIO0/1 ADC channels, 12 dB attenuation, 16 reads
 per channel separated by 2000 us delay requests, and calibrated conversion of
@@ -736,8 +790,9 @@ The rail-off attempt must complete successfully before BME acquisition.
 These tests use the available AN8008 multimeter for stable DC observations.
 This section owns the wiring preflight, measurement procedure, settling times
 and voltage limits. The schematic and fixture connections are defined in
-[SENSOR_CARRIER.md](test_apps/on_device/SENSOR_CARRIER.md); commands and retained
-results are in the [sensor-carrier README](test_apps/sensor_carrier/README.md).
+[SENSOR_CARRIER.md](test_apps/on_device/SENSOR_CARRIER.md). Commands are in the
+[sensor-carrier README](test_apps/sensor_carrier/README.md); recorded runs are in
+[sensor-carrier evidences/](test_apps/sensor_carrier/evidences/).
 Measure DC voltage relative to an adjacent carrier ground point. The meter's
 hold function does not provide transient capture or a min/max measurement.
 

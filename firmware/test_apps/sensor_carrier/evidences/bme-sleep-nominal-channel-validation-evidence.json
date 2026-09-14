@@ -1,15 +1,15 @@
 {
   "schema": 1,
-  "run_id": "fd679c54cf2a447b8560a8cab6b9883f",
+  "run_id": "a03d8f61c2554bea9e56e1c6a2df8f76",
   "metadata": {
-    "operation": "acquire",
+    "operation": "bme-sleep",
     "exploration": false,
     "expected_dut": "cc8da2fc0224",
     "requested_count": 1,
-    "fixture": "missing_ds0",
-    "carrier_revision": "nominal",
+    "fixture": "nominal",
+    "carrier_revision": "nominal carrier per SENSOR_CARRIER.md; user confirmed ready",
     "port": "/dev/ttyUSB0",
-    "elf_sha256": "d39293932130d17049b103a3558f8b63797a7249b5eb168c8bdfc9bf5144459b",
+    "elf_sha256": "f759f33adf7ccfa6e113448a4620ef84183bd02956ea6feb2dee29177be20914",
     "config_sha256": "9a551aa40f4360b5c52d404aaa64d7ad909809d1a1ed4c2380e2ba55eded110d",
     "source_version": "c6bbd90-dirty",
     "rom0": "DF00000050F93828",
@@ -118,7 +118,7 @@
     "bosch_bme280": {
       "repository": "https://github.com/S3tuit/BME280_SensorAPI.git",
       "commit": "5f4119ed6ee638abc573e75516ad9aa6e1cd612a",
-      "selection": "explicit_clean_checkout",
+      "selection": "fetched_pin",
       "sources": {
         "bme280.c": "adbabdc46abb03cfe79ddbabd19662f7e14c30f947d43f38e32a3274dc478b7c",
         "bme280.h": "6f144510e103f0ab1a24244a71f7ff8ab7f23147b4899aa7bfd0f526062d2163",
@@ -126,58 +126,27 @@
         "LICENSE": "8c966978a9f67992e824d0b76381eab42f240c0049881f7bf2b46c2c093191aa"
       }
     },
-    "elf_sha256": "d39293932130d17049b103a3558f8b63797a7249b5eb168c8bdfc9bf5144459b",
+    "elf_sha256": "f759f33adf7ccfa6e113448a4620ef84183bd02956ea6feb2dee29177be20914",
     "config_sha256": "9a551aa40f4360b5c52d404aaa64d7ad909809d1a1ed4c2380e2ba55eded110d"
   },
-  "status": "accepted",
+  "status": "software_passed_operator_acceptance_pending",
   "events": [
     {
-      "kind": "missing_probe_fixture",
-      "at": "2026-09-14T12:25:11.026629+00:00",
-      "missing_channel": 0,
-      "missing_rom": "DF00000050F93828",
-      "surviving_rom": "7E000000540FA728"
-    },
-    {
-      "kind": "wiring_confirmation",
-      "at": "2026-09-14T12:25:11.028428+00:00",
-      "position": null
-    },
-    {
       "kind": "preflight",
-      "at": "2026-09-14T12:25:28.598836+00:00",
-      "case": "carrier missing_ds0 preflight",
-      "serial": "\r\n3\r\nRunning carrier missing_ds0 preflight...\r\nCARRIER_ROM value=7E000000540FA728 family=28 type=DS18B20\r\nCARRIER_DISCOVERY count=1 ds18b20=1 status=0 cleanup=0\r\nCARRIER_BME address=76 register=D0 id=60 status=0\r\nCARRIER_BME_CLEANUP status=0\r\nCARRIER_PREFLIGHT missing_ds0_complete_resources_released_reset_required\r\n./main/test_sensor_carrier.c:182:carrier missing_ds0 preflight:PASS\r\nTest ran in 44ms\r\n\r\n"
+      "at": "2026-09-14T10:22:44.633175+00:00",
+      "case": "carrier nominal preflight",
+      "serial": "\r\n2\r\nRunning carrier nominal preflight...\r\nCARRIER_ROM value=DF00000050F93828 family=28 type=DS18B20\r\nCARRIER_ROM value=7E000000540FA728 family=28 type=DS18B20\r\nCARRIER_DISCOVERY count=2 ds18b20=2 status=0 cleanup=0\r\nCARRIER_BME address=76 register=D0 id=60 status=0\r\nCARRIER_BME_CLEANUP status=0\r\nCARRIER_PREFLIGHT nominal_complete_resources_released_reset_required\r\n./main/test_sensor_carrier.c:178:carrier nominal preflight:PASS\r\nTest ran in 53ms\r\n\r\n"
     },
     {
-      "kind": "observation_ready",
-      "at": "2026-09-14T12:25:30.582882+00:00",
-      "operation": "acquire",
-      "case": "carrier missing_ds0 acquisition and sample-return hold",
-      "serial": "\r\nCARRIER_SAMPLE result=00030002 duration_us=1221943 validity=1b soil0_mv=2586 soil1_mv=2584 temp0_centi_c=0 temp1_centi_c=2513 enclosure_centi_c=2583 pressure_pa=96707 humidity_centi_pct=4662\r\nCARRIER_DIAGNOSTIC operation=1 schema=1 length=48 context=000000000000000000000000000000000000000000000000020000000501000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=2 wait_us=793269 adc=2/2 onewire=1/1 ds=1/1 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2586 mv1=2584 power_released=1\r\nCARRIER_BME_TCAL raw=7C6C3A673200\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52EA00807F006D9B driver_result=0 temperature=25.8255809 pressure=96706.8861 humidity=46.615411\r\nCARRIER_HOLD_READY sample-return seconds=180"
-    },
-    {
-      "kind": "meter",
-      "at": "2026-09-14T12:26:13.511022+00:00",
-      "hold": "sample-return",
-      "volts": {
-        "TP_3V3": "3.299",
-        "TP_DQ": "0.001",
-        "TP_GATE": "3.282",
-        "TP_SW": "0.001"
-      },
-      "settling_seconds": 10,
-      "stable_updates": 3
-    },
-    {
-      "kind": "hold_acknowledged",
-      "at": "2026-09-14T12:26:13.565613+00:00",
-      "hold": "sample-return"
+      "kind": "bme_sleep_observation",
+      "at": "2026-09-14T10:22:46.773023+00:00",
+      "case": "carrier BME280 sleep observation",
+      "serial": "\r\n12\r\nRunning carrier BME280 sleep observation...\r\nCARRIER_SAMPLE result=00000000 duration_us=1347635 validity=1f soil0_mv=2586 soil1_mv=2584 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2578 pressure_pa=96816 humidity_centi_pct=4495\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800706 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2586 mv1=2584 power_released=1\r\nCARRIER_BME_TCAL raw=7C6C3A673200\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF008076006C75 driver_result=0 temperature=25.7802042 pressure=96815.909 humidity=44.9499619\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n./main/test_sensor_carrier.c:353:carrier BME280 sleep observation:PASS\r\nTest ran in 209ms\r\n\r\n"
     },
     {
       "kind": "software_completed",
-      "at": "2026-09-14T12:26:13.569758+00:00",
-      "operation": "acquire"
+      "at": "2026-09-14T10:22:46.773881+00:00",
+      "operation": "bme-sleep"
     }
   ]
 }

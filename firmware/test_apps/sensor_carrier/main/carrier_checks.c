@@ -27,14 +27,19 @@ static uint32_t read_u32_le(const uint8_t *bytes) {
 
 void carrier_assert_sample(const node_sensor_sample_t *sample,
                            const diagn_context_t *diagnostic, err_curag_t result,
-                           unsigned expected_ds_mask, bool air_soil) {
+                           unsigned expected_ds_mask, bool air_soil, bool bme_present) {
   TEST_ASSERT_TRUE(expected_ds_mask >= 1 && expected_ds_mask <= 3);
-  const bool nominal = expected_ds_mask == 3;
+  const bool nominal = expected_ds_mask == 3 && bme_present;
   TEST_ASSERT_EQUAL_HEX32(nominal ? CURAG_OK :
       curag_error_make(CURAG_EDOM_SENSORS, CURAG_ESENSORS_EPARTIAL_SAMPLE), result);
-  TEST_ASSERT_EQUAL_HEX8(0x13U | (expected_ds_mask << 2), sample->validity);
+  TEST_ASSERT_EQUAL_HEX8(0x03U | (expected_ds_mask << 2) | (bme_present ? 0x10U : 0U), sample->validity);
   if (!(expected_ds_mask & 1)) TEST_ASSERT_EQUAL_INT16(0, sample->soil_temp_0_centi_c);
   if (!(expected_ds_mask & 2)) TEST_ASSERT_EQUAL_INT16(0, sample->soil_temp_1_centi_c);
+  if (!bme_present) {
+    TEST_ASSERT_EQUAL_INT16(0, sample->enclosure_centi_c);
+    TEST_ASSERT_EQUAL_UINT32(0, sample->enclosure_pressure_pa);
+    TEST_ASSERT_EQUAL_UINT32(0, sample->enclosure_humidity_centi_pct);
+  }
   if (air_soil) {
     TEST_ASSERT_TRUE_MESSAGE(sample->soil_0_mv >= 2000U && sample->soil_0_mv <= 2700U,
                              "soil0 outside air-probe range");
@@ -49,12 +54,20 @@ void carrier_assert_sample(const node_sensor_sample_t *sample,
   for (unsigned pair = 0; pair < NODE_SENSOR_CONTEXT_PAIR_COUNT; ++pair) {
     const bool missing = (pair == NODE_SENSOR_CONTEXT_SOIL_TEMP_0 && !(expected_ds_mask & 1)) ||
                          (pair == NODE_SENSOR_CONTEXT_SOIL_TEMP_1 && !(expected_ds_mask & 2));
-    TEST_ASSERT_EQUAL_UINT32(missing ? NODE_SENSOR_BACKEND_STATUS_DRIVER : 0,
+    const bool missing_bme = pair == NODE_SENSOR_CONTEXT_ENCLOSURE_ENV && !bme_present;
+    TEST_ASSERT_EQUAL_UINT32(missing ? NODE_SENSOR_BACKEND_STATUS_DRIVER :
+                             missing_bme ? NODE_SENSOR_BACKEND_STATUS_ESP_ERR : 0,
                              read_u32_le(&diagnostic->context[pair * 8]));
-    TEST_ASSERT_EQUAL_UINT32(missing ? ESP_ERR_NOT_FOUND : 0,
+    TEST_ASSERT_EQUAL_UINT32(missing ? ESP_ERR_NOT_FOUND :
+                             missing_bme ? ESP_ERR_INVALID_RESPONSE : 0,
                              read_u32_le(&diagnostic->context[pair * 8 + 4]));
   }
   for (size_t i = CURAG_SENSOR_CONTEXT_V1_LENGTH; i < sizeof(diagnostic->context); ++i) {
     TEST_ASSERT_EQUAL_HEX8(0, diagnostic->context[i]);
   }
+}
+
+void carrier_assert_bme_sleep(uint8_t status, uint8_t control) {
+  TEST_ASSERT_EQUAL_HEX8(0, control & 3U);
+  TEST_ASSERT_EQUAL_HEX8(0, status & 9U);
 }

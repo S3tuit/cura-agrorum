@@ -74,8 +74,8 @@ def test_sensor_carrier(request, record_property):
         raise pytest.UsageError("position/prior evidence apply only to paired identity/reference cases")
     if paired and position not in {"A", "B"}:
         raise pytest.UsageError("select --sensor-position A or B")
-    if guided_requested and operation in {"repeat", "discover"}:
-        raise pytest.UsageError("guided measurements are not assigned to repeat/discover")
+    if guided_requested and operation in {"repeat", "discover", "bme-sleep"}:
+        raise pytest.UsageError("guided measurements are not assigned to repeat/discover/bme-sleep")
     prior = prior_position(config.getoption("sensor_prior_evidence"), metadata, position) if paired else None
     evidence = Evidence(Path(root_logdir) / "carrier-evidence.json", metadata, manifest)
     record_property("carrier_evidence", str(evidence.path))

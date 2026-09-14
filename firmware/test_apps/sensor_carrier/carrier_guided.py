@@ -165,7 +165,16 @@ class Guided:
 
     def wiring(self):
         fixture = self.evidence.data['metadata'].get('fixture')
-        if fixture in MISSING_FIXTURES:
+        if fixture == 'missing_bme280':
+            metadata = self.evidence.data['metadata']
+            confirm('The missing_bme280 fixture is ready: with power removed, the complete BME280 '
+                    'power, ground, SDA and SCL connector was removed. '
+                    f'Both configured DS probes, DS0 ROM {metadata["rom0"]} and DS1 ROM {metadata["rom1"]}, '
+                    'remain connected, with both air-exposed soil probes and soil shunts. '
+                    'Permanent R12 is fitted, reference enable is open and reference leads are removed. '
+                    'Wiring preflight was completed after the change; the identified DUT is ready.')
+            self.evidence.add('missing_bme_fixture', rom0=metadata['rom0'], rom1=metadata['rom1'])
+        elif fixture in MISSING_FIXTURES:
             missing = 0 if fixture == 'missing_ds0' else 1
             metadata = self.evidence.data['metadata']
             confirm(f'The {fixture} fixture is ready: with power removed, the complete power, '

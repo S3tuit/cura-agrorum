@@ -833,9 +833,9 @@ The operation lazily initializes the required private buses, enables the shared
 soil/DS18B20 rail, waits for its configured stabilization time, samples both
 soil channels and both configured DS18B20 identities, and disables the shared
 rail through one cleanup path before sampling the independent BME280. The
-BME280 remains on its always-powered rail. Bounded operation and low-power
-recovery of the current BME280 driver are known deferred work rather than a
-guarantee of this pilot interface.
+BME280 remains on its always-powered rail and follows the bounded private
+backend contract below. Failed BME initialization/acquisition is latched until
+the next MCU reset/deep-sleep wake; other sensor groups remain independent.
 
 One sensor-group failure does not suppress attempts for independent groups.
 The shared rail is disabled before return on every path after it may have been
@@ -998,10 +998,96 @@ provisioning error before bus access and invalidate both temperature groups. An
 external 1-Wire pull-up must be connected to the switched sensor rail; the
 backend does not enable the ESP32 internal pull-up.
 
-The current Espressif BME280 driver remains a deferred risk. The eventual
-choice is a corrected and immutable pinned fork with upstream contributions or
-replacement after evaluating another driver, initially Bosch's official
-SensorAPI. Generated `managed_components` are not edited in place.
+The BME280 dependency is the corrected Bosch SensorAPI fork pinned by full
+commit SHA. It is built identically for the production adapter and host driver
+tests. Generated managed_components are not edited in place.
+
+### BME280 backend contract
+
+The private adapter has exclusive synchronous ownership of I2C0 for the wake,
+uses address 0x76 at 100 kHz, x1 temperature/pressure/humidity oversampling,
+filter off and standby encoding 0. It never enables normal mode. Bus/device
+allocation errors retain the exact ESP-IDF status; Bosch context and transfer
+buffers have fixed storage. Successfully created resources are retained for the
+wake, including after a latched failure; a device-creation failure releases the
+otherwise unused bus. No retry loop or replacement resource allocation occurs.
+
+| Limit | Exact value and meaning |
+|---|---|
+| I2C transfer timeout argument | 20 ms to each synchronous ESP-IDF call; not a total-call wall-time ceiling |
+| Initialization admission budget | 500000 us, measured monotonically from initialization entry |
+| NVM copy polling | At most six status reads, each after at least 2000 us |
+| Forced conversion | Exactly one trigger per acquisition; no data acceptance before 9300 us after its successful write |
+| Measurement admission budget | 50000 us, restarted at the successful forced-trigger return |
+| Completion observations | At most six reads of adjacent ctrl_hum/status/ctrl_meas (0xF2..0xF4), separated by at least 2000 us |
+| Failure recovery | One sleep write and at most six status/mode observations, under a separate 50000 us admission budget |
+
+A transfer is admitted only with at least its 20000 us timeout argument remaining.
+A requested delay must fit the remaining budget; its implementation verifies
+minimum elapsed time despite FreeRTOS tick quantization. Success at or after a
+phase deadline is rejected. A synchronous SDK call already in progress cannot
+be preempted by this check; its bounded wait overrun is documented in TESTING.md.
+Callbacks preserve the first exact transport/admission failure even if a later
+Bosch operation or recovery attempt produces another error. Recovery gets its
+own budget and cannot erase the original failure. The initial pre-trigger mode
+check and trigger use a 50000 us admission budget; the measurement budget starts
+afresh only after the single successful trigger.
+
+The 9300 us guard is independently derived from Bosch datasheet section 9.1:
+1250 + 2300 + (2300 + 575) + (2300 + 575) us. Completion requires
+status.measuring=0, status.im_update=0 and ctrl_meas.mode=0. Read actual registers;
+an initially clear measuring bit or a cached requested mode alone is insufficient.
+When accepting sleep after configuration, before each trigger and at conversion
+completion, also require actual ctrl_hum.osrs_h=001, ctrl_meas.osrs_t=001 and
+ctrl_meas.osrs_p=001 (x1 on all channels). Read 0xF2..0xF4 together in the
+existing observation transaction. Disabled (000) or other non-x1 channel
+settings fail with ESP_ERR_INVALID_RESPONSE: INITIALIZE after configuration,
+READ before triggering or at completion. Preserve transport/admission error
+precedence; a non-sleep observation retains the existing sleep failure or
+bounded polling behavior before configuration is checked. Preconfiguration
+and failure-recovery observations require only sleep, without validating x1.
+An observed non-sleep state before a trigger fails without calling Bosch's
+mode setter, which could reset the device. Failure recovery writes the known
+x1 ctrl_meas sleep value once, then observes status/mode without another write.
+The adapter verifies sleep before acquiring/publishing enclosure data. A failed
+observation therefore leaves that group invalid. All three fields remain zero
+on any acquisition failure; no recovery error changes already returned fields.
+
+Compensation uses Bosch's double path, with temperature and pressure clipping
+removed. Undefined/nonfinite compensation is invalid, not a fabricated minimum
+pressure. Humidity retains the datasheet's 0..100 percent compensation saturation.
+The documented skipped outputs (temperature/pressure 0x80000, humidity 0x8000)
+are not independently invalid numeric codes. Accept them when the channel
+configuration and completed-conversion checks pass and compensation is
+structurally representable; detect skipped channels from their actual settings.
+Convert temperature to signed centi-C, pressure to unsigned Pa and humidity to
+unsigned centi-percent, rounding to nearest integer (ties away from zero).
+Both the scaled and rounded results must fit their destination types before
+casting. Do not add physical-plausibility ranges to validity; zero remains a
+valid value when acquired successfully.
+
+All direct BME failures use only the enclosure pair at offset 40. Initialization
+(including bus/device creation, reset, calibration and configuration) uses
+INITIALIZE; trigger/completion/data/conversion failures use READ. Null private
+output uses VALIDATE. Exact status kinds are:
+
+| Failure | Kind / status |
+|---|---|
+| ESP-IDF allocation or transport failure | ESP_ERR / exact esp_err_t, without narrowing to int8_t |
+| Adapter admission/measurement timeout | ESP_ERR / ESP_ERR_TIMEOUT (263) |
+| Non-x1 channel settings or invalid structural conversion | ESP_ERR / ESP_ERR_INVALID_RESPONSE (264) |
+| Bosch error without an underlying adapter error | DRIVER_STATUS / exact signed Bosch return |
+| Responding chip has wrong ID | DRIVER_STATUS / BME280_E_DEV_NOT_FOUND (-4) |
+| Exhausted NVM copy polling | DRIVER_STATUS / BME280_E_NVM_COPY_FAILED (-6) |
+| Observed sleep-state failure | DRIVER_STATUS / BME280_E_SLEEP_MODE_FAIL (-5) |
+
+The first acquisition failure wins over any secondary recovery failure; the
+latch prevents further BME operations that wake. An absent or unreachable device
+has no software guarantee of physical sleep. Force-power-off still touches
+only the switched soil/DS rail. A clean missing-BME NACK on the installed IDF
+register-read path returns ESP_ERR_INVALID_RESPONSE, giving (1,264) in the
+enclosure pair; preflight separately requires the probe API's absence result
+ESP_ERR_NOT_FOUND (261), rejecting timeout and responding mismatched devices.
 
 The public compatibility function
 `soil_sensor_read_mv(int gpio_num, uint16_t *out_mv)` remains in the

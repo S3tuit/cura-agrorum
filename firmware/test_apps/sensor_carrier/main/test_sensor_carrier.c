@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include "carrier_observer.h"
 #include "carrier_checks.h"
+#include "carrier_core.h"
 #include "carrier_hold.h"
 #include "node_platform_esp.h"
 #include <stdbool.h>
@@ -336,6 +337,61 @@ TEST_CASE("carrier missing_ds1 acquisition and sample-return hold", "[sensor_car
 
 TEST_CASE("carrier missing_bme280 acquisition and sample-return hold", "[sensor_carrier]") {
   fixture_acquisition(3, false);
+}
+
+static void fixture_reading(unsigned ds_mask, bool bme_present, bool air_soil,
+                            uint16_t expected_flags) {
+  uint64_t configured[2];
+  fresh_acquisition(configured);
+  carrier_core_observation_t seen;
+  carrier_core_run(configured, ds_mask, bme_present, &seen);
+  print_sample(seen.sample, seen.diagnostic, seen.result, seen.duration_us);
+  TEST_ASSERT_TRUE_MESSAGE(seen.duration_us >= 0 && seen.duration_us <= 30000000,
+                           "production sample did not return within 30 seconds");
+  carrier_assert_sample(&seen.sample, &seen.diagnostic, seen.result,
+                        ds_mask, air_soil, bme_present);
+  TEST_ASSERT_TRUE_MESSAGE(seen.acquisition_valid,
+                           "real core acquisition conditions/resource observer failed");
+  TEST_ASSERT_EQUAL_INT(seen.acquisition.soil_mv[0], seen.sample.soil_0_mv);
+  TEST_ASSERT_EQUAL_INT(seen.acquisition.soil_mv[1], seen.sample.soil_1_mv);
+  const carrier_observation_t final = carrier_observer_snapshot();
+  TEST_ASSERT_EQUAL_UINT(2, final.gate_off); /* sample-owned plus core final cleanup */
+  TEST_ASSERT_EQUAL_UINT(1, final.gate_on);
+  TEST_ASSERT_TRUE(final.power_released);
+  TEST_ASSERT_FALSE(final.invalid_sequence);
+
+  /* Expectations are the INTERFACE/protocol mapping, applied to the exact
+   * returned acquisition. Never synthesize a second reading or sample again. */
+  const cura_lora_v2_reading_t *const reading = &seen.reading;
+  TEST_ASSERT_EQUAL_HEX16(expected_flags, reading->flags & UINT16_C(0x00fe));
+  TEST_ASSERT_EQUAL_UINT16(seen.sample.soil_0_mv, reading->soil_0_mv);
+  TEST_ASSERT_EQUAL_UINT16(seen.sample.soil_1_mv, reading->soil_1_mv);
+  TEST_ASSERT_EQUAL_INT16(seen.sample.soil_temp_0_centi_c, reading->soil_temp_0_centi_c);
+  TEST_ASSERT_EQUAL_INT16(seen.sample.soil_temp_1_centi_c, reading->soil_temp_1_centi_c);
+  TEST_ASSERT_EQUAL_INT16(seen.sample.enclosure_centi_c, reading->enclosure_centi_c);
+  TEST_ASSERT_EQUAL_UINT32(seen.sample.enclosure_pressure_pa, reading->enclosure_pressure_pa);
+  TEST_ASSERT_EQUAL_UINT16(seen.sample.enclosure_humidity_centi_pct, reading->enclosure_humidity_centi_pct);
+  TEST_ASSERT_EQUAL_HEX16(bme_present ? 0x00e0 : 0, reading->flags & 0x00e0);
+}
+
+TEST_CASE("carrier nominal core reading", "[sensor_carrier]") {
+  fixture_reading(3, true, true, 0x00fe);
+}
+
+TEST_CASE("carrier missing_ds0 core reading", "[sensor_carrier]") {
+  fixture_reading(2, true, true, 0x00f6);
+}
+
+TEST_CASE("carrier missing_ds1 core reading", "[sensor_carrier]") {
+  fixture_reading(1, true, true, 0x00ee);
+}
+
+TEST_CASE("carrier missing_bme280 core reading", "[sensor_carrier]") {
+  fixture_reading(3, false, true, 0x001e);
+}
+
+TEST_CASE("carrier adc_reference core reading", "[sensor_carrier]") {
+  fixture_reading(3, true, false, 0x00fe);
 }
 
 static void observe_bme_sleep(const node_sensor_sample_t *sample) {

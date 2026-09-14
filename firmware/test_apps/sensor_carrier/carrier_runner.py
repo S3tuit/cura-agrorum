@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pexpect
 from pytest_embedded.unity import UNITY_SUMMARY_LINE_REGEX
+from carrier_reading import FIXTURES as READING_FIXTURES, validate_reading
 
 
 APP = Path(__file__).resolve().parent
@@ -20,7 +21,7 @@ HOLD_SECONDS = 75
 GUIDED_HOLD_SECONDS = 195
 ACK_HOLDS = {"acquire", "gate-on", "gate-off", "final-cleanup"}
 SLEEP_DEADLINE_SECONDS = 615
-ACQUISITIONS = {"bme-sleep", "acquire", "repeat", "final-cleanup", "ds-identity", "adc-reference"}
+ACQUISITIONS = {"bme-sleep", "acquire", "repeat", "final-cleanup", "ds-identity", "adc-reference", "reading"}
 OPERATIONS = {"discover", "gate-on", "gate-off", *ACQUISITIONS,
               "reset", "held-reset", "deep-sleep"}
 MISSING_FIXTURES = {"missing_ds0", "missing_ds1", "missing_bme280"}
@@ -35,6 +36,7 @@ CASES = {
     "final-cleanup": "carrier final cleanup hold",
     "ds-identity": "carrier nominal acquisition and sample-return hold",
     "adc-reference": "carrier reference acquisition and sample-return hold",
+    "reading": "carrier nominal core reading",
     "reset": "carrier production restart cleanup",
     "held-reset": "carrier enabled rail held reset",
     "deep-sleep": "carrier enabled rail deep sleep",
@@ -56,6 +58,8 @@ def validate_selection(operation, fixture, revision, ready):
     if operation == "discover":
         if fixture is not None:
             raise ValueError("discovery is setup; omit --sensor-fixture")
+    elif operation == "reading" and fixture in READING_FIXTURES:
+        pass
     elif operation == "acquire" and fixture in MISSING_FIXTURES:
         pass
     elif fixture != ("adc_reference" if operation == "adc-reference" else "nominal"):
@@ -159,7 +163,11 @@ def boot_menu(dut, build, *, reset=False, expected_dut=None, deadline=None, boot
 
 def select_case(menu, operation, fixture="nominal"):
     name = CASES[operation]
-    if fixture in MISSING_FIXTURES:
+    if operation == "reading":
+        if fixture not in READING_FIXTURES:
+            raise ValueError("select a declared reading fixture")
+        name = f"carrier {fixture} core reading"
+    elif fixture in MISSING_FIXTURES:
         if operation not in {"preflight", "acquire"}:
             raise ValueError("missing sensor fixtures support only acquire and its preflight")
         name = (f"carrier {fixture} preflight" if operation == "preflight" else
@@ -180,7 +188,8 @@ def require_pass(dut, before, name):
         raise AssertionError(f"required Unity case {name!r} did not complete exactly once with PASS")
 
 
-def execute_case(dut, case, operation, *, repeat_count=100, evidence=None, on_hold=None, exploration=False):
+def execute_case(dut, case, operation, *, repeat_count=100, evidence=None, on_hold=None, exploration=False,
+                 fixture="nominal"):
     with phase(operation):
         before = len(dut.testsuite.testcases)
         deadline = time.monotonic() + ACTIVE_SECONDS
@@ -238,6 +247,16 @@ def execute_case(dut, case, operation, *, repeat_count=100, evidence=None, on_ho
             dut.expect_unity_test_output(timeout=remaining(deadline), extra_before=prefix)
         else:
             dut.expect_unity_test_output(timeout=remaining(deadline))
+            if operation == "reading":
+                serial = dut.pexpect_proc.before
+                if evidence:
+                    evidence.add("core_reading_output", case=case.name,
+                                 serial=serial.decode(errors="replace"))
+                require_pass(dut, before, case.name)
+                observed = validate_reading(serial, fixture)
+                if evidence:
+                    evidence.add("core_reading", fixture=fixture, **observed)
+                return observed
             if evidence and operation in {"preflight", "bme-sleep"}:
                 evidence.add("preflight" if operation == "preflight" else "bme_sleep_observation", case=case.name,
                              serial=dut.pexpect_proc.before.decode(errors="replace"))
@@ -264,13 +283,15 @@ def run_operation(dut, build, operation, record, *, fixture="nominal", expected_
         return
     if guided:
         guided.before_sample()
-    execute_case(dut, select_case(menu, operation, fixture), operation,
+    observed = execute_case(dut, select_case(menu, operation, fixture), operation,
                  repeat_count=repeat_count, evidence=evidence,
-                 on_hold=guided.hold if guided else None, exploration=exploring)
+                 on_hold=guided.hold if guided else None, exploration=exploring, fixture=fixture)
+    if operation == "reading" and guided:
+        guided.reading_result(observed)
     if evidence:
         evidence.add("software_completed", operation=operation)
     record("operation_completed", operation)
-    record("electrical_acceptance", "pending_operator_measurements")
+    record("electrical_acceptance", "not_assigned" if operation == "reading" else "pending_operator_measurements")
 
 
 def select_stage(dut, case, stage, deadline):

@@ -12,6 +12,7 @@ import pexpect
 from pytest_embedded.unity import UNITY_SUMMARY_LINE_REGEX
 
 from carrier_runner import GUIDED_HOLD_SECONDS, MISSING_FIXTURES, check_uart, uart_identity
+from carrier_reading import parse_sample
 
 
 class IncompleteCase(RuntimeError):
@@ -68,16 +69,7 @@ def measured_volts(text, points):
 
 
 def sample_from_serial(serial):
-    matches = re.findall(rb'CARRIER_SAMPLE ([^\r\n]+)', serial)
-    if len(matches) != 1:
-        raise ValueError('expected exactly one sample record')
-    fields = dict(part.split('=') for part in matches[0].decode().split())
-    needed = {'result', 'duration_us', 'validity', 'soil0_mv', 'soil1_mv',
-              'temp0_centi_c', 'temp1_centi_c', 'enclosure_centi_c',
-              'pressure_pa', 'humidity_centi_pct'}
-    if set(fields) != needed:
-        raise ValueError('incomplete sample record')
-    sample = {k: int(v, 16 if k in {'result', 'validity'} else 10) for k, v in fields.items()}
+    sample = parse_sample(serial)
     if sample['result'] != 0 or sample['validity'] != 0x1f:
         raise AssertionError('guided acquisition did not return all five valid groups')
     return sample
@@ -156,6 +148,8 @@ class Guided:
     def __init__(self, evidence, operation, position, prior):
         self.evidence = evidence
         self.operation = operation
+        self.reference = operation == 'adc-reference' or (
+            operation == 'reading' and evidence.data['metadata'].get('fixture') == 'adc_reference')
         self.position = position
         self.prior = prior
         self.warmed = None
@@ -191,7 +185,7 @@ class Guided:
             confirm('Power was removed before connector changes, wiring preflight was completed, '
                     f'both configured probes and all nominal sensors are present: {arrangement}. '
                     'Reference leads are removed, JP_REF_ENABLE open, soil shunts fitted. DUT is ready.')
-        elif self.operation == 'adc-reference':
+        elif self.reference:
             routing = ('VREF_A -> J_INJECT0; VREF_B -> J_INJECT1' if self.position == 'A'
                        else 'VREF_B -> J_INJECT0; VREF_A -> J_INJECT1')
             confirm('Power was removed before changing wiring and wiring preflight was repeated. '
@@ -225,7 +219,7 @@ class Guided:
                     'The acquisition is ready; maintain this difference during sampling.')
             self.evidence.add('thermal_setup', warmed_channel=self.warmed, warmed_rom=rom)
 
-        elif self.operation == 'adc-reference':
+        elif self.reference:
             confirm('At this fresh acquisition boot, allow at least 5 seconds of reference settling. '
                     'Measure TP_3V3, TP_ADC0 and TP_ADC1 now; each display must be stable for three updates. '
                     'Do not change wiring or power after these measurements.')
@@ -242,6 +236,12 @@ class Guided:
             self.evidence.add('sample', sample=self.sample, hold=name)
         if self.operation not in {'ds-identity', 'adc-reference'}:
             self.measure_hold(name, deadline)
+
+    def reading_result(self, observed):
+        if not self.reference:
+            raise ValueError('guided reading is assigned only to ADC reference')
+        self.sample = observed['sample']
+        self.evidence.add('sample', sample=self.sample, source='core_reading')
 
     def measure_hold(self, name, deadline, *, check_state=None):
         # 15 s is transport/result margin, never extra meter-observation time.
@@ -332,13 +332,13 @@ class Guided:
             validate_identity(self.sample, self.warmed)
             self.evidence.add('position_result', position=self.position,
                               warmed_channel=self.warmed, sample=self.sample)
-        elif self.operation == 'adc-reference':
+        elif self.reference:
             validate_reference(self.sample, self.measurements, self.position)
             if self.prior:
                 validate_reference(self.prior['event']['sample'], self.prior['event']['volts'], 'A')
             self.evidence.add('position_result', position=self.position,
                               sample=self.sample, volts=self.measurements)
-        if self.operation in {'ds-identity', 'adc-reference'}:
+        if self.operation == 'ds-identity' or self.reference:
             if self.position == 'A':
                 self.evidence.finish('position_A_complete_sequence_incomplete')
                 raise IncompleteCase('position A recorded successfully; complete case requires position B')

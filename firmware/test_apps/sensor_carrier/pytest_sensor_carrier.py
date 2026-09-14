@@ -65,9 +65,12 @@ def test_sensor_carrier(request, record_property):
     root_logdir = config.getoption("root_logdir")
     if not root_logdir:
         raise pytest.UsageError("--root-logdir must identify a new run directory")
-    paired = operation in {"ds-identity", "adc-reference"}
+    paired = operation in {"ds-identity", "adc-reference"} or (
+        operation == "reading" and fixture == "adc_reference")
     position = config.getoption("sensor_position")
     guided_requested = config.getoption("sensor_guided")
+    if operation == "reading" and guided_requested and not paired:
+        raise pytest.UsageError("guided reading is assigned only to adc_reference A/B")
     if (paired or operation in {"reset", "held-reset", "deep-sleep"}) and not (guided_requested or exploration):
         raise pytest.UsageError("this operation requires --sensor-guided and live operator input")
     if not paired and (position or config.getoption("sensor_prior_evidence")):

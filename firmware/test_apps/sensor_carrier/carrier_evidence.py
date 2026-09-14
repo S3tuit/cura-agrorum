@@ -15,14 +15,21 @@ BOSCH_PIN = REPO / 'firmware/components/bosch_bme280/source_pin.cmake'
 def source_manifest():
     roots = [APP / 'main', APP / 'runner_tests', REPO / 'firmware/components/node_sensors',
              REPO / 'firmware/components/node_common', REPO / 'firmware/components/node_platform_esp',
-             REPO / 'firmware/components/bosch_bme280']
+             REPO / 'firmware/components/bosch_bme280', REPO / 'firmware/components/node_core',
+             REPO / 'firmware/components/node_persistence', REPO / 'firmware/components/protocol_v2_lora']
     roots += [APP / 'managed_components' / ('espressif__' + name)
               for name in ('ds18b20', 'onewire_bus')]
     paths = [p for root in roots for p in root.rglob('*')
              if p.is_file() and p.suffix in {'.c', '.h', '.py', '.txt', '.yml', '.cmake'}]
     paths += list(APP.glob('*.py'))
-    paths += [REPO / 'firmware/components/node_core/include/node_platform_ports.h',
-              REPO / 'firmware/components/protocol_v2_lora/include/protocol_v2_lora_schema_generated.h']
+    paths += [REPO / 'firmware/test_apps/on_device/main' / name
+              for name in ('persistence_test_support.c', 'persistence_test_support.h')]
+    paths += [REPO / 'firmware/components/sx1262_radio' / name for name in
+              ('CMakeLists.txt', 'sx1262_radio_timing.c', 'include/sx1262_radio.h')]
+    paths += [REPO / 'protocol/protocol-v2-lora/schemas/protocol_v2_lora.json']
+    littlefs = REPO / 'firmware/managed_components/joltwallet__littlefs'
+    paths += [p for p in littlefs.rglob('*') if p.is_file() and
+              p.suffix in {'.c', '.h', '.txt', '.cmake', '.yml'}]
     paths += [APP / name for name in ('CMakeLists.txt', 'dependencies.lock',
                                       'sdkconfig.defaults', 'sdkconfig', 'partitions.csv')]
     return {str(p.relative_to(REPO)): hashlib.sha256(p.read_bytes()).hexdigest()

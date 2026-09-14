@@ -4,6 +4,9 @@ This ESP32-C6-DEVKITM-1-N4 app links the real `node_sensors`, ESP backend,
 ADC, RMT 1-Wire and BME280/I2C dependencies. ESP-IDF Unity runs on the C6;
 pytest-embedded flashes the image, selects cases and records their results.
 The bare-C6 app and its fake sensor adapters are separate.
+The `reading` operation additionally links production core, codec/crypto and
+real test-partition persistence to verify the same acquisition's canonical body.
+See the [coverage and evidence index](COVERAGE.md) for the current acceptance boundary.
 
 Unity console waits yield to the C6 idle task while the operator answers prompts.
 The app forwards to the installed Unity parser and UART implementation; the
@@ -300,6 +303,119 @@ entry point against ESP-IDF dependency stubs to verify the full ELF hash and
 six-byte factory MAC record. These checks provide no sensor hardware evidence.
 
 ## Acceptance commands
+
+### Production core reading mapping
+
+Use the [session helper](#discovery-and-physical-probe-labeling) after
+confirming the actual UART DUT and carrier revision. Each command below requires
+the named fixture to be ready; these are separate operator steps, not a batch
+to execute against one wiring state. Building and sealing do not access the DUT:
+
+```sh
+source ~/esp/esp-idf/export.sh
+idf.py -C firmware/test_apps/sensor_carrier build
+.venv/bin/python firmware/test_apps/sensor_carrier/carrier_evidence.py \
+    --record-build firmware/test_apps/sensor_carrier/build
+```
+
+The image contains isolated `nvs_test` and `storage_test` partitions. Only the
+reading case erases those test partitions before and after its scenario; it
+uses a fresh disposable identity/key and the production sample/message counter
+claims. No production identity header is required or read. No key is emitted.
+The local radio adapter captures the production current frame and reports a
+non-started local error; it does not access an RF device or construct an ACK.
+The terminal port observes the normal 900-second sleep request and returns for
+assertions. This operation does not enter deep sleep or provide electrical
+sample-return holds.
+
+1. Start with `nominal`: both configured DS ROMs, both soil probes in air and
+   BME connected; reference leads removed, soil shunts fitted, reference enable
+   open, permanent R12 fitted. Confirm readiness, then run:
+
+   ```sh
+   sensor_carrier --sensor-operation reading --sensor-fixture nominal
+   ```
+
+2. Remove power and unplug the entire connector of logical DS0 (physical DS2,
+   ROM `DF00000050F93828`). Keep logical DS1 and the other sensors connected.
+   Restore power, confirm `missing_ds0` ready, then run:
+
+   ```sh
+   sensor_carrier --sensor-operation reading --sensor-fixture missing_ds0
+   ```
+
+3. Remove power, restore DS0 and remove logical DS1 (`7E000000540FA728`). Restore
+   power and confirm `missing_ds1` ready:
+
+   ```sh
+   sensor_carrier --sensor-operation reading --sensor-fixture missing_ds1
+   ```
+
+4. Remove power, restore both DS probes and remove the complete BME connector.
+   Preserve the specified I2C pull-ups. Restore power and confirm `missing_bme280`:
+
+   ```sh
+   sensor_carrier --sensor-operation reading --sensor-fixture missing_bme280
+   ```
+
+5. Remove power, restore BME and assemble
+   [ADC reference position A](#adc-reference-positions-a-and-b). After wiring
+   preflight/readiness, run:
+
+   ```sh
+   sensor_carrier --sensor-operation reading --sensor-fixture adc_reference \
+       --sensor-guided --sensor-position A
+   SENSOR_READING_A="$SENSOR_CARRIER_LAST_RUN/carrier-evidence.json"
+   ```
+
+   After inventory preflight and reset, the runner requests freshly measured
+   `TP_3V3`, `TP_ADC0` and `TP_ADC1`. The original five-second settling,
+   three-stable-update procedure, 180-second input window, 75 mV comparison
+   and greater-than-150 mV reference separation apply. It validates the values
+   from the very acquisition that core encoded. Position A exits incomplete
+   with `position_A_complete_sequence_incomplete`; retain that file for B.
+
+6. Remove power and exchange the reference leads to position B. Restore power,
+   confirm readiness, and supply fresh measurements again:
+
+   ```sh
+   sensor_carrier --sensor-operation reading --sensor-fixture adc_reference \
+       --sensor-guided --sensor-position B --sensor-prior-evidence="$SENSOR_READING_A"
+   ```
+
+   B requires the exact A run on the same image/configuration/DUT/fixture revision.
+   An older component `adc-reference` record cannot substitute for a `reading`
+   record. Preserve both A/B records with their original bytes.
+
+7. With power removed, restore `nominal`, remove reference leads, open reference
+   enable and restore both soil shunts/connectors. Confirm readiness and repeat:
+
+   ```sh
+   sensor_carrier --sensor-operation reading --sensor-fixture nominal
+   ```
+
+Each run must pass its selected preflight, reset to a checked fresh boot, then
+pass exactly the declared Unity reading case. The evidence's `core_reading`
+event includes the same-acquisition sample/diagnostic, decoded reading,
+captured and persisted body hex, and call counts. Missing/duplicate output,
+different bodies, invalid flags/values or an incomplete Unity result fails.
+The [contract table](../../TESTING.md#node_sensors-automated-cases) owns expected
+flags and zeroing. Unguided reading runs retain the existing
+`software_passed_operator_acceptance_pending` label for software completion;
+this operation has no assigned electrical hold. Guided ADC B records paired
+acceptance. Neither outcome accepts an outstanding electrical obligation.
+
+Use `reading-<fixture>-automatic-evidence.json` and
+`reading-adc_reference-sensor-guided-{A,B}-evidence.json` when manually retaining
+reviewed records. Keep separate nominal session-start and final-restoration
+records with `reading-nominal-automatic-session-start-evidence.json` and
+`reading-nominal-automatic-restoration-evidence.json`; preserve any earlier
+nominal evidence. Keep failures and raw UART/JUnit logs in the session directory.
+The [coverage index](COVERAGE.md) identifies prior electrical/identity evidence
+that may be reused after confirming its circuit and relevant behavior unchanged.
+If a mapping failure leads to a production fix, repeat affected component and
+electrical observations before closing acceptance. Existing bare-C6 Make targets
+retain their original meaning.
 
 Use the build/record-build commands and define `sensor_carrier` above in this
 same shell. Every invocation creates a new run directory below

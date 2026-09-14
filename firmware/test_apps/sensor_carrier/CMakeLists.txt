@@ -9,6 +9,14 @@ set(COMPONENTS main)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(cura_sensor_carrier)
 
+# This app owns only test-labelled storage. Production component defaults and
+# the bare-C6 application's build/quotas/sleep settings are unchanged.
+idf_component_get_property(carrier_persistence node_persistence COMPONENT_LIB)
+target_compile_definitions(${carrier_persistence} PRIVATE
+    NODE_PERSISTENCE_TESTING=1
+    NODE_PERSISTENCE_NVS_PARTITION_LABEL="nvs_test"
+    NODE_PERSISTENCE_PARTITION_LABEL="storage_test")
+
 foreach(setting CURA_SOIL_0_GPIO CURA_SOIL_1_GPIO
                 CURA_SENSOR_POWER_GATE_GPIO CURA_DS18B20_GPIO
                 CURA_I2C_SDA_GPIO CURA_I2C_SCL_GPIO

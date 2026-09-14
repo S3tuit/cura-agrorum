@@ -5,7 +5,9 @@ platform-port host matrices are implemented. The on-device implementation now
 includes the `node_persistence` matrix, the complete bare-board RTC suite, the
 receiver-free `node_core` integration suite, and platform clock, randomness,
 software-reset-reason and timer-deep-sleep cases. A sibling sensor-carrier app
-implements hardware tests that need the human operator.
+implements real sensor component and core-reading integration cases, including
+operator-guided fixtures. Its [coverage/evidence index](test_apps/sensor_carrier/COVERAGE.md)
+distinguishes implementation, prior component evidence and pending mapping runs.
 
 ## Philosophy and build
 
@@ -58,8 +60,9 @@ are tested without real waiting.
   current delivery.
 - RAM-only `ACCEPTED` does not attempt to remove a nonexistent pending copy.
 - Sampling that consumes the radio deadline produces no TX.
-- Behavior when `run_ms` exceeds `UINT16_MAX` is tested after its policy is
-  defined.
+- `run_ms` above `UINT16_MAX` saturates, preserves the reading and emits
+  `ETIME_RANGE`; `run_time_and_sampling_deadline_boundaries` tests this alongside
+  truncated millisecond conversion and the sampling-consumed radio deadline.
 
 ### ACKs and retries
 
@@ -606,6 +609,9 @@ acquisition, repetition, BME sleep observation, final cleanup, DS identity and e
 checks; `adc_reference` selects guided A/B conversion/mapping. `missing_ds0` and
 `missing_ds1` and `missing_bme280` select acquisition plus their respective preflight and
 sample-return hold using the [missing-probe commands](test_apps/sensor_carrier/README.md#missing-ds-probes-and-nominal-restoration).
+The separate `reading` operation supports all five declared fixtures through
+production core; `adc_reference` still requires guided A/B measurements. See
+the [reading commands](test_apps/sensor_carrier/README.md#production-core-reading-mapping).
 Discovery remains
 setup and permits unknown identities. Acquisition preflight requires both
 distinct configured identities in the build and checks the declared inventory:
@@ -674,7 +680,7 @@ plausibility policy to `node_sensors`.
 
 | Fixture state | Physical configuration | Automated mapping | Manual or host-guided mapping |
 |---|---|---|---|
-| `nominal` | Both soil probes, both externally powered DS18B20 probes with their configured ROM identities, and the BME280 are connected. | All groups acquired; every soil reading is 2,000–2,700 mV inclusive; atomic enclosure group; at least 100 repeated switched-rail acquisitions; idempotent final cleanup; successful diagnostic slots remain empty; the corresponding node reading sets all seven sensor validity bits (stage 10 integration remains pending). | DS18B20 identity mapping; sampling-owned successful shutdown; stable active-low gate states; final cleanup; intentional restart cleanup; held-reset and deep-sleep default-off behavior; post-sampling and deep-sleep back-power check. |
+| `nominal` | Both soil probes, both externally powered DS18B20 probes with their configured ROM identities, and the BME280 are connected. | All groups acquired; every soil reading is 2,000–2,700 mV inclusive; atomic enclosure group; at least 100 repeated switched-rail acquisitions; idempotent final cleanup; successful diagnostic slots remain empty; the carrier `reading` case verifies all seven sensor protocol validity bits. | DS18B20 identity mapping; sampling-owned successful shutdown; stable active-low gate states; final cleanup; intentional restart cleanup; held-reset and deep-sleep default-off behavior; post-sampling and deep-sleep back-power check. |
 | `missing_ds0` | The complete power, ground and data connector for the probe whose ROM is configured as logical channel 0 is removed. Channel 1 remains connected; both soil probes and the BME280 remain connected. | Channel 0 temperature is zero and invalid; channel 1 and the other independent groups remain usable; both soil readings are 2,000–2,700 mV inclusive; the result is partial and the channel-0 diagnostic pair contains the exact backend kind and status while unaffected pairs are empty. | Verify the switched rail is off after the failed acquisition path. |
 | `missing_ds1` | The complete power, ground and data connector for the probe whose ROM is configured as logical channel 1 is removed. Channel 0 remains connected; both soil probes and the BME280 remain connected. | Channel 1 temperature is zero and invalid; channel 0 and the other independent groups remain usable; both soil readings are 2,000–2,700 mV inclusive; the result is partial and the channel-1 diagnostic pair contains the exact backend kind and status while unaffected pairs are empty. | Verify the switched rail is off after the failed acquisition path. |
 | `missing_bme280` | The complete BME280 power, ground, SDA and SCL connector is removed. Both soil probes and both DS18B20 probes remain connected. | Enclosure temperature, pressure and humidity are all zero and the single enclosure group is invalid; the other four groups remain usable; both soil readings are 2,000–2,700 mV inclusive; the result is partial and the enclosure diagnostic pair contains the exact backend kind and status while unaffected pairs are empty. | Verify that the already-disabled switched rail remains off after the independent BME280 failure. |
@@ -712,6 +718,37 @@ necessarily the exact earlier shared backend status. Both public operations use
 the same private gate-off primitive.
 
 ### `node_sensors`: automated cases
+
+The carrier's stage-10 `reading` integration operation extends these component
+cases through one production `node_cycle_run()` invocation per fresh fixture
+boot. It links real sensors/backends, core, codec/crypto and test-partition
+NVS/LittleFS persistence. An app-only forwarding observer retains the exact
+sample returned to core; a local radio adapter captures the constructed frame
+and reports a non-started local error, leaving the reading pending. The terminal
+sleep port records the unchanged requested duration and returns for assertions.
+No RF or actual sleep behavior is claimed by this integration operation.
+
+The opened frame plaintext must equal the actual pending record's canonical
+32-byte body. Each decoded sensor field must equal the same acquisition, with
+invalid fields zero. Expected component validity and protocol sensor flags
+(`flags & 0x00fe`) are:
+
+| Fixture | Component validity | Protocol sensor flags |
+|---|---:|---:|
+| `nominal` | `0x1f` | `0x00fe` |
+| `missing_ds0` | `0x1b` | `0x00f6` |
+| `missing_ds1` | `0x17` | `0x00ee` |
+| `missing_bme280` | `0x0f` | `0x001e` |
+| `adc_reference`, positions A/B | `0x1f` | `0x00fe` |
+
+The three enclosure flags must agree on both success and failure. Partial
+sensor results preserve every independent valid field in the reading. Exact
+missing-fixture diagnostics and sensor timing remain as specified below.
+Reference integration requires fresh meter observations and the existing
+guided A/B acceptance criteria; no unattended ADC-reference pass is assigned.
+Each independent scenario uses a fresh test identity/key lifetime and isolated
+storage. Erasing its counters retires that identity. Existing electrical holds
+remain separate: core's final cleanup cannot establish sampling-owned shutdown.
 
 - **All groups acquired:** with the complete fixture, one call sets all five
   component validity bits and returns values from the expected physical

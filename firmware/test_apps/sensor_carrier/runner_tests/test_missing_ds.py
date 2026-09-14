@@ -14,8 +14,8 @@ from test_runner import build_dir, scripted_dut
 
 @pytest.mark.parametrize('fixture', ['missing_ds0', 'missing_ds1', 'missing_bme280'])
 @pytest.mark.parametrize('operation', sorted(runner.OPERATIONS))
-def test_missing_fixture_only_selects_acquire(fixture, operation):
-    if operation == 'acquire':
+def test_missing_fixture_only_selects_acquire_or_reading(fixture, operation):
+    if operation in {'acquire', 'reading'}:
         runner.validate_selection(operation, fixture, 'R12 fitted', True)
     else:
         with pytest.raises(ValueError):

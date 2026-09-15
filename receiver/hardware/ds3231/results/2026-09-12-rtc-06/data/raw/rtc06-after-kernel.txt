@@ -1,0 +1,460 @@
+[   16.212316] cura-receiver kernel: Booting Linux on physical CPU 0x0000000000 [0x410fd034]
+[   16.212582] cura-receiver kernel: Linux version 6.18.50+rpt-rpi-v8 (serge@raspberrypi.com) (aarch64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0, GNU ld (GNU Binutils for Debian) 2.44) #1 SMP PREEMPT Debian 1:6.18.50-1+rpt1~beta1 (2026-09-11)
+[   16.212668] cura-receiver kernel: KASLR enabled
+[   16.212720] cura-receiver kernel: random: crng init done
+[   16.212771] cura-receiver kernel: Machine model: Raspberry Pi 3 Model B Rev 1.2
+[   16.212821] cura-receiver kernel: efi: UEFI not found.
+[   16.212886] cura-receiver kernel: Reserved memory: created CMA memory pool at 0x000000001e400000, size 256 MiB
+[   16.212937] cura-receiver kernel: OF: reserved mem: initialized node linux,cma, compatible id shared-dma-pool
+[   16.212993] cura-receiver kernel: OF: reserved mem: 0x000000001e400000..0x000000002e3fffff (262144 KiB) map reusable linux,cma
+[   16.213044] cura-receiver kernel: NUMA: Faking a node at [mem 0x0000000000000000-0x000000003b3fffff]
+[   16.213095] cura-receiver kernel: NODE_DATA(0) allocated [mem 0x3b1fdb40-0x3b2008bf]
+[   16.213144] cura-receiver kernel: Zone ranges:
+[   16.213194] cura-receiver kernel:   DMA      [mem 0x0000000000000000-0x000000003b3fffff]
+[   16.213243] cura-receiver kernel:   DMA32    empty
+[   16.213315] cura-receiver kernel:   Normal   empty
+[   16.213364] cura-receiver kernel: Movable zone start for each node
+[   16.213414] cura-receiver kernel: Early memory node ranges
+[   16.213463] cura-receiver kernel:   node   0: [mem 0x0000000000000000-0x000000003b3fffff]
+[   16.213512] cura-receiver kernel: Initmem setup node 0 [mem 0x0000000000000000-0x000000003b3fffff]
+[   16.213561] cura-receiver kernel: On node 0, zone DMA: 19456 pages in unavailable ranges
+[   16.213609] cura-receiver kernel: percpu: Embedded 33 pages/cpu s95896 r8192 d31080 u135168
+[   16.213657] cura-receiver kernel: pcpu-alloc: s95896 r8192 d31080 u135168 alloc=33*4096
+[   16.213708] cura-receiver kernel: pcpu-alloc: [0] 0 [0] 1 [0] 2 [0] 3 
+[   16.213756] cura-receiver kernel: Detected VIPT I-cache on CPU0
+[   16.213805] cura-receiver kernel: CPU features: kernel page table isolation forced ON by KASLR
+[   16.213865] cura-receiver kernel: CPU features: detected: Kernel page table isolation (KPTI)
+[   16.213913] cura-receiver kernel: CPU features: detected: ARM erratum 843419
+[   16.213963] cura-receiver kernel: CPU features: detected: ARM erratum 845719
+[   16.214011] cura-receiver kernel: alternatives: applying boot alternatives
+[   16.214066] cura-receiver kernel: Kernel command line: coherent_pool=1M 8250.nr_uarts=1 snd_bcm2835.enable_headphones=0 cgroup_disable=memory snd_bcm2835.enable_headphones=1 snd_bcm2835.enable_hdmi=1 snd_bcm2835.enable_hdmi=0  vc_mem.mem_base=0x3ec00000 vc_mem.mem_size=0x40000000  console=ttyS0,115200 console=tty1 root=PARTUUID=80ac63b6-02 rootfstype=ext4 fsck.repair=yes rootwait cfg80211.ieee80211_regdom=IT
+[   16.214117] cura-receiver kernel: cgroup: Disabling memory control group subsystem
+[   16.214165] cura-receiver kernel: printk: log buffer data + meta data: 131072 + 458752 = 589824 bytes
+[   16.214215] cura-receiver kernel: Dentry cache hash table entries: 131072 (order: 8, 1048576 bytes, linear)
+[   16.214263] cura-receiver kernel: Inode-cache hash table entries: 65536 (order: 7, 524288 bytes, linear)
+[   16.214310] cura-receiver kernel: Fallback order for Node 0: 0 
+[   16.214362] cura-receiver kernel: Built 1 zonelists, mobility grouping on.  Total pages: 242688
+[   16.214413] cura-receiver kernel: Policy zone: DMA
+[   16.214462] cura-receiver kernel: mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+[   16.214511] cura-receiver kernel: SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=4, Nodes=1
+[   16.214561] cura-receiver kernel: ftrace: allocating 46803 entries in 184 pages
+[   16.214633] cura-receiver kernel: ftrace: allocated 184 pages with 4 groups
+[   16.214682] cura-receiver kernel: rcu: Preemptible hierarchical RCU implementation.
+[   16.214732] cura-receiver kernel: rcu:         RCU event tracing is enabled.
+[   16.214790] cura-receiver kernel:         Trampoline variant of Tasks RCU enabled.
+[   16.214839] cura-receiver kernel:         Rude variant of Tasks RCU enabled.
+[   16.214888] cura-receiver kernel:         Tracing variant of Tasks RCU enabled.
+[   16.214937] cura-receiver kernel: rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[   16.214985] cura-receiver kernel: RCU Tasks: Setting shift to 2 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=4.
+[   16.215035] cura-receiver kernel: RCU Tasks Rude: Setting shift to 2 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=4.
+[   16.215084] cura-receiver kernel: RCU Tasks Trace: Setting shift to 2 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=4.
+[   16.215131] cura-receiver kernel: NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[   16.215179] cura-receiver kernel: Root IRQ handler: bcm2836_arm_irqchip_handle_irq
+[   16.215227] cura-receiver kernel: rcu: srcu_init: Setting srcu_struct sizes based on contention.
+[   16.215276] cura-receiver kernel: clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+[   16.215324] cura-receiver kernel: arch_timer: cp15 timer running at 19.20MHz (phys).
+[   16.215374] cura-receiver kernel: clocksource: arch_sys_counter: mask: 0xffffffffffffff max_cycles: 0x46d987e47, max_idle_ns: 440795202767 ns
+[   16.215423] cura-receiver kernel: sched_clock: 56 bits at 19MHz, resolution 52ns, wraps every 4398046511078ns
+[   16.215480] cura-receiver kernel: Console: colour dummy device 80x25
+[   16.215553] cura-receiver kernel: printk: legacy console [tty1] enabled
+[   16.215607] cura-receiver kernel: Calibrating delay loop (skipped), value calculated using timer frequency.. 38.40 BogoMIPS (lpj=76800)
+[   16.215659] cura-receiver kernel: pid_max: default: 32768 minimum: 301
+[   16.215711] cura-receiver kernel: LSM: initializing lsm=capability
+[   16.215764] cura-receiver kernel: Mount-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[   16.215816] cura-receiver kernel: Mountpoint-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[   16.215870] cura-receiver kernel: rcu: Hierarchical SRCU implementation.
+[   16.215923] cura-receiver kernel: rcu:         Max phase no-delay instances is 1000.
+[   16.215984] cura-receiver kernel: Timer migration: 1 hierarchy levels; 8 children per group; 1 crossnode level
+[   16.216130] cura-receiver kernel: EFI services will not be available.
+[   16.216185] cura-receiver kernel: smp: Bringing up secondary CPUs ...
+[   16.216238] cura-receiver kernel: Detected VIPT I-cache on CPU1
+[   16.216291] cura-receiver kernel: CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
+[   16.216343] cura-receiver kernel: Detected VIPT I-cache on CPU2
+[   16.216396] cura-receiver kernel: CPU2: Booted secondary processor 0x0000000002 [0x410fd034]
+[   16.216447] cura-receiver kernel: Detected VIPT I-cache on CPU3
+[   16.216500] cura-receiver kernel: CPU3: Booted secondary processor 0x0000000003 [0x410fd034]
+[   16.216552] cura-receiver kernel: smp: Brought up 1 node, 4 CPUs
+[   16.216619] cura-receiver kernel: SMP: Total of 4 processors activated.
+[   16.216674] cura-receiver kernel: CPU: All CPU(s) started at EL2
+[   16.216726] cura-receiver kernel: CPU features: detected: 32-bit EL0 Support
+[   16.216779] cura-receiver kernel: CPU features: detected: 32-bit EL1 Support
+[   16.216832] cura-receiver kernel: CPU features: detected: CRC32 instructions
+[   16.216885] cura-receiver kernel: CPU features: detected: PMUv3
+[   16.216937] cura-receiver kernel: alternatives: applying system-wide alternatives
+[   16.216991] cura-receiver kernel: Memory: 645952K/970752K available (15104K kernel code, 2446K rwdata, 5096K rodata, 2048K init, 505K bss, 57624K reserved, 262144K cma-reserved)
+[   16.217044] cura-receiver kernel: devtmpfs: initialized
+[   16.217105] cura-receiver kernel: Enabled cp15_barrier support
+[   16.217158] cura-receiver kernel: Enabled setend support
+[   16.217211] cura-receiver kernel: posixtimers hash table entries: 2048 (order: 3, 32768 bytes, linear)
+[   16.217267] cura-receiver kernel: futex hash table entries: 1024 (65536 bytes on 1 NUMA nodes, total 64 KiB, linear).
+[   16.217321] cura-receiver kernel: 2G module region forced by RANDOMIZE_MODULE_REGION_FULL
+[   16.217374] cura-receiver kernel: 0 pages in range for non-PLT usage
+[   16.217427] cura-receiver kernel: 517936 pages in range for PLT usage
+[   16.217479] cura-receiver kernel: pinctrl core: initialized pinctrl subsystem
+[   16.217531] cura-receiver kernel: DMI not present or invalid.
+[   16.217594] cura-receiver kernel: NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[   16.217649] cura-receiver kernel: DMA: preallocated 1024 KiB GFP_KERNEL pool for atomic allocations
+[   16.217703] cura-receiver kernel: DMA: preallocated 1024 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
+[   16.217755] cura-receiver kernel: DMA: preallocated 1024 KiB GFP_KERNEL|GFP_DMA32 pool for atomic allocations
+[   16.217809] cura-receiver kernel: audit: initializing netlink subsys (disabled)
+[   16.217862] cura-receiver kernel: audit: type=2000 audit(0.028:1): state=initialized audit_enabled=0 res=1
+[   16.217917] cura-receiver kernel: thermal_sys: Registered thermal governor 'step_wise'
+[   16.217970] cura-receiver kernel: cpuidle: using governor menu
+[   16.218031] cura-receiver kernel: hw-breakpoint: found 6 breakpoint and 4 watchpoint registers.
+[   16.218086] cura-receiver kernel: ASID allocator initialised with 32768 entries
+[   16.218138] cura-receiver kernel: Serial: AMBA PL011 UART driver
+[   16.219478] cura-receiver kernel: bcm2835-mbox 3f00b880.mailbox: mailbox enabled
+[   16.220828] cura-receiver kernel: raspberrypi-firmware soc:firmware: Attached to firmware from 2026-09-07T10:25:18, variant start
+[   16.221778] cura-receiver kernel: raspberrypi-firmware soc:firmware: Firmware hash is 465206a286cc1a7b13c2e86bc199f74dde7a8309
+[   16.222784] cura-receiver kernel: bcm2835-dma 3f007000.dma-controller: DMA legacy API manager, dmachans=0x1
+[   16.222952] cura-receiver kernel: iommu: Default domain type: Translated
+[   16.223010] cura-receiver kernel: iommu: DMA domain TLB invalidation policy: strict mode
+[   16.223065] cura-receiver kernel: SCSI subsystem initialized
+[   16.223125] cura-receiver kernel: usbcore: registered new interface driver usbfs
+[   16.223179] cura-receiver kernel: usbcore: registered new interface driver hub
+[   16.223231] cura-receiver kernel: usbcore: registered new device driver usb
+[   16.223284] cura-receiver kernel: pps_core: LinuxPPS API ver. 1 registered
+[   16.223341] cura-receiver kernel: pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[   16.223412] cura-receiver kernel: PTP clock support registered
+[   16.223485] cura-receiver kernel: vgaarb: loaded
+[   16.223546] cura-receiver kernel: clocksource: Switched to clocksource arch_sys_counter
+[   16.223607] cura-receiver kernel: VFS: Disk quotas dquot_6.6.0
+[   16.223660] cura-receiver kernel: VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
+[   16.223713] cura-receiver kernel: NET: Registered PF_INET protocol family
+[   16.223768] cura-receiver kernel: IP idents hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[   16.223821] cura-receiver kernel: tcp_listen_portaddr_hash hash table entries: 512 (order: 1, 8192 bytes, linear)
+[   16.223876] cura-receiver kernel: Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[   16.223931] cura-receiver kernel: TCP established hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[   16.223999] cura-receiver kernel: TCP bind hash table entries: 8192 (order: 6, 262144 bytes, linear)
+[   16.228187] cura-receiver kernel: TCP: Hash tables configured (established 8192 bind 8192)
+[   16.228267] cura-receiver kernel: MPTCP token hash table entries: 1024 (order: 3, 24576 bytes, linear)
+[   16.228326] cura-receiver kernel: UDP hash table entries: 512 (order: 3, 32768 bytes, linear)
+[   16.228386] cura-receiver kernel: UDP-Lite hash table entries: 512 (order: 3, 32768 bytes, linear)
+[   16.228446] cura-receiver kernel: NET: Registered PF_UNIX/PF_LOCAL protocol family
+[   16.228509] cura-receiver kernel: RPC: Registered named UNIX socket transport module.
+[   16.228601] cura-receiver kernel: RPC: Registered udp transport module.
+[   16.228659] cura-receiver kernel: RPC: Registered tcp transport module.
+[   16.228717] cura-receiver kernel: RPC: Registered tcp-with-tls transport module.
+[   16.228873] cura-receiver kernel: RPC: Registered tcp NFSv4.1 backchannel transport module.
+[   16.228935] cura-receiver kernel: PCI: CLS 0 bytes, default 64
+[   16.229016] cura-receiver kernel: Trying to unpack rootfs image as initramfs...
+[   16.229076] cura-receiver kernel: kvm [1]: nv: 568 coarse grained trap handlers
+[   16.229133] cura-receiver kernel: kvm [1]: IPA Size Limit: 40 bits
+[   16.229189] cura-receiver kernel: kvm [1]: Hyp nVHE mode initialized successfully
+[   16.229283] cura-receiver kernel: Initialise system trusted keyrings
+[   16.229344] cura-receiver kernel: workingset: timestamp_bits=42 max_order=18 bucket_order=0
+[   16.229401] cura-receiver kernel: NFS: Registering the id_resolver key type
+[   16.229462] cura-receiver kernel: Key type id_resolver registered
+[   16.229518] cura-receiver kernel: Key type id_legacy registered
+[   16.229573] cura-receiver kernel: nfs4filelayout_init: NFSv4 File Layout Driver Registering...
+[   16.229628] cura-receiver kernel: nfs4flexfilelayout_init: NFSv4 Flexfile Layout Driver Registering...
+[   16.229683] cura-receiver kernel: Key type asymmetric registered
+[   16.229739] cura-receiver kernel: Asymmetric key parser 'x509' registered
+[   16.229820] cura-receiver kernel: Block layer SCSI generic (bsg) driver version 0.4 loaded (major 246)
+[   16.229875] cura-receiver kernel: io scheduler mq-deadline registered
+[   16.229933] cura-receiver kernel: io scheduler kyber registered
+[   16.229997] cura-receiver kernel: io scheduler bfq registered
+[   16.230909] cura-receiver kernel: pinctrl-bcm2835 3f200000.gpio: GPIO_OUT persistence: yes
+[   16.231063] cura-receiver kernel: Freeing initrd memory: 11588K
+[   16.231127] cura-receiver kernel: ledtrig-cpu: registered to indicate activity on CPUs
+[   16.232190] cura-receiver kernel: simple-framebuffer 3eaa9000.framebuffer: framebuffer at 0x3eaa9000, 0x151800 bytes
+[   16.233288] cura-receiver kernel: simple-framebuffer 3eaa9000.framebuffer: format=a8r8g8b8, mode=720x480x32, linelength=2880
+[   16.234636] cura-receiver kernel: Console: switching to colour frame buffer device 90x30
+[   16.235530] cura-receiver kernel: simple-framebuffer 3eaa9000.framebuffer: fb0: simplefb registered!
+[   16.235646] cura-receiver kernel: Serial: 8250/16550 driver, 1 ports, IRQ sharing enabled
+[   16.240682] cura-receiver kernel: bcm2835-rng 3f104000.rng: hwrng registered
+[   16.240813] cura-receiver kernel: vc-mem: phys_addr:0x00000000 mem_base=0x3ec00000 mem_size:0x40000000(1024 MiB)
+[   16.240870] cura-receiver kernel: brd: module loaded
+[   16.240956] cura-receiver kernel: loop: module loaded
+[   16.241011] cura-receiver kernel: Loading iSCSI transport class v2.0-870.
+[   16.241068] cura-receiver kernel: usbcore: registered new interface driver lan78xx
+[   16.241122] cura-receiver kernel: usbcore: registered new interface driver smsc95xx
+[   16.241178] cura-receiver kernel: dwc_otg: version 3.00a 10-AUG-2012 (platform bus)
+[   16.241232] cura-receiver kernel: Core Release: 2.80a
+[   16.241339] cura-receiver kernel: Setting default values for core params
+[   16.241408] cura-receiver kernel: Finished setting default values for core params
+[   16.241462] cura-receiver kernel: Using Buffer DMA mode
+[   16.241545] cura-receiver kernel: Periodic Transfer Interrupt Enhancement - disabled
+[   16.241600] cura-receiver kernel: Multiprocessor Interrupt Enhancement - disabled
+[   16.241656] cura-receiver kernel: OTG VER PARAM: 0, OTG VER FLAG: 0
+[   16.241711] cura-receiver kernel: Dedicated Tx FIFOs mode
+[   16.241768] cura-receiver kernel: INFO:: FIQ DMA bounce buffers: virt = ffffffc080cab000 dma = 0x00000000de800000 len=9024
+[   16.241889] cura-receiver kernel: FIQ FSM acceleration enabled for :
+                                     Non-periodic Split Transactions
+                                     Periodic Split Transactions
+                                     High-Speed Isochronous Endpoints
+                                     Interrupt/Control Split Transaction hack enabled
+[   16.241950] cura-receiver kernel: dwc_otg: Microframe scheduler enabled
+[   16.242007] cura-receiver kernel: INFO:: MPHI regs_base at ffffffc080075000
+[   16.242962] cura-receiver kernel: dwc_otg 3f980000.usb: DWC OTG Controller
+[   16.243918] cura-receiver kernel: dwc_otg 3f980000.usb: new USB bus registered, assigned bus number 1
+[   16.244986] cura-receiver kernel: dwc_otg 3f980000.usb: irq 74, io mem 0x00000000
+[   16.245116] cura-receiver kernel: Init: Port Power? op_state=1
+[   16.245172] cura-receiver kernel: Init: Power Port (0)
+[   16.246241] cura-receiver kernel: usb usb1: New USB device found, idVendor=1d6b, idProduct=0002, bcdDevice= 6.18
+[   16.247284] cura-receiver kernel: usb usb1: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[   16.249245] cura-receiver kernel: usb usb1: Product: DWC OTG Controller
+[   16.251935] cura-receiver kernel: usb usb1: Manufacturer: Linux 6.18.50+rpt-rpi-v8 dwc_otg_hcd
+[   16.253258] cura-receiver kernel: usb usb1: SerialNumber: 3f980000.usb
+[   16.254338] cura-receiver kernel: hub 1-0:1.0: USB hub found
+[   16.255365] cura-receiver kernel: hub 1-0:1.0: 1 port detected
+[   16.255490] cura-receiver kernel: dwc_otg: FIQ enabled
+[   16.255547] cura-receiver kernel: dwc_otg: NAK holdoff enabled
+[   16.255602] cura-receiver kernel: dwc_otg: FIQ split-transaction FSM enabled
+[   16.255690] cura-receiver kernel: Module dwc_common_port init
+[   16.255743] cura-receiver kernel: usbcore: registered new interface driver uas
+[   16.255797] cura-receiver kernel: usbcore: registered new interface driver usb-storage
+[   16.255858] cura-receiver kernel: mousedev: PS/2 mouse device common for all mice
+[   16.255911] cura-receiver kernel: sdhci: Secure Digital Host Controller Interface driver
+[   16.255967] cura-receiver kernel: sdhci: Copyright(c) Pierre Ossman
+[   16.260415] cura-receiver kernel: sdhci-pltfm: SDHCI platform and OF driver helper
+[   16.260521] cura-receiver kernel: hid: raw HID events driver (C) Jiri Kosina
+[   16.260596] cura-receiver kernel: usbcore: registered new interface driver usbhid
+[   16.260710] cura-receiver kernel: usbhid: USB HID core driver
+[   16.260774] cura-receiver kernel: hw perfevents: enabled with armv8_cortex_a53 PMU driver, 7 (0,8000003f) counters available
+[   16.260834] cura-receiver kernel: NET: Registered PF_PACKET protocol family
+[   16.260899] cura-receiver kernel: Key type dns_resolver registered
+[   16.260963] cura-receiver kernel: registered taskstats version 1
+[   16.261099] cura-receiver kernel: Loading compiled-in X.509 certificates
+[   16.261161] cura-receiver kernel: Demotion targets for Node 0: null
+[   16.261219] cura-receiver kernel: Key type .fscrypt registered
+[   16.261305] cura-receiver kernel: Key type fscrypt-provisioning registered
+[   16.262354] cura-receiver kernel: uart-pl011 3f201000.serial: cts_event_workaround enabled
+[   16.262510] cura-receiver kernel: 3f201000.serial: ttyAMA1 at MMIO 0x3f201000 (irq = 99, base_baud = 0) is a PL011 rev2
+[   16.263447] cura-receiver kernel: serial serial0: tty port ttyAMA1 registered
+[   16.265297] cura-receiver kernel: bcm2835-aux-uart 3f215040.serial: there is not valid maps for state default
+[   16.265434] cura-receiver kernel: printk: legacy console [ttyS0] disabled
+[   16.265494] cura-receiver kernel: 3f215040.serial: ttyS0 at MMIO 0x3f215040 (irq = 71, base_baud = 50000000) is a 16550
+[   16.265570] cura-receiver kernel: printk: legacy console [ttyS0] enabled
+[   16.265642] cura-receiver kernel: Indeed it is in host mode hprt0 = 00021501
+[   16.266422] cura-receiver kernel: bcm2835-wdt bcm2835-wdt: Broadcom BCM2835 watchdog timer
+[   16.267556] cura-receiver kernel: usb 1-1: new high-speed USB device number 2 using dwc_otg
+[   16.272638] cura-receiver kernel: bcm2835-power bcm2835-power: Broadcom BCM2835 power domains driver
+[   16.272776] cura-receiver kernel: Indeed it is in host mode hprt0 = 00001101
+[   16.273784] cura-receiver kernel: usb 1-1: New USB device found, idVendor=0424, idProduct=9514, bcdDevice= 2.00
+[   16.274708] cura-receiver kernel: mmc-bcm2835 3f300000.mmcnr: mmc_debug:0 mmc_debug2:0
+[   16.275750] cura-receiver kernel: usb 1-1: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[   16.276974] cura-receiver kernel: mmc-bcm2835 3f300000.mmcnr: DMA channel allocated
+[   16.284286] cura-receiver kernel: hub 1-1:1.0: USB hub found
+[   16.284440] cura-receiver kernel: of_cfs_init
+[   16.285624] cura-receiver kernel: hub 1-1:1.0: 5 ports detected
+[   16.285737] cura-receiver kernel: of_cfs_init: OK
+[   16.287059] cura-receiver kernel: usb 1-1.1: new high-speed USB device number 3 using dwc_otg
+[   16.287207] cura-receiver kernel: clk: Disabling unused clocks
+[   16.288308] cura-receiver kernel: usb 1-1.1: New USB device found, idVendor=0424, idProduct=ec00, bcdDevice= 2.00
+[   16.288441] cura-receiver kernel: PM: genpd: Disabling unused power domains
+[   16.289457] cura-receiver kernel: usb 1-1.1: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[   16.290344] cura-receiver kernel: sdhost-bcm2835 3f202000.mmc: loaded - DMA enabled (>1)
+[   16.290454] cura-receiver kernel: smsc95xx v2.0.0
+[   16.290538] cura-receiver kernel: mmc0: host does not support reading read-only switch, assuming write-enable
+[   16.290602] cura-receiver kernel: mmc0: new high speed SDHC card at address 0001
+[   16.290656] cura-receiver kernel: mmcblk0: mmc0:0001 SD 29.1 GiB
+[   16.290709] cura-receiver kernel: Freeing unused kernel memory: 2048K
+[   16.290763] cura-receiver kernel: Run /init as init process
+[   16.290816] cura-receiver kernel:  mmcblk0: p1 p2
+[   16.290869] cura-receiver kernel:   with arguments:
+[   16.290926] cura-receiver kernel: mmcblk0: mmc0:0001 SD 29.1 GiB
+[   16.290982] cura-receiver kernel:     /init
+[   16.291060] cura-receiver kernel:   with environment:
+[   16.291124] cura-receiver kernel:     HOME=/
+[   16.291182] cura-receiver kernel:     TERM=linux
+[   16.291236] cura-receiver kernel: mmc1: new high speed SDIO card at address 0001
+[   16.292353] cura-receiver kernel: SMSC LAN8700 usb-001:003:01: attached PHY driver (mii_bus:phy_addr=usb-001:003:01, irq=184)
+[   16.293431] cura-receiver kernel: smsc95xx 1-1.1:1.0 eth0: register 'smsc95xx' at usb-3f980000.usb-1.1, smsc95xx USB 2.0 Ethernet, b8:27:eb:02:72:11
+[   16.294583] cura-receiver kernel: rtc-ds1307 1-0068: registered as rtc0
+[   16.295494] cura-receiver kernel: rtc-ds1307 1-0068: setting system clock to 2026-09-14T09:48:16 UTC (1789379296)
+[   16.295610] cura-receiver kernel: EXT4-fs (mmcblk0p2): orphan cleanup on readonly fs
+[   16.295668] cura-receiver kernel: EXT4-fs (mmcblk0p2): mounted filesystem 15f4c6be-1102-4331-9904-f78e78afd1fd ro with ordered data mode. Quota mode: none.
+[   16.295722] cura-receiver kernel: NET: Registered PF_INET6 protocol family
+[   16.295775] cura-receiver kernel: Segment Routing with IPv6
+[   16.295829] cura-receiver kernel: In-situ OAM (IOAM) with IPv6
+[   16.295898] cura-receiver systemd[1]: systemd 257.13-1~deb13u1 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR +IMA +IPE +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBCRYPTSETUP_PLUGINS +LIBFDISK +PCRE2 +PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD +BPF_FRAMEWORK +BTF -XKBCOMMON -UTMP +SYSVINIT +LIBARCHIVE)
+[   16.295996] cura-receiver systemd[1]: Detected architecture arm64.
+[   16.300329] cura-receiver systemd[1]: Hostname set to <cura-receiver>.
+[   16.300411] cura-receiver systemd[1]: bpf-restrict-fs: BPF LSM hook not enabled in the kernel, BPF LSM not supported.
+[   16.300477] cura-receiver systemd[1]: Using hardware watchdog 'Broadcom BCM2835 Watchdog timer', version 0, device /dev/watchdog0
+[   16.300541] cura-receiver systemd[1]: Watchdog running with a hardware timeout of 1min.
+[   16.300609] cura-receiver zram_generator::config[186]: zram0: system has too much memory (905MB), limit is 0MB, ignoring.
+[   16.301617] cura-receiver kernel: raspberrypi-power soc:power: sync_state() pending due to 3fc00000.v3d
+[   16.302898] cura-receiver kernel: raspberrypi-power soc:power: sync_state() pending due to 3f902000.hdmi
+[   16.303087] cura-receiver systemd[1]: Queued start job for default target multi-user.target.
+[   16.303155] cura-receiver systemd[1]: Created slice system-getty.slice - Slice /system/getty.
+[   16.303215] cura-receiver systemd[1]: Created slice system-modprobe.slice - Slice /system/modprobe.
+[   16.303278] cura-receiver systemd[1]: Created slice system-rpi\x2dsetup\x2dloop.slice - Slice /system/rpi-setup-loop.
+[   16.303339] cura-receiver systemd[1]: Created slice system-serial\x2dgetty.slice - Slice /system/serial-getty.
+[   16.303402] cura-receiver systemd[1]: Created slice system-systemd\x2dfsck.slice - Slice /system/systemd-fsck.
+[   16.303467] cura-receiver systemd[1]: Created slice system-systemd\x2dzram\x2dsetup.slice - Slice /system/systemd-zram-setup.
+[   16.303559] cura-receiver systemd[1]: Created slice user.slice - User and Session Slice.
+[   16.303626] cura-receiver systemd[1]: Started systemd-ask-password-console.path - Dispatch Password Requests to Console Directory Watch.
+[   16.303688] cura-receiver systemd[1]: Started systemd-ask-password-wall.path - Forward Password Requests to Wall Directory Watch.
+[   16.303749] cura-receiver systemd[1]: Set up automount proc-sys-fs-binfmt_misc.automount - Arbitrary Executable File Formats File System Automount Point.
+[   16.303810] cura-receiver systemd[1]: Expecting device dev-disk-by\x2dpartuuid-80ac63b6\x2d01.device - /dev/disk/by-partuuid/80ac63b6-01...
+[   16.303870] cura-receiver systemd[1]: Expecting device dev-ttyS0.device - /dev/ttyS0...
+[   16.303930] cura-receiver systemd[1]: Expecting device dev-zram0.device - /dev/zram0...
+[   16.304102] cura-receiver systemd[1]: Reached target paths.target - Path Units.
+[   16.304171] cura-receiver systemd[1]: Reached target remote-fs.target - Remote File Systems.
+[   16.304233] cura-receiver systemd[1]: Reached target slices.target - Slice Units.
+[   16.304296] cura-receiver systemd[1]: Listening on systemd-creds.socket - Credential Encryption/Decryption.
+[   16.304356] cura-receiver systemd[1]: Listening on systemd-initctl.socket - initctl Compatibility Named Pipe.
+[   16.304418] cura-receiver systemd[1]: Listening on systemd-journald-dev-log.socket - Journal Socket (/dev/log).
+[   16.304486] cura-receiver systemd[1]: Listening on systemd-journald.socket - Journal Sockets.
+[   16.304547] cura-receiver systemd[1]: systemd-pcrextend.socket - TPM PCR Measurements skipped, unmet condition check ConditionSecurity=measured-uki
+[   16.304609] cura-receiver systemd[1]: systemd-pcrlock.socket - Make TPM PCR Policy skipped, unmet condition check ConditionSecurity=measured-uki
+[   16.304690] cura-receiver systemd[1]: Listening on systemd-udevd-control.socket - udev Control Socket.
+[   16.304749] cura-receiver systemd[1]: Listening on systemd-udevd-kernel.socket - udev Kernel Socket.
+[   16.304810] cura-receiver systemd[1]: dev-hugepages.mount - Huge Pages File System skipped, unmet condition check ConditionPathExists=/sys/kernel/mm/hugepages
+[   16.304868] cura-receiver systemd[1]: Mounting dev-mqueue.mount - POSIX Message Queue File System...
+[   16.304927] cura-receiver systemd[1]: Mounting run-lock.mount - Legacy Locks Directory /run/lock...
+[   16.304996] cura-receiver systemd[1]: Mounting sys-kernel-debug.mount - Kernel Debug File System...
+[   16.305055] cura-receiver systemd[1]: Mounting sys-kernel-tracing.mount - Kernel Trace File System...
+[   16.305115] cura-receiver systemd[1]: Starting keyboard-setup.service - Set the console keyboard layout...
+[   16.305187] cura-receiver systemd[1]: Starting kmod-static-nodes.service - Create List of Static Device Nodes...
+[   16.305248] cura-receiver systemd[1]: Starting modprobe@configfs.service - Load Kernel Module configfs...
+[   16.305306] cura-receiver systemd[1]: Starting modprobe@drm.service - Load Kernel Module drm...
+[   16.305371] cura-receiver systemd[1]: Starting modprobe@efi_pstore.service - Load Kernel Module efi_pstore...
+[   16.305433] cura-receiver systemd[1]: Starting modprobe@fuse.service - Load Kernel Module fuse...
+[   16.305505] cura-receiver systemd[1]: systemd-fsck-root.service - File System Check on Root Device skipped, unmet condition check ConditionPathExists=!/run/initramfs/fsck-root
+[   16.305589] cura-receiver systemd[1]: systemd-hibernate-clear.service - Clear Stale Hibernate Storage Info skipped, unmet condition check ConditionPathExists=/sys/firmware/efi/efivars/HibernateLocation-8cf2644b-4b0b-428f-9387-6d876050dc67
+[   16.305651] cura-receiver systemd[1]: Starting systemd-journald.service - Journal Service...
+[   16.305711] cura-receiver systemd[1]: Starting systemd-modules-load.service - Load Kernel Modules...
+[   16.305775] cura-receiver systemd[1]: systemd-pcrmachine.service - TPM PCR Machine ID Measurement skipped, unmet condition check ConditionSecurity=measured-uki
+[   16.305837] cura-receiver systemd[1]: Starting systemd-remount-fs.service - Remount Root and Kernel File Systems...
+[   16.305894] cura-receiver kernel: fuse: init (API version 7.45)
+[   16.305961] cura-receiver systemd[1]: systemd-tpm2-setup-early.service - Early TPM SRK Setup skipped, unmet condition check ConditionSecurity=measured-uki
+[   16.306024] cura-receiver systemd[1]: Starting systemd-udev-load-credentials.service - Load udev Rules from Credentials...
+[   16.306100] cura-receiver systemd[1]: Starting systemd-udev-trigger.service - Coldplug All udev Devices...
+[   16.306163] cura-receiver systemd[1]: Mounted dev-mqueue.mount - POSIX Message Queue File System.
+[   16.306224] cura-receiver systemd[1]: Mounted run-lock.mount - Legacy Locks Directory /run/lock.
+[   16.306283] cura-receiver systemd[1]: Mounted sys-kernel-debug.mount - Kernel Debug File System.
+[   16.306345] cura-receiver systemd[1]: Mounted sys-kernel-tracing.mount - Kernel Trace File System.
+[   16.306406] cura-receiver systemd[1]: Finished kmod-static-nodes.service - Create List of Static Device Nodes.
+[   16.306472] cura-receiver systemd[1]: modprobe@configfs.service: Deactivated successfully.
+[   16.306533] cura-receiver systemd[1]: Finished modprobe@configfs.service - Load Kernel Module configfs.
+[   16.306592] cura-receiver systemd[1]: modprobe@efi_pstore.service: Deactivated successfully.
+[   16.306673] cura-receiver systemd[1]: Finished modprobe@efi_pstore.service - Load Kernel Module efi_pstore.
+[   16.306732] cura-receiver systemd[1]: modprobe@fuse.service: Deactivated successfully.
+[   16.306792] cura-receiver systemd[1]: Finished modprobe@fuse.service - Load Kernel Module fuse.
+[   16.306851] cura-receiver systemd[1]: modprobe@drm.service: Deactivated successfully.
+[   16.306910] cura-receiver systemd[1]: Finished modprobe@drm.service - Load Kernel Module drm.
+[   16.306977] cura-receiver systemd[1]: Mounting sys-fs-fuse-connections.mount - FUSE Control File System...
+[   16.307039] cura-receiver systemd[1]: Mounting sys-kernel-config.mount - Kernel Configuration File System...
+[   16.307098] cura-receiver kernel: EXT4-fs (mmcblk0p2): re-mounted 15f4c6be-1102-4331-9904-f78e78afd1fd r/w.
+[   16.307176] cura-receiver systemd[1]: Starting systemd-tmpfiles-setup-dev-early.service - Create Static Device Nodes in /dev gracefully...
+[   16.307237] cura-receiver systemd[1]: Finished systemd-remount-fs.service - Remount Root and Kernel File Systems.
+[   16.307299] cura-receiver systemd[1]: Mounted sys-fs-fuse-connections.mount - FUSE Control File System.
+[   16.307359] cura-receiver systemd[1]: Mounted sys-kernel-config.mount - Kernel Configuration File System.
+[   16.307419] cura-receiver systemd[1]: regenerate_ssh_host_keys.service - Regenerate SSH host keys skipped, unmet condition check ConditionFirstBoot=yes
+[   16.307487] cura-receiver systemd[1]: Starting rpi-resize-swap-file.service - rpi-resize-var-swap-service - resize swapfile...
+[   16.307549] cura-receiver systemd[1]: systemd-hwdb-update.service - Rebuild Hardware Database skipped, unmet condition check ConditionNeedsUpdate=/etc
+[   16.307737] cura-receiver systemd-journald[269]: Collecting audit messages is disabled.
+[   16.307909] cura-receiver kernel: zram: Added device: zram0
+[   16.307983] cura-receiver systemd[1]: systemd-pstore.service - Platform Persistent Storage Archival skipped, unmet condition check ConditionDirectoryNotEmpty=/sys/fs/pstore
+[   16.309698] cura-receiver systemd[1]: Starting systemd-random-seed.service - Load/Save OS Random Seed...
+[   16.309792] cura-receiver systemd[1]: systemd-tpm2-setup.service - TPM SRK Setup skipped, unmet condition check ConditionSecurity=measured-uki
+[   16.309858] cura-receiver systemd[1]: Finished systemd-modules-load.service - Load Kernel Modules.
+[   16.340137] cura-receiver systemd[1]: Finished systemd-udev-load-credentials.service - Load udev Rules from Credentials.
+[   16.360179] cura-receiver systemd[1]: Started systemd-journald.service - Journal Service.
+[   16.605428] cura-receiver systemd-journald[269]: Received client request to flush runtime journal.
+[   18.048108] cura-receiver kernel: rpi-gpiomem 3f200000.gpiomem: window base 0x3f200000 size 0x00001000
+[   18.049309] cura-receiver kernel: rpi-gpiomem 3f200000.gpiomem: initialised 1 regions as /dev/gpiomem
+[   18.420245] cura-receiver kernel: snd_bcm2835: module is from the staging directory, the quality is unknown, you have been warned.
+[   18.424103] cura-receiver kernel: bcm2835-audio bcm2835-audio: card created with 8 channels
+[   18.548119] cura-receiver kernel: mc: Linux media interface: v0.10
+[   18.768100] cura-receiver kernel: Bluetooth: Core ver 2.22
+[   18.768320] cura-receiver kernel: NET: Registered PF_BLUETOOTH protocol family
+[   18.768398] cura-receiver kernel: Bluetooth: HCI device and connection manager initialized
+[   18.768464] cura-receiver kernel: Bluetooth: HCI socket layer initialized
+[   18.768527] cura-receiver kernel: Bluetooth: L2CAP socket layer initialized
+[   18.768591] cura-receiver kernel: Bluetooth: SCO socket layer initialized
+[   18.815428] cura-receiver kernel: videodev: Linux video capture interface: v2.00
+[   18.936121] cura-receiver kernel: Bluetooth: HCI UART driver ver 2.3
+[   18.936308] cura-receiver kernel: Bluetooth: HCI UART protocol H4 registered
+[   18.936381] cura-receiver kernel: Bluetooth: HCI UART protocol Three-wire (H5) registered
+[   18.936455] cura-receiver kernel: Bluetooth: HCI UART protocol Broadcom registered
+[   18.940064] cura-receiver kernel: hci_uart_bcm serial0-0: supply vbat not found, using dummy regulator
+[   18.941151] cura-receiver kernel: hci_uart_bcm serial0-0: supply vddio not found, using dummy regulator
+[   19.200263] cura-receiver kernel: vc_sm_cma: module is from the staging directory, the quality is unknown, you have been warned.
+[   19.212156] cura-receiver kernel: bcm2835_vc_sm_cma_probe: Videocore shared memory driver
+[   19.212448] cura-receiver kernel: [vc_sm_connected_init]: start
+[   19.216575] cura-receiver kernel: [vc_sm_connected_init]: installed successfully
+[   19.256123] cura-receiver kernel: bcm2835_mmal_vchiq: module is from the staging directory, the quality is unknown, you have been warned.
+[   19.256399] cura-receiver kernel: cfg80211: Loading compiled-in X.509 certificates for regulatory database
+[   19.296165] cura-receiver kernel: Bluetooth: hci0: BCM: chip id 94
+[   19.296385] cura-receiver kernel: Bluetooth: hci0: BCM: features 0x2e
+[   19.296501] cura-receiver kernel: bcm2835_codec: module is from the staging directory, the quality is unknown, you have been warned.
+[   19.296573] cura-receiver kernel: Loaded X.509 cert 'benh@debian.org: 577e021cb980e0e820821ba7b54b4961b8b4fadf'
+[   19.300131] cura-receiver kernel: Bluetooth: hci0: BCM43430A1
+[   19.300402] cura-receiver kernel: Bluetooth: hci0: BCM43430A1 (001.002.009) build 0000
+[   19.300478] cura-receiver kernel: Loaded X.509 cert 'romain.perier@gmail.com: 3abbc6ec146e09d1b6016ab9d6cf71dd233f0328'
+[   19.300548] cura-receiver kernel: Loaded X.509 cert 'sforshee: 00b28ddf47aef9cea7'
+[   19.304136] cura-receiver kernel: Loaded X.509 cert 'wens: 61c038651aabdcf94bd0ac7ff06c7248db18c600'
+[   19.312136] cura-receiver kernel: bcm2835_isp: module is from the staging directory, the quality is unknown, you have been warned.
+[   19.314595] cura-receiver kernel: bcm2835_v4l2: module is from the staging directory, the quality is unknown, you have been warned.
+[   19.320230] cura-receiver kernel: bcm2835-codec bcm2835-codec: Device registered as /dev/video10
+[   19.320493] cura-receiver kernel: bcm2835-codec bcm2835-codec: Loaded V4L2 decode
+[   19.332091] cura-receiver kernel: bcm2835-isp bcm2835-isp: Device node output[0] registered as /dev/video13
+[   19.332334] cura-receiver kernel: bcm2835-codec bcm2835-codec: Device registered as /dev/video11
+[   19.332431] cura-receiver kernel: bcm2835-codec bcm2835-codec: Loaded V4L2 encode
+[   19.334767] cura-receiver kernel: bcm2835-isp bcm2835-isp: Device node capture[0] registered as /dev/video14
+[   19.334989] cura-receiver kernel: bcm2835-isp bcm2835-isp: Device node capture[1] registered as /dev/video15
+[   19.336098] cura-receiver kernel: bcm2835-isp bcm2835-isp: Device node stats[2] registered as /dev/video16
+[   19.336379] cura-receiver kernel: bcm2835-isp bcm2835-isp: Register output node 0 with media controller
+[   19.336465] cura-receiver kernel: bcm2835-isp bcm2835-isp: Register capture node 1 with media controller
+[   19.336535] cura-receiver kernel: bcm2835-isp bcm2835-isp: Register capture node 2 with media controller
+[   19.336610] cura-receiver kernel: bcm2835-isp bcm2835-isp: Register capture node 3 with media controller
+[   19.344116] cura-receiver kernel: bcm2835-codec bcm2835-codec: Device registered as /dev/video12
+[   19.344366] cura-receiver kernel: bcm2835-codec bcm2835-codec: Loaded V4L2 isp
+[   19.344453] cura-receiver kernel: bcm2835-isp bcm2835-isp: Device node output[0] registered as /dev/video20
+[   19.348140] cura-receiver kernel: bcm2835-isp bcm2835-isp: Device node capture[0] registered as /dev/video21
+[   19.348405] cura-receiver kernel: bcm2835-isp bcm2835-isp: Device node capture[1] registered as /dev/video22
+[   19.351867] cura-receiver kernel: bcm2835-codec bcm2835-codec: Device registered as /dev/video18
+[   19.352178] cura-receiver kernel: bcm2835-codec bcm2835-codec: Loaded V4L2 image_fx
+[   19.358946] cura-receiver kernel: bcm2835-isp bcm2835-isp: Device node stats[2] registered as /dev/video23
+[   19.359111] cura-receiver kernel: bcm2835-isp bcm2835-isp: Register output node 0 with media controller
+[   19.359184] cura-receiver kernel: bcm2835-isp bcm2835-isp: Register capture node 1 with media controller
+[   19.359256] cura-receiver kernel: bcm2835-isp bcm2835-isp: Register capture node 2 with media controller
+[   19.359320] cura-receiver kernel: bcm2835-isp bcm2835-isp: Register capture node 3 with media controller
+[   19.359382] cura-receiver kernel: bcm2835-isp bcm2835-isp: Loaded V4L2 bcm2835-isp
+[   19.360490] cura-receiver kernel: bcm2835-codec bcm2835-codec: Device registered as /dev/video31
+[   19.360587] cura-receiver kernel: bcm2835-codec bcm2835-codec: Loaded V4L2 encode_image
+[   19.492171] cura-receiver kernel: loop0: detected capacity change from 0 to 1853440
+[   19.640062] cura-receiver kernel: brcmfmac: F1 signature read @0x18000000=0x1541a9a6
+[   19.654391] cura-receiver kernel: Bluetooth: hci0: BCM43430A1 'brcm/BCM43430A1.raspberrypi,3-model-b.hcd' Patch
+[   19.676181] cura-receiver kernel: brcmfmac: brcmf_fw_alloc_request: using brcm/brcmfmac43430-sdio for chip BCM43430/1
+[   19.676424] cura-receiver kernel: usbcore: registered new interface driver brcmfmac
+[   20.008360] cura-receiver kernel: Console: switching to colour dummy device 80x25
+[   20.016235] cura-receiver kernel: zram: setup backing device /dev/disk/by-backingfile/var-swap
+[   20.020705] cura-receiver kernel: zram0: detected capacity change from 0 to 1853440
+[   20.040158] cura-receiver kernel: vc4-drm soc:gpu: bound 3f400000.hvs (ops vc4_hvs_ops [vc4])
+[   20.051609] cura-receiver kernel: Registered IR keymap rc-cec
+[   20.051849] cura-receiver kernel: rc rc0: vc4-hdmi as /devices/platform/soc/3f902000.hdmi/rc/rc0
+[   20.053244] cura-receiver kernel: input: vc4-hdmi as /devices/platform/soc/3f902000.hdmi/rc/rc0/input0
+[   20.096209] cura-receiver kernel: input: vc4-hdmi HDMI Jack as /devices/platform/soc/3f902000.hdmi/sound/card1/input1
+[   20.104231] cura-receiver kernel: vc4-drm soc:gpu: bound 3f902000.hdmi (ops vc4_hdmi_ops [vc4])
+[   20.109714] cura-receiver kernel: vc4-drm soc:gpu: bound 3f004000.txp (ops vc4_txp_ops [vc4])
+[   20.110949] cura-receiver kernel: vc4-drm soc:gpu: bound 3f206000.pixelvalve (ops vc4_crtc_ops [vc4])
+[   20.112362] cura-receiver kernel: vc4-drm soc:gpu: bound 3f207000.pixelvalve (ops vc4_crtc_ops [vc4])
+[   20.120537] cura-receiver kernel: vc4-drm soc:gpu: bound 3f807000.pixelvalve (ops vc4_crtc_ops [vc4])
+[   20.121934] cura-receiver kernel: vc4-drm soc:gpu: bound 3fc00000.v3d (ops vc4_v3d_ops [vc4])
+[   20.136237] cura-receiver kernel: [drm] Initialized vc4 0.0.0 for soc:gpu on minor 0
+[   20.140198] cura-receiver kernel: vc4-drm soc:gpu: [drm] Cannot find any crtc or sizes
+[   20.141493] cura-receiver kernel: vc4-drm soc:gpu: [drm] Cannot find any crtc or sizes
+[   20.336683] cura-receiver kernel: brcmfmac: brcmf_c_process_txcap_blob: no txcap_blob available (err=-2)
+[   20.340095] cura-receiver kernel: brcmfmac: brcmf_c_preinit_dcmds: Firmware: BCM43430/1 wl0: Jul 19 2021 03:24:18 version 7.45.98 (TOB) (56df937 CY) FWID 01-8e14b897
+[   20.528086] cura-receiver kernel: Bluetooth: hci0: BCM: features 0x2e
+[   20.532184] cura-receiver kernel: Bluetooth: hci0: BCM43438A1 37.4MHz Raspberry Pi 3-0141
+[   20.532519] cura-receiver kernel: Bluetooth: hci0: BCM43430A1 (001.002.009) build 0508
+[   20.560096] cura-receiver kernel: Adding 926716k swap on /dev/zram0.  Priority:100 extents:1 across:926716k SS
+[   30.928108] cura-receiver kernel: Bluetooth: BNEP (Ethernet Emulation) ver 1.3
+[   30.928315] cura-receiver kernel: Bluetooth: BNEP filters: protocol multicast
+[   30.928392] cura-receiver kernel: Bluetooth: BNEP socket layer initialized
+[   31.028112] cura-receiver kernel: Bluetooth: MGMT ver 1.23
+[   31.060121] cura-receiver kernel: NET: Registered PF_ALG protocol family
+[   31.492253] cura-receiver kernel: Bluetooth: RFCOMM TTY layer initialized
+[   31.492349] cura-receiver kernel: Bluetooth: RFCOMM socket layer initialized
+[   31.492415] cura-receiver kernel: Bluetooth: RFCOMM ver 1.11
+[   48.648059] cura-receiver kernel: smsc95xx 1-1.1:1.0 eth0: hardware isn't capable of remote wakeup
+[   48.649502] cura-receiver kernel: smsc95xx 1-1.1:1.0 eth0: Link is Down
+[   48.680216] cura-receiver kernel: brcmfmac: brcmf_cfg80211_set_power_mgmt: power save enabled
+
+command_exit=0

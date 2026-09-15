@@ -519,6 +519,15 @@ provenance remains in `CommunicatorStateV1`. A time diagnostic explains why an
 exceptional operation failed. It neither creates another UTC anchor nor
 substitutes for any of those records.
 
+A bounded RTC read-recovery episode retains its first exceptional read as the
+trigger even when a later attempt succeeds; its secondary status records the
+final effective read status. Ordinary `MISSING` or `INVALID` results alone do
+not create an I/O diagnostic, but exhaustion of the recovery window is a
+`DEADLINE` failure. A successful recovered read resets the consecutive-read
+failure latch after reporting any new trigger. Pre-write recovery, one write
+and recovered read-back share at most one refresh diagnostic. Generation/source
+checks and UTC acceptance use the final result, independently of diagnostics.
+
 ### `TimeDiagnosticErrorCode`
 
 | Value | Name | Meaning |

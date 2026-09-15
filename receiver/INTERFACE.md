@@ -491,6 +491,26 @@ serialization; construction remains ordinary Python process work.
 
 ## DS3231 control interface
 
+[DS3231 LIMITATION.md](hardware/ds3231/LIMITATION.md) records the platform
+findings and pilot qualification; this section owns the exact control contract.
+
+The runtime time component consumes the existing clock capabilities and narrow
+Chrony, kernel-sampling and RTC ports. Its complete communicator-state snapshot
+callback belongs to its caller: for requested provenance and a supplied trusted
+snapshot UTC/monotonic instant, the caller returns an immutable next-generation
+`CommunicatorStateV1`, or no snapshot when its state owner is unavailable. The
+component checks the requested provenance, generation and exact snapshot UTC
+before submission. It never initializes, recovers or ages airtime history.
+Returning no snapshot defers refresh without a device write; persistence
+failure remains a typed persistence-control result. State is adopted only after
+acknowledged commit or serialized load matching the exact generation and bytes.
+
+Before refresh may submit a physical write, the last acknowledged complete
+state must have absent RTC provenance. Otherwise first obtain and durably
+commit a new complete snapshot with absent provenance. Reconcile an unknown
+invalidation commit before writing. Once invalidated, a failed refresh never
+restores the previous proof, including after process restart.
+
 The communicator owns runtime DS3231 policy and accesses the device only
 through one fakeable adapter. The boot helper remains a separate, ordered
 once-per-Linux-boot RTC-to-system-clock bootstrap component; it does not own
@@ -519,6 +539,28 @@ deadline. It records the actual return time even when an underlying operation
 finishes after its deadline. Neither method reads `CLOCK_REALTIME`, changes
 Linux system time, performs persistence I/O or retries without returning to
 communicator policy.
+
+The pilot communicator uses `recover_rtc_read()` for ordinary RTC reads,
+pre-write communication checks and post-write verification. It repeatedly
+calls this single-attempt port during a 3000000-us recovery window, stopping
+on the first `OK` or `INVALID`. Other read results permit another attempt while
+the window remains open. Each call has its own 5000000-us deadline budget,
+independent of the recovery deadline, so the configured 3000000-us Pi kernel
+allowance can be reserved. Apply conservative maximum-lifetime conversion to
+both budgets. Do not start another call at/after the recovery deadline. A final
+in-flight call is allowed to return within its deployment-validated bound;
+completion at/after the recovery deadline returns `DEADLINE_EXCEEDED`, including
+when that last call read a valid calendar. This is a retry window, not a promise
+to interrupt an ioctl or return at exactly three seconds.
+
+`RtcReadRecoveryResult` retains the recovery start/finish, attempt count, final
+effective `Ds3231ReadResult` and first exceptional (`IO_ERROR` or
+`DEADLINE_EXCEEDED`) read. It does not retain an unbounded list of attempts.
+An exhausted window is a deadline failure even when earlier attempts returned
+`MISSING`. On success, use only the successful attempt's read bracket for UTC
+and uncertainty; failed-attempt time never widens that successful bracket.
+`INVALID` requires the explicit network-qualified operator initialization or
+recovery procedure. Ordinary runtime refresh must not write an invalid RTC.
 
 `UtcSeconds` reflects the DS3231's whole-second resolution. `write_time()`
 accepts only a canonical value in the deployment-validated RTC/driver range.
@@ -673,14 +715,57 @@ protocol without changing communicator policy.
 
 ### Recovery and scheduling
 
+The initial backend supports Linux LP64 little-endian x86-64 and AArch64
+libc `adjtimex`/RTC ABIs, verified against native headers on each target.
+Kernel sampling accepts only `TIME_OK` without `STA_UNSYNC`, or `TIME_ERROR`
+with `STA_UNSYNC`. `STA_NANO` selects nanosecond normalization; all other
+status bits are rejected as interference for this chrony-slew-only deployment.
+Calendar conversion and the native RTC helper use the conservative common
+range 2000-01-01 through 2099-12-31 UTC (946684800..4102444799 seconds).
+
+The native helper V1 has no output and uses these fixed exit statuses:
+`32 COMPLETED`, `33 INVALID_ARGUMENT`, `34 MISSING_BEFORE_SUBMISSION`,
+`35 IO_BEFORE_SUBMISSION`, `36 IO_AFTER_SUBMISSION`. Every other status,
+signal or lost result after successful execution is an unknown outcome.
+The configured trusted SHA256 of the installed ELF pins this protocol; no
+version-probe invocation can write the RTC. The helper accepts exactly one
+canonical decimal argument, with no sign or leading zeroes. Its compiled
+device path is `/dev/rtc-ds3231`. The adapter validates root ownership,
+receiver-group execution, absence of set-ID/world/group-write permissions,
+and exactly `cap_sys_time=ep`; it also requires a capability-free receiver
+parent, the retained bounding capability and `NoNewPrivileges=0`.
+
+Deployment supplies a finite validated RTC kernel-operation bound; the
+adapter refuses to start a read without enough remaining deadline for that
+bound. It still records late actual completion as `DEADLINE_EXCEEDED`.
+After terminating a timed-out RTC helper, child reaping allows at least that
+validated kernel-operation bound (and at least one second); the actual cleanup
+time remains part of the reported operation bracket. Deployment must validate
+the bound for both read and write kernel paths, including termination during an
+in-flight ioctl.
+Runtime operation budgets are explicit positive configuration, with initial
+values of 250000 us for tracking/kernel sampling, 5000000 us per RTC read attempt,
+3000000 us per RTC read-recovery window,
+1000000 us for helper/control operations, 30000000 us per step episode,
+1000000 us between stable-time polls, and retry backoff from 1000000 us to
+60000000 us. A scheduling pass makes at most one network sampling attempt or
+one bounded RTC recovery episode. Safety
+budgets and retry waits use the existing conservative duration conversions.
+Operations start before required observation/poll boundaries by their
+applicable operation budgets (RTC recovery window plus final-attempt budget);
+insufficient remaining trust life causes an
+ordinary expiry rather than a spin or a stretched sampling margin.
+
 `Ds3231Control` deliberately exposes no reset operation. The DS3231 `RST` pin
 is a processor-reset/power-fail signal and does not reset the device's RTC,
 I2C interface or oscillator. Removing both main and backup power would destroy
-the time state whose provenance the receiver protects. I2C-controller recovery
-is a kernel/board transport concern and may affect other devices; it is not
-communicator RTC policy.
+the time state whose provenance the receiver protects. Controller resets and
+driver repair remain kernel/board concerns. The pilot communicator's recovery
+uses only repeated RTC reads through the existing port; it never resets or
+rebinds a controller.
 
-The communicator performs a bounded read after receiver startup, after every
+The communicator performs bounded read recovery after receiver startup, before
+an ordinary RTC write, after every
 completed or uncertain write, and whenever a direct `RTC_HOLDOVER`
 `ClockObservationV1` is due. The holdover observation period is capped by
 `rtc_holdover_observation_period_cap_us` and shortened by the current UTC-error
@@ -753,6 +838,17 @@ chronyc -n -c -h <socket-path> makestep
 configuration, not a per-call argument. The backend pins and startup-checks a
 supported chronyc output version before time quality can become
 `NETWORK_SYNCED`.
+
+The initial deployment pins chronyc 4.6.1 and its 14-field CSV tracking output.
+All fields are structurally validated, including unused finite numeric fields;
+local mode (`7F7F0101`) and an absent reference cannot establish network trust.
+Signed system correction preserves chronyc's slow-positive CSV offset
+and is rounded away from zero in microseconds. Root distance is formed from the
+unrounded decimal delay/dispersion and rounded upward once; skew is rounded
+upward in ppb. Executables and socket paths are immutable absolute construction
+data; socket paths may not contain a comma/fallback list. Child output is
+bounded to 4096 bytes per stream. A late or lost step result is unknown once
+execution is possible, even if a subsequent child exit looks successful.
 
 `read_tracking()` executes the fixed read-only equivalent of `chronyc
 tracking`, validates the complete response from a deployment-supported chrony

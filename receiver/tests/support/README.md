@@ -25,9 +25,12 @@ At this stage `fakes/os_clock.py` implements the already defined monotonic and
 realtime clock capabilities, `models/persist_queue.py` is the independent
 list-based oracle for the production queue's observable state machine, and
 `coordination/threads.py` provides named checked workers plus bounded deadlock
-detection for the queue's real-thread tests. Chrony, DS3231, SX1262, host-
-health, filesystem and persistence fakes wait for their production interfaces
-and component tests.
+detection for the queue's real-thread tests. `fakes/kernel_clock.py`,
+`fakes/chrony.py` and `fakes/ds3231.py` implement the existing production time
+ports. Each was introduced with its first runtime state-machine test. They
+supply explicit queued outcomes and named call hooks; they never infer policy,
+advance time or acknowledge persistence. SX1262 and other fakes still wait for
+their production interfaces and component tests.
 
 The ordinary-persistence suites now share reviewed literal entity inputs in
 `builders/persistence.py`. Their real-file host fixture is local to the host
@@ -60,7 +63,11 @@ Pure time analysis keeps its merged-stream correlation oracle local to
 local to `host/test_logical_timestamps.py`. Each has reviewed primitive examples
 before generated comparisons. Observation/reading constructors also remain
 local, while realtime-step tests reuse the existing `FakeOsClock`. This stage
-adds no shared time model or helper and no Chrony/DS3231 port or fake.
+added no shared time model or helper. The runtime extension keeps its primitive
+network oracle, RTC episode builders and SIGKILL milestones local to
+`host/test_runtime_time.py`, using the existing real queue and SQLite worker.
+The laptop reference bridge remains in `hardware/time_reference.py`; its
+independent numerical examples are host tests, not target slew evidence.
 
 ## Builders
 

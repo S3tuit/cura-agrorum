@@ -442,7 +442,7 @@ Current host coverage is mapped as follows. The required families below remain
 the full pilot obligations; partial coverage here does not remove their later
 integration requirements.
 
-| Required family | Current pure coverage | Remaining owning-component coverage |
+| Required family | Pure coverage | Runtime or integration responsibility (coverage below) |
 |---|---|---|
 | Independent quality axes | `test_time_policy.py`: meaningful combinations, present-RTC holdover requirement, startup probe and rejection of persisted snapshots as current authority | Startup orchestration with loaded state and fresh probes |
 | Conservative duration conversions | `test_elapsed_duration.py`: normative values, unit boundaries, checked scalar/intermediate overflow and generated integer inequalities | Use by later radio/time-service callers |
@@ -465,11 +465,50 @@ integration requirements.
 | Logical extrapolation and competing anchors | `test_logical_timestamps.py`: both directions, continuity/identity fences, direct priority, nearest/newer selection, immutable output and independent generated chain walks | Output-storage adapter, when introduced |
 | Time-policy state-machine properties | `test_time_analysis_properties.py`: independent merged-stream oracle against generated recorded network/RTC observations, quality loss, steps, starts and events | Generated runtime command/RTC/persistence episode schedules |
 
-The reference models and input constructors remain local to their test files;
-no new shared helper or production port is introduced. Raspberry Pi execution
-for this stage is pending target availability. No new hardware placeholder
-tests were added: the hardware families below require their production adapters
-and deployment fixtures.
+The runtime extension adds these concrete component suites. Its platform fakes
+were introduced after each production port and with the first runtime consumer;
+reference models and episode builders remain local.
+
+| Component responsibility | Implemented coverage |
+|---|---|
+| Bounded normalized Linux inputs | `host/test_linux_kernel_clock.py`, `test_linux_chrony.py`, `test_linux_ds3231.py`: native ABI, fixed arguments, conservative parser conversion, OS failures, deadlines, uncertain completion, actual bounded children, native helper and deployment checks |
+| Live time ownership and step state | `host/test_runtime_time.py`: quality/health axes, exact expiry, generation ABA, observation admission, retained boundaries, fresh-authorized steps, bounded stable polling and retries |
+| RTC refresh and persistence | Same suite: five-second rechecks, mandatory read-back, prior-proof invalidation, exact commit/load reconciliation using real SQLite, six SIGKILL/restart milestones; no airtime policy is synthesized |
+| Diagnostic contract | `host/test_time_diagnostics.py` and runtime cases: exact 80-byte context, operation/status/error matrix, latch suppression/reset, immutable episode trigger and caller-owned diagnostic identity/admission |
+| Real Pi component inputs | `hardware/test_runtime_time.py`: native header ABI, real clock/Chrony/RTC input brackets, safe OS failures, process restart/boot identity, supplied-provenance offline startup, effective time-writer audit |
+| Invasive Pi components | `hardware/test_time_mutations.py`: capability-free receiver child, native-helper write/read-back, durable invalidation before replacement, explicit forward/backward steps and persisted correlation gaps, positive/negative maximum slew using the laptop reference bridge |
+| Operator-created oscillator-stop fault | `hardware/test_ds3231_osf.py`: valid pre-fault baseline, confirmed RTC-04 power/cell cycle, changed boot, current OSF boot evidence and production-adapter `INVALID`/`EINVAL` capture before RTC-05 recovery; the operator run owns physical restoration |
+| Controller fault qualification | `hardware/test_time_mutations.py::test_ds3231_controller_fault`: four held-SCL/SDA read/write cases, confirmed temporary wiring, physical pad levels, actual ioctl and pending-SIGKILL evidence, bounded completion/reaping and restoration. Dedicated RTC-only fixture keeps normal Chrony running; read cleanup verifies without writing, write cleanup explicitly restores after authorized submission, and uncertain cleanup stops dependent cases. Target execution is required before claiming qualification |
+
+The exact execution status and invasive commands are in
+[`hardware/evidence/runtime_time/README.md`](tests/hardware/evidence/runtime_time/README.md).
+A supplied test provenance value proves the offline component's treatment of
+that input; it is not a physical RTC calibration or a complete receiver-service
+boot test. Current-process restart evidence does not prove a changed boot ID
+across reboot. Full receiver-service lifecycle/reboot integration stays with
+that owner's implementation. Physical OSF fault injection follows the existing
+[DS3231 operator procedure](hardware/ds3231/OPERATOR_TESTS.md); its earlier
+results do not claim a run of these new adapters. The configured RTC operation
+budget is an acceptance bound; nominal reads do not establish the kernel's
+worst-case failure bound.
+The [component fault procedure](tests/hardware/RTC_FAULT_TESTS.md) defines the
+operator confirmations, temporary connections, execution order and restoration
+for these two fault families.
+The controller investigation and pilot qualification are summarized in
+[DS3231 LIMITATION.md](hardware/ds3231/LIMITATION.md).
+Fault cleanup distinguishes released GPIO inputs from recovered high bus
+pads: bounded production read recovery may start with low pads after confirmed
+GPIO release; high pads and a valid read are required before any restoration
+write. Host subprocess tests cover low-valued release replies without killing
+the holder's cleanup, while target tests establish actual GPIO ownership and
+electrical recovery.
+The [receiver test carrier](hardware/TEST_CARRIER.md) owns their common schematic
+and shunt states. Normal suites use open fault shunts; only the connected
+controller-fault suite checks and owns the two injection GPIOs.
+
+Pure observation helpers retain their reject-with-`None` default. Their explicit
+`report_calculation_failure=True` option lets the runtime distinguish checked
+arithmetic failure for TIME diagnostics without duplicating the equations.
 
 ### Host tests
 
@@ -483,6 +522,7 @@ and deployment fixtures.
 - **Quality ABA rejection:** Change time quality away and back during a sampled operation and prove the changed `clock_state_generation` invalidates the result despite equal final enum values.
 - **Direct RTC observation:** Verify whole-second midpoint, half-second representation term, converted half-bracket, fixed margin, durable verification uncertainty and pre-read RTC drift are combined exactly.
 - **Holdover age limits:** Reproduce the documented approximately 24.46-day cadence and 39.93-day absolute examples, then check equality, next-unit and nonzero-read-bracket boundaries.
+- **Pilot RTC read recovery:** Exercise transport failures followed by success, INVALID without retry, expiry before entry, the exact three-second boundary and a last in-flight read returning late. Keep successful UTC brackets separate from total recovery duration and preserve the first diagnostic trigger. Prove that failed pre-write recovery preserves prior durable provenance and issues no write, while a successful preflight rechecks source/generation and derives fresh UTC before exactly one write. Unknown writes still require read-back and never trigger a blind write retry. Explicit operator recovery owns invalid-RTC initialization.
 - **RTC refresh ordering:** Exercise derive, write, read-back, generation recheck and durable provenance commit, with failures/crashes after every step and no usable provenance before acknowledged commit.
 - **RTC source threshold:** Require the stricter five-second source-error bound both at refresh start and before commit, independently of the broader network-trust threshold.
 - **Clock-step state machine:** Cover boundary publication failure, command rejection, confirmed submission, unknown command outcome, stable-time polling, deadline and bounded retry without blind resubmission after an unknown result.
@@ -505,6 +545,15 @@ and deployment fixtures.
 - **Unproven RTC startup:** Remove or invalidate only the test provenance and prove a plausible RTC bootstrap value does not establish `RTC_HOLDOVER` authority.
 - **RTC write/read-back:** Under destructive opt-in, save the fixture state, perform a network-qualified RTC refresh, verify read-back and durable provenance ordering, then restore and independently verify host/device state.
 - **Maximum slew-rate validation:** Compare disciplined `CLOCK_MONOTONIC` with an independent elapsed-time reference during configured maximum positive and negative slew and validate the 3,700 ppm receiver bound; this is slow and destructive.
+  For the laptop/SSH fixture, retain every reference sample (including invalid
+  replies) and computed interval even when the case fails. Sample each direction
+  for at least 20 minutes, extending only while interval width remains at least
+  200 ppm, up to 40 minutes. At the first interval narrower than 200 ppm after
+  the minimum duration, immediately require the complete interval within
+  ±3,700 ppm and the requested-direction magnitude conclusively above 3,300 ppm.
+  Do not extend a resolved rate failure to seek a pass. Insufficient resolution
+  at the maximum duration fails. Bound component execution to 45 minutes,
+  including reference exchanges, and preserve mandatory fixture restoration.
 - **Explicit step integration:** Under destructive isolation, execute forward and backward chrony-step episodes and prove complete boundary publication before the command, FIFO persistence ordering, permanent correlation gaps and recovery only at the first later trusted observation.
 - **Deployment time-writer audit:** Verify effective chrony configuration has the declared slew/leap policy, no automatic-step directive, no `rtcsync`/`rtcfile`, command port disabled and no competing enabled system-clock or RTC writer.
 

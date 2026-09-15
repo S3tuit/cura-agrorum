@@ -1,0 +1,51 @@
+$ date -u +%Y-%m-%dT%H:%M:%S.%N%z
+2026-09-14T09:59:58.665401948+0000
+command_exit=0
+
+$ cat /proc/sys/kernel/random/boot_id
+577740db-60ed-46f8-ab94-042b46381c7f
+command_exit=0
+
+$ chronyc -h /run/chrony/chronyd.sock tracking
+Reference ID    : CCD8D64C (204.216.214.76)
+Stratum         : 3
+Ref time (UTC)  : Mon Sep 14 09:59:55 2026
+System time     : 0.000041198 seconds slow of NTP time
+Last offset     : -0.000120692 seconds
+RMS offset      : 0.003138346 seconds
+Frequency       : 6.768 ppm fast
+Residual freq   : -0.021 ppm
+Skew            : 1.546 ppm
+Root delay      : 0.030129690 seconds
+Root dispersion : 0.000999626 seconds
+Update interval : 65.2 seconds
+Leap status     : Normal
+command_exit=0
+
+$ chronyc -h /run/chrony/chronyd.sock sources -v
+
+  .-- Source mode  '^' = server, '=' = peer, '#' = local clock.
+ / .- Source state '*' = current best, '+' = combined, '-' = not combined,
+| /             'x' = may be in error, '~' = too variable, '?' = unusable.
+||                                                 .- xxxx [ yyyy ] +/- zzzz
+||      Reachability register (octal) -.           |  xxxx = adjusted offset,
+||      Log2(Polling interval) --.      |          |  yyyy = measured offset,
+||                                \     |          |  zzzz = estimated error.
+||                                 |    |           \
+MS Name/IP address         Stratum Poll Reach LastRx Last sample               
+===============================================================================
+^+ time.cloudflare.com           3   6   377     2  -1997us[-1997us] +/-   27ms
+^+ time.cloudflare.com           3   6   377     4  -2512us[-2633us] +/-   28ms
+^* 204.216.214.76                2   6   377     2   +138us[  +18us] +/-   16ms
+^+ ntp2.leontp.com               1   6   377    67  +2095us[+1981us] +/-   24ms
+command_exit=0
+
+$ journalctl --list-boots --utc --no-pager
+IDX BOOT ID                          FIRST ENTRY                  LAST ENTRY
+  0 577740db60ed46f8ab94042b46381c7f Mon 2026-09-14 11:48:28 CEST Mon 2026-09-14 11:59:58 CEST
+command_exit=0
+
+$ journalctl -b 20a93cf7dc7041ffb00e9269bb05014b -n 35 --utc -o short-iso-precise --no-pager
+No journal boot entry found for the specified boot (20a93cf7dc7041ffb00e9269bb05014b+0).
+command_exit=1
+

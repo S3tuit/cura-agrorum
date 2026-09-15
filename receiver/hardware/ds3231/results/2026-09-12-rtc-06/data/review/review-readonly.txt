@@ -1,0 +1,66 @@
+$ date -u +%Y-%m-%dT%H:%M:%S.%N%z
+2026-09-14T09:58:54.860641699+0000
+command_exit=0
+
+$ cat /proc/sys/kernel/random/boot_id
+577740db-60ed-46f8-ab94-042b46381c7f
+command_exit=0
+
+$ uname -a
+Linux cura-receiver 6.18.50+rpt-rpi-v8 #1 SMP PREEMPT Debian 1:6.18.50-1+rpt1~beta1 (2026-09-11) aarch64 GNU/Linux
+command_exit=0
+
+$ cat /etc/os-release
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+NAME="Debian GNU/Linux"
+VERSION_ID="13"
+VERSION="13 (trixie)"
+VERSION_CODENAME=trixie
+DEBIAN_VERSION_FULL=13.6
+ID=debian
+HOME_URL="https://www.debian.org/"
+SUPPORT_URL="https://www.debian.org/support"
+BUG_REPORT_URL="https://bugs.debian.org/"
+command_exit=0
+
+$ dpkg-query -W linux-image-6.18.50+rpt-rpi-v8 chrony util-linux
+chrony	4.6.1-3+deb13u2
+linux-image-6.18.50+rpt-rpi-v8	1:6.18.50-1+rpt1~beta1
+util-linux	2.41.5-0+deb13u1
+command_exit=0
+
+$ cat /sys/class/rtc/rtc0/name
+rtc-ds1307 1-0068
+command_exit=0
+
+$ readlink -f /sys/class/rtc/rtc0/device/driver
+/sys/bus/i2c/drivers/rtc-ds1307
+command_exit=0
+
+$ chronyc -h /run/chrony/chronyd.sock tracking
+Could not open connection to daemon
+command_exit=1
+
+$ chronyc -h /run/chrony/chronyd.sock sources -v
+Could not open connection to daemon
+command_exit=1
+
+$ systemctl is-active chrony.service systemd-timesyncd.service
+active
+inactive
+command_exit=0
+
+$ systemctl is-enabled chrony.service systemd-timesyncd.service
+enabled
+masked
+command_exit=0
+
+$ journalctl --list-boots --no-pager
+IDX BOOT ID                          FIRST ENTRY                  LAST ENTRY
+  0 577740db60ed46f8ab94042b46381c7f Mon 2026-09-14 11:48:28 CEST Mon 2026-09-14 11:58:54 CEST
+command_exit=0
+
+$ journalctl -b 20a93cf7-dc70-41ff-b00e-9269bb05014b -n 35 --utc -o short-iso-precise --no-pager
+Failed to add match '20a93cf7-dc70-41ff-b00e-9269bb05014b': Invalid argument
+command_exit=1
+

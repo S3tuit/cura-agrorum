@@ -1,0 +1,15 @@
+Reference ID    : B99DE5FE (ns3.fibertelecom.it)
+Stratum         : 3
+Ref time (UTC)  : Sat Sep 12 19:50:59 2026
+System time     : 0.000645663 seconds fast of NTP time
+Last offset     : +0.000100371 seconds
+RMS offset      : 0.000376802 seconds
+Frequency       : 5.983 ppm fast
+Residual freq   : +0.001 ppm
+Skew            : 0.092 ppm
+Root delay      : 0.024403038 seconds
+Root dispersion : 0.010316553 seconds
+Update interval : 1044.4 seconds
+Leap status     : Normal
+
+command_exit=0

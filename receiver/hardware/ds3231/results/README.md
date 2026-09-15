@@ -9,6 +9,7 @@ acceptance for another fixture, kernel or receiver implementation.
 | Run | Outcome |
 |---|---|
 | [2026-09-12-run-01 — Raspberry Pi 3](2026-09-12-run-01/README.md) | RTC-01–RTC-05 PASS; RTC-06 NOT RUN. No drift resolved in the short retention check. |
+| [2026-09-12-rtc-06 — Raspberry Pi 3, completed 2026-09-14](2026-09-12-rtc-06/README.md) | RTC-06 PASS. About 37 h 42 min between network-qualified reads, including powered time; no drift resolved. Physical retention sequence confirmed by the operator. |
 
 ## Adding a run
 

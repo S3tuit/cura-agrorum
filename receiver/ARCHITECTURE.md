@@ -244,6 +244,9 @@ The receiver uses the Pi system clocks and the battery-backed DS3231 for differe
 
 The DS3231 stores UTC, never local civil time.
 
+The pilot controller findings and recovery rationale are recorded in
+[DS3231 LIMITATION.md](hardware/ds3231/LIMITATION.md).
+
 ### Time quality and RTC health
 
 System-time quality and RTC health are separate axes:
@@ -309,21 +312,46 @@ separate five-second RTC-write threshold. The periodic online clock-observation
 and RTC-refresh tasks share this scheduling episode when both are due. The
 refresh is ordered:
 
-1. Capture `clock_state_generation` as the episode generation and derive the
+1. Capture `clock_state_generation` as the episode generation. Recover RTC
+   communication using repeated single reads within the configured three-second
+   retry window. Require a valid read before an ordinary write; `INVALID`
+   requires explicit network-qualified operator recovery. A failed pre-write
+   check returns `PREWRITE_READ_FAILED` without changing durable provenance or
+   writing the device. Recheck the generation and fresh source bounds after
+   recovery. Before any physical write is possible, durably invalidate any existing RTC provenance
+   by committing a complete next-generation communicator state with absent
+   provenance. Require acknowledgement or exact serialized-load reconciliation
+   of that invalidation before continuing. A previously acknowledged state
+   whose provenance is already absent needs no redundant invalidation commit.
+   The caller supplies a complete valid state snapshot; the time component
+   does not construct, age or recover an airtime ledger. If no such snapshot
+   is available, defer the refresh and retain separately valid network time.
+2. Recheck the generation and fresh five-second source bound, and derive the
    target whole-second UTC from the fresh trusted observation plus bounded
    monotonic elapsed time.
-2. Write that value to the DS3231.
-3. Read back and verify the RTC update. The returned whole-second midpoint must
+3. Write that value to the DS3231.
+4. Use bounded read recovery to read back and verify the RTC update, including
+   after a possibly applied write. Never repeat the physical write blindly.
+   The returned whole-second midpoint must
    differ from network UTC advanced to the same read midpoint by no more than
    the fixed one-second `time_sampling_margin_us`; the actual difference and
    the checked read uncertainty are charged to provenance.
-4. Recheck the episode generation, current `NETWORK_SYNCED` quality and the
+5. Recheck the episode generation, current `NETWORK_SYNCED` quality and the
    stricter source-error condition, including that the supporting tracking
    result has not reached its next required poll deadline.
-5. Durably commit the verification uncertainty, RTC drift bound and new RTC
+6. Durably commit the verification uncertainty, RTC drift bound and new RTC
    provenance through `commit_communicator_state()`.
-6. Only after acknowledgement may a later Pi boot or runtime holdover
+7. Only after acknowledgement may a later Pi boot or runtime holdover
    observation use that update for `RTC_HOLDOVER`.
+
+Read recovery belongs to communicator policy; each adapter call remains a
+single attempt. The retry window stops new attempts after three seconds, while
+a final in-flight call retains its separate deployment-validated operation
+bound. A completion at/after the recovery deadline fails even if the last
+calendar read was valid. Only the successful attempt's bracket contributes UTC
+and read uncertainty. The same recovery operation serves direct holdover reads;
+its retry window plus final-attempt budget is included in scheduling lead time.
+Failure changes RTC health without removing separately valid network time.
 
 A clock-step command is not an RTC-refresh trigger: the communicator waits for
 the first qualifying post-step `NETWORK_SYNCED` observation. A reset between
@@ -334,6 +362,15 @@ boot trust an RTC that was never updated. Offline operation neither writes the
 RTC from Linux nor repeatedly writes Linux system time from the RTC. Clean
 shutdown has no special clock-persistence role, and an unsynchronized Pi must
 never overwrite a credible RTC.
+
+Invalidation is a removal of trust, never an advance assertion that a future
+write succeeded. A crash before acknowledged invalidation leaves the old RTC
+and its old proof intact because no write was submitted. A crash after that
+point and before new verification commits leaves no usable proof, even if the
+device still contains a good time. Unknown invalidation or verification commits
+are reconciled by exact generation and canonical bytes through the existing
+persistence control channel; no physical write is retried while its preceding
+invalidation is unresolved.
 
 ### Clock observations and event timestamps
 
@@ -434,7 +471,8 @@ number of failed sampling attempts leaves the observation pending; it never
 guesses a correlation.
 
 An `RTC_HOLDOVER` observation uses the same generation-before/after rule around
-one bounded `Ds3231Control.read_time()` call. Its monotonic value is the read
+the successful `Ds3231Control.read_time()` attempt in one bounded read-recovery
+episode. Its monotonic value is the read
 bracket midpoint, while its UTC value is the midpoint of the returned whole
 UTC second. The uncertainty calculation charges exactly half a second for that
 representation, the conservatively converted measured half-bracket and the

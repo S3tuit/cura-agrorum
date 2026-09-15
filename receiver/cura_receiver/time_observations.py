@@ -82,6 +82,7 @@ def network_observation(
     kernel_sample_usable: bool,
     required_poll_deadline_us: int,
     policy: TimePolicy,
+    report_calculation_failure: bool = False,
 ) -> TrustedTimeSample | None:
     """Consume normalized kernel acceptance; this function never interprets raw timex bits."""
     try:
@@ -128,7 +129,11 @@ def network_observation(
         ):
             return None
         return sample
-    except (TypeError, ValueError, OverflowError):
+    except OverflowError:
+        if report_calculation_failure:
+            raise
+        return None
+    except (TypeError, ValueError):
         return None
 
 
@@ -142,6 +147,7 @@ def rtc_observation(
     operation_started_at_monotonic_us: int,
     operation_finished_at_monotonic_us: int,
     policy: TimePolicy,
+    report_calculation_failure: bool = False,
 ) -> TrustedTimeSample | None:
     """Provenance must already be durably loaded/acknowledged and its instance resolved."""
     try:
@@ -204,7 +210,11 @@ def rtc_observation(
         ):
             return None
         return sample
-    except (TypeError, ValueError, OverflowError):
+    except OverflowError:
+        if report_calculation_failure:
+            raise
+        return None
+    except (TypeError, ValueError):
         return None
 
 
@@ -277,6 +287,7 @@ def rtc_refresh_source_error_us(
     now_monotonic_us: int,
     required_poll_deadline_us: int,
     policy: TimePolicy,
+    report_calculation_failure: bool = False,
 ) -> int | None:
     try:
         if (
@@ -296,7 +307,11 @@ def rtc_refresh_source_error_us(
         ):
             return error
         return None
-    except (TypeError, ValueError, OverflowError):
+    except OverflowError:
+        if report_calculation_failure:
+            raise
+        return None
+    except (TypeError, ValueError):
         return None
 
 
@@ -337,6 +352,7 @@ def rtc_provenance_candidate(
     rtc_utc_seconds: int,
     required_poll_deadline_us: int,
     policy: TimePolicy,
+    report_calculation_failure: bool = False,
 ) -> RtcProvenanceV1 | None:
     """Compute a proposal only; it is not durable provenance until commit acknowledgement."""
     try:
@@ -389,5 +405,9 @@ def rtc_provenance_candidate(
             uncertainty,
             policy.rtc_drift_bound_ppm,
         )
-    except (TypeError, ValueError, OverflowError):
+    except OverflowError:
+        if report_calculation_failure:
+            raise
+        return None
+    except (TypeError, ValueError):
         return None

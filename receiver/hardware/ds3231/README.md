@@ -3,9 +3,11 @@
 This guide describes the receiver bench setup on a Raspberry Pi 3 Model B,
 Raspberry Pi OS Trixie arm64, and an Adafruit DS3231 with a CR1220 battery.
 The repeatable acceptance procedure is in [OPERATOR_TESTS.md](OPERATOR_TESTS.md).
+The stock-driver recovery limitation and its qualification are documented in
+[LIMITATION.md](LIMITATION.md).
 [Recorded results](results/README.md) are Git-tracked beside this procedure,
 including the dated installation and raw evidence in the
-[September 2026 record](results/2026-09-12-rpi3/README.md).
+[September 2026 record](results/2026-09-12-run-01/README.md).
 
 These are operator commands for an isolated bench Pi. The production authority
 remains [the time model](../../ARCHITECTURE.md#time-model) and
@@ -16,14 +18,10 @@ No production adapter, privileged helper, stable device alias, or trusted
 
 ## 1. Wire and enable the device
 
-Shut down Linux, disconnect the Pi's power, and connect:
-
-| Adafruit DS3231 | Pi physical pin | Function |
-|---|---|---|
-| VIN | 1 | 3.3 V |
-| GND | 6 | Ground |
-| SDA | 3 | GPIO2 / I2C data |
-| SCL | 5 | GPIO3 / I2C clock |
+Shut down Linux, disconnect the Pi's power, and connect the RTC using the
+[test carrier's pin table and schematic](../TEST_CARRIER.md#pin-and-connector-allocation).
+Use the `nominal` fixture state: both RTC fault shunts open. The common carrier
+document owns physical pin assignments and removable fault connections.
 
 Fit the CR1220 with its positive side visible. Leave BAT, SQW, 32K, and RST
 unconnected. These instructions apply to the recorded Adafruit board; check

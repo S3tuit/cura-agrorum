@@ -1,0 +1,130 @@
+{
+  "run_id": "2026-09-12-rtc-06",
+  "review_date_utc": "2026-09-14",
+  "purpose": "RTC-06 longer retention; review-derived data, not original operator captures",
+  "source_directory": "cura-receiver:/home/cura/ds3231-runs/2026-09-12-rtc-06",
+  "original_capture_count": 19,
+  "procedure_sha256_at_review": "583db6c298b227ba6e1cf792e5e7761b31f134c78436b30acc2f2cbade606603",
+  "sign": "RTC minus network reference",
+  "formulas": {
+    "reference_error": "abs(System time) + Root dispersion + Root delay / 2",
+    "E": "max(reference_error from tracking_before, reference_error from tracking_after); no additional margin",
+    "offset_interval": "[R - A - E, R + 1 - B + E]",
+    "change_interval": "[O1_low - O0_high, O1_high - O0_low]",
+    "elapsed_interval": "[B1 - A0 - E0 - E1, A1 - B0 + E0 + E1]",
+    "coarse_ppm_interval": "min/max of all four change/elapsed endpoint ratios * 1e6; rounded outward to 6 decimal places"
+  },
+  "samples": [
+    {
+      "file": "data/raw/rtc02-baseline.txt",
+      "sha256": "835c5dbccb90785c97d200076dbccecad14363c226bf3b9556959084f4e93532",
+      "before_epoch_s": "1789243698.162044384",
+      "after_epoch_s": "1789243699.007947048",
+      "rtc_epoch_s": "1789243699",
+      "before_utc": "2026-09-12T20:08:18.162044384+0000",
+      "after_utc": "2026-09-12T20:08:19.007947048+0000",
+      "capture_bracket_s": "0.845902664",
+      "tracking_reports": [
+        {
+          "reference_id": "B99DE5FE (ns3.fibertelecom.it)",
+          "reference_time_utc": "Sat Sep 12 20:08:04 2026",
+          "stratum": 3,
+          "system_time": "0.000553480 seconds fast of NTP time",
+          "root_delay_s": "0.024403038",
+          "root_dispersion_s": "0.009331484",
+          "reference_error_s": "0.022086483",
+          "leap_status": "Normal"
+        },
+        {
+          "reference_id": "B99DE5FE (ns3.fibertelecom.it)",
+          "reference_time_utc": "Sat Sep 12 20:08:04 2026",
+          "stratum": 3,
+          "system_time": "0.000553423 seconds fast of NTP time",
+          "root_delay_s": "0.024403038",
+          "root_dispersion_s": "0.009332458",
+          "reference_error_s": "0.022087400",
+          "leap_status": "Normal"
+        }
+      ],
+      "reference_error_allowance_s": "0.022087400",
+      "additional_margin_s": "0",
+      "offset_interval_s": [
+        "-0.030034448",
+        "1.860043016"
+      ],
+      "command_statuses": {
+        "hwclock_exit": 0,
+        "after_date_exit": 0,
+        "tracking_after_exit": 0,
+        "command_exit": 0
+      }
+    },
+    {
+      "file": "data/raw/rtc06-after-poweroff.txt",
+      "sha256": "aa9d3bea63cd37eaf3ff568a738a5d8e41eed8192cdde12decdc87ac9544bbff",
+      "before_epoch_s": "1789379447.363363731",
+      "after_epoch_s": "1789379448.357413267",
+      "rtc_epoch_s": "1789379448",
+      "before_utc": "2026-09-14T09:50:47.363363731+0000",
+      "after_utc": "2026-09-14T09:50:48.357413267+0000",
+      "capture_bracket_s": "0.994049536",
+      "tracking_reports": [
+        {
+          "reference_id": "55C7D663 (ntp2.leontp.com)",
+          "reference_time_utc": "Mon Sep 14 09:50:12 2026",
+          "stratum": 2,
+          "system_time": "0.000000000 seconds fast of NTP time",
+          "root_delay_s": "0.045411907",
+          "root_dispersion_s": "0.001497430",
+          "reference_error_s": "0.0242033835",
+          "leap_status": "Normal"
+        },
+        {
+          "reference_id": "55C7D663 (ntp2.leontp.com)",
+          "reference_time_utc": "Mon Sep 14 09:50:12 2026",
+          "stratum": 2,
+          "system_time": "0.000000000 seconds fast of NTP time",
+          "root_delay_s": "0.045411907",
+          "root_dispersion_s": "0.001526495",
+          "reference_error_s": "0.0242324485",
+          "leap_status": "Normal"
+        }
+      ],
+      "reference_error_allowance_s": "0.0242324485",
+      "additional_margin_s": "0",
+      "offset_interval_s": [
+        "-0.3816457155",
+        "1.6608687175"
+      ],
+      "command_statuses": {
+        "hwclock_exit": 0,
+        "after_date_exit": 0,
+        "tracking_after_exit": 0,
+        "command_exit": 0
+      }
+    }
+  ],
+  "offset_change_interval_s": [
+    "-2.2416887315",
+    "1.6909031655"
+  ],
+  "elapsed_between_samples_interval_s": [
+    "135748.3090968345",
+    "135750.2416887315"
+  ],
+  "coarse_average_rate_interval_ppm": [
+    "-16.513567",
+    "12.456164"
+  ],
+  "interpretation": "no drift resolved by this measurement",
+  "functional_outcome": "PASS",
+  "physical_evidence": "Operator confirmed the coin cell stayed installed and the RTC-06 procedure was followed; exact disconnection/reconnection times were not separately recorded.",
+  "assumptions_and_limits": [
+    "Each network reference is correct within the Chrony-derived allowance; this is not an independently calibrated bound.",
+    "Synchronization stays stable throughout each short capture; neither paired tracking report changes reference or has abnormal leap status.",
+    "The reference differs between the two captures; each capture uses its own allowance.",
+    "No RTC write between baseline and after-poweroff capture, based on operator confirmation that the procedure was followed.",
+    "The sample interval includes powered time and is not the physical outage duration.",
+    "Functional retention and a coarse average rate estimate do not certify datasheet accuracy or receiver runtime holdover policy."
+  ]
+}

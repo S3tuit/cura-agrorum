@@ -1487,9 +1487,11 @@ operations is part of the public interface.
 - The pilot module is the Waveshare Pico-LoRa-SX1262-868M. Semtech's
   Clear-BSD `sx126x_driver` v2.5.0 is vendored at a pinned upstream commit and
   used unchanged below the Cura backend adapter.
-- The ESP32-C6 uses SPI2 at 8 MHz. Provisional SCLK, MOSI, MISO, CS, RESET,
-  BUSY and DIO1 pins are component Kconfig values and must be revised against
-  the assembled board. DIO1 uses a rising-edge GPIO interrupt.
+- The ESP32-C6 uses SPI2 at 8 MHz, mode 0. SCLK, MOSI, MISO, CS, RESET, BUSY and DIO1
+  pins are component Kconfig values. The DevKitM-1 component-test fixture uses
+  the [exposed-pin allocation below](#selected-radio-fixture-pins), which must
+  be checked against the assembled wiring and resolved build configuration.
+  DIO1 uses a rising-edge GPIO interrupt.
 - The module's onboard DIO2-controlled RF switch is enabled. Its DIO3-powered
   TCXO is configured for 1.7 V and a 5 ms startup. The regulator uses DC-DC
   mode.
@@ -1518,6 +1520,39 @@ operations is part of the public interface.
   return `CURAG_ERADIO_ECOMMAND_STATUS` and preserve the reconstructed raw
   chip-status byte in diagnostic context. `SetSleep` is excluded because the
   sleeping device cannot be queried afterward.
+
+#### Selected radio fixture pins
+
+For the ESP32-C6-DEVKITM-1 sensor/radio carrier, the required selected values
+are:
+
+```text
+CONFIG_CURA_SX1262_SCLK_GPIO=6
+CONFIG_CURA_SX1262_MOSI_GPIO=7
+CONFIG_CURA_SX1262_MISO_GPIO=14
+CONFIG_CURA_SX1262_CS_GPIO=23
+CONFIG_CURA_SX1262_RESET_GPIO=18
+CONFIG_CURA_SX1262_BUSY_GPIO=19
+CONFIG_CURA_SX1262_DIO1_GPIO=20
+```
+
+These allocate the seven exposed pins reserved by the approved sensor carrier.
+GPIO0/1/2/3/21/22 remain sensor-owned, GPIO16/17 remain UART-owned, GPIO12/13
+remain available for native USB, and the carrier's strapping-pin exclusions
+remain unchanged. The repository's provisional component defaults still use
+GPIO10/GPIO11 for MISO/CS; they are inaccessible on this DevKitM-1 and are not
+valid values for this fixture. The later radio test application must explicitly
+select the values above and inspect generated `sdkconfig`/`sdkconfig.h` and
+production ESP-backend linkage before flashing. This fixture-design stage
+does not change Kconfig defaults or add an executable test application.
+
+Physical C6 header positions, Waveshare Pico-footprint contacts, node supply,
+the permanent DIO1 pull-down and absence-only BUSY/MISO jumpers are specified in
+[SENSOR_CARRIER.md](test_apps/on_device/SENSOR_CARRIER.md#radio-connectors-and-pin-allocation).
+Receiver wiring is owned separately from the node fixture.
+The [radio preflight](TESTING.md#sx1262_radio-static-preflight) owns its DC checks;
+no fixture selection changes the production oscillator, BUSY, watchdog or
+caller-deadline values above.
 
 ## Platform ports
 

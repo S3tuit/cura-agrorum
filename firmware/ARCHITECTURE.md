@@ -1034,9 +1034,14 @@ DIO1 rising-edge ISR. `esp_timer_get_time()` is used both by ordinary deadline
 checks and by the ISR, while a static binary semaphore wakes the waiting task.
 The selected Waveshare Pico-LoRa-SX1262-868M uses its onboard DIO2 RF switch,
 DIO3 1.7 V TCXO and the SX1262 DC-DC regulator. SPI runs at 8 MHz; the seven
-ESP32-C6 pins are provisional component Kconfig values until the board is
-assembled. Every reset or cold-start initialization applies Semtech's SX1262
-TX-clamp workaround before configuring the pilot profile.
+ESP32-C6 pins are selected through component Kconfig. The DevKitM-1 fixture's
+required exposed-pin allocation is in
+[`INTERFACE.md`](INTERFACE.md#selected-radio-fixture-pins), with physical wiring
+and manual fixture connections in
+[`SENSOR_CARRIER.md`](test_apps/on_device/SENSOR_CARRIER.md#sx1262-radio-fixture).
+The later component test image must select that allocation and verify it
+against the assembled fixture. Every reset or cold-start initialization applies
+Semtech's SX1262 TX-clamp workaround before configuring the pilot profile.
 
 BUSY waits are bounded to 10 ms, reset startup to 20 ms and the radio TX
 watchdog to five milliseconds before the caller deadline when representable.

@@ -719,9 +719,7 @@ the same private gate-off primitive.
 
 ### `node_sensors`: automated cases
 
-The carrier's stage-10 `reading` integration operation extends these component
-cases through one production `node_cycle_run()` invocation per fresh fixture
-boot. It links real sensors/backends, core, codec/crypto and test-partition
+It links real sensors/backends, core, codec/crypto and test-partition
 NVS/LittleFS persistence. An app-only forwarding observer retains the exact
 sample returned to core; a local radio adapter captures the constructed frame
 and reports a non-started local error, leaving the reading pending. The terminal
@@ -976,9 +974,12 @@ duplicate controller policy already covered by host fakes.
 
 ### `sx1262_radio`: hardware strategy
 
-All tests in this radio hardware section are deliberately deferred. No radio
-hardware test application, receiver-peer harness or RF exchange is part of the
-current implementation.
+The radio circuit and manual connection states are documented in
+[SENSOR_CARRIER.md](test_apps/on_device/SENSOR_CARRIER.md#sx1262-radio-fixture).
+Assembly/static preflight and the first RF operating envelope are specified
+below. All executable tests in this radio hardware section remain deferred:
+there is no radio test application, receiver-peer harness or retained RF
+acceptance run in the current implementation.
 
 SX1262 hardware tests exercise behavior that the fake backend cannot prove:
 real SPI/BUSY/DIO1 operation, RF interoperability, IRQ timestamps,
@@ -986,8 +987,11 @@ direction-specific IQ, physical state transitions and bounded deadlines. They
 do not repeat every invalid argument, backend error or exact deadline boundary
 already covered on the host.
 
-The node DUT runs the production `sx1262_radio` component. The peer is the
-actual receiver hardware running separate test code that can:
+The node DUT runs the production `sx1262_radio` component and ESP backend through
+ESP-IDF Unity, with pytest-embedded as host orchestration. The selected pilot
+peer is the actual Pi 3B receiver hardware and its second Waveshare module,
+running separate component test code. Full receiver application readiness is
+not required for these component tests. The peer can:
 
 - receive node uplinks with normal IQ and report exact payload bytes;
 - transmit arbitrary downlink payloads with inverted or normal IQ;
@@ -1026,6 +1030,230 @@ D <= returned_at_us <= D + ceil((D - S) * 0.15)
 
 Hardware packets are scheduled with generous separation from the deadline;
 the exact equality boundary remains a deterministic host test.
+
+### `sx1262_radio`: static preflight
+
+The [radio sections of SENSOR_CARRIER.md](test_apps/on_device/SENSOR_CARRIER.md#sx1262-radio-fixture)
+own the node circuit, connector numbering, parts and three declared radio
+states. This procedure establishes node static assembly readiness only. It
+neither sends SPI commands nor validates radio initialization, RF, interrupt
+timing or sleep current. Wiring and multimeter observations are operator-owned.
+Receiver wiring/preflight belongs to receiver work; a node preflight record
+cannot establish peer readiness for the later RF exchange.
+
+1. **Identify and isolate.** Record the C6 and node module identities, antenna
+   kit, radio state and sensor state. Check the documented HF layout and
+   `ANT_SW A (3V3)` population. Disconnect UART USB power and any other
+   power/back-power path. Verify the carrier rail is below 0.1 V before
+   changing wiring. Leave battery/Pico/VBUS/VSYS connections absent and the
+   module battery switch off. Attach the antenna unpowered.
+2. **Check the unpowered circuit.** Trace every C6 GPIO through the carrier
+   and module contact against the C6/Pico numbering. Check intended ground
+   continuity, capacitor polarity, RN5's 10 kohm value and its connection from
+   MCU-side DIO1 to GND. Check for unintended shorts between supply, ground
+   and signals. Verify both absence jumpers are open whenever the radio is
+   installed. To select `radio_absent`, remove the whole board before fitting
+   BUSY-to-3.3 V and MISO-to-GND ties; confirm that all nine module connections
+   are absent and the ties reach GPIO19/GPIO14 respectively. RN5 stays on the
+   carrier in every state. A capacitor charging on the resistance range is not
+   a steady short; retain unresolved readings. With the relevant loom detached,
+   verify DIO1 continuity when its link is fitted and no direct continuity
+   across the open link, accounting for semiconductor paths through a module.
+3. **Make the powered check incapable of issuing radio commands.** With
+   power removed, disconnect the seven-signal `J_HOST_N`; leave carrier supply
+   and ground intact. When a radio is fitted, connect a temporary lead from
+   carrier `TP_N_CS` to `TP_N_3V3` before powering it. This holds CS inactive
+   while every C6 signal driver is isolated. The radio's internal NRESET
+   pull-up releases reset; no external reset resistor is fitted. Hold the C6
+   EN/reset button before connecting UART USB power and keep it held until
+   USB power is removed again. Do not access/flash the C6. In `radio_absent`,
+   fit the two absence jumpers and omit the temporary CS lead.
+4. **Record stable DC readings.** Use the AN8008 in DC-voltage mode, black
+   lead at `TP_N_GND`. Check the C6's 3V3 header and `TP_N_3V3`; when a module
+   is fitted, also measure its U1.36 supply contact. Perform resistance and
+   continuity checks only unpowered. The assembly admission band remains
+   3.2-3.4 V at the supply points, centred on the specified 3.3 V. It is a
+   conservative bench check, not a new module operating range. Wait at least
+   five seconds after power application and record three stable display
+   updates, consistent with the existing DC observation convention. This wait
+   makes no claim about the production 5 ms TCXO startup or supply transients.
+   Never put the current-range leads across the supply.
+5. **Check the static levels in the table below.** Low means at most
+   `0.2 * measured_local_3V3`; high means at least `0.8 * measured_local_3V3`
+   without exceeding that supply beyond meter resolution. These bands check
+   defined wiring levels, not edge timing. Remove power before every state
+   change and keep `J_HOST_N` isolated during readings. Remove the temporary
+   CS lead before removing the radio, and remove both absence jumpers before
+   reinstalling it. Repeat the supply check in each state. An intermediate
+   or unstable level where the table requires high/low, a missing required
+   measurement or a wiring mismatch leaves preflight unresolved; investigate
+   without widening limits.
+6. **Restore and retain.** Remove power. Remove both absence jumpers before
+   reinstalling the Waveshare, restore `nominal` with its DIO1 link fitted,
+   and remove the temporary CS lead before reconnecting `J_HOST_N`. Verify
+   the absence ties are open, no C6 output is tied to a supply rail, and the
+   sensor reservations are intact. Leave the node unpowered. Retain readings
+   and setup photographs tied to the C6, module, connections and date. Before
+   executable use, confirm a reviewed image that waits without transmitting
+   for an explicit selected case, its resolved pin configuration and operator
+   DUT readiness. A separate peer configuration/readiness record is required
+   for RF tests; its component process must exclusively own its radio and
+   other automatic transmitters must be disabled.
+
+| Node power-only observation (`J_HOST_N` isolated) | CS | RESET | BUSY | MISO | MCU-side DIO1 |
+|---|---|---|---|---|---|
+| `nominal`, temporary CS-high lead fitted | High | High, internal radio pull-up | Low after power-on settles | High impedance; no voltage criterion | Low, no IRQ armed |
+| `radio_absent`, both absence jumpers fitted | Unconnected; no voltage criterion | Unconnected; no voltage criterion | High, direct 3.3 V tie | Low, direct GND tie | Low from RN5 |
+| `dio1_disconnected`, temporary CS-high lead fitted | High | High, internal radio pull-up | Low after power-on settles | High impedance; no voltage criterion | Low from RN5; open link independently checked |
+
+Record each required reading individually. MISO is not sampled by a host in
+this power-only check; its deselected high-impedance state is specified in
+[Semtech section 8.2](https://files.waveshare.com/wiki/SX1262-XXXM-LoRaWAN-GNSS-HAT/DS_SX1261-2_V1.2.pdf).
+Removing its pull-down removes the former fitted-module static-low expectation;
+exact received SPI/RF bytes remain required in executable tests. With the
+module absent, all three MCU inputs instead have defined levels from the two
+jumpers and RN5. Confirm their continuity to the MCU pins unpowered after
+refitting `J_HOST_N`.
+
+The low open-DIO1 measurement alone does not establish disconnection; the
+unpowered link check does. A BUSY-low observation does not establish successful
+SPI/oscillator calibration. Later functional runs must also watch for
+supply/reset errors under TX load; this check cannot establish dynamic margin.
+
+For the first RF run, mark two repeatable antenna positions **at least 3 m
+apart**, implementing the hardware strategy's few-metres separation. Use the
+supplied antennas in the same vertical orientation, at fixed heights, with a
+clear path and away from immediate metal obstructions. Record separation,
+height, orientation and nearby objects, and photograph both locations. Keep
+them fixed through a run and its restoration comparison. Do not bring the
++14 dBm ends next to one another to remedy a failing exchange or interpret
+RSSI/SNR as a calibrated power measurement.
+
+If assembly disturbed sensor wiring, repeat the affected existing
+[sensor preflight and measurements](#node_sensors-manual-electrical-cases)
+using the implemented carrier workflow before claiming continued sensor
+acceptance. Changes to the shared supply branch require a nominal sensor
+acquisition and gate-on/gate-off DC recheck with the radio quiet. For that
+check, disconnect `J_HOST_N` and fit the temporary radio CS-high lead with
+power removed; remove the lead unpowered before reconnecting `J_HOST_N`.
+Preserve the configured DS identities, BME address and reference-state rules.
+Do not repeat every sensor absence case for an untouched connector or treat
+the radio design as new sensor evidence.
+
+### `sx1262_radio`: first RF operating envelope
+
+This envelope is for the later first component exchange using the assembled
+C6/Waveshare node and Pi/Waveshare peer. Static preflight itself emits nothing.
+Use the [protocol's pilot PHY](../protocol/protocol-v2-lora/README.md#pilot-airtime-constants)
+unchanged: 868.1 MHz, SF7, 125 kHz bandwidth, CR4/5, LDRO off, explicit header,
+eight-symbol preamble, payload CRC, private sync word and configured +14 dBm.
+The node sends normal-IQ uplinks and the peer sends inverted-IQ downlinks.
+First component packets are known raw byte patterns, not authenticated live
+protocol traffic; no identity provisioning or persistent-counter erasure is
+needed for this stage. Authenticated tests introduced later must follow the
+protocol's test-identity and counter rules.
+
+**Regulatory basis and power evidence.** Checked on 2026-09-15,
+[Commission Implementing Decision (EU) 2025/105, annex row 48 and duty-cycle definition](https://www.boe.es/buscar/doc.php?id=DOUE-L-2025-80100)
+(official EU text reproduced by BOE) specifies 25 mW ERP in 868.0-868.6 MHz,
+with a duty-cycle alternative of at most 1%. Its observation period is a
+continuous hour for each transmitter over the applicable band. Use that
+alternative here; do not claim LBT/equivalent channel-access compliance or
+borrow another sub-band's allowance. The configured 125 kHz channel spans
+868.0375-868.1625 MHz nominally; this calculation is not a measured emission mask.
+
+The field-pilot-v2 kit record supplies the nominal 2 dBi antenna gain. With
+`P_port` the radio's output in dBm, `G` gain in dBi and `L` total RF-path loss
+in dB, the source-based estimate is:
+
+```text
+ERP_dBm = P_port + G - L - 2.15
+nominal ERP = 14 + 2 - 0 - 2.15 = 13.85 dBm = 24.27 mW
+25 mW = 13.9794 dBm; nominal margin is only about 0.13 dB
+```
+
+The [ITU short-range-device report](https://www.itu.int/dms_pub/itu-r/opb/rep/R-REP-SM.2153-8-2021-PDF-E.pdf)
+explains the 2.15 dB ERP/EIRP reference conversion. Zero loss above deliberately
+credits no unmeasured pigtail attenuation. The nominal PA output follows the
+[selected implementation](INTERFACE.md#selected-radio-implementation), including
+its optimal +14 dBm PA row: the associated `SetTxParams(+22)` register value
+does not mean +22 dBm emitted power in that configuration. Apply the same
+intended +14 dBm output at the peer through its own driver configuration.
+
+This is the first run's nominal source-based power assessment, **not measured
+RF compliance**. Neither actual output tolerance nor antenna gain/path loss
+has been measured, and the small nominal margin does not bound their combined
+uncertainty. The AN8008 and a successful packet exchange cannot establish ERP,
+carrier accuracy or unwanted emissions. Retain the specified kit antennas and
+PA settings; a different antenna or conflicting RF evidence requires renewed
+assessment. Lower duty cycle does not cure excessive instantaneous ERP.
+
+**Airtime and initial pacing.** The protocol's independently specified values
+are the expected results, not values copied from DUT output:
+
+| Transmitter / initial packet | Payload bytes | On-air time | Reserved charge, `ceil(us * 1.10)` | Ten attempted packets |
+|---|---:|---:|---:|---:|
+| C6 / known uplink | 54 | 102,656 us | 112,922 us | 1,129,220 us |
+| Pi / known downlink | 23 | 61,696 us | 67,866 us | 678,660 us |
+
+The independent LoRa symbol calculation gives `Tsym = 2^7 / 125000 = 1.024 ms`.
+At explicit-header/CRC-on/LDRO-off, payload symbols are
+`8 + 5 * ceil((8 * PL - 4 * 7 + 28 + 16) / (4 * 7))`: 88 and 48 respectively.
+Adding the 12.25 preamble symbols gives the two times above. The 10% charge is
+accounting margin, not additional emitted airtime or a changed timing tolerance.
+
+Allow at most **ten attempted exchanges per initial session**, with one
+54-byte node TX and at most one 23-byte peer TX per exchange. Keep at least
+**60 seconds between successive TX starts by the same transmitter**, across
+case boundaries and reruns too. The downlink follows within the selected RX
+window; the minute is between exchanges, not an added ACK delay. Do not add
+automatic retries or other transmissions to this envelope. After ten attempts,
+stop and retain the results before another session. Even counting 61 boundary
+packets conservatively in an hour gives only 6.889 charged seconds at the node
+and 4.140 at the peer; the independent rolling ledger below still controls
+admission and includes any other recorded activity.
+
+**Per-transmitter accounting before emission.** For every session, the operator
+and later host orchestration must retain a separate journal for each physical
+transmitter, covering all its activity in this sub-band, including both test
+ends' earlier runs:
+
+- Before any trigger capable of TX, durably reserve that end's full packet
+  charge. Admit it only if the retained charges plus the new reservation are
+  at most **36,000,000 us**. Retain a charge until a full 3,600 seconds after
+  the latest possible end of its transmission, conservatively covering packets
+  that straddle an observation-window boundary. Record the physical end,
+  run/case, PHY/payload length, charge, trigger time, latest possible TX end,
+  outcome and running total. Update completion information without refunding
+  an attempted packet merely because its result failed.
+- Reserve both ends before an exchange if its command could cause both to
+  transmit. Reserve every attempted or uncertain TX, including missing DIO1,
+  no peer reception, lost host acknowledgement, test failure or interrupted
+  orchestration. A fault result is not evidence that the channel was unused.
+  A pending reservation with no trustworthy completion must remain held until
+  its possible emission interval has been bounded or the quiet-hour fallback
+  has completed.
+- Boot/reset, reflashing, peer-process restart, session restart and changing
+  fixture state do not clear the journals or restart the minute spacing. Keep
+  history outside DUT storage and preserve it across host process restarts.
+  Use a time basis whose continuity is established across those records; a
+  discontinuous clock cannot age entries out early. Before use, confirm no
+  other process can transmit through either module.
+- If either end's prior activity, clock continuity or journal is unknown,
+  keep that radio physically unpowered for a verified uninterrupted **3,600
+  seconds** before starting its empty history. A known quiet hour is evidence;
+  merely rebooting or starting an empty file is not. If RF duration may have
+  exceeded the modeled packet, stop, remove power and retain the failure;
+  bound the possible emission interval conservatively or use this fallback.
+
+This host-controlled component-test envelope does not claim that the node's
+production per-wake eight-second allowance enforces a rolling hour across
+resets. It does not replace the receiver's eventual production ledger either.
+Larger payloads, filtering bursts, transition cases and stress runs retain all
+their required coverage; their later run plans must account for every emission
+and establish suitable pacing before expanding beyond this initial envelope.
+Missing hardware, unresolved preflight, missing peer configuration, zero
+selected tests or a mismatched fixture cannot be reported as a passing run.
 
 ### `sx1262_radio`: fast automated cases
 
@@ -1085,9 +1313,14 @@ the exact equality boundary remains a deterministic host test.
   a bounded I/O or BUSY error without starting TX or hanging. Final radio
   cleanup must not prevent ESP32 deep sleep.
 
-These fault cases are manual for the pilot; no automated DIO1 switching or
-radio-disconnect fixture is planned yet. Broken-SPI, forced-BUSY and unexpected
-IRQ injection remain deferred until a safe controllable fixture exists.
+Use the [declared radio states](test_apps/on_device/SENSOR_CARRIER.md#declared-radio-connection-states):
+the removable node DIO1 link for `dio1_disconnected`; for `radio_absent`,
+remove the whole module before fitting the MCU-side BUSY-to-3.3 V and
+MISO-to-GND jumpers. Remove both jumpers before restoring the module and
+`nominal`. RN5 remains on MCU-side DIO1 in all three states. Change all
+connections with power removed. These fault cases are manual for the pilot; no automated DIO1 switching or radio-disconnect
+fixture is planned yet. Broken-SPI, forced-BUSY and unexpected IRQ injection
+remain deferred until a safe controllable fixture exists.
 
 The slow 50-100-exchange RF transition stress test is also deferred. The test
 suite must account for all RF airtime and remain within the applicable EU868

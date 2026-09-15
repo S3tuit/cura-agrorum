@@ -80,15 +80,13 @@ __pycache__/
 
 # Raw hardware test runs; keep curated summaries and manifests outside dated directories.
 /receiver/tests/hardware/evidence/**/20??-??-??/
+/receiver/tests/hardware/evidence/runtime_time/raw/
 
 # Fuzzing
 protocol/protocol-v2-lora/.fuzz-corpus/
 
 # debug information files
 *.dwo
-
-# used to debug while implementing
-receiver/tests/hardware/evidence/runtime_time/
 
 # agents
 .codex

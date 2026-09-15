@@ -697,6 +697,15 @@ the declared `maxslewrate 3500`, `leapsecmode slew` and no automatic-step
 directive. A mismatch fails deployment validation; the runtime adapter must not
 pretend it discovered that daemon setting from tracking output.
 
+The pilot's systemd `ExecStartPre` validates the same explicit configuration
+path used by `ExecStart` on every Chrony start. Trusted operators change its
+inputs only while Chrony is stopped and start it through that unit. This
+deliberately accepts the check/use interval without configuration snapshots or
+tamper protection. The receiver does not manage Chrony's service lifecycle.
+The [installation procedure](hardware/ds3231/README.md#3-configure-time-ownership)
+defines the supported launch; deployment validation checks its actual process
+arguments as well as the configuration.
+
 The receiver has no `CAP_SYS_TIME` and never invokes `clock_settime()`. For the
 pilot, its service account receives narrowly scoped filesystem permission to
 chronyd's local Unix command socket, normally through membership in the
@@ -1765,6 +1774,24 @@ the preserved artifacts.
 If the process crashes or loses power while an accepted unit remains only in the volatile queue during either outage, that unit can still be lost under the pilot's documented non-durable-ACK guarantee. Eliminating that window requires the deferred durable queue or pre-ACK journal.
 
 ### Communicator-state ownership
+
+One communicator-owned complete-state coordinator owns the acknowledged
+immutable state, generation authority and any pending exact commit. Policy
+callers build complete candidate snapshots; runtime time consumes this shared
+owner rather than maintaining another durable-state/provenance cache. Physical
+SQLite access remains exclusively in the persistence worker.
+
+Before submission the coordinator retains the preceding and requested states.
+An unknown result blocks all dependent state mutations and physical RTC writes
+across scheduling calls until a serialized load matches either exact state.
+The requested value becomes authoritative if installed; the preceding value
+remains authoritative if unchanged. Failed loads and unexpected contents leave
+the request unresolved; unexpected contents are exposed as a conflict, never
+adopted as a new baseline. No RTC provenance is usable while unresolved.
+After reconciliation time policy rechecks its source and durably invalidates
+any acknowledged RTC proof before another write. This applies equally to an
+unknown invalidation commit and an unknown verification commit. The coordinator
+does not introduce airtime initialization or recovery policy.
 
 The persistence control channel is separate from `PersistQueue` and has stronger semantics. A private control command is never sampled, dropped, merged silently or acknowledged on submission. `commit_communicator_state()` either reports the requested generation and exact canonical bytes durably installed, reports that the preceding generation definitely remains authoritative, or returns an unknown outcome that requires a serialized state reload before TX resumes.
 

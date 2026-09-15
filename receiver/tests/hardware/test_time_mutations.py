@@ -42,6 +42,7 @@ from cura_receiver.persistence_control_values import (
     CommunicatorStateCommitDisposition as CD,
 )
 from cura_receiver.receiver_startup import create_receiver_instance
+from cura_receiver.communicator_state_owner import CommunicatorStateOwner
 from cura_receiver.runtime_time import (
     RuntimeTime,
     RuntimeTimeSettings,
@@ -937,7 +938,9 @@ def execute_component(case, value):
                 ).disposition
                 is CD.COMMITTED
             )
-            rt.durable_state = state
+            rt.state_owner = CommunicatorStateOwner(
+                control=owner.control, initial_state=state
+            )
 
             def snapshot(**kw):
                 return replace(
@@ -947,7 +950,7 @@ def execute_component(case, value):
                     airtime_snapshot_utc_us=kw["snapshot_utc_us"],
                 )
 
-            first = rt.refresh_rtc(rtc, owner.control, snapshot)
+            first = rt.refresh_rtc(rtc, snapshot)
             assert first.status is RS.VERIFIED, first
             assert first.write_result.disposition is W.COMPLETED
             # Repeat with existing proof to exercise the extra durable invalidation.
@@ -967,7 +970,7 @@ def execute_component(case, value):
                 def read_time(self, **kw):
                     return rtc.read_time(**kw)
 
-            second = rt.refresh_rtc(InspectWrite(), owner.control, snapshot)
+            second = rt.refresh_rtc(InspectWrite(), snapshot)
             assert second.status is RS.VERIFIED, second
             assert rt.durable_state.generation == 4
             # The production adapter rejects entry expiry without executing its privileged helper.

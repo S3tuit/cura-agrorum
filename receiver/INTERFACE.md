@@ -495,19 +495,27 @@ serialization; construction remains ordinary Python process work.
 findings and pilot qualification; this section owns the exact control contract.
 
 The runtime time component consumes the existing clock capabilities and narrow
-Chrony, kernel-sampling and RTC ports. Its complete communicator-state snapshot
-callback belongs to its caller: for requested provenance and a supplied trusted
-snapshot UTC/monotonic instant, the caller returns an immutable next-generation
+Chrony, kernel-sampling and RTC ports. One communicator-owned
+`CommunicatorStateOwner` holds the persistence control channel, acknowledged
+complete state and any unresolved commit. Runtime time receives that owner;
+it has no independent durable-state or RTC-provenance cache. Its complete-state
+snapshot callback belongs to its caller: for requested provenance and a supplied
+trusted snapshot UTC/monotonic instant, the caller returns an immutable next-generation
 `CommunicatorStateV1`, or no snapshot when its state owner is unavailable. The
-component checks the requested provenance, generation and exact snapshot UTC
-before submission. It never initializes, recovers or ages airtime history.
+component checks requested provenance and exact snapshot UTC before submission;
+the owner enforces the next generation. Neither initializes, recovers or ages
+airtime history.
 Returning no snapshot defers refresh without a device write; persistence
 failure remains a typed persistence-control result. State is adopted only after
 acknowledged commit or serialized load matching the exact generation and bytes.
+An unresolved request makes the owner's usable state absent, including for
+RTC-holdover evaluation. Refresh reconciles pending state before accessing the
+device, then rechecks current time eligibility. An unresolved verification
+commit is subject to the same gate as an unresolved invalidation commit.
 
 Before refresh may submit a physical write, the last acknowledged complete
-state must have absent RTC provenance. Otherwise first obtain and durably
-commit a new complete snapshot with absent provenance. Reconcile an unknown
+state must be resolved and have absent RTC provenance. Otherwise first obtain
+and durably commit a new complete snapshot with absent provenance. Reconcile an unknown
 invalidation commit before writing. Once invalidated, a failed refresh never
 restores the previous proof, including after process restart.
 
@@ -796,6 +804,17 @@ deadline. Tests never require a fake implementation to open a device, execute
 the helper or use real time.
 
 ## Chrony control interface
+
+The supported pilot launch is `/usr/sbin/chronyd -F 1 -f
+/etc/chrony/chrony.conf`, started by `chrony.service`. Its `ExecStartPre` runs
+`/usr/bin/python3 /usr/libexec/cura-agrorum/check-chrony.py
+/etc/chrony/chrony.conf`; a nonzero result prevents startup. The check expands
+configuration with `chronyd -p` and requires exactly one each of `leapsecmode
+slew`, `maxslewrate 3500`, `cmdport 0`, and `bindcmdaddress
+/run/chrony/chronyd.sock`, with no `makestep`, `initstepslew`, `rtcsync` or
+`rtcfile`. Trusted operators keep all configuration inputs unchanged while the
+daemon runs and use the same unit to restart after edits. This procedure needs
+no network synchronization, runtime receiver invocation or retained snapshot.
 
 The pilot isolates all chronyc-specific behavior behind one runtime adapter.
 It is not a persistence-control interface and none of its values cross
@@ -2806,6 +2825,20 @@ known to precede `COMMIT` returns `NOT_INSTALLED`. Once `COMMIT` may have been
 issued, lack of confirmation returns `OUTCOME_UNKNOWN`. Caller timeout never
 cancels possibly committed work. A later serialized load reconciles the exact
 installed generation and bytes.
+
+The communicator's `CommunicatorStateOwner` retains immutable preceding and
+requested complete states before submitting an ordinary next-generation
+commit. `COMMITTED` or `ALREADY_COMMITTED` adopts the request;
+`NOT_INSTALLED` keeps the preceding state. `OUTCOME_UNKNOWN` retains both
+values across scheduling calls and rejects every new mutating request until
+serialized reconciliation resolves it. A load matching the request's exact
+canonical bytes adopts it; a load matching the preceding bytes keeps that
+state. Generation equality alone is insufficient. Failed/unavailable loads
+keep the request pending; any other loaded contents also mark a reconciliation
+conflict and must not be silently adopted or used as a replacement baseline.
+The original request and preceding state remain available as evidence while
+usable state remains absent. The owner adds no persistence thread, schema,
+airtime recovery or generation-one initialization policy.
 
 ## Receiver clean-stop control
 

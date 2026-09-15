@@ -474,14 +474,23 @@ reference models and episode builders remain local.
 | Bounded normalized Linux inputs | `host/test_linux_kernel_clock.py`, `test_linux_chrony.py`, `test_linux_ds3231.py`: native ABI, fixed arguments, conservative parser conversion, OS failures, deadlines, uncertain completion, actual bounded children, native helper and deployment checks |
 | Live time ownership and step state | `host/test_runtime_time.py`: quality/health axes, exact expiry, generation ABA, observation admission, retained boundaries, fresh-authorized steps, bounded stable polling and retries |
 | RTC refresh and persistence | Same suite: five-second rechecks, mandatory read-back, prior-proof invalidation, exact commit/load reconciliation using real SQLite, six SIGKILL/restart milestones; no airtime policy is synthesized |
+| Complete-state coordinator | Same suite: unknown invalidation/verification commits retained across failed reloads; exact preceding/requested reconciliation, conflicting airtime bytes/generations, blocked new commits and RTC writes, and renewed invalidation before retry using real worker/SQLite state |
+| Chrony deployment procedure | `host/test_chrony_deployment.py`: pre-start policy/exit status, real host config expansion when available, and actual audit entrypoint rejecting mismatched configuration paths, process arguments and unenforced checks |
+| Step publication and process loss | Same suite: four SIGKILL cases before/after boundary and following-profile persistence; preserved database/WAL/SHM, real replacement-worker startup and stored-history correlation fences |
 | Diagnostic contract | `host/test_time_diagnostics.py` and runtime cases: exact 80-byte context, operation/status/error matrix, latch suppression/reset, immutable episode trigger and caller-owned diagnostic identity/admission |
 | Real Pi component inputs | `hardware/test_runtime_time.py`: native header ABI, real clock/Chrony/RTC input brackets, safe OS failures, process restart/boot identity, supplied-provenance offline startup, effective time-writer audit |
 | Invasive Pi components | `hardware/test_time_mutations.py`: capability-free receiver child, native-helper write/read-back, durable invalidation before replacement, explicit forward/backward steps and persisted correlation gaps, positive/negative maximum slew using the laptop reference bridge |
 | Operator-created oscillator-stop fault | `hardware/test_ds3231_osf.py`: valid pre-fault baseline, confirmed RTC-04 power/cell cycle, changed boot, current OSF boot evidence and production-adapter `INVALID`/`EINVAL` capture before RTC-05 recovery; the operator run owns physical restoration |
 | Controller fault qualification | `hardware/test_time_mutations.py::test_ds3231_controller_fault`: four held-SCL/SDA read/write cases, confirmed temporary wiring, physical pad levels, actual ioctl and pending-SIGKILL evidence, bounded completion/reaping and restoration. Dedicated RTC-only fixture keeps normal Chrony running; read cleanup verifies without writing, write cleanup explicitly restores after authorized submission, and uncertain cleanup stops dependent cases. Target execution is required before claiming qualification |
 
-The exact execution status and invasive commands are in
+Short run summaries and the evidence worth keeping are in
 [`hardware/evidence/runtime_time/README.md`](tests/hardware/evidence/runtime_time/README.md).
+That overview includes the historical passes' limitations. Routine output goes
+in an ignored `runtime_time/raw/` directory or outside the repository. Keep
+manual/slow measurements, useful failure lessons and the evidence needed to
+check them; discard repetitive logs after diagnosis. New runtime/slew runs use
+the Make targets above and `receiver/tests/hardware/time_reference.py --help`
+for the laptop-reference options, with fresh source staging and fixture roots.
 A supplied test provenance value proves the offline component's treatment of
 that input; it is not a physical RTC calibration or a complete receiver-service
 boot test. Current-process restart evidence does not prove a changed boot ID
@@ -524,6 +533,7 @@ arithmetic failure for TIME diagnostics without duplicating the equations.
 - **Holdover age limits:** Reproduce the documented approximately 24.46-day cadence and 39.93-day absolute examples, then check equality, next-unit and nonzero-read-bracket boundaries.
 - **Pilot RTC read recovery:** Exercise transport failures followed by success, INVALID without retry, expiry before entry, the exact three-second boundary and a last in-flight read returning late. Keep successful UTC brackets separate from total recovery duration and preserve the first diagnostic trigger. Prove that failed pre-write recovery preserves prior durable provenance and issues no write, while a successful preflight rechecks source/generation and derives fresh UTC before exactly one write. Unknown writes still require read-back and never trigger a blind write retry. Explicit operator recovery owns invalid-RTC initialization.
 - **RTC refresh ordering:** Exercise derive, write, read-back, generation recheck and durable provenance commit, with failures/crashes after every step and no usable provenance before acknowledged commit.
+- **Unresolved complete-state commits:** Lose an invalidation or verification reply after real persistence, fail repeated serialized loads, and prove no new state mutation or RTC write occurs. Resolve exact requested and preceding states separately; reject different canonical contents even at the requested generation. Inspect actual durable absent provenance before a resumed write and recheck source validity after reconciliation.
 - **RTC source threshold:** Require the stricter five-second source-error bound both at refresh start and before commit, independently of the broader network-trust threshold.
 - **Clock-step state machine:** Cover boundary publication failure, command rejection, confirmed submission, unknown command outcome, stable-time polling, deadline and bounded retry without blind resubmission after an unknown result.
 - **Step-boundary FIFO:** Prove no explicit step precedes complete boundary publication, later ordinary entities cannot overtake it, and an isolated boundary failure closes admission without quarantine.
@@ -555,7 +565,7 @@ arithmetic failure for TIME diagnostics without duplicating the equations.
   at the maximum duration fails. Bound component execution to 45 minutes,
   including reference exchanges, and preserve mandatory fixture restoration.
 - **Explicit step integration:** Under destructive isolation, execute forward and backward chrony-step episodes and prove complete boundary publication before the command, FIFO persistence ordering, permanent correlation gaps and recovery only at the first later trusted observation.
-- **Deployment time-writer audit:** Verify effective chrony configuration has the declared slew/leap policy, no automatic-step directive, no `rtcsync`/`rtcfile`, command port disabled and no competing enabled system-clock or RTC writer.
+- **Deployment time-writer audit:** Require the documented `ExecStartPre`/`ExecStart` and actual MainPID arguments before checking expanded configuration, the declared slew/leap policy, no automatic-step directive or `rtcsync`/`rtcfile`, disabled command port and no competing enabled system-clock or RTC writer. Follow the trusted-operator procedure; this is not proof against concurrent privileged configuration changes.
 
 ## Receiver TX-airtime policy
 

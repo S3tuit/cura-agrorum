@@ -16,7 +16,6 @@ from .elapsed_duration import (
 from .generated import receiver_enums_generated as E
 from .generated.receiver_entities_generated import (
     ClockObservationV1,
-    encode_communicator_state_v1,
 )
 from .persist_queue_entities import CLOCK_OBSERVATION_V1_SPEC
 from .ports.ds3231 import (
@@ -54,7 +53,6 @@ from .persistence_control_values import (
     CommunicatorStateLoadResult,
     require_immutable_state,
     CommunicatorStateCommitDisposition as CD,
-    CommunicatorStateLoadStatus as LS,
 )
 from .receiver_startup import ReceiverInstanceStart
 from .time_policy import (
@@ -182,7 +180,7 @@ class RuntimeTime:
         queue,
         policy,
         startup_rtc_result,
-        durable_state=None,
+        state_owner=None,
         settings=None,
     ):
         ReceiverInstanceStart(receiver_instance_id, 0)
@@ -195,12 +193,7 @@ class RuntimeTime:
         )
         self.state = startup_clock_state(rtc_health(startup_rtc_result))
         self.startup_rtc_result = startup_rtc_result
-        self.durable_state = durable_state
-        if durable_state is not None:
-            require_immutable_state(durable_state)
-        self.rtc_provenance = (
-            None if durable_state is None else durable_state.rtc_provenance
-        )
+        self.state_owner = state_owner
         self._health_observation_pending = False
         self.sample = None
         self.schedule = None
@@ -227,6 +220,15 @@ class RuntimeTime:
         self.rtc_trust_invalidated_count = 0
         self.rtc_write_counts = {disposition: 0 for disposition in W}
         self.rtc_readback_verified_count = 0
+
+    @property
+    def durable_state(self):
+        return None if self.state_owner is None else self.state_owner.state
+
+    @property
+    def rtc_provenance(self):
+        state = self.durable_state
+        return None if state is None else state.rtc_provenance
 
     @property
     def ordinary_admission_blocked(self):
@@ -366,6 +368,13 @@ class RuntimeTime:
             )
         sequence = self._sequence()
         reservation = self.queue.try_reserve_one(CLOCK_OBSERVATION_V1_SPEC)
+        if (
+            self.step_state is ChronyStepState.WAITING_FOR_STABLE_TIME
+            and self.clock.now_monotonic_us() >= self.step_deadline_monotonic_us
+        ):
+            if reservation.reservation is not None:
+                reservation.reservation.cancel()
+            return self._step_timeout(tracking_processed=tracking_processed)
         if before.generation != self.state.generation:
             if reservation.reservation is not None:
                 reservation.reservation.cancel()
@@ -464,18 +473,22 @@ class RuntimeTime:
                     self.sample = replace(self.sample, generation=self.state.generation)
                 return TimeUpdate()
             return self._untrusted(finish, tracking_processed=True)
+        sample_deadline = min(
+            poll_deadline,
+            checked_monotonic_deadline(start, self.policy.time_sampling_margin_us),
+        )
+        waiting = self.step_state is ChronyStepState.WAITING_FOR_STABLE_TIME
+        if waiting:
+            sample_deadline = min(sample_deadline, self.step_deadline_monotonic_us)
         kernel = self.kernel.sample(
             deadline_monotonic_us=self.deadline(
                 self.settings.kernel_budget_us,
-                cap=min(
-                    poll_deadline,
-                    checked_monotonic_deadline(
-                        start, self.policy.time_sampling_margin_us
-                    ),
-                ),
+                cap=sample_deadline,
             )
         )
         finish = self.clock.now_monotonic_us()
+        if waiting and finish >= self.step_deadline_monotonic_us:
+            return self._step_timeout(tracking_processed=True)
         if before.generation != self.state.generation:
             return self._untrusted(finish, tracking_processed=True)
         sample = network_observation(
@@ -637,7 +650,7 @@ class RuntimeTime:
             return max(self.next_rtc_attempt_monotonic_us, due - lead)
         return self.next_rtc_attempt_monotonic_us
 
-    def _commit_rtc_state(self, provenance, control, snapshot, generation):
+    def _commit_rtc_state(self, provenance, snapshot, generation):
         """The callback supplies the real state owner's complete immutable snapshot."""
         now = self.clock.now_monotonic_us()
         utc = checked_correlated_utc(self.sample.utc_us, self.sample.monotonic_us, now)
@@ -651,8 +664,7 @@ class RuntimeTime:
             return False, None, None
         require_immutable_state(requested)
         if (
-            requested.generation != self.durable_state.generation + 1
-            or requested.rtc_provenance != provenance
+            requested.rtc_provenance != provenance
             or requested.airtime_snapshot_utc_us != utc
         ):
             raise ValueError("complete state callback violated the time handoff")
@@ -660,24 +672,16 @@ class RuntimeTime:
             generation, allow_health_pending=True
         ):
             return False, None, None
-        result = control.commit_communicator_state(
+        result = self.state_owner.commit(
             requested,
             deadline_monotonic_us=self.deadline(self.settings.control_budget_us),
         )
         loaded = None
-        acknowledged = result.disposition in (CD.COMMITTED, CD.ALREADY_COMMITTED)
         if result.disposition is CD.OUTCOME_UNKNOWN:
-            loaded = control.load_communicator_state(
+            loaded = self.state_owner.reconcile(
                 deadline_monotonic_us=self.deadline(self.settings.control_budget_us)
             )
-            acknowledged = loaded.status is LS.LOADED and encode_communicator_state_v1(
-                loaded.state
-            ) == encode_communicator_state_v1(requested)
-        if acknowledged:
-            self.durable_state = requested
-            if provenance is None:
-                self.rtc_provenance = None
-        return acknowledged, result, loaded
+        return self.state_owner.state == requested, result, loaded
 
     def _rtc_source_valid(self, generation, *, allow_health_pending=False):
         if (
@@ -700,7 +704,7 @@ class RuntimeTime:
             is not None
         )
 
-    def refresh_rtc(self, rtc, control, snapshot):
+    def refresh_rtc(self, rtc, snapshot):
         """One invalidate/write/read-back/provenance episode; no blind device retries."""
         before = self.state
         generation = before.generation
@@ -771,6 +775,14 @@ class RuntimeTime:
                 )
 
         try:
+            if self.state_owner is not None and self.state_owner.pending is not None:
+                if start < self.next_rtc_attempt_monotonic_us:
+                    return RtcRefreshResult(RtcRefreshStatus.DEFERRED)
+                reconciliation = self.state_owner.reconcile(
+                    deadline_monotonic_us=self.deadline(self.settings.control_budget_us)
+                )
+                if self.state_owner.pending is not None:
+                    return finish(RtcRefreshStatus.PERSISTENCE_FAILED)
             if self.durable_state is None or not self._rtc_source_valid(generation):
                 return finish(RtcRefreshStatus.DEFERRED)
             due = rtc_refresh_due_us(
@@ -798,7 +810,7 @@ class RuntimeTime:
                 return finish(RtcRefreshStatus.TRUST_INVALIDATED)
             if self.durable_state.rtc_provenance is not None:
                 acknowledged, commit, reconciliation = self._commit_rtc_state(
-                    None, control, snapshot, generation
+                    None, snapshot, generation
                 )
                 if not acknowledged:
                     if not self._rtc_source_valid(
@@ -947,7 +959,7 @@ class RuntimeTime:
             if provenance is None:
                 return finish(RtcRefreshStatus.TRUST_INVALIDATED)
             acknowledged, commit, reconciliation = self._commit_rtc_state(
-                provenance, control, snapshot, generation
+                provenance, snapshot, generation
             )
             if not acknowledged:
                 if not self._rtc_source_valid(generation, allow_health_pending=True):
@@ -959,7 +971,6 @@ class RuntimeTime:
                 )
             if not self._rtc_source_valid(generation, allow_health_pending=True):
                 return finish(RtcRefreshStatus.TRUST_INVALIDATED)
-            self.rtc_provenance = provenance
             self.last_refresh_monotonic_us = self.clock.now_monotonic_us()
             return finish(RtcRefreshStatus.VERIFIED)
         except OverflowError:
@@ -1016,8 +1027,10 @@ class RuntimeTime:
             )
         return replace(update, failure=failure)
 
-    def _step_timeout(self):
-        update = self._untrusted(self.step_deadline_monotonic_us)
+    def _step_timeout(self, *, tracking_processed=False):
+        update = self._untrusted(
+            self.step_deadline_monotonic_us, tracking_processed=tracking_processed
+        )
         if self._step_failure is None:
             self._step_failure = self._failure(
                 E.TimeDiagnosticErrorCode.DEADLINE,
@@ -1093,6 +1106,9 @@ class RuntimeTime:
     def poll_chrony(self, chrony):
         """One bounded scheduling action, never waitsync or a blocking retry loop."""
         now = self.clock.now_monotonic_us()
+        waiting = self.step_state is ChronyStepState.WAITING_FOR_STABLE_TIME
+        if waiting and now >= self.step_deadline_monotonic_us:
+            return self._step_timeout()
         expiry = self.expire_due()
         if self.pending_observation is not None:
             return (
@@ -1102,9 +1118,6 @@ class RuntimeTime:
             )
         if self.step_state is ChronyStepState.STEP_COMMAND_PENDING:
             return self._submit_step(chrony)
-        waiting = self.step_state is ChronyStepState.WAITING_FOR_STABLE_TIME
-        if waiting and now >= self.step_deadline_monotonic_us:
-            return self._step_timeout()
         if waiting and now < self.next_status_poll_monotonic_us:
             return expiry
         if (
@@ -1123,13 +1136,7 @@ class RuntimeTime:
         if before.generation != self.state.generation:
             return self._untrusted(finish, tracking_processed=True)
         if waiting and finish >= self.step_deadline_monotonic_us:
-            self.state = advance_clock_state(
-                self.state,
-                quality=E.SystemTimeQuality.UNTRUSTED,
-                rtc_health=self.state.rtc_health,
-                tracking_processed=True,
-            )
-            return self._step_timeout()
+            return self._step_timeout(tracking_processed=True)
         decision = network_tracking_decision(
             before,
             query.evidence(),
@@ -1160,6 +1167,8 @@ class RuntimeTime:
             self._step_clock_generation = self.state.generation
             return update
         update = self.sample_network(query)
+        if waiting and self.step_state is ChronyStepState.RETRY_BACKOFF:
+            return update  # Kernel completion already ended this expired episode.
         if query.status in (Q.DEADLINE_EXCEEDED, Q.INVALID_RESPONSE):
             code = (
                 E.TimeDiagnosticErrorCode.DEADLINE

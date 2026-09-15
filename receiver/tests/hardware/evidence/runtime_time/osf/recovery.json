@@ -1,0 +1,112 @@
+{
+  "boot_id": "8e244439-41a6-41b3-8b50-e9e15df24c18",
+  "commands": [
+    {
+      "argv": [
+        "systemctl",
+        "is-active",
+        "chrony.service"
+      ],
+      "exit": 0,
+      "stdout": "active\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "chronyc",
+        "-n",
+        "-c",
+        "-h",
+        "/run/chrony/chronyd.sock",
+        "tracking"
+      ],
+      "exit": 0,
+      "stdout": "CCD8D64C,204.216.214.76,3,1789391485.155314319,256427.250000000,0.001246180,0.001246180,5.877,19.193,0.904,0.030201780,0.001087584,64.9,Normal\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "chronyc",
+        "-h",
+        "/run/chrony/chronyd.sock",
+        "makestep"
+      ],
+      "exit": 0,
+      "stdout": "200 OK\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "chronyc",
+        "-h",
+        "/run/chrony/chronyd.sock",
+        "waitsync",
+        "60",
+        "0.01",
+        "0",
+        "1"
+      ],
+      "exit": 0,
+      "stdout": "try: 1, refid: CCD8D64C, correction: 0.000000012, skew: 0.904\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "chronyc",
+        "-n",
+        "-c",
+        "-h",
+        "/run/chrony/chronyd.sock",
+        "tracking"
+      ],
+      "exit": 0,
+      "stdout": "CCD8D64C,204.216.214.76,3,1789391485.155314319,-0.000000012,0.001246180,0.001246180,5.877,19.193,0.904,0.030201780,0.001088170,64.9,Normal\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "env",
+        "TZ=UTC",
+        "/usr/sbin/hwclock",
+        "--systohc",
+        "--utc",
+        "--noadjfile",
+        "--rtc=/dev/rtc0"
+      ],
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "env",
+        "TZ=UTC",
+        "/usr/sbin/hwclock",
+        "--show",
+        "--verbose",
+        "--utc",
+        "--noadjfile",
+        "--rtc=/dev/rtc0"
+      ],
+      "exit": 0,
+      "stdout": "hwclock from util-linux 2.41.5\nSystem Time: 1789391501.016636\nUsing the rtc interface to the clock.\nAssuming hardware clock is kept in UTC time.\nWaiting for clock tick...\nioctl(4, RTC_UIE_ON, 0): Invalid argument\nWaiting in loop for time from /dev/rtc0 to change\n...got clock tick\nTime read from Hardware Clock: 2026/09/14 13:11:42\nHw clock time : 2026/09/14 13:11:42 = 1789391502 seconds since 1969\nTime since last adjustment is 1789391502 seconds\nCalculated Hardware Clock drift is 0.000000 seconds\n2026-09-14 13:11:41.010525+00:00\n",
+      "stderr": ""
+    }
+  ],
+  "write_attempted": true,
+  "recovered": true,
+  "before_write_utc_us": 1789391500842410,
+  "after_write_utc_us": 1789391501005921,
+  "rtc": {
+    "status": "OK",
+    "operation_started_at_monotonic_us": 132380967,
+    "operation_finished_at_monotonic_us": 132384987,
+    "rtc_utc_s": 1789391501,
+    "os_errno": null
+  },
+  "read_bracket_utc_us": [
+    1789391501006290,
+    1789391501010429
+  ],
+  "chrony_config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7"
+}

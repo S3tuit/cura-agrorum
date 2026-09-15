@@ -331,7 +331,8 @@ def rtc_refresh_due_us(
     expiry = _trust_expiry_us(sample, policy)
     if last_refresh_monotonic_us is None:
         return sample.monotonic_us
-    checked_monotonic_elapsed(last_refresh_monotonic_us, sample.monotonic_us)
+    # The supporting sample can still be current after a refresh completes.
+    checked_duration_us(last_refresh_monotonic_us)
     due = checked_monotonic_deadline(
         last_refresh_monotonic_us, policy.network_rtc_refresh_period_us
     )

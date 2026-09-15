@@ -19,6 +19,7 @@ import pytest
 
 from cura_receiver.generated import receiver_enums_generated as E
 from cura_receiver.generated.receiver_entities_generated import RtcProvenanceV1
+from cura_receiver.clock_correlation import AnalysisInstance, ClockCorrelation
 from cura_receiver.persistence_control_values import (
     CommunicatorStateCommitDisposition as CD,
 )
@@ -30,6 +31,7 @@ from cura_receiver.ports.chrony import ChronyQueryStatus as Q
 from cura_receiver.ports.ds3231 import Ds3231ReadStatus as R
 from cura_receiver.ports.kernel_clock import KernelSampleStatus as K
 from cura_receiver.receiver_startup import create_receiver_instance
+from cura_receiver.communicator_state_owner import CommunicatorStateOwner
 from cura_receiver.runtime_time import RuntimeTime, RuntimeTimeSettings
 from cura_receiver.time_policy import TimePolicy
 from tests.support.builders.persistence_control import synthetic
@@ -37,6 +39,7 @@ from tests.support.coordination.persistence_worker import (
     CheckedPersistenceWorker,
     prepare_worker_files,
 )
+from tools.check_chrony import check_configuration
 
 pytestmark = pytest.mark.hardware
 SOCKET = "/run/chrony/chronyd.sock"
@@ -239,8 +242,6 @@ w.finish_test()
 def test_offline_component_startup(tmp_path, proven):
     clock = LinuxOsClock()
     rtc = rtc_port(clock)
-    probe = rtc.read_time(deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000)
-    assert probe.status is R.OK
     database, config, _ = prepare_worker_files(tmp_path)
     instance = create_receiver_instance(clock)
     owner = CheckedPersistenceWorker(
@@ -255,6 +256,8 @@ def test_offline_component_startup(tmp_path, proven):
             deadline_monotonic_us=clock.now_monotonic_us() + 10_000_000
         )
         assert started.instance_start is not None, started
+        probe = rtc.read_time(deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000)
+        assert probe.status is R.OK
         utc = probe.rtc_utc_s * 1_000_000
         state = synthetic()
         state = replace(
@@ -290,7 +293,9 @@ def test_offline_component_startup(tmp_path, proven):
             queue=owner.queue,
             policy=TimePolicy(maximum_network_skew_ppb=1000),
             startup_rtc_result=probe,
-            durable_state=loaded.state,
+            state_owner=CommunicatorStateOwner(
+                control=owner.control, initial_state=loaded.state
+            ),
             settings=RuntimeTimeSettings(rtc_read_budget_us=5_000_000),
         )
         assert rt.state.quality is E.SystemTimeQuality.UNTRUSTED
@@ -309,25 +314,74 @@ def test_offline_component_startup(tmp_path, proven):
             proven_test_input=proven,
             observation=asdict(update.observation),
         )
+        owner.request_stop(deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000)
+        owner.join(5)
+        assert not owner.is_alive() and owner.queue.snapshot().closed_and_drained
     finally:
         owner.finish_test()
 
+    # Inspect the durable history consumed by analysis, including its real instance boundary.
+    import sqlite3
+    from cura_receiver.generated.receiver_entities_generated import ClockObservationV1
 
-# Audit expanded effective config and enabled/running competing writers without modifying any service.
-def test_deployment_time_writer_audit(tmp_path):
-    effective = command(
-        "/usr/sbin/chronyd", "-p", "-f", "/etc/chrony/chrony.conf"
-    ).stdout
-    lines = [
-        line.split()
-        for line in effective.splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
+    with sqlite3.connect(database) as db:
+        lifecycle = db.execute(
+            "SELECT instance_ordinal, receiver_instance_id, linux_boot_id, "
+            "started_at_monotonic_us FROM receiver_instances"
+        ).fetchone()
+        rows = db.execute(
+            "SELECT receiver_instance_id, observation_sequence, clock_state_generation, "
+            "sampled_at_monotonic_us, sampled_at_utc_us, step_discontinuity_boundary, "
+            "system_time_quality_id, rtc_health_id FROM clock_observations"
+        ).fetchall()
+    observations = [
+        ClockObservationV1(
+            *row[:5], bool(row[5]), E.SystemTimeQuality(row[6]), E.RtcHealth(row[7])
+        )
+        for row in rows
     ]
-    assert ["leapsecmode", "slew"] in lines and ["maxslewrate", "3500"] in lines
-    assert ["cmdport", "0"] in lines and ["bindcmdaddress", SOCKET] in lines
-    assert not {"makestep", "initstepslew", "rtcsync", "rtcfile"} & {
-        line[0] for line in lines
-    }
+    assert observations == [update.observation]
+    assert observations[0].sampled_at_monotonic_us >= instance.started_at_monotonic_us
+    correlation = ClockCorrelation([AnalysisInstance(*lifecycle)], observations)
+    derived = correlation.correlate(
+        instance.receiver_instance_id, observations[0].sampled_at_monotonic_us
+    )
+    if proven:
+        assert derived is not None and derived.utc_us == observations[0].sampled_at_utc_us
+    else:
+        assert derived is None
+    record(tmp_path, "offline-history", lifecycle=lifecycle, observations=rows)
+
+
+def chrony_process_arguments(pid):
+    return Path(f"/proc/{pid}/cmdline").read_bytes().rstrip(b"\0").decode().split("\0")
+
+
+# Check the trusted procedure's actual launch, expanded config and competing writers without service changes.
+def test_deployment_time_writer_audit(tmp_path):
+    service = command(
+        "systemctl", "show", "chrony.service", "-p", "ExecStart", "-p", "ExecStartPre",
+        "-p", "ActiveState", "-p", "MainPID", "-p", "Type", "-p", "Restart",
+    ).stdout
+    properties = dict(line.split("=", 1) for line in service.splitlines() if "=" in line)
+    assert properties["ActiveState"] == "active"
+    assert properties["Type"] == "forking" and properties["Restart"] == "on-failure"
+    launch = ["/usr/sbin/chronyd", "-F", "1", "-f", "/etc/chrony/chrony.conf"]
+    precheck = [
+        "/usr/bin/python3", "/usr/libexec/cura-agrorum/check-chrony.py",
+        "/etc/chrony/chrony.conf",
+    ]
+    for name, argv in (("ExecStart", launch), ("ExecStartPre", precheck)):
+        configured = properties[name]
+        assert configured.count("argv[]=") == 1
+        assert configured.startswith(
+            "{ path=" + argv[0] + " ; argv[]=" + " ".join(argv) + " ; ignore_errors=no ;"
+        ), f"{name} must use the documented launch procedure"
+    pid = int(properties["MainPID"])
+    assert pid > 0
+    process_arguments = chrony_process_arguments(pid)
+    assert process_arguments == launch, "running Chrony must use the audited configuration"
+    effective = check_configuration("/etc/chrony/chrony.conf")
     units = command("systemctl", "list-unit-files", "--no-pager", "--no-legend").stdout
     active = command(
         "systemctl", "list-units", "--state=active", "--no-pager", "--no-legend"
@@ -347,14 +401,6 @@ def test_deployment_time_writer_audit(tmp_path):
         assert not any(
             row.lstrip().startswith(name + " ") for row in active.splitlines()
         )
-    service = command(
-        "systemctl", "show", "chrony.service", "-p", "ExecStart", "-p", "ActiveState"
-    ).stdout
-    assert (
-        "ActiveState=active" in service
-        and " -s " not in service
-        and " -q " not in service
-    )
     record(
         tmp_path,
         "writer-audit",
@@ -362,6 +408,7 @@ def test_deployment_time_writer_audit(tmp_path):
         unit_files=units,
         active_units=active,
         chrony_service=service,
+        process_arguments=process_arguments,
     )
 
 

@@ -207,7 +207,27 @@ writes; removing one competing daemon does not audit every possible writer.
 No periodic `hwclock --systohc` service is installed. In particular,
 `rtcsync` can enable kernel RTC updates even without an `hwclock` service.
 
-`/etc/default/chrony` used `DAEMON_OPTS="-F 1"`. Enable the configured daemon:
+Install the [policy check](../../tools/check_chrony.py) and
+[systemd drop-in](chrony-runtime.conf) from the repository root:
+
+```bash
+sudo install -D -m 0644 -o root -g root receiver/tools/check_chrony.py /usr/libexec/cura-agrorum/check-chrony.py
+sudo install -D -m 0644 -o root -g root receiver/hardware/ds3231/chrony-runtime.conf /etc/systemd/system/chrony.service.d/cura-runtime.conf
+sudo systemctl daemon-reload
+```
+
+`ExecStartPre` checks the expanded configuration before every manual or
+automatic start; failure prevents Chrony from starting. `ExecStart` explicitly
+uses that same `/etc/chrony/chrony.conf`, retaining `-F 1` without reading
+`DAEMON_OPTS`. `Restart=on-failure` enables crash recovery; an explicit stop
+leaves it stopped. This is a trusted-operator procedure: keep configuration
+inputs unchanged while running; for later edits, stop the unit, edit, then
+start it through systemd. We accept the check/use interval and keep no
+configuration snapshots. The receiver process does not run this check.
+See [systemd's service contract](https://github.com/systemd/systemd/blob/main/man/systemd.service.xml)
+and [Chrony's configuration check](https://chrony-project.org/doc/4.6/chronyd.html).
+
+Enable the configured daemon:
 
 ```bash
 sudo systemctl unmask chrony.service

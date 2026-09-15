@@ -1,0 +1,350 @@
+{
+  "kind": "Final nominal-carrier runtime time qualification",
+  "date": "2026-09-15",
+  "source_stage": "/home/cura/runtime-time-release-stage-gdhtO1uT",
+  "source_manifest_sha256": "e457c8999da1abbe481743f62386f0e2717348199c8902d46e392d89e5c47aae",
+  "source_files": 214,
+  "preflight": {
+    "boot_id": "05188476-ddf2-42bd-b8c6-9eb9a2736402",
+    "source_manifest_sha256": "e457c8999da1abbe481743f62386f0e2717348199c8902d46e392d89e5c47aae",
+    "source_files": 214,
+    "operator_confirmation": "Externally unpowered; both fault shunts opened; original RTC wiring and coin cell retained; powered again; no deviation.",
+    "rtc_before_mutations": {
+      "status": "Ds3231ReadStatus.OK",
+      "operation_started_at_monotonic_us": 361480830,
+      "operation_finished_at_monotonic_us": 361484608,
+      "rtc_utc_s": 1789474600,
+      "os_errno": null
+    },
+    "chrony_before_wait": {
+      "pid": 641,
+      "start_ticks": "2720",
+      "config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7",
+      "tracking": [
+        "A29FC87B",
+        "162.159.200.123",
+        "4",
+        "1789474552.601670415",
+        "0.814025342",
+        "0.000128192",
+        "0.001953644",
+        "5.826",
+        "-0.639",
+        "2.221",
+        "0.053218488",
+        "0.001304121",
+        "64.9",
+        "Normal"
+      ]
+    },
+    "setup_step_before": [
+      "A29FC87B",
+      "162.159.200.123",
+      "4",
+      "1789474680.713453683",
+      "0.341331452",
+      "0.000012798",
+      "0.001766368",
+      "5.351",
+      "-0.151",
+      "4.238",
+      "0.054069757",
+      "0.001427415",
+      "64.5",
+      "Normal"
+    ],
+    "setup_step": "200 OK\n",
+    "ready_tracking": [
+      "A29FC87B",
+      "162.159.200.123",
+      "4",
+      "1789474680.713453682",
+      "-0.000000010",
+      "0.000012798",
+      "0.001766368",
+      "5.351",
+      "-0.151",
+      "4.238",
+      "0.054069757",
+      "0.001427499",
+      "64.5",
+      "Normal"
+    ]
+  },
+  "invasive_pytest": {
+    "passed": 3,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "duration_s": "97.797",
+    "cases": [
+      "test_network_rtc_refresh_and_helper_privilege[0]",
+      "test_forward_backward_step_component[60]",
+      "test_forward_backward_step_component[-60]"
+    ]
+  },
+  "safe_pytest": {
+    "passed": 8,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "duration_s": "6.597",
+    "cases": [
+      "test_real_kernel_abi_and_sample",
+      "test_real_chrony_tracking",
+      "test_real_rtc_read_and_safe_failures",
+      "test_real_process_restart_boot_identity",
+      "test_offline_component_startup[False]",
+      "test_offline_component_startup[True]",
+      "test_deployment_time_writer_audit",
+      "test_rtc_permission_failure"
+    ]
+  },
+  "restorations": [
+    {
+      "baseline_tracking": [
+        "A29FC801",
+        "162.159.200.1",
+        "4",
+        "1789474805.971843967",
+        "0.000000013",
+        "59.997348785",
+        "59.997348785",
+        "5.351",
+        "43.083",
+        "4.238",
+        "0.053988412",
+        "0.000912032",
+        "0.0",
+        "Normal"
+      ],
+      "saved_rtc": {
+        "status": "Ds3231ReadStatus.OK",
+        "operation_started_at_monotonic_us": 566036106,
+        "operation_finished_at_monotonic_us": 566038843,
+        "rtc_utc_s": 1789474803,
+        "os_errno": null
+      },
+      "offset": -60,
+      "restored": true,
+      "access": {
+        "device_uid": 0,
+        "device_gid": 0,
+        "device_mode": 384,
+        "restored": true,
+        "cleanup_errors": [],
+        "actual_uid": 0,
+        "actual_gid": 0,
+        "actual_mode": 384,
+        "helper_removed": true,
+        "created_link_removed": true
+      },
+      "restored_tracking": [
+        "437BF176",
+        "2603:c020:8017:3e00::123:123",
+        "3",
+        "1789474836.489734216",
+        "-0.000000014",
+        "-59.996520996",
+        "59.996520996",
+        "5.351",
+        "32.755",
+        "4.238",
+        "0.033349309",
+        "0.000387931",
+        "0.0",
+        "Normal"
+      ]
+    },
+    {
+      "baseline_tracking": [
+        "A29FC87B",
+        "162.159.200.123",
+        "4",
+        "1789474680.713453682",
+        "-0.000000000",
+        "0.000012798",
+        "0.001766368",
+        "5.351",
+        "-0.151",
+        "4.238",
+        "0.054069757",
+        "0.001444689",
+        "64.5",
+        "Normal"
+      ],
+      "saved_rtc": {
+        "status": "Ds3231ReadStatus.OK",
+        "operation_started_at_monotonic_us": 500431526,
+        "operation_finished_at_monotonic_us": 500435154,
+        "rtc_utc_s": 1789474739,
+        "os_errno": null
+      },
+      "offset": 0,
+      "restored": true,
+      "access": {
+        "device_uid": 0,
+        "device_gid": 0,
+        "device_mode": 384,
+        "restored": true,
+        "cleanup_errors": [],
+        "actual_uid": 0,
+        "actual_gid": 0,
+        "actual_mode": 384,
+        "helper_removed": true,
+        "created_link_removed": true
+      },
+      "restored_tracking": [
+        "5D2CF392",
+        "93.44.243.146",
+        "3",
+        "1789474775.207778449",
+        "0.000000011",
+        "0.003807649",
+        "0.003807649",
+        "5.351",
+        "-292.910",
+        "4.238",
+        "0.026570247",
+        "0.002015821",
+        "0.0",
+        "Normal"
+      ],
+      "restored_rtc": {
+        "status": "Ds3231ReadStatus.OK",
+        "operation_started_at_monotonic_us": 535219664,
+        "operation_finished_at_monotonic_us": 535223640,
+        "rtc_utc_s": 1789474773,
+        "os_errno": null
+      }
+    },
+    {
+      "baseline_tracking": [
+        "5D2CF392",
+        "93.44.243.146",
+        "3",
+        "1789474775.207778449",
+        "0.000000010",
+        "0.003807649",
+        "0.003807649",
+        "5.351",
+        "-292.910",
+        "4.238",
+        "0.026570247",
+        "0.002038836",
+        "0.0",
+        "Normal"
+      ],
+      "saved_rtc": {
+        "status": "Ds3231ReadStatus.OK",
+        "operation_started_at_monotonic_us": 535290142,
+        "operation_finished_at_monotonic_us": 535292854,
+        "rtc_utc_s": 1789474773,
+        "os_errno": null
+      },
+      "offset": 60,
+      "restored": true,
+      "access": {
+        "device_uid": 0,
+        "device_gid": 0,
+        "device_mode": 384,
+        "restored": true,
+        "cleanup_errors": [],
+        "actual_uid": 0,
+        "actual_gid": 0,
+        "actual_mode": 384,
+        "helper_removed": true,
+        "created_link_removed": true
+      },
+      "restored_tracking": [
+        "A29FC801",
+        "162.159.200.1",
+        "4",
+        "1789474805.971843967",
+        "0.000000014",
+        "59.997348785",
+        "59.997348785",
+        "5.351",
+        "43.083",
+        "4.238",
+        "0.053988412",
+        "0.000908162",
+        "0.0",
+        "Normal"
+      ]
+    }
+  ],
+  "postflight": {
+    "rtc": {
+      "status": "Ds3231ReadStatus.OK",
+      "operation_started_at_monotonic_us": 660640879,
+      "operation_finished_at_monotonic_us": 660644256,
+      "rtc_utc_s": 1789474898,
+      "os_errno": null
+    },
+    "independent_hwclock": "2026-09-15 14:21:38.432930+02:00\n",
+    "chrony": {
+      "pid": 2049,
+      "start_ticks": "59146",
+      "config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7",
+      "tracking": [
+        "437BF176",
+        "2603:c020:8017:3e00::123:123",
+        "3",
+        "1789474838.806074120",
+        "0.000000120",
+        "0.000133335",
+        "0.000133335",
+        "5.351",
+        "37.416",
+        "4.238",
+        "0.033475541",
+        "0.003203646",
+        "1.6",
+        "Normal"
+      ]
+    },
+    "rtc_permissions": [
+      384,
+      0,
+      0
+    ],
+    "stock_bindings": {
+      "3f804000.i2c": "/sys/bus/platform/drivers/i2c-bcm2835",
+      "3f805000.i2c": "/sys/bus/platform/drivers/i2c-bcm2835"
+    },
+    "diagnostic_loaded": false,
+    "temporary_helpers": [],
+    "temporary_sockets": [],
+    "stable_alias_exists": false,
+    "verified": true
+  },
+  "boot_inspection": {
+    "boot_id": "05188476-ddf2-42bd-b8c6-9eb9a2736402",
+    "kernel": "6.18.50+rpt-rpi-v8",
+    "rtc_driver": "/sys/bus/platform/drivers/i2c-bcm2835",
+    "diagnostic_loaded": false,
+    "chrony": {
+      "pid": 641,
+      "start_ticks": "2720",
+      "config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7",
+      "tracking": [
+        "A29FC87B",
+        "162.159.200.123",
+        "4",
+        "1789474295.549131243",
+        "1.768387556",
+        "-0.000925415",
+        "0.000925415",
+        "5.921",
+        "66.294",
+        "0.631",
+        "0.052113116",
+        "0.003396432",
+        "1.8",
+        "Normal"
+      ]
+    },
+    "kernel_rtc": "[   14.724345] cura-receiver kernel: rtc-ds1307 1-0068: registered as rtc0\n[   14.725198] cura-receiver kernel: rtc-ds1307 1-0068: setting system clock to 2026-09-15T12:10:45 UTC (1789474245)\n[   18.379265] cura-receiver kernel: vc4-drm soc:gpu: bound 3f206000.pixelvalve (ops vc4_crtc_ops [vc4])\n[   18.384527] cura-receiver kernel: vc4-drm soc:gpu: bound 3f207000.pixelvalve (ops vc4_crtc_ops [vc4])\n[   18.385921] cura-receiver kernel: vc4-drm soc:gpu: bound 3f807000.pixelvalve (ops vc4_crtc_ops [vc4])\n[   18.404384] cura-receiver kernel: vc4-drm soc:gpu: [drm] Cannot find any crtc or sizes\n[   18.405585] cura-receiver kernel: vc4-drm soc:gpu: [drm] Cannot find any crtc or sizes\n"
+  }
+}

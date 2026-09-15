@@ -1,0 +1,10 @@
+{
+  "outage_start_response": "unplugged. Don't worry to time it, I'll do it. You can return when the only thing you have to to is wait for the 30m.",
+  "outage_end_response": "powered again, no deviations.",
+  "minimum_outage_seconds": 1800,
+  "timing_owner": "operator",
+  "procedure_completed_without_deviation": true,
+  "physical_disconnection_time": null,
+  "physical_reconnection_time": null,
+  "note": "The operator undertook timing and confirmed completion without deviations. Message/capture timestamps are not claimed as exact physical switching times."
+}

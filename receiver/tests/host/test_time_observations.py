@@ -293,6 +293,18 @@ def test_rtc_refresh_due_times():
     )
 
 
+# F-001: refresh completion can follow its supporting sample without reversing a clock bracket.
+@pytest.mark.parametrize("completion", [99, 100, 101])
+def test_refresh_completion_relative_to_supporting_sample(completion):
+    sample = TrustedTimeSample(100, 0, 1_000_000, Quality.NETWORK_SYNCED, 7)
+    zero_rate = replace(
+        POLICY, chrony_max_slew_rate_ppm=0, monotonic_elapsed_rate_bound_ppm=0
+    )
+    assert rtc_refresh_due_us(
+        sample, last_refresh_monotonic_us=completion, policy=zero_rate
+    ) == completion + 10_800_000_000
+
+
 # The stricter five-second threshold is inclusive and expires on the first added error unit.
 def test_rtc_source_threshold():
     sample = TrustedTimeSample(0, 500_000, 5_000_000, Quality.NETWORK_SYNCED, 7)

@@ -2688,6 +2688,24 @@ current-boot deadline using `minimum_wait_monotonic_us()`. Live aging thereafter
 uses those monotonic deadlines. It never reuses a preceding boot's monotonic
 values or moves an old charge into another grid bucket.
 
+Each live bucket owns that fixed retention deadline. When a new bucket is first
+charged, map its guarded expiration using the current paired trusted UTC and
+monotonic construction sample. Do not use an earlier bucket's or the ledger's
+original clock sample. Copying the ledger, updating an existing charge,
+settlement, and equal-offset trusted refreshes preserve its deadline; they do
+not shorten or restart retention. These deadlines are runtime metadata only
+and do not change the canonical V1 encoding. Complete-state preparation carries
+them with the exact pending candidate and preceding ledger across commit
+acknowledgement, failure and reconciliation.
+
+Under continuously fresh unchanged-offset time and the default policy, a new
+bucket has at most 3,780 seconds of remaining guarded lifetime. Its 3,700-ppm
+conversion adds at most 13,986,000 microseconds relative to nominal expiration,
+independently of process uptime. With one request per minute, one-second retries,
+healthy persistence and available headroom, conservative snapshot deferral must
+therefore clear within 14 seconds. This availability bound does not apply to
+trust/offset changes, failed or unresolved persistence, or exhausted budget.
+
 The spending deadline uses `maximum_lifetime_monotonic_us(bucket_end - utc)`
 at selection time, excluding the guard, and is fixed before the state commit.
 Acknowledgement cannot restart that lifetime. Both deadlines use checked

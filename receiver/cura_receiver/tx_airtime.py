@@ -248,7 +248,7 @@ class TxAirtimePolicy:
             if utc != snapshot_utc_us or previous_state.generation >= (1 << 63) - 1:
                 return None
             if self._ledger is None:
-                self._restore(previous_state, utc)
+                self._restore(previous_state, utc, snapshot_monotonic_us)
             if previous_state is not self._known_state:
                 return None
             ledger = self._ledger.copy()
@@ -305,7 +305,7 @@ class TxAirtimePolicy:
         if self._disabled_since is None:
             self._disabled_since = self.clock.now_monotonic_us()
 
-    def _restore(self, state, utc):
+    def _restore(self, state, utc, monotonic_us):
         for name in (
             "rolling_window_us",
             "tx_airtime_budget_us",
@@ -319,7 +319,7 @@ class TxAirtimePolicy:
             self.policy,
             state.buckets,
             utc_us=utc,
-            monotonic_us=self.clock.now_monotonic_us(),
+            monotonic_us=monotonic_us,
             rate_bound_ppm=self.rate,
         )
         self._known_state = state
@@ -328,11 +328,12 @@ class TxAirtimePolicy:
     def _adopt_recovery_result(self, result, requested, *, loaded=None):
         if result.disposition in (CD.COMMITTED, CD.ALREADY_COMMITTED):
             self._pending_requested = None
-            utc = self._utc()
+            now = self.clock.now_monotonic_us()
+            utc = self._utc(now)
             if utc is None:
                 return AirtimeUpdate(AirtimeReason.UNTRUSTED_TIME, result, loaded)
             try:
-                self._restore(requested, utc)
+                self._restore(requested, utc, now)
             except (ValueError, OverflowError):
                 return AirtimeUpdate(AirtimeReason.INVALID_STATE, result, loaded)
             return AirtimeUpdate(AirtimeReason.STATE_READY, result, loaded)
@@ -366,13 +367,14 @@ class TxAirtimePolicy:
         if self._grant is not None:
             return AirtimeUpdate(self._grant_reason(), load_result=loaded)
         self._pending_requested = None
-        utc = self._utc()
+        now = self.clock.now_monotonic_us()
+        utc = self._utc(now)
         if utc is None:
             return AirtimeUpdate(AirtimeReason.UNTRUSTED_TIME, load_result=loaded)
         if self.owner.state is None:
             return AirtimeUpdate(AirtimeReason.STATE_UNAVAILABLE, load_result=loaded)
         try:
-            self._restore(self.owner.state, utc)
+            self._restore(self.owner.state, utc, now)
         except (ValueError, OverflowError):
             return AirtimeUpdate(AirtimeReason.INVALID_STATE, load_result=loaded)
         return AirtimeUpdate(AirtimeReason.STATE_READY, load_result=loaded)
@@ -389,15 +391,16 @@ class TxAirtimePolicy:
             return AirtimeUpdate(
                 AirtimeReason.STATE_READY if reason is AirtimeReason.ALLOWED else reason
             )
-        utc = self._utc()
+        now = self.clock.now_monotonic_us()
+        utc = self._utc(now)
         if utc is None:
             return AirtimeUpdate(AirtimeReason.UNTRUSTED_TIME)
         if self.owner.state is not None:
             try:
                 if self._ledger is None or self._needs_rebase:
-                    self._restore(self.owner.state, utc)
+                    self._restore(self.owner.state, utc, now)
                 else:
-                    self._ledger.advance(self.clock.now_monotonic_us())
+                    self._ledger.advance(now)
             except (ValueError, OverflowError):
                 return AirtimeUpdate(AirtimeReason.INVALID_STATE)
             return AirtimeUpdate(AirtimeReason.STATE_READY)
@@ -570,6 +573,8 @@ class TxAirtimePolicy:
                     ledger.set_charge(
                         old.expiration,
                         old.baseline_us + old.increment_us - old.unspent_us,
+                        utc_us=utc,
+                        monotonic_us=now,
                     )
             if ledger.empty:
                 ledger = AirtimeLedger(
@@ -602,7 +607,12 @@ class TxAirtimePolicy:
                                 rate_bound_ppm=self.rate,
                             ),
                         )
-                        ledger.set_charge(expiration, baseline + increment)
+                        ledger.set_charge(
+                            expiration,
+                            baseline + increment,
+                            utc_us=utc,
+                            monotonic_us=now,
+                        )
                         grant = _BucketGrant(
                             expiration,
                             baseline,

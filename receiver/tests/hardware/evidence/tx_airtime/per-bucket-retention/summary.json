@@ -1,0 +1,106 @@
+{
+  "status": "host_component_and_reboot_requalification_passed",
+  "workload": "receiver_tx_airtime",
+  "approved_decision": "D-017",
+  "review_finding": "F-001",
+  "source_manifest_sha256": "de38d29ec11c0652d73f94f0e496aee99d9f722abb02d5689cb0ce01d15d5168",
+  "source_file_count": 327,
+  "source_base_commit": "b18d76a8c325f183a3ae17e7f436c15d6b2f9dc4",
+  "source_has_uncommitted_changes": true,
+  "host": {
+    "passed": 2484,
+    "seconds": 28.21,
+    "log": "2026-09-16/per-bucket-host.log"
+  },
+  "availability": {
+    "duration_seconds": 28800,
+    "request_period_seconds": 60,
+    "retry_period_seconds": 1,
+    "initial_history": "valid_empty",
+    "time": "fresh trusted samples with fixed UTC-minus-monotonic offset; virtual clocks advance at the physical reference rate",
+    "reviewed_commit": {
+      "sent": 417,
+      "maximum_gap_seconds": 3794,
+      "maximum_deferral_seconds": 3793,
+      "status": "regression_failed_as_expected"
+    },
+    "redesign": {
+      "sent": 480,
+      "maximum_gap_seconds": 74,
+      "maximum_deferral_seconds": 14,
+      "status": "passed"
+    }
+  },
+  "target": {
+    "source": "/home/cura/cura-airtime-per-bucket-33220c30",
+    "component_root": "/var/tmp/cura-airtime-per-bucket-33220c30",
+    "component_tests_passed": 17,
+    "component_seconds": 18.28,
+    "fixture_maximum_network_skew_ppb": 10000,
+    "first_reboot_controller_attempt": {
+      "status": "failed",
+      "trusted_prepare": "passed",
+      "trusted_verify": "passed",
+      "unavailable_prepare": "passed",
+      "unavailable_verify": "not_run",
+      "failure": "Pi unreachable after second reboot; 180-second reconnect limit exceeded",
+      "restoration": "not_verified",
+      "evidence": "2026-09-16/reboot-first-attempt/"
+    },
+    "artifact_retrieval": "complete; regular files match raw archives byte-for-byte",
+    "recovery_inspection": {
+      "status": "passed",
+      "chrony": "active and synchronized",
+      "config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7",
+      "evidence": "2026-09-16/recovered-inspection/"
+    },
+    "reboot_retry": {
+      "status": "passed",
+      "root": "/var/tmp/cura-airtime-per-bucket-33220c30-reboot-retry",
+      "pytest_phases_passed": 4,
+      "trusted": "unchanged 8000000-us charge reconstructed; zero initial allowance",
+      "unavailable": "unchanged durable bytes; reconstruction and TX suppressed",
+      "changed_boot_and_process_identities": true,
+      "sqlite_integrity": "passed",
+      "chrony_restoration": "passed; active synchronized service and unchanged configuration",
+      "evidence": "2026-09-16/reboot-retry/",
+      "modes": {
+        "trusted": {
+          "before_boot": "50c13fdc112f45a594d0e1be4cfffb43",
+          "after_boot": "9f40a74aaf73403d9a5370e3fc17b2f6",
+          "state_sha256": "3ceac8e7acfdbc7a672c90d32b9e1e8253269adcadcf20eae6d1814bfd82caf8",
+          "charge_us": 8000000
+        },
+        "unavailable": {
+          "before_boot": "9f40a74aaf73403d9a5370e3fc17b2f6",
+          "after_boot": "e1a42214b38a484e82099541ecddceec",
+          "state_sha256": "b18b8b201140dde2dd9e98557d679e06face28c667642457cf5cc4efe42fddec",
+          "charge_us": 8000000
+        }
+      }
+    },
+    "lifetime": {
+      "samples": 1707,
+      "last_allowed_before_deadline_us": 632,
+      "first_denied_after_deadline_us": 564,
+      "remaining_after_acknowledgement_us": 1952962
+    },
+    "restart_loaded_baseline_us": 1067866
+  },
+  "generator_validate_only": "passed",
+  "generator_check": "passed",
+  "diff_check": "passed",
+  "limits": [
+    "The availability bound applies to the recorded steady-time, empty-history, healthy-persistence scenario.",
+    "RF execution and continuous-window RF observation remain assigned to the radio stage.",
+    "Process SIGKILL and reboot are not physical power-loss evidence.",
+    "Root fixture access does not establish receiver-user permissions."
+  ],
+  "audit": {
+    "status": "passed",
+    "evidence": "2026-09-16/evidence-audit.json",
+    "clock_captures": 10,
+    "retrieved_regular_files_verified": 155,
+    "raw_files_with_verified_checksums": 280
+  }
+}

@@ -142,6 +142,28 @@ def test_unknown_settlement_exact_resolution(airtime_component, installed, prech
     )
 
 
+# F-001: reconciliation adopts the candidate's original per-bucket deadlines or the exact preceding ones.
+@pytest.mark.parametrize("installed", [False, True])
+def test_unknown_next_bucket_preserves_prepared_deadlines(airtime_component, installed):
+    policy, worker, _, clock = acquired(airtime_component)
+    policy.report_tx(policy.try_spend().token, C.STARTED)
+    clock.advance_elapsed_us(60_000_000)
+    policy.owner = CommunicatorStateOwner(
+        control=LostStateReply(worker.control, installed=installed),
+        initial_state=policy.state,
+    )
+    assert settle(policy, clock, precharge=True).reason is R.PERSISTENCE_PENDING
+    clock.advance_elapsed_us(10_000_000)
+    policy.reconcile(deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000)
+    assert policy._ledger.retention_deadline(3_780_000_000) == 3_793_986_100
+    if installed:
+        assert policy._ledger.retention_deadline(3_840_000_000) == 3_853_986_100
+        assert policy.try_spend().grant_deadline_monotonic_us == 119_778_100
+    else:
+        assert policy._ledger.charge_at(3_840_000_000) == 0
+        assert policy.try_spend().reason is R.GRANT_EXPIRED
+
+
 # A lost-trust episode freezes even an unchanged UTC offset until a new durable state transition.
 def test_trust_loss_cannot_reopen_grant_via_recovery(airtime_component):
     policy, _, _, clock = acquired(airtime_component)

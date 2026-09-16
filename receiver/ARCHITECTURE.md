@@ -1191,9 +1191,10 @@ canonical capacity and policy sizing rules belong to `INTERFACE.md`.
 
 The ring contains:
 
-- a monotonic beginning timestamp for the oldest represented bucket;
+- the UTC grid identity of the oldest represented bucket;
 - the physical array index corresponding to that bucket;
-- charged airtime in integer microseconds for each bucket; and
+- charged airtime in integer microseconds for each bucket;
+- a fixed process-local monotonic retention deadline for each nonempty bucket; and
 - a cached `total_used` maintained from the buckets.
 
 `total_used` is derived state: it is recomputed and validated when a ledger is loaded, then updated incrementally on insertion, expiration and definite reclamation. The communicator does not sum the complete ring on the receive-to-ACK path.
@@ -1211,6 +1212,15 @@ while now_monotonic >= oldest_bucket_retention_deadline:
 ```
 
 An implementation may bulk-reset a fully expired ring after a long idle interval. It must bounds-check every computed logical and physical index and fail closed if the ring cannot represent the required interval.
+
+Each retention deadline is mapped from one paired trusted UTC and monotonic
+sample when the bucket is loaded or first charged. New buckets use a current
+sample, so their rate allowance covers their remaining guarded lifetime rather
+than elapsed process uptime. Copies, settlement, top-ups and equal-offset time
+refreshes preserve existing deadlines. Only the established restart or
+correlation-invalidation boundary reconstructs them. Deadline order need not
+be inferred from UTC grid order; aging must never remove a charge before its
+own deadline.
 
 The durable bucket expiration identifies the bucket across receiver instances;
 persisted monotonic timestamps are never reused. At grant time the communicator

@@ -1,7 +1,11 @@
 # Receiver TX-airtime component evidence
 
+The subsequent [per-bucket retention redesign](per-bucket-retention/README.md)
+current host/component results and completed reboot requalification.
+The qualification below describes the original sources.
+
 [Summary](summary.json) and [source manifest](source-manifest.json) identify the
-current implementation and its validation. Raw runs are retained under the
+original implementation and its validation. Raw runs are retained under the
 ignored [2026-09-15 directory](2026-09-15/); its `SHA256SUMS` covers the captures,
 including source archives, pytest output, controller transcripts and target
 database/WAL/SHM sets.
@@ -22,14 +26,6 @@ unchanged. The last allowed timing sample preceded the deadline by 472 us;
 the first denied sample finished 763 us after it. The measured remaining
 grant lifetime after acknowledgement was 1,954,799 us, within the original
 two-second bucket interval. All 1,653 samples are retained.
-
-The accepted source directory is
-`/home/cura/cura-airtime-accepted-ex9hiQLw`; its 326-file manifest was checked
-before and after execution. The 15 regression passes used the same production
-sources in `/home/cura/cura-airtime-qualified-O3hbjMyd`; only `TESTING.md` and
-the airtime fixture's approved input/metadata differ. Both reboot identities
-changed, and the controller verified the unchanged Chrony configuration,
-active service and restored network synchronization after the final reboot.
 
 Earlier lifetime/process-restart cases and two actual reboot modes passed.
 Final review then found that descheduling between separate UTC and monotonic

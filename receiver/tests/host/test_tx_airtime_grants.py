@@ -83,8 +83,25 @@ def test_grant_preparation_uses_one_clock_sample(airtime_component, monkeypatch)
     assert results[0].reason is R.ALLOWED
     spend = policy.try_spend()
     assert spend.grant_deadline_monotonic_us == 59_778_100
+    assert policy._ledger.retention_deadline(3_780_000_000) == 3_793_986_100
     clock.advance_elapsed_us(29_778_000)
     assert policy.try_spend().reason is R.GRANT_EXPIRED
+
+
+# Reconstruction pairs the UTC sample with its captured monotonic value even if preparation is delayed.
+def test_reconstruction_uses_one_clock_sample(airtime_component, monkeypatch):
+    policy, _, _, clock, _ = airtime_component(
+        initial_state=populated((1, 3_780_000_000))
+    )
+    restore = policy._restore
+
+    def delayed_restore(value, utc, monotonic):
+        clock.advance_elapsed_us(30_000_000)
+        return restore(value, utc, monotonic)
+
+    monkeypatch.setattr(policy, "_restore", delayed_restore)
+    assert policy.recover(deadline_monotonic_us=40_000_100).reason is R.STATE_READY
+    assert policy._ledger.retention_deadline(3_780_000_000) == 3_793_986_100
 
 
 class ObserveCommit:

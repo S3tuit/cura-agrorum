@@ -27,7 +27,6 @@ class LedgerModel:
 
     def restart(self, enabled, bias):
         self.live = None
-        self.anchor = None
         self.grant = None
         self.pending = None
         self.sample = None
@@ -66,22 +65,23 @@ class LedgerModel:
 
     def restore(self):
         utc = self.utc()
-        self.live = [
-            (charge, expiration)
+        self.live = self.reconstructed(utc)
+        self.rebase = False
+
+    def reconstructed(self, utc):
+        return [
+            (charge, expiration, self.now + ceil(Fraction(expiration - utc) * FAST))
             for charge, expiration in self.durable[2]
             if expiration > utc
         ]
-        self.anchor = (self.now, utc)
-        self.rebase = False
 
     @staticmethod
-    def aged(entries, anchor, now):
-        mono, utc = anchor
-        return [
-            (charge, expiration)
-            for charge, expiration in entries
-            if now < mono + ceil(Fraction(expiration - utc) * FAST)
-        ]
+    def aged(entries, now):
+        # Head aging keeps the suffix beginning with the earliest still-retained UTC identity.
+        blocked = [expiration for _, expiration, deadline in entries if deadline > now]
+        return (
+            [] if not blocked else [entry for entry in entries if entry[1] >= min(blocked)]
+        )
 
     def advance(self, duration):
         self.now += duration
@@ -110,7 +110,7 @@ class LedgerModel:
         return (
             None
             if self.live is None or self.pending is not None
-            else sum(charge for charge, _ in self.live)
+            else sum(charge for charge, _, _ in self.live)
         )
 
     def recover(self):
@@ -119,7 +119,7 @@ class LedgerModel:
         if self.live is None or self.rebase:
             self.restore()
         else:
-            self.live = self.aged(self.live, self.anchor, self.now)
+            self.live = self.aged(self.live, self.now)
         return "STATE_READY"
 
     def acquire(self, outcome="committed"):
@@ -138,6 +138,7 @@ class LedgerModel:
         reason = self.reason()
         if reason != "ALLOWED":
             return reason
+        self.live = self.aged(self.live, self.now)
         self.grant["available"] -= ACK
         if certainty == "NOT_STARTED":
             self.grant["available"] += ACK
@@ -169,41 +170,44 @@ class LedgerModel:
         if utc is None:
             return "UNTRUSTED_TIME"
         if self.rebase:
-            entries = [(c, e) for c, e in self.durable[2] if e > utc]
-            anchor = (self.now, utc)
+            entries = self.reconstructed(utc)
         else:
-            entries = self.aged(self.live, self.anchor, self.now)
-            anchor = self.anchor
+            entries = self.aged(self.live, self.now)
         if self.grant is not None:
             old = self.grant
             settled = old["baseline"] + old["increment"] - old["available"]
             entries = [
-                (settled if e == old["expiration"] else c, e) for c, e in entries
+                (settled if e == old["expiration"] else c, e, deadline)
+                for c, e, deadline in entries
             ]
-            entries = [(c, e) for c, e in entries if c]
-        if not entries:
-            anchor = (self.now, utc)
+            entries = [(c, e, deadline) for c, e, deadline in entries if c]
         granted = None
         result = "STATE_READY"
         if precharge:
             if entries:
-                reference_end = min(e for _, e in entries) - WINDOW - GUARD
+                reference_end = min(e for _, e, _ in entries) - WINDOW - GUARD
                 index = floor(Fraction(utc - reference_end, WIDTH)) + 1
                 end = reference_end + index * WIDTH
             else:
                 end = utc + WIDTH
             expiration = end + WINDOW + GUARD
-            all_expirations = [e for _, e in entries] + [expiration]
+            all_expirations = [e for _, e, _ in entries] + [expiration]
             if (max(all_expirations) - min(all_expirations)) // WIDTH >= 64:
                 result = "CAPACITY_EXCEEDED"
             else:
-                baseline = sum(c for c, e in entries if e == expiration)
-                increment = min(LIMIT - baseline, BUDGET - sum(c for c, _ in entries))
+                baseline = sum(c for c, e, _ in entries if e == expiration)
+                increment = min(
+                    LIMIT - baseline, BUDGET - sum(c for c, _, _ in entries)
+                )
                 if increment < ACK:
                     result = "BUDGET_EXHAUSTED"
                 else:
-                    entries = [(c, e) for c, e in entries if e != expiration]
-                    entries.append((baseline + increment, expiration))
+                    retention = next(
+                        (deadline for _, e, deadline in entries if e == expiration),
+                        self.now + ceil(Fraction(expiration - utc) * FAST),
+                    )
+                    entries = [(c, e, d) for c, e, d in entries if e != expiration]
+                    entries.append((baseline + increment, expiration, retention))
                     granted = dict(
                         expiration=expiration,
                         baseline=baseline,
@@ -215,17 +219,15 @@ class LedgerModel:
                     result = "ALLOWED"
             if granted is None and self.grant is None:
                 return result
-        if any(expiration <= utc for _, expiration in entries):
+        if any(expiration <= utc for _, expiration, _ in entries):
             return "SNAPSHOT_DEFERRED"
         entries.sort(key=lambda item: item[1])
-        requested = (self.durable[0] + 1, utc, tuple(entries))
+        requested = (self.durable[0] + 1, utc, tuple((c, e) for c, e, _ in entries))
         transition = dict(
             requested=requested,
             entries=entries,
-            anchor=anchor,
             grant=granted,
             previous_live=deepcopy(self.live),
-            previous_anchor=self.anchor,
             previous_grant=deepcopy(self.grant),
             epoch=self.epoch,
             next_reason=result,
@@ -245,16 +247,14 @@ class LedgerModel:
     def finish(self, transition):
         installed = self.durable == transition["requested"]
         if installed:
-            self.live, self.anchor, self.grant = (
+            self.live, self.grant = (
                 transition["entries"],
-                transition["anchor"],
                 transition["grant"],
             )
             self.rebase = self.epoch != transition["epoch"]
         else:
-            self.live, self.anchor, self.grant = (
+            self.live, self.grant = (
                 transition["previous_live"],
-                transition["previous_anchor"],
                 transition["previous_grant"],
             )
         self.pending = None

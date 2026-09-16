@@ -60,3 +60,17 @@ def test_model_reviewed_snapshot_deferral():
     model.advance(37_000)
     assert model.acquire() == "ALLOWED"
     assert model.durable == (2, 10_037_000, ((8_000_000, 3_790_037_000),))
+
+
+# F-001: after five hours a new bucket carries 13.986 seconds of rate allowance, with the old proof preserved.
+def test_model_reviewed_late_bucket_deadline():
+    model = LedgerModel(((1, 21_720_000_000),))
+    model.advance(18_000_000_000)
+    model.set_trust(True, 0)
+    assert model.acquire() == "ALLOWED"
+    assert model.live == [
+        (1, 21_720_000_000, 21_800_364_100),
+        (8_000_000, 21_780_000_000, 21_793_986_100),
+    ]
+    assert model.aged(model.live, 21_793_986_100) == model.live
+    assert model.aged(model.live, 21_800_364_100) == []

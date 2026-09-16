@@ -66,20 +66,24 @@ def test_long_idle_bulk_reset_and_new_grid():
 def test_ring_wraparound_and_no_charge_relocation():
     value = ledger((2, 120_000_000), (3, 180_000_000))
     value.advance(120_444_000)
-    value.set_charge(240_000_000, 4)
-    value.set_charge(180_000_000, 5)
+    value.set_charge(240_000_000, 4, utc_us=120_444_000, monotonic_us=120_444_000)
+    value.set_charge(180_000_000, 5, utc_us=120_444_000, monotonic_us=120_444_000)
     assert value.entries() == (Bucket(5, 180_000_000), Bucket(4, 240_000_000))
     assert value.total_used == 9
     for minute in range(5, 80):
-        value.advance((minute - 2) * 60_000_000 * 10037 // 10000)
-        value.set_charge(minute * 60_000_000, 1)
+        now = (minute - 2) * 60_000_000 * 10037 // 10000
+        value.advance(now)
+        value.set_charge(minute * 60_000_000, 1, utc_us=now, monotonic_us=now)
+        assert minute * 60_000_000 < value.retention_deadline(
+            minute * 60_000_000
+        ) <= minute * 60_000_000 + 444_000
     assert value.total_used == 2
     assert value.entries() == (Bucket(1, 78 * 60_000_000), Bucket(1, 79 * 60_000_000))
-    value.set_charge(78 * 60_000_000, 0)
+    value.set_charge(78 * 60_000_000, 0, utc_us=now, monotonic_us=now)
     assert value.total_used == 1
 
 
-# Receive-to-ACK reads and head aging do not iterate the full charge array or construct a snapshot.
+# Receive-to-ACK reads and head aging do not iterate the full bucket array or construct a snapshot.
 def test_admission_path_never_scans_ring():
     value = ledger((2, 10_000_000), (3, 70_000_000), (4, 130_000_000))
 
@@ -87,7 +91,7 @@ def test_admission_path_never_scans_ring():
         def __iter__(self):
             raise AssertionError("admission scanned the ring")
 
-    value._charges = NoIteration(value._charges)
+    value._buckets = NoIteration(value._buckets)
     value.advance(10_037_000)
     assert value.total_used == 7 and value.charge_at(70_000_000) == 3
     assert value.charge_at(190_000_000) == 0
@@ -132,9 +136,75 @@ def test_capacity_and_headroom_failures_leave_ledger_unchanged():
         (120_000_000 + 64 * 60_000_000, 1),
     ]:
         with pytest.raises(ValueError):
-            value.set_charge(expiration, charge)
+            value.set_charge(expiration, charge, utc_us=0, monotonic_us=0)
         assert value.entries() == original and value.total_used == 16_000_000
     assert value.copy().entries() == original
+
+
+# F-001: a bucket first charged after five hours gets only its own remaining-lifetime allowance.
+def test_new_bucket_uses_current_sample_and_preserves_loaded_deadline():
+    value = ledger((1, 21_720_000_000), monotonic=100)
+    assert value.retention_deadline(21_720_000_000) == 21_800_364_100
+    value.advance(18_000_000_100)
+    value.set_charge(
+        21_780_000_000, 2, utc_us=18_000_000_000, monotonic_us=18_000_000_100
+    )
+    assert value.retention_deadline(21_780_000_000) == 21_793_986_100
+    assert value.retention_deadline(21_720_000_000) == 21_800_364_100
+    # UTC-last expires monotonically first; the long-idle shortcut must not discard the older charge.
+    value.advance(21_793_986_100)
+    assert value.total_used == 3
+    value.advance(21_800_364_100)
+    assert value.total_used == 0 and value.empty
+
+
+# Copies and charge edits preserve mapped deadlines even after nominal UTC expiration.
+def test_copy_top_up_and_settlement_preserve_retention():
+    original = ledger((2, 10_000_000), (3, 70_000_000))
+    copied = original.copy()
+    copied.advance(10_000_000)
+    copied.set_charge(10_000_000, 1, utc_us=10_000_000, monotonic_us=10_000_000)
+    copied.set_charge(70_000_000, 4, utc_us=10_000_000, monotonic_us=10_000_000)
+    assert copied.retention_deadline(10_000_000) == 10_037_000
+    assert copied.retention_deadline(70_000_000) == 70_259_000
+    assert original.entries() == (Bucket(2, 10_000_000), Bucket(3, 70_000_000))
+    with pytest.raises(SnapshotDeferred):
+        copied.snapshot_buckets(10_000_000)
+    copied.advance(10_037_000)
+    assert copied.entries() == (Bucket(4, 70_000_000),)
+    assert original.total_used == 5
+
+
+# A new bucket's sample, expiration and deadline arithmetic are checked before any ring mutation.
+@pytest.mark.parametrize(
+    "start, expiration, utc, now, error",
+    [
+        (0, 10_000_000, 0, 1, ValueError),
+        (0, 10_000_000, 10_000_000, 0, ValueError),
+        ((1 << 64) - 1, 1, 0, (1 << 64) - 1, OverflowError),
+        (0, (1 << 63) - 1, 0, 0, OverflowError),
+    ],
+)
+def test_new_deadline_failure_is_atomic(start, expiration, utc, now, error):
+    value = ledger(monotonic=start)
+    with pytest.raises(error):
+        value.set_charge(expiration, 1, utc_us=utc, monotonic_us=now)
+    assert value.empty and value.total_used == 0 and value.entries() == ()
+
+
+# Reusing a ring emptied by aging must map a new deadline instead of keeping the prior slot's value.
+def test_reused_slots_do_not_reuse_retention_deadlines():
+    value = ledger()
+    for minute in range(130):
+        now = minute * 60_000_000
+        value.advance(now)
+        expiration = now + 30_000_000
+        value.set_charge(expiration, 1, utc_us=now, monotonic_us=now)
+        assert value.retention_deadline(expiration) == now + 30_111_000
+        value.advance(now + 30_110_999)
+        assert value.total_used == 1
+        value.advance(now + 30_111_000)
+        assert value.empty and value.total_used == 0
 
 
 # Trust generation, source validity and upward-rounded error growth all gate correlated UTC.

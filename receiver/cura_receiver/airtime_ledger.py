@@ -65,6 +65,12 @@ class AirtimeCorrelation:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _LiveBucket:
+    charge: int
+    retention_deadline: int
+
+
 class AirtimeLedger:
     """One fixed grid with cached charge, reconstructed in the current clock domain.
 
@@ -86,12 +92,12 @@ class AirtimeLedger:
         if type(buckets) is not tuple or len(buckets) != CAPACITY:
             raise ValueError("ledger requires exactly 64 immutable buckets")
         self.policy = policy
-        self._utc = checked_utc_us(utc_us)
-        self._monotonic = checked_duration_us(monotonic_us)
-        self._now = self._monotonic
+        checked_utc_us(utc_us)
+        self._now = checked_duration_us(monotonic_us)
         self._rate = rate_bound_ppm
         minimum_wait_monotonic_us(0, rate_bound_ppm=rate_bound_ppm)
-        self._charges = [0] * CAPACITY
+        self._buckets = [None] * CAPACITY
+        self._retention_ceiling = 0
         self._first = self._last = None
         self._head = 0
         self._total = 0
@@ -124,12 +130,17 @@ class AirtimeLedger:
                 raise ValueError("ledger grid span exceeds capacity")
             total = checked_monotonic_deadline(total, charge)
             previous = expiration
-            if expiration > self._utc:
+            if expiration > utc_us:
                 retained.append(bucket)
         if total > policy.tx_airtime_budget_us:
             raise ValueError("loaded charge exceeds the global budget")
         for bucket in retained:
-            self.set_charge(bucket.expires_at_utc_us, bucket.charged_airtime_us)
+            self.set_charge(
+                bucket.expires_at_utc_us,
+                bucket.charged_airtime_us,
+                utc_us=utc_us,
+                monotonic_us=monotonic_us,
+            )
 
     @property
     def width(self):
@@ -156,11 +167,10 @@ class AirtimeLedger:
         )
 
     def retention_deadline(self, expiration):
-        remaining = checked_utc_difference(expiration, self._utc)
-        return checked_monotonic_deadline(
-            self._monotonic,
-            minimum_wait_monotonic_us(max(0, remaining), rate_bound_ppm=self._rate),
-        )
+        bucket = self._bucket_at(expiration)
+        if bucket is None:
+            raise ValueError("empty bucket has no retention deadline")
+        return bucket.retention_deadline
 
     def current_bucket_end(self, utc_us):
         checked_utc_us(utc_us)
@@ -180,16 +190,20 @@ class AirtimeLedger:
             raise ValueError("logical ring index is outside capacity")
         return (self._head + slot) % CAPACITY
 
-    def charge_at(self, expiration):
+    def _bucket_at(self, expiration):
         checked_utc_us(expiration)
         if self.empty:
-            return 0
+            return None
         distance = checked_utc_difference(expiration, self._first)
         if distance % self.width:
             raise ValueError("expiration is off the retained grid")
         if expiration < self._first or expiration > self._last:
-            return 0
-        return self._charges[self._index(expiration)]
+            return None
+        return self._buckets[self._index(expiration)]
+
+    def charge_at(self, expiration):
+        bucket = self._bucket_at(expiration)
+        return 0 if bucket is None else bucket.charge
 
     def fits(self, expiration):
         checked_utc_us(expiration)
@@ -202,23 +216,39 @@ class AirtimeLedger:
         )
         return span // self.width < CAPACITY
 
-    def set_charge(self, expiration, charge):
-        """Change a bucket during preparation/settlement, never at a radio command."""
+    def set_charge(self, expiration, charge, *, utc_us, monotonic_us):
+        """Preserve existing deadlines; map a new bucket from this paired sample."""
         checked_utc_us(expiration)
         self.bucket_end(expiration)
         checked_duration_us(charge)
+        checked_utc_us(utc_us)
+        checked_duration_us(monotonic_us)
+        if monotonic_us != self._now:
+            raise ValueError("charge update must use the ledger's current sample")
         if charge > self.policy.bucket_charge_limit_us:
             raise ValueError("charge exceeds the bucket limit")
-        previous = self.charge_at(expiration)
+        previous_bucket = self._bucket_at(expiration)
+        previous = 0 if previous_bucket is None else previous_bucket.charge
         total = checked_monotonic_deadline(self._total - previous, charge)
         if total > self.policy.tx_airtime_budget_us:
             raise ValueError("charge exceeds the global budget")
         if not self.fits(expiration):
             raise ValueError("new bucket does not fit the ring")
-        if charge and (
-            expiration <= self._utc or self.retention_deadline(expiration) <= self._now
-        ):
-            raise ValueError("cannot insert an expired bucket")
+        replacement = None
+        if charge:
+            if previous_bucket is None:
+                remaining = checked_utc_difference(expiration, utc_us)
+                if remaining <= 0:
+                    raise ValueError("cannot insert an expired bucket")
+                deadline = checked_monotonic_deadline(
+                    monotonic_us,
+                    minimum_wait_monotonic_us(remaining, rate_bound_ppm=self._rate),
+                )
+            else:
+                deadline = previous_bucket.retention_deadline
+            if deadline <= self._now:
+                raise ValueError("cannot update an expired bucket")
+            replacement = _LiveBucket(charge, deadline)
         if self.empty:
             if not charge:
                 return
@@ -230,19 +260,21 @@ class AirtimeLedger:
         elif expiration > self._last and charge:
             self._last = expiration
         if self._first <= expiration <= self._last:
-            self._charges[self._index(expiration)] = charge
+            self._buckets[self._index(expiration)] = replacement
+        if replacement is not None:
+            self._retention_ceiling = max(self._retention_ceiling, deadline)
         self._total = total
         self._trim_empty_edges()
 
     def _trim_empty_edges(self):
         if self._total == 0:
             self._first = self._last = None
-            self._head = 0
+            self._head = self._retention_ceiling = 0
             return
-        while self._charges[self._head] == 0:
+        while self._buckets[self._head] is None:
             self._first = checked_utc_offset(self._first, self.width)
             self._head = (self._head + 1) % CAPACITY
-        while self._charges[self._index(self._last)] == 0:
+        while self._buckets[self._index(self._last)] is None:
             self._last = checked_utc_offset(self._last, -self.width)
 
     def advance(self, now_monotonic_us):
@@ -250,17 +282,19 @@ class AirtimeLedger:
         self._now = now_monotonic_us
         if self.empty:
             return
-        if now_monotonic_us >= self.retention_deadline(self._last):
-            self._charges = [0] * CAPACITY
+        # This upper bound remains safe even when deadlines are not in UTC order.
+        if now_monotonic_us >= self._retention_ceiling:
+            self._buckets = [None] * CAPACITY
             self._first = self._last = None
-            self._head = self._total = 0
+            self._head = self._total = self._retention_ceiling = 0
             return
-        while now_monotonic_us >= self.retention_deadline(self._first):
-            self._total -= self._charges[self._head]
-            self._charges[self._head] = 0
-            self._head = (self._head + 1) % CAPACITY
-            self._first = checked_utc_offset(self._first, self.width)
-        self._trim_empty_edges()
+        while not self.empty:
+            bucket = self._buckets[self._head]
+            if now_monotonic_us < bucket.retention_deadline:
+                break
+            self._total -= bucket.charge
+            self._buckets[self._head] = None
+            self._trim_empty_edges()
 
     def entries(self):
         if self.empty:
@@ -269,9 +303,9 @@ class AirtimeLedger:
         result = []
         expiration = self._first
         for index in range(count):
-            charge = self._charges[(self._head + index) % CAPACITY]
-            if charge:
-                result.append(TxAirtimeBucketV1(charge, expiration))
+            bucket = self._buckets[(self._head + index) % CAPACITY]
+            if bucket is not None:
+                result.append(TxAirtimeBucketV1(bucket.charge, expiration))
             if index + 1 < count:
                 expiration = checked_utc_offset(expiration, self.width)
         return tuple(result)
@@ -286,5 +320,5 @@ class AirtimeLedger:
     def copy(self):
         clone = object.__new__(type(self))
         clone.__dict__.update(self.__dict__)
-        clone._charges = self._charges.copy()
+        clone._buckets = self._buckets.copy()
         return clone

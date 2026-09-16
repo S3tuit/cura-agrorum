@@ -312,6 +312,38 @@ def test_guarded_reconstruction_preserves_continuous_physical_window(
     assert ledger.total_used == 67_866
 
 
+# F-001: fresh bucket retention stays bounded by its own lifetime and safe at either monotonic rate extreme.
+@settings(max_examples=100, deadline=None, derandomize=True)
+@given(
+    uptime=st.integers(0, 7 * 24 * 3_600_000_000),
+    error=st.integers(-39_999_999, 39_999_999),
+    remaining=st.integers(1, 60_000_000),
+    rate=st.sampled_from([-3700, 0, 3700]),
+)
+def test_new_bucket_physical_retention_independent_of_uptime(
+    uptime, error, remaining, rate
+):
+    ledger = AirtimeLedger(
+        CommunicatorStatePolicy(), (Bucket(0, 0),) * 64, utc_us=0, monotonic_us=100
+    )
+    now = uptime + 100
+    utc = uptime + error
+    ledger.advance(now)
+    expiration = utc + remaining + 3_720_000_000
+    ledger.set_charge(expiration, 67_866, utc_us=utc, monotonic_us=now)
+    deadline = ledger.retention_deadline(expiration)
+    assert deadline <= now + 3_793_986_000
+    # Even a latest possible attempt at the bucket end remains charged for a full physical hour.
+    physical_wait = remaining + 3_600_000_000
+    observed_wait = (physical_wait * (1_000_000 + rate)) // 1_000_000
+    ledger.advance(now + observed_wait)
+    assert ledger.total_used == 67_866
+    ledger.advance(deadline - 1)
+    assert ledger.total_used == 67_866
+    ledger.advance(deadline)
+    assert ledger.empty and ledger.total_used == 0
+
+
 # The reviewed rejected 60-second shift is early; the chosen 120-second guard survives the same clock reversal.
 def test_recorded_clock_shift_counterexample_and_fixed_guard():
     actual_tx = 13 * 3600 + 38

@@ -26,6 +26,8 @@ from .sqlite_repository import (
 _I64_MIN = -(1 << 63)
 _I64_MAX = (1 << 63) - 1
 _U64_MAX = (1 << 64) - 1
+COMMUNICATOR_STATE_BUCKET_CAPACITY = 64
+AIRTIME_UTC_ERROR_CEILING_US = 40_000_000
 _POLICY_FIELDS = (
     "rolling_window_us",
     "tx_airtime_budget_us",
@@ -50,8 +52,13 @@ def _policy_shape(value) -> None:
     if window == 0 or width == 0 or not 0 < limit <= budget:
         raise ValueError("invalid state policy durations or charge bounds")
     span = _integer(window + guard)
-    if (span + width - 1) // width + 1 > 62 or (budget + limit - 1) // limit > 62:
+    grid_count = span // width + bool(span % width) + 1
+    synthetic_count = budget // limit + bool(budget % limit)
+    if max(grid_count, synthetic_count) > COMMUNICATOR_STATE_BUCKET_CAPACITY:
         raise ValueError("state policy exceeds fixed ledger capacity")
+    oldest_offset = _integer((synthetic_count - 1) * width)
+    if oldest_offset >= _integer(span + width):
+        raise ValueError("synthetic recovery would contain expired buckets")
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,12 +69,14 @@ class CommunicatorStatePolicy:
     tx_airtime_budget_us: int = 36_000_000
     bucket_width_us: int = 60_000_000
     bucket_charge_limit_us: int = 8_000_000
-    bucket_expiration_guard_us: int = 1_000_000
+    bucket_expiration_guard_us: int = 120_000_000
     receiver_utc_error_budget_us: int = 40_000_000
 
     def __post_init__(self) -> None:
         _policy_shape(self)
-        _integer(self.receiver_utc_error_budget_us, 1)
+        _integer(self.receiver_utc_error_budget_us, 1, AIRTIME_UTC_ERROR_CEILING_US)
+        if self.bucket_expiration_guard_us < 2 * AIRTIME_UTC_ERROR_CEILING_US:
+            raise ValueError("airtime guard does not cover both UTC correlations")
 
 
 def validate_communicator_state(
@@ -106,6 +115,7 @@ def validate_communicator_state(
         )
         _integer(provenance.drift_bound_ppm, 1, 999_999)
     previous = None
+    first = None
     empty_seen = False
     total = 0
     for bucket in state.buckets:
@@ -130,6 +140,11 @@ def validate_communicator_state(
             delta = _integer(expiration - previous, 1, _I64_MAX)
             if delta % state.bucket_width_us:
                 raise ValueError("bucket expirations are not on one increasing grid")
+        if first is None:
+            first = expiration
+        span = _integer(expiration - first, 0, _I64_MAX)
+        if span // state.bucket_width_us >= COMMUNICATOR_STATE_BUCKET_CAPACITY:
+            raise ValueError("ledger grid span exceeds fixed capacity")
         previous = expiration
         total = _integer(total + charge)
     if total > state.tx_airtime_budget_us:

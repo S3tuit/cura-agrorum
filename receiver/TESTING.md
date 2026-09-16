@@ -574,13 +574,14 @@ arithmetic failure for TIME diagnostics without duplicating the equations.
 - **Bucket boundary aging:** Exercise exact start/end, partially overlapping oldest bucket, complete expiration and long-idle bulk reset while retaining a bucket until its full interval is conservatively outside the rolling window.
 - **Cached-total reconstruction:** Load valid and inconsistent ledgers, recompute `total_used`, reject checked overflow or mismatch and prove ACK admission updates totals without scanning the full ring.
 - **Grid continuation:** Continue the latest unexpired durable logical bucket across process restart, top up only that bucket when eligible and never relabel an earlier process's charge.
-- **Grant headroom:** Check bucket and global headroom equality/one-unit boundaries and require a durable current-process increment before any allowance becomes spendable.
+- **Grant headroom:** Check bucket and global headroom equality/one-unit boundaries and require a durable current-process increment before any allowance becomes spendable. A named scheduling barrier between time sampling and grant preparation must not pair old UTC with a later monotonic origin or extend the original deadline.
 - **Spend and settlement:** Tentatively spend an ACK charge, settle exact used airtime, reclaim only definitely unused allowance and atomically precharge a later bucket when budget permits.
 - **SetTx certainty charging:** Parameterize definite pre-SetTx failure, confirmed start, uncertain command and missing terminal outcome; reclaim only the first and retain every possible transmission.
 - **Crash before and after grant commit:** Prove a pre-commit crash enables no TX and a post-commit crash leaves the complete increment charged and unspendable to the replacement process.
 - **Repeated crashes:** Generate consecutive process failures and show conservative precharges accumulate without exceeding bucket/global budget or reopening spent allowance.
 - **Settlement failures:** Cover definite commit failure and unknown outcome, retaining the preceding authoritative generation and suppressing TX until exact reconciliation.
 - **Time-trust loss:** Invalidate the grant's UTC/monotonic correlation and require frozen allowance until a new trusted correlation and state transition establish safe expiration.
+- **Bounded UTC reconstruction:** Cover opposite recording/restart errors approaching 40 seconds, the rejected 60-second shift counterexample, and the 120-second guard. Generate bounded error and monotonic-rate extremes and prove no charge expires before its physical rolling-window obligation. A tighter runtime budget never changes the fixed historical ceiling. Check trusted-sample growth, exact trust/deadline boundaries, changed offsets, and snapshot deferral when conservative monotonic retention outlasts nominal UTC expiration.
 - **Missing/corrupt history:** Start from generation zero, synthesize `[4, 8, 8, 8, 8]` seconds for pilot defaults and forbid TX until the checked generation-one state commits.
 - **Unsupported/policy mismatch wait:** Start the complete conservative rolling-window wait only after TX is known disabled, restart the wait on process restart and permit empty-ledger replacement only after trusted UTC and the full wait.
 - **Budget exhaustion semantics:** Accept and publish an otherwise valid reading when no ACK allowance exists, record airtime suppression and never change acceptance to retry-later.
@@ -593,6 +594,51 @@ arithmetic failure for TIME diagnostics without duplicating the equations.
 - **Pi-reboot reconstruction:** Reboot with trusted RTC or network time and reconstruct unexpired charges from UTC; repeat without trusted time and require TX suppression.
 - **Real-radio charge result:** With the component RF fixture, exercise one definite pre-SetTx failure and one confirmed/uncertain attempted transmission and verify durable settlement follows command certainty, not whether the peer observed the packet.
 - **Continuous-window observation:** Run a slow, legally bounded sequence spanning bucket edges and confirm no set of attempted ACK transmissions exceeds the configured 36 seconds in any continuous 3,600-second observation period.
+
+The first three target families are airtime/time/persistence component tests and
+arrive with the durable airtime implementation. The final two require the
+production SX1262 component and RF fixture; policy-only or injected certainty
+results cannot satisfy them. They remain required at that component stage.
+
+The implemented target cases are `tests/hardware/test_tx_airtime.py` and
+`tests/hardware/test_tx_airtime_reboot.py`. The first measures a grant selected
+with two seconds left in its logical minute. Its observations permit no early
+expiration, at most 500 ms late detection and a final allowed sample within
+50 ms of the deadline; raw samples are retained. Both use the actual Linux
+clocks, time adapters, state owner and SQLite worker. A reviewed existing-history
+row establishes the fixture; missing-state recovery remains conservative.
+The airtime fixture declares `maximum_network_skew_ppb = 10_000` (10 ppm),
+approved for this bench. This is an explicit test input, not a receiver default.
+The same production time policy still decides trust, including total UTC error
+and source freshness. Chrony's `Normal` leap state alone does not establish that
+the component has trusted time. Raw evidence includes the fixture ceiling.
+
+For reboot coverage, stage the current sources with `source-manifest.json`
+containing the SHA-256 of every staged source file, then run the bounded external
+controller from the host:
+
+```sh
+CURA_PI_PASSWORD=... python receiver/tools/test_airtime_reboot.py \
+  --host cura@cura-receiver --remote-source /absolute/isolated/source \
+  --python /absolute/target/venv/bin/python \
+  --remote-test-root /var/tmp/cura-airtime-unique-run \
+  --output /absolute/new/local/evidence \
+  --confirm-receiver-destructive
+```
+
+The controller creates the dedicated sentinel-marked data root, verifies source
+hashes before every phase, and performs two real Pi reboots. Each phase uses the
+registered hardware/destructive flags. The second mode supplies an absent
+component Chrony socket and has no valid RTC provenance, exercising real adapter
+failure and untrusted-time suppression without changing system time services.
+The controller bounds each command and uses a 180-second reconnect loop for a
+changed boot identity and restored network synchronization. It verifies the existing
+Chrony configuration hash and active state and records final host state even
+after failure. The read-only Chrony/RTC fixture may require root; root-owned
+configuration and database files must have trusted ancestry (for example under
+the dedicated `/var/tmp` root). This privilege does not establish receiver-user
+deployment permissions. Raw pytest/JUnit, clock/state JSON, source manifests and
+database/WAL/SHM snapshots remain evidence; no radio command is executed.
 
 ## Deployment and lifecycle
 

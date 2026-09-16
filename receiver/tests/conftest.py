@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 
-
 TESTS_ROOT = Path(__file__).resolve().parent
 HOST_ROOT = TESTS_ROOT / "host"
 HARDWARE_ROOT = TESTS_ROOT / "hardware"
@@ -27,6 +26,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         metavar="PATH",
         help="dedicated marked root for destructive receiver test files and artifacts",
     )
+    group.addoption("--airtime-reboot-phase", choices=("prepare", "verify"))
+    group.addoption("--airtime-reboot-mode", choices=("trusted", "unavailable"))
+    group.addoption("--airtime-reboot-session", metavar="PATH")
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -52,9 +54,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             )
             continue
         if in_hardware and "hardware" not in marker_names:
-            violations.append(
-                f"{item.nodeid}: hardware test lacks the hardware marker"
-            )
+            violations.append(f"{item.nodeid}: hardware test lacks the hardware marker")
         if in_host and marker_names.intersection(
             {"hardware", "destructive", "rf_peer"}
         ):
@@ -62,9 +62,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
                 f"{item.nodeid}: host test carries a hardware-only marker"
             )
         if "destructive" in marker_names and "hardware" not in marker_names:
-            violations.append(
-                f"{item.nodeid}: destructive test is not marked hardware"
-            )
+            violations.append(f"{item.nodeid}: destructive test is not marked hardware")
         if "rf_peer" in marker_names and "hardware" not in marker_names:
             violations.append(f"{item.nodeid}: RF-peer test is not marked hardware")
 

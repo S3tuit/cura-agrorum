@@ -171,7 +171,7 @@ def test_pure_policy_mismatch(setup):
 )
 def test_ledger_semantics(setup, buckets):
     _, connection, *_ = setup
-    value = state(buckets=buckets + (TxAirtimeBucketV1(0, 0),) * (62 - len(buckets)))
+    value = state(buckets=buckets + (TxAirtimeBucketV1(0, 0),) * (64 - len(buckets)))
     assert (
         classify(connection, (communicator_state_v1_parameters(value),)).state_condition
         is Condition.CORRUPT
@@ -185,10 +185,13 @@ def test_ledger_semantics(setup, buckets):
         {"bucket_width_us": 0},
         {"bucket_charge_limit_us": 0},
         {"tx_airtime_budget_us": 1},
-        {"rolling_window_us": 3_660_000_000},
+        {"rolling_window_us": 3_660_000_001},
         {"bucket_charge_limit_us": 1},
         {"rolling_window_us": 1 << 64},
         {"bucket_expiration_guard_us": True},
+        {"bucket_expiration_guard_us": 79_999_999},
+        {"receiver_utc_error_budget_us": 40_000_001},
+        {"rolling_window_us": 1, "bucket_charge_limit_us": 1_000_000},
     ],
 )
 def test_invalid_deployment_policy(changes):
@@ -228,7 +231,7 @@ def test_provenance_semantics(setup, changes, expected):
         {"last_observed_system_time_quality": RtcHealth.PRESENT},
         {"last_observed_system_time_quality": 1},
         {"buckets": []},
-        {"buckets": (TxAirtimeBucketV1(True, 0),) * 62},
+        {"buckets": (TxAirtimeBucketV1(True, 0),) * 64},
     ],
 )
 def test_request_types_rejected_before_encoding(setup, changes):
@@ -237,3 +240,80 @@ def test_request_types_rejected_before_encoding(setup, changes):
         validate_communicator_state(
             state(**changes), SqliteRepository(connection), CommunicatorStatePolicy()
         )
+
+
+# The approved 64-slot layout fits this exact span; one more microsecond needs slot 65.
+def test_exact_policy_capacity_and_fixed_historical_error_bound():
+    assert CommunicatorStatePolicy(rolling_window_us=3_660_000_000)
+    assert CommunicatorStatePolicy(receiver_utc_error_budget_us=1)
+    assert CommunicatorStatePolicy(bucket_expiration_guard_us=80_000_000)
+
+
+# Sparse states must fit the same physical ring as dense ones, even before policy comparison.
+@pytest.mark.parametrize(
+    "span,expected", [(63, Condition.NONE), (64, Condition.CORRUPT)]
+)
+@pytest.mark.parametrize("mismatch", [False, True])
+def test_sparse_ledger_span(setup, span, expected, mismatch):
+    _, connection, *_ = setup
+    value = state(
+        tx_airtime_budget_us=35_000_000 if mismatch else 36_000_000,
+        buckets=(
+            TxAirtimeBucketV1(1, 120_000_000),
+            TxAirtimeBucketV1(1, 120_000_000 + span * 60_000_000),
+        )
+        + (TxAirtimeBucketV1(0, 0),) * 62,
+    )
+    if expected is Condition.NONE and mismatch:
+        expected = Condition.POLICY_MISMATCH
+    assert (
+        classify(connection, (communicator_state_v1_parameters(value),)).state_condition
+        is expected
+    )
+
+
+# A digest-valid supported state cannot hide arithmetic overflow behind differing policy values.
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {
+            "airtime_snapshot_utc_us": -(1 << 63),
+            "buckets": (TxAirtimeBucketV1(1, -(1 << 63) + 1),)
+            + (TxAirtimeBucketV1(0, 0),) * 63,
+        },
+        {
+            "tx_airtime_budget_us": (1 << 64) - 1,
+            "bucket_charge_limit_us": 1 << 63,
+            "buckets": (
+                TxAirtimeBucketV1(1 << 63, 3_780_000_000),
+                TxAirtimeBucketV1(1 << 63, 3_840_000_000),
+            )
+            + (TxAirtimeBucketV1(0, 0),) * 62,
+        },
+        {"rolling_window_us": (1 << 64) - 1},
+        {"bucket_width_us": (1 << 64) - 1},
+        {"rolling_window_us": 1, "bucket_charge_limit_us": 1_000_000},
+    ],
+)
+def test_supported_arithmetic_precedes_policy(setup, changes):
+    _, connection, *_ = setup
+    value = state(**changes)
+    assert (
+        classify(connection, (communicator_state_v1_parameters(value),)).state_condition
+        is Condition.CORRUPT
+    )
+
+
+# The old 1120-byte pilot layout is not silently decoded using the revised V1 shape.
+def test_old_pilot_layout_is_rejected_in_new_schema_epoch(setup):
+    _, connection, *_ = setup
+    blob = bytearray(encode_communicator_state_v1(state())[:-32])
+    struct.pack_into("<I", blob, 2, 1120)
+    struct.pack_into("<H", blob, 116, 62)
+    blob = bytes(blob)
+    assert (
+        classify(
+            connection, ((1, 1, 1, blob, hashlib.sha256(blob).digest()),)
+        ).state_condition
+        is Condition.CORRUPT
+    )

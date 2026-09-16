@@ -60,7 +60,7 @@ The top-level `encodings` array owns canonical binary layouts. Each encoding
 has a stable name, one endianness, ordered root `fields`, and reusable
 fixed-size `structs`. `struct:<NAME>` embeds one structure;
 `array:<NAME>` embeds a structure sequence. An array `length` is exact, so the
-current communicator state requires exactly 62 `TX_AIRTIME_BUCKET_V1`
+current communicator state requires exactly 64 `TX_AIRTIME_BUCKET_V1`
 elements. Omitting `length` means that a derived integer field supplies the
 encoded sequence length; the current communicator-state encoding has no such
 variable-length array.

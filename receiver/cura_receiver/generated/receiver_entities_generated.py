@@ -23,7 +23,7 @@ from .receiver_enums_generated import (
     SystemTimeQuality,
 )
 
-RECEIVER_ENTITY_MANIFEST_SHA256 = '17ab343345f882806bcc898ef8bcb6244c322373033fefe510a182d94a5b1f61'
+RECEIVER_ENTITY_MANIFEST_SHA256 = '45ea2e3c76049429a1c3c89c8ba824332dbe8bfa5e87208eb43fca7bd2233155'
 
 __all__ = [
     "RECEIVER_ENTITY_MANIFEST_SHA256",
@@ -739,11 +739,11 @@ def _decode_tx_airtime_bucket_v1(
     ), offset
 
 def encode_communicator_state_v1(entity: CommunicatorStateV1) -> bytes:
-    if len(entity.buckets) != 62:
+    if len(entity.buckets) != 64:
         raise ValueError(
-            'buckets' + ' must have length 62'
+            'buckets' + ' must have length 64'
         )
-    encoded_length = 1120
+    encoded_length = 1152
     validity_mask = ((1 << 0) if entity.rtc_provenance is not None else 0)
     bucket_count = len(entity.buckets)
     chunks: list[bytes] = []
@@ -858,10 +858,10 @@ def decode_communicator_state_v1(blob: bytes) -> CommunicatorStateV1:
     )
     if reserved_3 != 0:
         raise ValueError('CommunicatorStateV1.reserved_3' + ' has an invalid constant value')
-    if bucket_count != 62:
+    if bucket_count != 64:
         raise ValueError('CommunicatorStateV1.buckets' + ' has an invalid fixed length')
     buckets_items: list[TxAirtimeBucketV1] = []
-    for _ in range(62):
+    for _ in range(64):
         item, offset = _decode_tx_airtime_bucket_v1(view, offset)
         buckets_items.append(item)
     buckets = tuple(buckets_items)

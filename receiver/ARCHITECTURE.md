@@ -1184,7 +1184,10 @@ A later durable-ACK design would require persistence or journaling before ACK tr
 
 The communicator is the sole logical owner of receiver TX-airtime admission. Under the pilot protocol it enforces the configured charged-airtime limit over every continuous one-hour observation period, not over fixed clock hours. Every receiver transmission uses the protocol's modeled airtime plus its conservative charge.
 
-The live ledger aggregates known charged transmissions into fixed-duration time buckets. The initial bucket width is one minute. The implementation chooses an array capacity sufficient to retain both partial boundary buckets and the complete rolling window; this document does not prescribe the exact number of entries.
+The live ledger aggregates known charged transmissions into fixed-duration time
+buckets. The initial bucket width is one minute. A fixed 64-slot ring retains
+the complete guarded rolling window and its boundary buckets; the exact
+canonical capacity and policy sizing rules belong to `INTERFACE.md`.
 
 The ring contains:
 
@@ -1200,10 +1203,7 @@ physical rolling window. `minimum_wait_monotonic_us()` is the normative
 conservative conversion in `INTERFACE.md`:
 
 ```text
-rolling_retention_monotonic_us =
-    minimum_wait_monotonic_us(rolling_window_us)
-
-while now_monotonic - oldest_bucket_end >= rolling_retention_monotonic_us:
+while now_monotonic >= oldest_bucket_retention_deadline:
     total_used -= oldest_bucket_charge
     clear oldest bucket
     advance starting index
@@ -1231,7 +1231,7 @@ rolling window W       = 3,600 seconds
 bucket width X         = 60 seconds
 bucket charge limit Y  = 8 seconds
 total budget B         = 36 seconds
-UTC expiration guard G = 1 second
+UTC expiration guard G = 120 seconds
 ```
 
 Bucket spend intervals are consecutive and non-overlapping. A new process
@@ -1240,6 +1240,21 @@ empty history it may begin a new grid. A grant ends at the selected bucket
 boundary, never one nominal minute after an arbitrary commit, so two grants
 cannot authorize more than `Y` in one logical bucket. The durable expiration is
 exactly the checked bucket end plus `W` and the configured UTC-expiration guard.
+
+The fixed guard covers the sum of historical and current trusted UTC error,
+each strictly below the V1 40-second ceiling. It changes retention only, never
+the grant's spending interval. Restart reconstruction maps the remaining
+guarded UTC lifetime through the conservative minimum-wait conversion, then
+ages the ring monotonically. A new correlation with a different UTC offset
+freezes the grant; settlement and a new durable increment are required before
+spending under it. The complete numerical rules are in `INTERFACE.md`.
+
+The airtime component owns only ledger, recovery and grant policy. It consumes
+trusted time and command-certainty facts and uses the shared complete-state
+owner for persistence. It issues no radio commands and schedules no communicator
+loop. Its admission result can suppress an ACK without changing the existing
+ProtocolIngress acceptance or PersistQueue reservation. Diagnostic emission
+remains with communicator orchestration.
 
 Every persisted charge loaded by another receiver instance is an unspendable
 baseline, regardless of whether it represents actual airtime or an unused
@@ -1791,7 +1806,9 @@ adopted as a new baseline. No RTC provenance is usable while unresolved.
 After reconciliation time policy rechecks its source and durably invalidates
 any acknowledged RTC proof before another write. This applies equally to an
 unknown invalidation commit and an unknown verification commit. The coordinator
-does not introduce airtime initialization or recovery policy.
+also coordinates caller-prepared generation-one recovery requests. Airtime
+initialization, synthetic history and the no-TX recovery wait remain airtime
+policy; a second recovery state owner is unnecessary.
 
 The persistence control channel is separate from `PersistQueue` and has stronger semantics. A private control command is never sampled, dropped, merged silently or acknowledged on submission. `commit_communicator_state()` either reports the requested generation and exact canonical bytes durably installed, reports that the preceding generation definitely remains authoritative, or returns an unknown outcome that requires a serialized state reload before TX resumes.
 

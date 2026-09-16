@@ -3,6 +3,8 @@
 from dataclasses import dataclass, replace
 from enum import Enum, auto
 
+from .airtime_ledger import AirtimeCorrelation
+
 from .elapsed_duration import (
     checked_monotonic_deadline,
     checked_monotonic_elapsed,
@@ -341,6 +343,34 @@ class RuntimeTime:
         if deadline is not None and self.clock.now_monotonic_us() >= deadline:
             return self._untrusted(deadline)
         return TimeUpdate()
+
+    def airtime_correlation(self):
+        """Read-only live handoff; pending boundaries and expired sources supply no trust."""
+        if (
+            self.sample is None
+            or self.schedule is None
+            or self.ordinary_admission_blocked
+            or self.step_state is not ChronyStepState.IDLE
+            or self.sample.generation != self.state.generation
+            or self.sample.quality is not self.state.quality
+        ):
+            return None
+        bounds = [self.schedule.trust_expires_at_monotonic_us]
+        if self.state.quality is E.SystemTimeQuality.NETWORK_SYNCED:
+            bounds.append(self.tracking_poll_deadline)
+        deadline = min(
+            (value for value in bounds if value is not None), default=(1 << 64) - 1
+        )
+        correlation = AirtimeCorrelation(self.sample, self.state.generation, deadline)
+        try:
+            correlation.utc_at(
+                self.clock.now_monotonic_us(),
+                policy=self.policy,
+                rate_bound_ppm=self.policy.monotonic_elapsed_rate_bound_ppm,
+            )
+        except (ValueError, OverflowError):
+            return None
+        return correlation
 
     def _accept(
         self, sample, *, tracking_processed=False, tracking_start=None, health=None
@@ -727,7 +757,8 @@ class RuntimeTime:
                     ),
                     quality=(before.quality, self.state.quality),
                     rtc_health=(before.rtc_health, self.state.rtc_health),
-                    flags=root.context.flags | (
+                    flags=root.context.flags
+                    | (
                         int(TimeFlags.COMMAND_MAY_HAVE_APPLIED)
                         if write is not None and write.disposition is W.OUTCOME_UNKNOWN
                         else 0
@@ -757,8 +788,11 @@ class RuntimeTime:
             trigger = recovery.first_failure
             if root is None and trigger is not None:
                 root = self._failure(
-                    E.TimeDiagnosticErrorCode.IO
-                    if trigger.status is R.IO_ERROR else E.TimeDiagnosticErrorCode.DEADLINE,
+                    (
+                        E.TimeDiagnosticErrorCode.IO
+                        if trigger.status is R.IO_ERROR
+                        else E.TimeDiagnosticErrorCode.DEADLINE
+                    ),
                     E.TimeComponent.DS3231,
                     stage,
                     trigger.operation_started_at_monotonic_us,
@@ -769,7 +803,8 @@ class RuntimeTime:
                         E.TimeBackendStatusKind.DS3231_READ_STATUS, trigger.status
                     ),
                     secondary_status=encoded_status(
-                        E.TimeBackendStatusKind.DS3231_READ_STATUS, recovery.result.status
+                        E.TimeBackendStatusKind.DS3231_READ_STATUS,
+                        recovery.result.status,
                     ),
                     os_errno=trigger.os_errno,
                 )

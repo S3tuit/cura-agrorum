@@ -58,6 +58,23 @@ remain local to the test that names their safe boundary. The worker schedule
 oracle remains local to `host/test_persistence_worker_schedules.py`, where two
 reviewed primitive examples precede deterministic Hypothesis sequences.
 
+`coordination/state_commit.py` loses a reply from an actual persistence control
+call, after either installation or queued expiry. It is shared by complete-state
+owner and airtime tests; it never emulates SQL or acknowledges a fabricated
+state. The airtime component fixture is local to the host suite. Its SIGKILL
+milestones run the actual policy, complete-state owner and persistence worker.
+`models/tx_airtime.py` uses primitive list entries, rational duration bounds and
+an independent history of possible transmission times. Reviewed literal examples
+precede generated comparisons of grants, full-budget bursts, settlements, UTC
+offset changes, trust loss, failed/unknown commits and repeated process loss.
+Production codecs decode observed results only; they never supply model inputs
+or expectations. The existing model import guard covers this module.
+The Pi lifetime/restart and two-phase reboot families share
+`hardware/airtime_component.py` only after both needed the same real Linux time
+adapters and SQLite worker fixture. Existing-history rows are explicit test
+inputs. The reboot controller lives in `tools/test_airtime_reboot.py`, outside
+the deployed package, and uses the existing hardware/destructive interlocks.
+
 Pure time analysis keeps its merged-stream correlation oracle local to
 `host/test_time_analysis_properties.py` and its independent per-anchor walk
 local to `host/test_logical_timestamps.py`. Each has reviewed primitive examples

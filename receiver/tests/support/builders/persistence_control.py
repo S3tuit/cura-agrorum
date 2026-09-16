@@ -22,9 +22,9 @@ def state(**changes):
             tx_airtime_budget_us=36_000_000,
             bucket_width_us=60_000_000,
             bucket_charge_limit_us=8_000_000,
-            bucket_expiration_guard_us=1_000_000,
+            bucket_expiration_guard_us=120_000_000,
             airtime_snapshot_utc_us=0,
-            buckets=(TxAirtimeBucketV1(0, 0),) * 62,
+            buckets=(TxAirtimeBucketV1(0, 0),) * 64,
         ),
         **changes,
     )
@@ -35,12 +35,12 @@ def synthetic():
         buckets=tuple(
             TxAirtimeBucketV1(charge, expiration)
             for charge, expiration in (
-                (4_000_000, 3_421_000_000),
-                (8_000_000, 3_481_000_000),
-                (8_000_000, 3_541_000_000),
-                (8_000_000, 3_601_000_000),
-                (8_000_000, 3_661_000_000),
+                (4_000_000, 3_540_000_000),
+                (8_000_000, 3_600_000_000),
+                (8_000_000, 3_660_000_000),
+                (8_000_000, 3_720_000_000),
+                (8_000_000, 3_780_000_000),
             )
         )
-        + (TxAirtimeBucketV1(0, 0),) * 57
+        + (TxAirtimeBucketV1(0, 0),) * 59
     )

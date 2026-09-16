@@ -181,7 +181,7 @@ def test_invalid_text_archive_preserves_exact_values(controls, column, invalid_t
             "SELECT calculated_blob_sha256, preserved_by_receiver_instance_id, preserved_at_monotonic_us, database_schema_version "
             "FROM quarantined_communicator_states ORDER BY quarantined_state_id"
         ).fetchall()
-        == [(expected_digest, INSTANCE, 100, 10)] * 2
+        == [(expected_digest, INSTANCE, 100, 11)] * 2
     )
     assert operations.load_state(command(Kind.LOAD_STATE)).state == synthetic()
 
@@ -480,9 +480,9 @@ def test_clean_stop_generation_conditions(controls, raw_condition):
         row = communicator_state_v1_parameters(
             state(
                 generation=4,
-                tx_airtime_budget_us=36_000_000
-                if raw_condition == "valid"
-                else 35_000_000,
+                tx_airtime_budget_us=(
+                    36_000_000 if raw_condition == "valid" else 35_000_000
+                ),
             )
         )
     elif raw_condition == "unsupported":

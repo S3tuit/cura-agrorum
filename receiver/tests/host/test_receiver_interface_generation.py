@@ -13,7 +13,6 @@ from pathlib import Path
 
 import pytest
 
-
 RECEIVER_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = RECEIVER_ROOT.parent
 GENERATOR = RECEIVER_ROOT / "tools" / "generate.py"
@@ -126,9 +125,9 @@ def communicator_state(
         tx_airtime_budget_us=36_000_000,
         bucket_width_us=60_000_000,
         bucket_charge_limit_us=8_000_000,
-        bucket_expiration_guard_us=1_000_000,
+        bucket_expiration_guard_us=120_000_000,
         airtime_snapshot_utc_us=0,
-        buckets=(empty_bucket,) * 62,
+        buckets=(empty_bucket,) * 64,
     )
 
 
@@ -220,9 +219,11 @@ def test_time_diagnostic_status_assignments_are_exact() -> None:
 def test_schema_fingerprint_is_exact_schema_sql_sha256() -> None:
     schema_bytes = SCHEMA.read_bytes()
     assert hashlib.sha256(schema_bytes).hexdigest() == generated.DATABASE_SCHEMA_SHA256
-    assert hashlib.sha256(schema_bytes).digest() == generated.DATABASE_SCHEMA_FINGERPRINT
+    assert (
+        hashlib.sha256(schema_bytes).digest() == generated.DATABASE_SCHEMA_FINGERPRINT
+    )
     assert generated.SQLITE_APPLICATION_ID == 0x43555252
-    assert generated.DATABASE_SCHEMA_VERSION == 10
+    assert generated.DATABASE_SCHEMA_VERSION == 11
 
 
 # Requires every declared catalogue, entity table, and trigger in assembled SQL.
@@ -244,10 +245,7 @@ def test_schema_contains_declared_catalogues_and_entity_tables() -> None:
                 target["table"] for target in persistence["targets"]
             )
             expected_table_constants.update(
-                {
-                    target["name"]: target["table"]
-                    for target in persistence["targets"]
-                }
+                {target["name"]: target["table"] for target in persistence["targets"]}
             )
             expected_append_only_tables.update(
                 target["table"]
@@ -270,7 +268,10 @@ def test_schema_contains_declared_catalogues_and_entity_tables() -> None:
             "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
         )
     }
-    assert actual_tables == expected_catalogues | expected_entity_tables | HANDWRITTEN_TABLES
+    assert (
+        actual_tables
+        == expected_catalogues | expected_entity_tables | HANDWRITTEN_TABLES
+    )
 
     strict_by_table = {
         row[1]: row[5]
@@ -387,16 +388,12 @@ def test_generated_entities_have_no_queue_byte_accounting_fields() -> None:
     assert removed_fields.isdisjoint(
         field.name for field in fields(generated_entities.ReceiverHealthV1)
     )
-    assert removed_fields.isdisjoint(
-        generated_entities.MESSAGE_PROFILE_ROW_V1_COLUMNS
-    )
+    assert removed_fields.isdisjoint(generated_entities.MESSAGE_PROFILE_ROW_V1_COLUMNS)
     assert removed_fields.isdisjoint(generated_entities.RECEIVER_HEALTH_V1_COLUMNS)
 
     connection = open_schema()
     for table in ("message_profiles", "receiver_health"):
-        columns = {
-            row[1] for row in connection.execute(f"PRAGMA table_info({table})")
-        }
+        columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
         assert removed_fields.isdisjoint(columns)
 
 
@@ -428,13 +425,11 @@ def test_logical_record_manifest_validation(
     elif mutation == "missing_flatten":
         del profile_field["sql"]
     elif mutation == "nested_record":
-        manifest["logical_records"][0]["fields"][0]["type"] = (
-            "logical_record:MESSAGE_PROFILING_V1"
-        )
+        manifest["logical_records"][0]["fields"][0][
+            "type"
+        ] = "logical_record:MESSAGE_PROFILING_V1"
     elif mutation == "duplicate_column":
-        profile_target["fields"].append(
-            {"name": "receiver_instance_id", "type": "u64"}
-        )
+        profile_target["fields"].append({"name": "receiver_instance_id", "type": "u64"})
     else:  # pragma: no cover - parametrization is closed above.
         raise AssertionError(mutation)
 
@@ -514,9 +509,7 @@ def test_schema_source_rejects_every_transaction_boundary(
     tmp_path: Path,
     transaction_statement: str,
 ) -> None:
-    source = (RECEIVER_ROOT / "db" / "schema_source.sql").read_text(
-        encoding="utf-8"
-    )
+    source = (RECEIVER_ROOT / "db" / "schema_source.sql").read_text(encoding="utf-8")
     result = validate_schema_source_fixture(
         tmp_path,
         source + "\n" + transaction_statement + "\n",
@@ -644,9 +637,7 @@ def test_quarantined_entity_bytes_must_match_declared_length() -> None:
     )
     connection.execute(
         insert,
-        generated_entities.quarantined_entity_row_v1_parameters(
-            maximum_evidence_row
-        ),
+        generated_entities.quarantined_entity_row_v1_parameters(maximum_evidence_row),
     )
     assert connection.execute(
         "SELECT length(entity_bytes) FROM quarantined_entities "
@@ -696,9 +687,9 @@ def test_receiver_instance_lifecycle_is_append_only_with_one_clean_stop() -> Non
             "started_at_monotonic_us) VALUES (?, ?, ?, ?)",
             (100, bytes([3]) * 16, boot_id, 50),
         )
-    assert connection.execute(
-        "SELECT count(*) FROM receiver_instances"
-    ).fetchone() == (0,)
+    assert connection.execute("SELECT count(*) FROM receiver_instances").fetchone() == (
+        0,
+    )
     connection.execute(insert, (first_id, boot_id, 100))
     connection.execute(insert, (second_id, boot_id, 300))
     assert connection.execute(
@@ -823,8 +814,7 @@ def test_quarantined_communicator_state_preserves_storage_classes() -> None:
 
     with pytest.raises(sqlite3.IntegrityError):
         connection.execute(
-            "UPDATE quarantined_communicator_states "
-            "SET observed_generation = 2"
+            "UPDATE quarantined_communicator_states " "SET observed_generation = 2"
         )
     with pytest.raises(sqlite3.IntegrityError):
         connection.execute("DELETE FROM quarantined_communicator_states")
@@ -846,7 +836,11 @@ def test_quarantined_communicator_state_preserves_storage_classes() -> None:
     (
         ("missing_receiver_instances", "receiver_instance_id", "missing table"),
         ("receiver_instances", "missing_receiver_instance_id", "missing columns"),
-        ("receiver_instances", "linux_boot_id", "not a complete PRIMARY KEY or UNIQUE key"),
+        (
+            "receiver_instances",
+            "linux_boot_id",
+            "not a complete PRIMARY KEY or UNIQUE key",
+        ),
     ),
 )
 def test_assembled_schema_foreign_key_targets_must_be_valid(
@@ -1055,9 +1049,7 @@ def test_receiver_scoped_generated_rows_require_lifecycle_parent() -> None:
 
 # Expands receiver-health arrays only when every generated shape is exact.
 def test_receiver_health_binding_expands_only_exact_array_shapes() -> None:
-    values = {
-        field.name: 0 for field in fields(generated_entities.ReceiverHealthV1)
-    }
+    values = {field.name: 0 for field in fields(generated_entities.ReceiverHealthV1)}
     values.update(
         receiver_instance_id=bytes(16),
         radio_state=generated.RadioState.INITIALIZING,
@@ -1093,7 +1085,7 @@ def test_communicator_state_canonical_blob_round_trip_and_binding() -> None:
     )
     state = communicator_state(rtc_provenance=provenance)
     blob = generated_entities.encode_communicator_state_v1(state)
-    assert len(blob) == 1120
+    assert len(blob) == 1152
     assert generated_entities.decode_communicator_state_v1(blob) == state
 
     parameters = generated_entities.communicator_state_v1_parameters(state)
@@ -1118,7 +1110,7 @@ def test_communicator_state_codec_enforces_only_canonical_structure() -> None:
     state = communicator_state()
     blob = generated_entities.encode_communicator_state_v1(state)
 
-    with pytest.raises(ValueError, match="buckets.*length 62"):
+    with pytest.raises(ValueError, match="buckets.*length 64"):
         generated_entities.encode_communicator_state_v1(
             replace(state, buckets=state.buckets[:-1])
         )
@@ -1140,13 +1132,16 @@ def test_communicator_state_codec_enforces_only_canonical_structure() -> None:
 
 
 # Raw application-state defects survive actual startup integrity without SQL coercion.
-@pytest.mark.parametrize("raw_rows", [
-    ((1, 2, 1, b"\x02\x00", hashlib.sha256(b"\x02\x00").digest()),),
-    ((1, 1, 0, b"bad", b"short"),),
-    ((None, "2", 1.5, 42, None),),
-    ((1, 1, 1, b"a", b"b"), (1, 1, 2, b"c", b"d")),
-    ((2, 1, 1, None, bytes(32)),),
-])
+@pytest.mark.parametrize(
+    "raw_rows",
+    [
+        ((1, 2, 1, b"\x02\x00", hashlib.sha256(b"\x02\x00").digest()),),
+        ((1, 1, 0, b"bad", b"short"),),
+        ((None, "2", 1.5, 42, None),),
+        ((1, 1, 1, b"a", b"b"), (1, 1, 2, b"c", b"d")),
+        ((2, 1, 1, None, bytes(32)),),
+    ],
+)
 def test_raw_state_envelope_passes_database_integrity(tmp_path, raw_rows):
     from cura_receiver.database_initializer import initialize_database
     from cura_receiver.sqlite_database import open_receiver_database
@@ -1161,22 +1156,36 @@ def test_raw_state_envelope_passes_database_integrity(tmp_path, raw_rows):
     opened = open_receiver_database(path, group, minimum_free_bytes=0)
     assert opened.failure is None
     try:
-        assert tuple(opened.database.connection.execute(
-            "SELECT * FROM communicator_state"
-        )) == raw_rows
-        assert opened.database.connection.execute("PRAGMA integrity_check").fetchall() == [("ok",)]
-        assert [(row[2], row[3], row[5]) for row in opened.database.connection.execute(
-            "PRAGMA table_info(communicator_state)"
-        )] == [("ANY", 0, 0)] * 5
+        assert (
+            tuple(
+                opened.database.connection.execute("SELECT * FROM communicator_state")
+            )
+            == raw_rows
+        )
+        assert opened.database.connection.execute(
+            "PRAGMA integrity_check"
+        ).fetchall() == [("ok",)]
+        assert [
+            (row[2], row[3], row[5])
+            for row in opened.database.connection.execute(
+                "PRAGMA table_info(communicator_state)"
+            )
+        ] == [("ANY", 0, 0)] * 5
     finally:
         opened.database.close()
 
 
 # Raw storage is explicit, restricted to canonical envelopes, and never carries SQL keys.
-@pytest.mark.parametrize("change", ["false", "integer", "key", "without_rowid", "noncanonical"])
+@pytest.mark.parametrize(
+    "change", ["false", "integer", "key", "without_rowid", "noncanonical"]
+)
 def test_raw_envelope_manifest_rejects_incompatible_storage(tmp_path, change):
     manifest = load_entity_manifest()
-    state = next(entity for entity in manifest["entities"] if entity["name"] == "COMMUNICATOR_STATE_V1")
+    state = next(
+        entity
+        for entity in manifest["entities"]
+        if entity["name"] == "COMMUNICATOR_STATE_V1"
+    )
     if change == "false":
         state["persistence"]["raw_envelope"] = False
     elif change == "integer":

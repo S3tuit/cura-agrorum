@@ -203,7 +203,7 @@ rolling_window_us = 3_600_000_000
 tx_airtime_budget_us = 36_000_000
 bucket_width_us = 60_000_000
 bucket_charge_limit_us = 8_000_000
-bucket_expiration_guard_us = 1_000_000
+bucket_expiration_guard_us = 120_000_000
 ```
 
 `time_sampling_margin_us` is one fixed pilot constant shared by network-clock
@@ -2466,8 +2466,8 @@ The version and generation encoded inside the blob must equal the SQL columns.
 
 Generation defines the raw storage shape and the existing canonical V1
 entities, codecs and binders. Classification, semantic validation and recovery
-remain handwritten. This storage change starts database schema epoch 10;
-the 1120-byte V1 encoding is unchanged. An older database requires the normal
+remain handwritten. The 64-slot pre-deployment V1 revision starts database
+schema epoch 11 and has a 1152-byte encoding. An older database requires the normal
 offline epoch transition, never an in-process migration.
 
 The communicator never mutates a loaded value. It creates a complete new
@@ -2512,7 +2512,7 @@ The generated logical Python `CommunicatorStateV1` exposes
 `rtc_provenance: RtcProvenanceV1 | None`, not `validity_mask` or the
 representation-only version, length and count fields. `RtcProvenanceV1` groups
 the five non-reserved RTC-provenance values shown in the header.
-`CommunicatorStateV1.buckets` is a tuple of exactly 62
+`CommunicatorStateV1.buckets` is a tuple of exactly 64
 `TxAirtimeBucketV1` values. Durable airtime allowance exists only as bucket
 charge; there is no second collection. The canonical-BLOB codec consumes and derives the version, encoded
 length, mask, fixed count and reserved zeros so the binary
@@ -2560,7 +2560,7 @@ trusted `ClockObservationV1` correlation under `NETWORK_SYNCED` or valid
 `RTC_HOLDOVER`. It is not a direct per-state `CLOCK_REALTIME` read. Every
 nonempty bucket expiration is later than that snapshot.
 
-The V1 blob contains exactly 62 bucket slots. Each slot is this 16-byte entry:
+The V1 blob contains exactly 64 bucket slots. Each slot is this 16-byte entry:
 
 ```text
 charged_airtime_us: u64
@@ -2644,10 +2644,10 @@ The complete length is:
 
 ```text
 encoded_length = 128 + bucket_count * 16
-               = 1120
+               = 1152
 ```
 
-`bucket_count` is exactly 62 in V1. Changing it requires a new state encoding
+`bucket_count` is exactly 64 in this pre-deployment V1 revision. Changing it requires a new state encoding
 version once a deployed database must remain readable.
 
 For every valid state:
@@ -2663,6 +2663,74 @@ never silently reinterprets state. Policy validation also requires
 `0 < bucket_width_us`, `0 < bucket_charge_limit_us <= tx_airtime_budget_us`, and
 enough fixed slots both for the maximum unexpired grid span and for the
 synthetic worst-case ledger.
+
+The maximum represented grid span, including empty intervals between nonempty
+entries, is 64 slots: `(last_expiration - first_expiration) / bucket_width_us`
+is at most 63. The span and all recovered bucket ends use checked signed
+arithmetic. Synthetic recovery must be representable with every expiration
+strictly after its construction snapshot; a policy that cannot construct that
+ledger is invalid.
+
+#### Conservative UTC reconstruction
+
+The V1 airtime correlation ceiling is fixed at 40,000,000 microseconds. A
+deployment may tighten its receiver UTC budget but cannot raise this historical
+ceiling. A live sample's complete error, including monotonic growth to each use,
+must be strictly below both ceilings. The active expiration guard is at least
+80,000,000 microseconds; the pilot uses 120,000,000. It covers the combined
+recording and reconstruction UTC error without persisting per-snapshot errors.
+Changing the guard remains an airtime-policy mismatch, not reinterpretation.
+
+After restart or invalidation of a correlation, discard only entries whose
+guarded expiration is no later than the new trusted UTC. For each retained
+entry, map its remaining physical duration `expiration - trusted_utc` to a
+current-boot deadline using `minimum_wait_monotonic_us()`. Live aging thereafter
+uses those monotonic deadlines. It never reuses a preceding boot's monotonic
+values or moves an old charge into another grid bucket.
+
+The spending deadline uses `maximum_lifetime_monotonic_us(bucket_end - utc)`
+at selection time, excluding the guard, and is fixed before the state commit.
+Acknowledgement cannot restart that lifetime. Both deadlines use checked
+arithmetic; spending additionally requires a still-live trusted sample.
+If monotonic retention outlasts an entry's nominal UTC expiration, complete
+snapshot construction defers until the entry can be safely removed: it does not
+serialize an expired entry or reclaim one before its live retention deadline.
+
+The grant boundary is exclusive: a spend at that deadline is suppressed.
+Tentative spending consumes the complete charge before the caller can issue
+the radio command. An opaque current-process spend token accepts exactly one
+certainty result; only definite non-start returns its charge. Confirmed start,
+uncertainty and an absent terminal result remain charged. A late definite
+non-start after settlement cannot reopen an already settled grant. Invalid or
+foreign tokens are caller invariant failures.
+The spend result includes the durable bucket expiration and original monotonic
+grant deadline. The radio caller must bound its SetTx submission by that
+deadline; holding a token does not extend permission to submit a later command.
+
+The component accepts existing `TrustedTimeSample` values, current time-policy
+generation and a caller validity deadline. The caller supplies no sample while
+time is untrusted or an observation/step boundary is pending. It invalidates
+the correlation before clock changes. Equal UTC-minus-monotonic offset refreshes
+may retain a live grant; a changed offset freezes it until a new acknowledged
+complete-state transition. Invalid time, arithmetic, or an unrepresentable ring
+suppresses TX. Capacity, trust, pending persistence and snapshot deferral are
+explicit policy outcomes, never fabricated radio results.
+
+`RuntimeTime.airtime_correlation()` supplies that live handoff or `None`; it is
+read-only and does not schedule a refresh. `TxAirtimePolicy.update_time()` takes
+the handoff and the current RTC health. `recover()` establishes durable history;
+`acquire_grant()` acquires or renews allowance; `try_spend()` tentatively charges
+one 67,866-microsecond pilot ACK; `report_tx()` accepts `NOT_STARTED`, `STARTED`
+or `UNCERTAIN`; `settle(precharge=...)` commits possible use, optionally with a
+new increment; `reconcile()` resolves the pending exact request. Radio execution
+and calls to these operations remain the communicator caller's responsibility.
+`snapshot()` is RuntimeTime's complete-state callback: it preserves every
+outstanding airtime precharge while updating RTC provenance. Acknowledgement
+or exact reconciliation of that prepared snapshot updates the shared state
+without assigning a new spendable increment. An unrecognized complete-state
+change freezes existing allowance. `total_used` is absent while history has not
+been reconstructed or an exact commit is unresolved; it is never an independent
+permission to transmit.
 
 ### State-row conditions and loading
 
@@ -2837,8 +2905,19 @@ state. Generation equality alone is insufficient. Failed/unavailable loads
 keep the request pending; any other loaded contents also mark a reconciliation
 conflict and must not be silently adopted or used as a replacement baseline.
 The original request and preceding state remain available as evidence while
-usable state remains absent. The owner adds no persistence thread, schema,
-airtime recovery or generation-one initialization policy.
+usable state remains absent.
+
+The same owner accepts a caller-prepared generation-one recovery request when
+its initial serialized load established a non-NONE state condition. It retains
+that condition and the exact request before submission. Definite failure keeps
+the unavailable baseline; acknowledgement adopts the request. After an unknown
+result, a load of the exact requested bytes adopts it; another loaded state is
+a conflict. An unavailable load is not proof that the original rejected rows
+are unchanged. The caller may retry only the exact pending recovery request,
+through the existing idempotent atomic control transaction, after reconciliation
+again reports the original state condition. It may not submit a different
+recovery snapshot while that request is pending. The owner adds no persistence
+thread, schema, synthetic-ledger construction or no-TX waiting policy.
 
 ## Receiver clean-stop control
 

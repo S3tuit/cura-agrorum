@@ -1,0 +1,171 @@
+{
+  "status": "passed",
+  "workload": "receiver_tx_airtime",
+  "source_manifest_sha256": "408755d402cec60dcb7cafd95a0fdcd7c1abd5b17b2f93be9c2cc7868cdbe472",
+  "policy": {
+    "bucket_count": 64,
+    "bucket_width_us": 60000000,
+    "expiration_guard_us": 120000000,
+    "canonical_v1_bytes": 1152,
+    "database_schema_epoch": 11
+  },
+  "host": {
+    "passed": 2471,
+    "seconds": 55.5,
+    "log": "2026-09-15/host-qualified.log",
+    "generator_validate_only": "passed",
+    "generator_check": "passed",
+    "git_diff_check": "passed",
+    "fixture_interlock_regressions": 16
+  },
+  "target": {
+    "fixture_maximum_network_skew_ppb": 10000,
+    "fixture_approval": "D-013; user explicitly approved",
+    "safe_airtime": {
+      "passed": 2,
+      "seconds": 8.28,
+      "timing": {
+        "lifetime_after_ack_us": 1954799,
+        "last_allowed_lead_us": 472,
+        "denial_lateness_us": 763,
+        "samples": 1653
+      },
+      "source": "/home/cura/cura-airtime-accepted-ex9hiQLw"
+    },
+    "existing_regressions": {
+      "passed": 15,
+      "source": "/home/cura/cura-airtime-qualified-O3hbjMyd",
+      "note": "Production sources unchanged; only TESTING.md and the airtime fixture input/metadata differ from accepted staging."
+    },
+    "reboot": {
+      "passed_modes": [
+        "trusted",
+        "unavailable"
+      ],
+      "phase_junit": [
+        "cura-airtime-reboot-ex9hiQLw/trusted/prepare.xml",
+        "cura-airtime-reboot-ex9hiQLw/trusted/verify.xml",
+        "cura-airtime-reboot-ex9hiQLw/unavailable/prepare.xml",
+        "cura-airtime-reboot-ex9hiQLw/unavailable/verify.xml"
+      ],
+      "observations": {
+        "trusted": {
+          "after": {
+            "boot": "d1302820cbea40f4a65b8bcd7b624b79",
+            "instance": "d3ba69ef91d442efa6e2e38ecc36c600",
+            "instance_started_at_monotonic_us": 57960438,
+            "sample": {
+              "monotonic_us": 58078737,
+              "utc_us": 1789504118900871,
+              "error_bound_us": 4565770,
+              "quality": "SystemTimeQuality.NETWORK_SYNCED",
+              "generation": 1
+            },
+            "generation": 2,
+            "total_used": 8000000,
+            "allowance": 0,
+            "state_sha256": "da809fd3606c11e0154c2aa448a36daa24a86c490ad1acc96d3d469c03b451f9",
+            "buckets": [
+              {
+                "charged_airtime_us": 8000000,
+                "expires_at_utc_us": 1789507792972730
+              }
+            ],
+            "mode": "trusted"
+          },
+          "before": {
+            "boot": "6226f0ae8bfa4b48bade0425ec203532",
+            "instance": "9a58e944d4494e81a43c86fa2baa8e40",
+            "instance_started_at_monotonic_us": 1273043091,
+            "sample": {
+              "monotonic_us": 1273138300,
+              "utc_us": 1789504052966187,
+              "error_bound_us": 1029774,
+              "quality": "SystemTimeQuality.NETWORK_SYNCED",
+              "generation": 1
+            },
+            "generation": 2,
+            "total_used": 8000000,
+            "allowance": 7000000,
+            "state_sha256": "da809fd3606c11e0154c2aa448a36daa24a86c490ad1acc96d3d469c03b451f9",
+            "buckets": [
+              {
+                "charged_airtime_us": 8000000,
+                "expires_at_utc_us": 1789507792972730
+              }
+            ],
+            "mode": "trusted"
+          }
+        },
+        "unavailable": {
+          "after": {
+            "boot": "370016528c5844ecb230e8a91830b2b1",
+            "instance": "0b433dd1823c4611ad02488473601347",
+            "instance_started_at_monotonic_us": 54390459,
+            "sample": null,
+            "generation": 2,
+            "total_used": null,
+            "allowance": 0,
+            "state_sha256": "caa1f680edb56d3413334aac4bd58ad29bcf146d54ad01e72c530786c1e933f2",
+            "buckets": [
+              {
+                "charged_airtime_us": 8000000,
+                "expires_at_utc_us": 1789507864527609
+              }
+            ],
+            "mode": "unavailable"
+          },
+          "before": {
+            "boot": "d1302820cbea40f4a65b8bcd7b624b79",
+            "instance": "194a0e98ee16467f919d8de2b68b5ab1",
+            "instance_started_at_monotonic_us": 63596914,
+            "sample": {
+              "monotonic_us": 63698922,
+              "utc_us": 1789504124521061,
+              "error_bound_us": 4548111,
+              "quality": "SystemTimeQuality.NETWORK_SYNCED",
+              "generation": 1
+            },
+            "generation": 2,
+            "total_used": 8000000,
+            "allowance": 7000000,
+            "state_sha256": "caa1f680edb56d3413334aac4bd58ad29bcf146d54ad01e72c530786c1e933f2",
+            "buckets": [
+              {
+                "charged_airtime_us": 8000000,
+                "expires_at_utc_us": 1789507864527609
+              }
+            ],
+            "mode": "unavailable"
+          }
+        }
+      },
+      "restoration": {
+        "boot": "37001652-8c58-44ec-b230-e8a91830b2b1",
+        "model": "Raspberry Pi 3 Model B Rev 1.2",
+        "config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7",
+        "chrony": "active",
+        "tracking": "55C7D663,85.199.214.99,2,1789504189.547875280,3.797729492,-0.001716447,0.001716447,6.020,-628.699,1.150,0.049205720,0.005001880,1.8,Normal",
+        "python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+        "sqlite": "3.46.1",
+        "platform": "Linux-6.18.50+rpt-rpi-v8-aarch64-with-glibc2.41",
+        "source_manifest_sha256": "408755d402cec60dcb7cafd95a0fdcd7c1abd5b17b2f93be9c2cc7868cdbe472"
+      }
+    }
+  },
+  "retained_runs": {
+    "initial_unsafe_configuration_fixture": "2 failed",
+    "arbitrary_generation_one_fixture": "2 failed",
+    "old_lifetime_restart": "2 passed before the scheduling correction",
+    "old_reboot": "both modes passed before the scheduling correction",
+    "preemption_regression": "failed with 89778100-us deadline; passed with 59778100-us deadline after correction",
+    "one_ppm_fixture": "2 failed to establish trusted time; 15 unrelated component regressions passed; original failures retained",
+    "readiness": "bounded waits and four finite NTP measurement requests retained; no clock step/configuration change"
+  },
+  "limits": [
+    "Radio execution and communicator orchestration are outside the component.",
+    "RF certainty and continuous-window RF observation remain required at the radio stage.",
+    "Process SIGKILL and reboot are not physical power-loss evidence.",
+    "Root fixture access does not establish receiver-user deployment permissions."
+  ]
+}

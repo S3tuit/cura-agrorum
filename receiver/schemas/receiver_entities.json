@@ -247,7 +247,7 @@
         {
           "name": "buckets",
           "type": "array:TX_AIRTIME_BUCKET_V1",
-          "length": 62
+          "length": 64
         }
       ],
       "structs": [

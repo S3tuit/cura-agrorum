@@ -1,0 +1,631 @@
+{"operation": "reset", "start_us": 262415244, "end_us": 262415320, "result": null, "asserted": true}
+{"operation": "reset", "start_us": 262416313, "end_us": 262416366, "result": null, "asserted": false}
+{"operation": "busy", "start_us": 262416509, "end_us": 262416601, "result": true}
+{"operation": "busy", "start_us": 262416810, "end_us": 262416863, "result": true}
+{"operation": "busy", "start_us": 262417058, "end_us": 262417106, "result": true}
+{"operation": "busy", "start_us": 262417305, "end_us": 262417353, "result": true}
+{"operation": "busy", "start_us": 262417546, "end_us": 262417593, "result": true}
+{"operation": "busy", "start_us": 262417793, "end_us": 262417841, "result": true}
+{"operation": "busy", "start_us": 262418035, "end_us": 262418082, "result": false}
+{"operation": "busy", "start_us": 262418239, "end_us": 262418290, "result": false}
+{"operation": "spi", "start_us": 262418407, "end_us": 262418527, "result": "aa2a", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262418657, "end_us": 262418705, "result": false}
+{"operation": "busy", "start_us": 262418853, "end_us": 262418899, "result": false}
+{"operation": "spi", "start_us": 262419009, "end_us": 262419091, "result": "aaaa", "tx": "8000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262419227, "end_us": 262419275, "result": false}
+{"operation": "busy", "start_us": 262419405, "end_us": 262419456, "result": false}
+{"operation": "spi", "start_us": 262419565, "end_us": 262419644, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262419758, "end_us": 262419806, "result": false}
+{"operation": "busy", "start_us": 262419961, "end_us": 262420058, "result": false}
+{"operation": "spi", "start_us": 262420214, "end_us": 262420352, "result": "a2a20020", "tx": "17000000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262420481, "end_us": 262420544, "result": false}
+{"operation": "busy", "start_us": 262420678, "end_us": 262420725, "result": false}
+{"operation": "spi", "start_us": 262420840, "end_us": 262420924, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262421038, "end_us": 262421086, "result": false}
+{"operation": "busy", "start_us": 262421233, "end_us": 262421279, "result": false}
+{"operation": "spi", "start_us": 262421395, "end_us": 262421473, "result": "a2a2", "tx": "9601", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262421586, "end_us": 262421634, "result": false}
+{"operation": "busy", "start_us": 262421762, "end_us": 262421813, "result": false}
+{"operation": "spi", "start_us": 262421922, "end_us": 262421999, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262422112, "end_us": 262422160, "result": false}
+{"operation": "busy", "start_us": 262422314, "end_us": 262422360, "result": false}
+{"operation": "spi", "start_us": 262422471, "end_us": 262422610, "result": "a2a2a2a2c8", "tx": "1d08d80000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262422740, "end_us": 262422794, "result": false}
+{"operation": "busy", "start_us": 262422926, "end_us": 262422972, "result": false}
+{"operation": "spi", "start_us": 262423082, "end_us": 262423161, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262423280, "end_us": 262423328, "result": false}
+{"operation": "busy", "start_us": 262423477, "end_us": 262423523, "result": false}
+{"operation": "spi", "start_us": 262423633, "end_us": 262423756, "result": "a2a2a2a2", "tx": "0d08d8de", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262423880, "end_us": 262423932, "result": false}
+{"operation": "busy", "start_us": 262424105, "end_us": 262424157, "result": false}
+{"operation": "spi", "start_us": 262424301, "end_us": 262424394, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262424511, "end_us": 262424569, "result": false}
+{"operation": "busy", "start_us": 262424708, "end_us": 262424756, "result": false}
+{"operation": "spi", "start_us": 262424866, "end_us": 262425005, "result": "a2a2a2a2a2", "tx": "9701000140", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262425172, "end_us": 262425227, "result": false}
+{"operation": "busy", "start_us": 262425362, "end_us": 262425409, "result": false}
+{"operation": "spi", "start_us": 262425525, "end_us": 262425608, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262425722, "end_us": 262425769, "result": false}
+{"operation": "busy", "start_us": 262425904, "end_us": 262425956, "result": false}
+{"operation": "spi", "start_us": 262426066, "end_us": 262426186, "result": "a2a2a2", "tx": "070000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262426313, "end_us": 262426367, "result": false}
+{"operation": "busy", "start_us": 262426501, "end_us": 262426550, "result": false}
+{"operation": "spi", "start_us": 262426658, "end_us": 262426739, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262426857, "end_us": 262426905, "result": false}
+{"operation": "busy", "start_us": 262427042, "end_us": 262427088, "result": false}
+{"operation": "spi", "start_us": 262427218, "end_us": 262427297, "result": "a2a2", "tx": "897f", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262427411, "end_us": 262427464, "result": true}
+{"operation": "busy", "start_us": 262427674, "end_us": 262427724, "result": true}
+{"operation": "busy", "start_us": 262427922, "end_us": 262427973, "result": true}
+{"operation": "busy", "start_us": 262428231, "end_us": 262428285, "result": true}
+{"operation": "busy", "start_us": 262428482, "end_us": 262428531, "result": true}
+{"operation": "busy", "start_us": 262428726, "end_us": 262428774, "result": true}
+{"operation": "busy", "start_us": 262428970, "end_us": 262429018, "result": true}
+{"operation": "busy", "start_us": 262429213, "end_us": 262429260, "result": true}
+{"operation": "busy", "start_us": 262429458, "end_us": 262429506, "result": true}
+{"operation": "busy", "start_us": 262429702, "end_us": 262429751, "result": true}
+{"operation": "busy", "start_us": 262429945, "end_us": 262429997, "result": true}
+{"operation": "busy", "start_us": 262430193, "end_us": 262430241, "result": true}
+{"operation": "busy", "start_us": 262430437, "end_us": 262430490, "result": true}
+{"operation": "busy", "start_us": 262430687, "end_us": 262430735, "result": true}
+{"operation": "busy", "start_us": 262430930, "end_us": 262430982, "result": true}
+{"operation": "busy", "start_us": 262431178, "end_us": 262431225, "result": true}
+{"operation": "busy", "start_us": 262431420, "end_us": 262431473, "result": true}
+{"operation": "busy", "start_us": 262431669, "end_us": 262431717, "result": true}
+{"operation": "busy", "start_us": 262431913, "end_us": 262431965, "result": true}
+{"operation": "busy", "start_us": 262432208, "end_us": 262432260, "result": true}
+{"operation": "busy", "start_us": 262432461, "end_us": 262432511, "result": true}
+{"operation": "busy", "start_us": 262432706, "end_us": 262432754, "result": true}
+{"operation": "busy", "start_us": 262432949, "end_us": 262433000, "result": true}
+{"operation": "busy", "start_us": 262433196, "end_us": 262433244, "result": true}
+{"operation": "busy", "start_us": 262433438, "end_us": 262433490, "result": true}
+{"operation": "busy", "start_us": 262433686, "end_us": 262433734, "result": true}
+{"operation": "busy", "start_us": 262433929, "end_us": 262433981, "result": true}
+{"operation": "busy", "start_us": 262434177, "end_us": 262434225, "result": true}
+{"operation": "busy", "start_us": 262434421, "end_us": 262434472, "result": true}
+{"operation": "busy", "start_us": 262434669, "end_us": 262434717, "result": true}
+{"operation": "busy", "start_us": 262434913, "end_us": 262434960, "result": true}
+{"operation": "busy", "start_us": 262435160, "end_us": 262435208, "result": true}
+{"operation": "busy", "start_us": 262435404, "end_us": 262435451, "result": true}
+{"operation": "busy", "start_us": 262435647, "end_us": 262435694, "result": true}
+{"operation": "busy", "start_us": 262435893, "end_us": 262435941, "result": true}
+{"operation": "busy", "start_us": 262436199, "end_us": 262436255, "result": true}
+{"operation": "busy", "start_us": 262436475, "end_us": 262436525, "result": true}
+{"operation": "busy", "start_us": 262436728, "end_us": 262436777, "result": true}
+{"operation": "busy", "start_us": 262436974, "end_us": 262437023, "result": false}
+{"operation": "busy", "start_us": 262437183, "end_us": 262437234, "result": false}
+{"operation": "spi", "start_us": 262437353, "end_us": 262437469, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262437597, "end_us": 262437646, "result": false}
+{"operation": "busy", "start_us": 262437793, "end_us": 262437839, "result": false}
+{"operation": "spi", "start_us": 262437950, "end_us": 262438077, "result": "a2a2a2", "tx": "98d7db", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262438207, "end_us": 262438258, "result": true}
+{"operation": "busy", "start_us": 262438460, "end_us": 262438509, "result": true}
+{"operation": "busy", "start_us": 262438704, "end_us": 262438752, "result": true}
+{"operation": "busy", "start_us": 262438946, "end_us": 262438994, "result": true}
+{"operation": "busy", "start_us": 262439188, "end_us": 262439236, "result": true}
+{"operation": "busy", "start_us": 262439431, "end_us": 262439478, "result": true}
+{"operation": "busy", "start_us": 262439670, "end_us": 262439716, "result": true}
+{"operation": "busy", "start_us": 262439914, "end_us": 262439962, "result": true}
+{"operation": "busy", "start_us": 262440209, "end_us": 262440261, "result": true}
+{"operation": "busy", "start_us": 262440460, "end_us": 262440507, "result": true}
+{"operation": "busy", "start_us": 262440702, "end_us": 262440749, "result": true}
+{"operation": "busy", "start_us": 262440945, "end_us": 262440993, "result": true}
+{"operation": "busy", "start_us": 262441188, "end_us": 262441235, "result": true}
+{"operation": "busy", "start_us": 262441430, "end_us": 262441477, "result": true}
+{"operation": "busy", "start_us": 262441670, "end_us": 262441717, "result": true}
+{"operation": "busy", "start_us": 262441911, "end_us": 262441958, "result": true}
+{"operation": "busy", "start_us": 262442152, "end_us": 262442199, "result": true}
+{"operation": "busy", "start_us": 262442393, "end_us": 262442441, "result": true}
+{"operation": "busy", "start_us": 262442639, "end_us": 262442687, "result": true}
+{"operation": "busy", "start_us": 262442881, "end_us": 262442928, "result": true}
+{"operation": "busy", "start_us": 262443130, "end_us": 262443178, "result": true}
+{"operation": "busy", "start_us": 262443378, "end_us": 262443427, "result": true}
+{"operation": "busy", "start_us": 262443623, "end_us": 262443671, "result": true}
+{"operation": "busy", "start_us": 262443866, "end_us": 262443913, "result": true}
+{"operation": "busy", "start_us": 262444111, "end_us": 262444160, "result": true}
+{"operation": "busy", "start_us": 262444382, "end_us": 262444431, "result": true}
+{"operation": "busy", "start_us": 262444627, "end_us": 262444675, "result": false}
+{"operation": "busy", "start_us": 262444833, "end_us": 262444882, "result": false}
+{"operation": "spi", "start_us": 262444997, "end_us": 262445104, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262445229, "end_us": 262445285, "result": false}
+{"operation": "busy", "start_us": 262445424, "end_us": 262445471, "result": false}
+{"operation": "spi", "start_us": 262445581, "end_us": 262445665, "result": "a2a2", "tx": "9d01", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262445785, "end_us": 262445834, "result": false}
+{"operation": "busy", "start_us": 262445964, "end_us": 262446010, "result": false}
+{"operation": "spi", "start_us": 262446118, "end_us": 262446197, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262446315, "end_us": 262446364, "result": false}
+{"operation": "busy", "start_us": 262446498, "end_us": 262446544, "result": false}
+{"operation": "spi", "start_us": 262446653, "end_us": 262446790, "result": "a2a2a2a2a2", "tx": "9504070001", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262446953, "end_us": 262447011, "result": false}
+{"operation": "busy", "start_us": 262447154, "end_us": 262447202, "result": false}
+{"operation": "spi", "start_us": 262447313, "end_us": 262447394, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262447507, "end_us": 262447556, "result": false}
+{"operation": "busy", "start_us": 262447698, "end_us": 262447744, "result": false}
+{"operation": "spi", "start_us": 262447853, "end_us": 262447970, "result": "a2a2a2", "tx": "8f0000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262448163, "end_us": 262448228, "result": false}
+{"operation": "busy", "start_us": 262448369, "end_us": 262448419, "result": false}
+{"operation": "spi", "start_us": 262448538, "end_us": 262448626, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262448741, "end_us": 262448790, "result": false}
+{"operation": "busy", "start_us": 262448938, "end_us": 262448985, "result": false}
+{"operation": "spi", "start_us": 262449100, "end_us": 262449230, "result": "a2a20000", "tx": "17000000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262449355, "end_us": 262449413, "result": false}
+{"operation": "busy", "start_us": 262449546, "end_us": 262449594, "result": false}
+{"operation": "spi", "start_us": 262449704, "end_us": 262449785, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262449903, "end_us": 262449952, "result": false}
+{"operation": "busy", "start_us": 262450105, "end_us": 262450152, "result": false}
+{"operation": "spi", "start_us": 262450263, "end_us": 262450340, "result": "a2a2", "tx": "8000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262450458, "end_us": 262450508, "result": false}
+{"operation": "busy", "start_us": 262450637, "end_us": 262450684, "result": false}
+{"operation": "spi", "start_us": 262450793, "end_us": 262450870, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262450989, "end_us": 262451037, "result": false}
+{"operation": "busy", "start_us": 262451180, "end_us": 262451227, "result": false}
+{"operation": "spi", "start_us": 262451355, "end_us": 262451434, "result": "a2a2", "tx": "8a01", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262451553, "end_us": 262451603, "result": false}
+{"operation": "busy", "start_us": 262451732, "end_us": 262451778, "result": false}
+{"operation": "spi", "start_us": 262451885, "end_us": 262451963, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262452150, "end_us": 262452207, "result": false}
+{"operation": "busy", "start_us": 262452349, "end_us": 262452397, "result": false}
+{"operation": "spi", "start_us": 262452507, "end_us": 262452659, "result": "a2a2a2a2a2", "tx": "863641999a", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262452781, "end_us": 262452834, "result": false}
+{"operation": "busy", "start_us": 262452971, "end_us": 262453019, "result": false}
+{"operation": "spi", "start_us": 262453129, "end_us": 262453209, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262453322, "end_us": 262453370, "result": false}
+{"operation": "busy", "start_us": 262453512, "end_us": 262453559, "result": false}
+{"operation": "spi", "start_us": 262453669, "end_us": 262453811, "result": "a2a2a2a2a2", "tx": "8b07040100", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262453934, "end_us": 262453988, "result": false}
+{"operation": "busy", "start_us": 262454120, "end_us": 262454168, "result": false}
+{"operation": "spi", "start_us": 262454277, "end_us": 262454363, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262454477, "end_us": 262454526, "result": false}
+{"operation": "busy", "start_us": 262454661, "end_us": 262454708, "result": false}
+{"operation": "spi", "start_us": 262454822, "end_us": 262454976, "result": "a2a2a2a2a2a2a2", "tx": "8c000800ff0100", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262455136, "end_us": 262455201, "result": false}
+{"operation": "busy", "start_us": 262455338, "end_us": 262455386, "result": false}
+{"operation": "spi", "start_us": 262455496, "end_us": 262455577, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262455696, "end_us": 262455745, "result": false}
+{"operation": "busy", "start_us": 262455880, "end_us": 262455927, "result": false}
+{"operation": "spi", "start_us": 262456079, "end_us": 262456199, "result": "a2a2a2", "tx": "8e0e02", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262456353, "end_us": 262456413, "result": false}
+{"operation": "busy", "start_us": 262456556, "end_us": 262456604, "result": false}
+{"operation": "spi", "start_us": 262456713, "end_us": 262456797, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262456911, "end_us": 262456960, "result": false}
+{"operation": "busy", "start_us": 262457102, "end_us": 262457149, "result": false}
+{"operation": "spi", "start_us": 262457259, "end_us": 262457337, "result": "a2a2", "tx": "9320", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262457450, "end_us": 262457498, "result": false}
+{"operation": "busy", "start_us": 262457631, "end_us": 262457678, "result": false}
+{"operation": "spi", "start_us": 262457787, "end_us": 262457864, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262457976, "end_us": 262458025, "result": false}
+{"operation": "busy", "start_us": 262458164, "end_us": 262458211, "result": false}
+{"operation": "spi", "start_us": 262458320, "end_us": 262458397, "result": "a2a2", "tx": "9f00", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262458510, "end_us": 262458563, "result": false}
+{"operation": "busy", "start_us": 262458693, "end_us": 262458739, "result": false}
+{"operation": "spi", "start_us": 262458847, "end_us": 262458924, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262459035, "end_us": 262459088, "result": false}
+{"operation": "busy", "start_us": 262459222, "end_us": 262459269, "result": false}
+{"operation": "spi", "start_us": 262459378, "end_us": 262459459, "result": "a2a2", "tx": "a000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262459573, "end_us": 262459623, "result": false}
+{"operation": "busy", "start_us": 262459751, "end_us": 262459799, "result": false}
+{"operation": "spi", "start_us": 262459913, "end_us": 262459990, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262460174, "end_us": 262460235, "result": false}
+{"operation": "busy", "start_us": 262460386, "end_us": 262460435, "result": false}
+{"operation": "spi", "start_us": 262460546, "end_us": 262460737, "result": "a2a2a2a2a2a2a2a2a2", "tx": "080263026300000000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262460861, "end_us": 262460913, "result": false}
+{"operation": "busy", "start_us": 262461045, "end_us": 262461092, "result": false}
+{"operation": "spi", "start_us": 262461207, "end_us": 262461288, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262461402, "end_us": 262461450, "result": false}
+{"operation": "busy", "start_us": 262461599, "end_us": 262461646, "result": false}
+{"operation": "spi", "start_us": 262461762, "end_us": 262461900, "result": "a2a2a2a2a2", "tx": "0d07401424", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262462021, "end_us": 262462081, "result": false}
+{"operation": "busy", "start_us": 262462213, "end_us": 262462261, "result": false}
+{"operation": "spi", "start_us": 262462370, "end_us": 262462449, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262462568, "end_us": 262462617, "result": false}
+{"operation": "busy", "start_us": 262462759, "end_us": 262462806, "result": false}
+{"operation": "spi", "start_us": 262462916, "end_us": 262463039, "result": "a2a2a2a2", "tx": "0d08ac96", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262463231, "end_us": 262463292, "result": false}
+{"operation": "busy", "start_us": 262463429, "end_us": 262463484, "result": false}
+{"operation": "spi", "start_us": 262463594, "end_us": 262463679, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262463793, "end_us": 262463841, "result": false}
+{"operation": "busy", "start_us": 262463995, "end_us": 262464084, "result": false}
+{"operation": "spi", "start_us": 262464230, "end_us": 262464383, "result": "a2a2a2a204", "tx": "1d08890000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262464511, "end_us": 262464569, "result": false}
+{"operation": "busy", "start_us": 262464704, "end_us": 262464751, "result": false}
+{"operation": "spi", "start_us": 262464866, "end_us": 262464950, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262465064, "end_us": 262465113, "result": false}
+{"operation": "busy", "start_us": 262465265, "end_us": 262465313, "result": false}
+{"operation": "spi", "start_us": 262465428, "end_us": 262465558, "result": "a2a2a2a2", "tx": "0d088904", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262465682, "end_us": 262465741, "result": false}
+{"operation": "busy", "start_us": 262465875, "end_us": 262465922, "result": false}
+{"operation": "spi", "start_us": 262466031, "end_us": 262466111, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262466231, "end_us": 262466279, "result": false}
+{"operation": "busy", "start_us": 262466429, "end_us": 262466476, "result": false}
+{"operation": "spi", "start_us": 262466585, "end_us": 262466721, "result": "a2a2a2a20d", "tx": "1d07360000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262466844, "end_us": 262466898, "result": false}
+{"operation": "busy", "start_us": 262467032, "end_us": 262467084, "result": false}
+{"operation": "spi", "start_us": 262467195, "end_us": 262467275, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262467389, "end_us": 262467438, "result": false}
+{"operation": "busy", "start_us": 262467594, "end_us": 262467641, "result": false}
+{"operation": "spi", "start_us": 262467752, "end_us": 262467880, "result": "a2a2a2a2", "tx": "0d07360d", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262468005, "end_us": 262468102, "result": false}
+{"operation": "busy", "start_us": 262468276, "end_us": 262468325, "result": false}
+{"operation": "spi", "start_us": 262468437, "end_us": 262468524, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262468638, "end_us": 262468687, "result": false}
+{"operation": "busy", "start_us": 262468842, "end_us": 262468890, "result": false}
+{"operation": "spi", "start_us": 262468999, "end_us": 262469135, "result": "a2a20000", "tx": "17000000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262469259, "end_us": 262469311, "result": false}
+{"operation": "busy", "start_us": 262469443, "end_us": 262469491, "result": false}
+{"operation": "spi", "start_us": 262469606, "end_us": 262469688, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262469802, "end_us": 262469851, "result": false}
+{"operation": "busy", "start_us": 262470017, "end_us": 262470063, "result": false}
+{"operation": "spi", "start_us": 262470180, "end_us": 262470306, "result": "a2a20000", "tx": "12000000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262470429, "end_us": 262470488, "result": false}
+{"operation": "busy", "start_us": 262470622, "end_us": 262470669, "result": false}
+{"operation": "spi", "start_us": 262470778, "end_us": 262470857, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262470976, "end_us": 262471025, "result": false}
+{"operation": "busy", "start_us": 262471173, "end_us": 262471220, "result": false}
+{"operation": "spi", "start_us": 262471329, "end_us": 262471445, "result": "a2a2a2", "tx": "02ffff", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262471604, "end_us": 262471661, "result": false}
+{"operation": "busy", "start_us": 262471796, "end_us": 262471849, "result": false}
+{"operation": "spi", "start_us": 262471959, "end_us": 262472087, "result": "a222", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262472230, "end_us": 262472283, "result": false}
+{"operation": "edge", "start_us": 262472412, "end_us": 262472497, "result": null, "deadline_us": 262472398}
+{"operation": "busy", "start_us": 262472651, "end_us": 262472696, "result": false}
+{"operation": "spi", "start_us": 262472808, "end_us": 262472956, "result": "a2a2a2a2", "tx": "82000000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262473081, "end_us": 262473134, "result": true}
+{"operation": "busy", "start_us": 262473338, "end_us": 262473388, "result": true}
+{"operation": "busy", "start_us": 262473585, "end_us": 262473634, "result": true}
+{"operation": "busy", "start_us": 262473829, "end_us": 262473877, "result": true}
+{"operation": "busy", "start_us": 262474071, "end_us": 262474119, "result": true}
+{"operation": "busy", "start_us": 262474312, "end_us": 262474360, "result": true}
+{"operation": "busy", "start_us": 262474555, "end_us": 262474603, "result": true}
+{"operation": "busy", "start_us": 262474797, "end_us": 262474845, "result": true}
+{"operation": "busy", "start_us": 262475039, "end_us": 262475087, "result": true}
+{"operation": "busy", "start_us": 262475281, "end_us": 262475328, "result": true}
+{"operation": "busy", "start_us": 262475523, "end_us": 262475572, "result": true}
+{"operation": "busy", "start_us": 262475766, "end_us": 262475815, "result": true}
+{"operation": "busy", "start_us": 262476044, "end_us": 262476094, "result": true}
+{"operation": "busy", "start_us": 262476318, "end_us": 262476373, "result": true}
+{"operation": "busy", "start_us": 262476569, "end_us": 262476617, "result": true}
+{"operation": "busy", "start_us": 262476811, "end_us": 262476863, "result": true}
+{"operation": "busy", "start_us": 262477059, "end_us": 262477107, "result": true}
+{"operation": "busy", "start_us": 262477301, "end_us": 262477348, "result": true}
+{"operation": "busy", "start_us": 262477547, "end_us": 262477595, "result": true}
+{"operation": "busy", "start_us": 262477791, "end_us": 262477838, "result": true}
+{"operation": "busy", "start_us": 262478036, "end_us": 262478087, "result": false}
+{"operation": "busy", "start_us": 262478234, "end_us": 262478281, "result": false}
+{"operation": "spi", "start_us": 262478400, "end_us": 262478503, "result": "d252", "tx": "c000", "deadline_us": 264406446}
+{"operation": "busy", "start_us": 262478625, "end_us": 262478674, "result": false}
+{"operation": "edge", "start_us": 262478795, "end_us": 262478876, "result": null, "deadline_us": 262478783}
+{"operation": "busy", "start_us": 262481705, "end_us": 262481822, "result": false}
+{"operation": "spi", "start_us": 262482069, "end_us": 262482197, "result": "d2d2", "tx": "8000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262482336, "end_us": 262482415, "result": false}
+{"operation": "busy", "start_us": 262482553, "end_us": 262482601, "result": false}
+{"operation": "spi", "start_us": 262482711, "end_us": 262482793, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262482911, "end_us": 262482960, "result": false}
+{"operation": "busy", "start_us": 262483109, "end_us": 262483156, "result": false}
+{"operation": "spi", "start_us": 262483267, "end_us": 262483345, "result": "a2a2", "tx": "8a01", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262483465, "end_us": 262483532, "result": false}
+{"operation": "busy", "start_us": 262483663, "end_us": 262483710, "result": false}
+{"operation": "spi", "start_us": 262483819, "end_us": 262483899, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262484068, "end_us": 262484123, "result": false}
+{"operation": "busy", "start_us": 262484286, "end_us": 262484334, "result": false}
+{"operation": "spi", "start_us": 262484484, "end_us": 262484650, "result": "a2a2a2a2a2", "tx": "863641999a", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262484777, "end_us": 262484833, "result": false}
+{"operation": "busy", "start_us": 262484971, "end_us": 262485019, "result": false}
+{"operation": "spi", "start_us": 262485129, "end_us": 262485211, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262485325, "end_us": 262485373, "result": false}
+{"operation": "busy", "start_us": 262485516, "end_us": 262485563, "result": false}
+{"operation": "spi", "start_us": 262485673, "end_us": 262485814, "result": "a2a2a2a2a2", "tx": "8b07040100", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262485938, "end_us": 262485992, "result": false}
+{"operation": "busy", "start_us": 262486124, "end_us": 262486170, "result": false}
+{"operation": "spi", "start_us": 262486285, "end_us": 262486365, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262486479, "end_us": 262486526, "result": false}
+{"operation": "busy", "start_us": 262486662, "end_us": 262486708, "result": false}
+{"operation": "spi", "start_us": 262486823, "end_us": 262486976, "result": "a2a2a2a2a2a2a2", "tx": "8c000800ff0100", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262487099, "end_us": 262487157, "result": false}
+{"operation": "busy", "start_us": 262487290, "end_us": 262487338, "result": false}
+{"operation": "spi", "start_us": 262487447, "end_us": 262487527, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262487641, "end_us": 262487696, "result": false}
+{"operation": "busy", "start_us": 262487832, "end_us": 262487879, "result": false}
+{"operation": "spi", "start_us": 262487988, "end_us": 262488151, "result": "a2a2a2", "tx": "8e0e02", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262488304, "end_us": 262488362, "result": false}
+{"operation": "busy", "start_us": 262488500, "end_us": 262488553, "result": false}
+{"operation": "spi", "start_us": 262488664, "end_us": 262488748, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262488863, "end_us": 262488911, "result": false}
+{"operation": "busy", "start_us": 262489053, "end_us": 262489101, "result": false}
+{"operation": "spi", "start_us": 262489210, "end_us": 262489289, "result": "a2a2", "tx": "9320", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262489402, "end_us": 262489451, "result": false}
+{"operation": "busy", "start_us": 262489584, "end_us": 262489630, "result": false}
+{"operation": "spi", "start_us": 262489740, "end_us": 262489817, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262489930, "end_us": 262489979, "result": false}
+{"operation": "busy", "start_us": 262490119, "end_us": 262490166, "result": false}
+{"operation": "spi", "start_us": 262490275, "end_us": 262490352, "result": "a2a2", "tx": "9f00", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262490464, "end_us": 262490512, "result": false}
+{"operation": "busy", "start_us": 262490646, "end_us": 262490693, "result": false}
+{"operation": "spi", "start_us": 262490801, "end_us": 262490879, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262490991, "end_us": 262491044, "result": false}
+{"operation": "busy", "start_us": 262491179, "end_us": 262491225, "result": false}
+{"operation": "spi", "start_us": 262491334, "end_us": 262491410, "result": "a2a2", "tx": "a000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262491544, "end_us": 262491593, "result": false}
+{"operation": "busy", "start_us": 262491728, "end_us": 262491775, "result": false}
+{"operation": "spi", "start_us": 262491884, "end_us": 262491963, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262492146, "end_us": 262492205, "result": false}
+{"operation": "busy", "start_us": 262492347, "end_us": 262492395, "result": false}
+{"operation": "spi", "start_us": 262492539, "end_us": 262492731, "result": "a2a2a2a2a2a2a2a2a2", "tx": "080263026300000000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262492859, "end_us": 262492915, "result": false}
+{"operation": "busy", "start_us": 262493054, "end_us": 262493102, "result": false}
+{"operation": "spi", "start_us": 262493213, "end_us": 262493298, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262493412, "end_us": 262493460, "result": false}
+{"operation": "busy", "start_us": 262493614, "end_us": 262493662, "result": false}
+{"operation": "spi", "start_us": 262493772, "end_us": 262493911, "result": "a2a2a2a2a2", "tx": "0d07401424", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262494038, "end_us": 262494094, "result": false}
+{"operation": "busy", "start_us": 262494226, "end_us": 262494274, "result": false}
+{"operation": "spi", "start_us": 262494384, "end_us": 262494466, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262494580, "end_us": 262494630, "result": false}
+{"operation": "busy", "start_us": 262494771, "end_us": 262494818, "result": false}
+{"operation": "spi", "start_us": 262494932, "end_us": 262495058, "result": "a2a2a2a2", "tx": "0d08ac96", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262495182, "end_us": 262495236, "result": false}
+{"operation": "busy", "start_us": 262495372, "end_us": 262495419, "result": false}
+{"operation": "spi", "start_us": 262495530, "end_us": 262495609, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262495721, "end_us": 262495770, "result": false}
+{"operation": "busy", "start_us": 262495923, "end_us": 262495970, "result": false}
+{"operation": "spi", "start_us": 262496153, "end_us": 262496298, "result": "a2a2a2a204", "tx": "1d08890000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262496426, "end_us": 262496485, "result": false}
+{"operation": "busy", "start_us": 262496619, "end_us": 262496667, "result": false}
+{"operation": "spi", "start_us": 262496784, "end_us": 262496865, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262496978, "end_us": 262497028, "result": false}
+{"operation": "busy", "start_us": 262497179, "end_us": 262497231, "result": false}
+{"operation": "spi", "start_us": 262497341, "end_us": 262497466, "result": "a2a2a2a2", "tx": "0d088904", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262497595, "end_us": 262497650, "result": false}
+{"operation": "busy", "start_us": 262497782, "end_us": 262497830, "result": false}
+{"operation": "spi", "start_us": 262497939, "end_us": 262498018, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262498136, "end_us": 262498184, "result": false}
+{"operation": "busy", "start_us": 262498330, "end_us": 262498377, "result": false}
+{"operation": "spi", "start_us": 262498486, "end_us": 262498620, "result": "a2a2a2a20d", "tx": "1d07360000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262498743, "end_us": 262498797, "result": false}
+{"operation": "busy", "start_us": 262498930, "end_us": 262498983, "result": false}
+{"operation": "spi", "start_us": 262499093, "end_us": 262499174, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262499287, "end_us": 262499336, "result": false}
+{"operation": "busy", "start_us": 262499491, "end_us": 262499539, "result": false}
+{"operation": "spi", "start_us": 262499664, "end_us": 262499791, "result": "a2a2a2a2", "tx": "0d07360d", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262499918, "end_us": 262499978, "result": false}
+{"operation": "busy", "start_us": 262500178, "end_us": 262500230, "result": false}
+{"operation": "spi", "start_us": 262500342, "end_us": 262500430, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262500552, "end_us": 262500602, "result": false}
+{"operation": "busy", "start_us": 262500788, "end_us": 262500837, "result": false}
+{"operation": "spi", "start_us": 262500952, "end_us": 262501086, "result": "a2a20000", "tx": "17000000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262501210, "end_us": 262501265, "result": false}
+{"operation": "busy", "start_us": 262501403, "end_us": 262501450, "result": false}
+{"operation": "spi", "start_us": 262501560, "end_us": 262501640, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262501754, "end_us": 262501804, "result": false}
+{"operation": "busy", "start_us": 262501973, "end_us": 262502022, "result": false}
+{"operation": "spi", "start_us": 262502131, "end_us": 262502260, "result": "a2a20000", "tx": "12000000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262502382, "end_us": 262502436, "result": false}
+{"operation": "busy", "start_us": 262502567, "end_us": 262502614, "result": false}
+{"operation": "spi", "start_us": 262502730, "end_us": 262502811, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262502924, "end_us": 262502972, "result": false}
+{"operation": "busy", "start_us": 262503118, "end_us": 262503166, "result": false}
+{"operation": "spi", "start_us": 262503282, "end_us": 262503398, "result": "a2a2a2", "tx": "02ffff", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262503520, "end_us": 262503574, "result": false}
+{"operation": "busy", "start_us": 262503712, "end_us": 262503760, "result": false}
+{"operation": "spi", "start_us": 262503870, "end_us": 262503949, "result": "a222", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262504140, "end_us": 262504195, "result": false}
+{"operation": "edge", "start_us": 262504319, "end_us": 262504403, "result": null, "deadline_us": 262504305}
+{"operation": "busy", "start_us": 262504561, "end_us": 262504612, "result": false}
+{"operation": "spi", "start_us": 262504726, "end_us": 262504867, "result": "a2a2a2a2", "tx": "82001900", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262505000, "end_us": 262505052, "result": true}
+{"operation": "busy", "start_us": 262505257, "end_us": 262505305, "result": true}
+{"operation": "busy", "start_us": 262505501, "end_us": 262505550, "result": true}
+{"operation": "busy", "start_us": 262505745, "end_us": 262505792, "result": true}
+{"operation": "busy", "start_us": 262505989, "end_us": 262506037, "result": true}
+{"operation": "busy", "start_us": 262506235, "end_us": 262506283, "result": true}
+{"operation": "busy", "start_us": 262506481, "end_us": 262506530, "result": true}
+{"operation": "busy", "start_us": 262506725, "end_us": 262506775, "result": true}
+{"operation": "busy", "start_us": 262506974, "end_us": 262507023, "result": true}
+{"operation": "busy", "start_us": 262507217, "end_us": 262507267, "result": true}
+{"operation": "busy", "start_us": 262507461, "end_us": 262507515, "result": true}
+{"operation": "busy", "start_us": 262507724, "end_us": 262507774, "result": true}
+{"operation": "busy", "start_us": 262507969, "end_us": 262508049, "result": true}
+{"operation": "busy", "start_us": 262508282, "end_us": 262508333, "result": true}
+{"operation": "busy", "start_us": 262508529, "end_us": 262508578, "result": true}
+{"operation": "busy", "start_us": 262508776, "end_us": 262508824, "result": true}
+{"operation": "busy", "start_us": 262509020, "end_us": 262509069, "result": true}
+{"operation": "busy", "start_us": 262509268, "end_us": 262509317, "result": true}
+{"operation": "busy", "start_us": 262509512, "end_us": 262509561, "result": true}
+{"operation": "busy", "start_us": 262509761, "end_us": 262509809, "result": true}
+{"operation": "busy", "start_us": 262510005, "end_us": 262510054, "result": false}
+{"operation": "busy", "start_us": 262510210, "end_us": 262510258, "result": false}
+{"operation": "spi", "start_us": 262510372, "end_us": 262510477, "result": "d252", "tx": "c000", "deadline_us": 262979761}
+{"operation": "busy", "start_us": 262510599, "end_us": 262510655, "result": false}
+{"operation": "edge", "start_us": 262510833, "end_us": 262609523, "result": {"timestamp_ns": 262609297311, "sequence": 1}, "deadline_us": 262810764}
+{"operation": "busy", "start_us": 262609916, "end_us": 262610003, "result": false}
+{"operation": "spi", "start_us": 262610137, "end_us": 262610308, "result": "a6a60200", "tx": "12000000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262610450, "end_us": 262610511, "result": false}
+{"operation": "busy", "start_us": 262610658, "end_us": 262610706, "result": false}
+{"operation": "spi", "start_us": 262610816, "end_us": 262610957, "result": "a6a60000", "tx": "17000000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262611081, "end_us": 262611136, "result": false}
+{"operation": "busy", "start_us": 262611279, "end_us": 262611327, "result": false}
+{"operation": "spi", "start_us": 262611436, "end_us": 262611519, "result": "a626", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262611631, "end_us": 262611680, "result": false}
+{"operation": "busy", "start_us": 262612150, "end_us": 262612211, "result": false}
+{"operation": "spi", "start_us": 262612383, "end_us": 262612487, "result": "a6a6", "tx": "8000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262612614, "end_us": 262612668, "result": false}
+{"operation": "busy", "start_us": 262612801, "end_us": 262612853, "result": false}
+{"operation": "spi", "start_us": 262612964, "end_us": 262613045, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262613158, "end_us": 262613207, "result": false}
+{"operation": "busy", "start_us": 262613362, "end_us": 262613410, "result": false}
+{"operation": "spi", "start_us": 262613520, "end_us": 262613648, "result": "a2a2a2", "tx": "020200", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262613775, "end_us": 262613831, "result": false}
+{"operation": "busy", "start_us": 262613964, "end_us": 262614011, "result": false}
+{"operation": "spi", "start_us": 262614120, "end_us": 262614199, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262614318, "end_us": 262614367, "result": false}
+{"operation": "busy", "start_us": 262614521, "end_us": 262614568, "result": false}
+{"operation": "spi", "start_us": 262614677, "end_us": 262614756, "result": "a2a2", "tx": "8000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262614868, "end_us": 262614918, "result": false}
+{"operation": "busy", "start_us": 262615045, "end_us": 262615092, "result": false}
+{"operation": "spi", "start_us": 262615199, "end_us": 262615282, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262615393, "end_us": 262615442, "result": false}
+{"operation": "busy", "start_us": 262615585, "end_us": 262615632, "result": false}
+{"operation": "spi", "start_us": 262615747, "end_us": 262615824, "result": "a2a2", "tx": "8a01", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262615936, "end_us": 262615985, "result": false}
+{"operation": "busy", "start_us": 262616186, "end_us": 262616244, "result": false}
+{"operation": "spi", "start_us": 262616356, "end_us": 262616439, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262616553, "end_us": 262616602, "result": false}
+{"operation": "busy", "start_us": 262616743, "end_us": 262616790, "result": false}
+{"operation": "spi", "start_us": 262616899, "end_us": 262617040, "result": "a2a2a2a2a2", "tx": "863641999a", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262617168, "end_us": 262617222, "result": false}
+{"operation": "busy", "start_us": 262617354, "end_us": 262617400, "result": false}
+{"operation": "spi", "start_us": 262617510, "end_us": 262617590, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262617708, "end_us": 262617757, "result": false}
+{"operation": "busy", "start_us": 262617890, "end_us": 262617936, "result": false}
+{"operation": "spi", "start_us": 262618045, "end_us": 262618181, "result": "a2a2a2a2a2", "tx": "8b07040100", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262618344, "end_us": 262618404, "result": false}
+{"operation": "busy", "start_us": 262618547, "end_us": 262618595, "result": false}
+{"operation": "spi", "start_us": 262618705, "end_us": 262618788, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262618901, "end_us": 262618950, "result": false}
+{"operation": "busy", "start_us": 262619090, "end_us": 262619137, "result": false}
+{"operation": "spi", "start_us": 262619246, "end_us": 262619407, "result": "a2a2a2a2a2a2a2", "tx": "8c000800ff0100", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262619530, "end_us": 262619584, "result": false}
+{"operation": "busy", "start_us": 262619717, "end_us": 262619765, "result": false}
+{"operation": "spi", "start_us": 262619880, "end_us": 262619961, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262620161, "end_us": 262620218, "result": false}
+{"operation": "busy", "start_us": 262620360, "end_us": 262620409, "result": false}
+{"operation": "spi", "start_us": 262620525, "end_us": 262620652, "result": "a2a2a2", "tx": "8e0e02", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262620776, "end_us": 262620830, "result": false}
+{"operation": "busy", "start_us": 262620969, "end_us": 262621017, "result": false}
+{"operation": "spi", "start_us": 262621127, "end_us": 262621208, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262621322, "end_us": 262621376, "result": false}
+{"operation": "busy", "start_us": 262621513, "end_us": 262621560, "result": false}
+{"operation": "spi", "start_us": 262621670, "end_us": 262621748, "result": "a2a2", "tx": "9320", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262621860, "end_us": 262621914, "result": false}
+{"operation": "busy", "start_us": 262622042, "end_us": 262622089, "result": false}
+{"operation": "spi", "start_us": 262622198, "end_us": 262622276, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262622396, "end_us": 262622445, "result": false}
+{"operation": "busy", "start_us": 262622581, "end_us": 262622628, "result": false}
+{"operation": "spi", "start_us": 262622737, "end_us": 262622814, "result": "a2a2", "tx": "9f00", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262622931, "end_us": 262622980, "result": false}
+{"operation": "busy", "start_us": 262623108, "end_us": 262623155, "result": false}
+{"operation": "spi", "start_us": 262623264, "end_us": 262623341, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262623458, "end_us": 262623508, "result": false}
+{"operation": "busy", "start_us": 262623642, "end_us": 262623689, "result": false}
+{"operation": "spi", "start_us": 262623798, "end_us": 262623879, "result": "a2a2", "tx": "a000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262623991, "end_us": 262624087, "result": false}
+{"operation": "busy", "start_us": 262624243, "end_us": 262624292, "result": false}
+{"operation": "spi", "start_us": 262624409, "end_us": 262624492, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262624607, "end_us": 262624657, "result": false}
+{"operation": "busy", "start_us": 262624792, "end_us": 262624840, "result": false}
+{"operation": "spi", "start_us": 262624953, "end_us": 262625135, "result": "a2a2a2a2a2a2a2a2a2", "tx": "080263026300000000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262625262, "end_us": 262625317, "result": false}
+{"operation": "busy", "start_us": 262625449, "end_us": 262625496, "result": false}
+{"operation": "spi", "start_us": 262625605, "end_us": 262625686, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262625803, "end_us": 262625852, "result": false}
+{"operation": "busy", "start_us": 262625997, "end_us": 262626044, "result": false}
+{"operation": "spi", "start_us": 262626153, "end_us": 262626290, "result": "a2a2a2a2a2", "tx": "0d07401424", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262626450, "end_us": 262626507, "result": false}
+{"operation": "busy", "start_us": 262626648, "end_us": 262626696, "result": false}
+{"operation": "spi", "start_us": 262626806, "end_us": 262626888, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262627002, "end_us": 262627051, "result": false}
+{"operation": "busy", "start_us": 262627198, "end_us": 262627245, "result": false}
+{"operation": "spi", "start_us": 262627353, "end_us": 262627481, "result": "a2a2a2a2", "tx": "0d08ac96", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262627608, "end_us": 262627662, "result": false}
+{"operation": "busy", "start_us": 262627793, "end_us": 262627840, "result": false}
+{"operation": "spi", "start_us": 262627968, "end_us": 262628084, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262628228, "end_us": 262628288, "result": false}
+{"operation": "busy", "start_us": 262628442, "end_us": 262628490, "result": false}
+{"operation": "spi", "start_us": 262628601, "end_us": 262628743, "result": "a2a2a2a204", "tx": "1d08890000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262628865, "end_us": 262628919, "result": false}
+{"operation": "busy", "start_us": 262629052, "end_us": 262629099, "result": false}
+{"operation": "spi", "start_us": 262629214, "end_us": 262629296, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262629409, "end_us": 262629457, "result": false}
+{"operation": "busy", "start_us": 262629611, "end_us": 262629663, "result": false}
+{"operation": "spi", "start_us": 262629773, "end_us": 262629900, "result": "a2a2a2a2", "tx": "0d088904", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262630027, "end_us": 262630082, "result": false}
+{"operation": "busy", "start_us": 262630215, "end_us": 262630262, "result": false}
+{"operation": "spi", "start_us": 262630372, "end_us": 262630453, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262630571, "end_us": 262630619, "result": false}
+{"operation": "busy", "start_us": 262630767, "end_us": 262630814, "result": false}
+{"operation": "spi", "start_us": 262630924, "end_us": 262631060, "result": "a2a2a2a20d", "tx": "1d07360000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262631183, "end_us": 262631237, "result": false}
+{"operation": "busy", "start_us": 262631368, "end_us": 262631421, "result": false}
+{"operation": "spi", "start_us": 262631530, "end_us": 262631611, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262631725, "end_us": 262631774, "result": false}
+{"operation": "busy", "start_us": 262631928, "end_us": 262631975, "result": false}
+{"operation": "spi", "start_us": 262632153, "end_us": 262632293, "result": "a2a2a2a2", "tx": "0d07360d", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262632421, "end_us": 262632481, "result": false}
+{"operation": "busy", "start_us": 262632613, "end_us": 262632661, "result": false}
+{"operation": "spi", "start_us": 262632770, "end_us": 262632858, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262632971, "end_us": 262633020, "result": false}
+{"operation": "busy", "start_us": 262633169, "end_us": 262633216, "result": false}
+{"operation": "spi", "start_us": 262633331, "end_us": 262633458, "result": "a2a20000", "tx": "17000000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262633582, "end_us": 262633637, "result": false}
+{"operation": "busy", "start_us": 262633775, "end_us": 262633823, "result": false}
+{"operation": "spi", "start_us": 262633931, "end_us": 262634012, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262634124, "end_us": 262634178, "result": false}
+{"operation": "busy", "start_us": 262634344, "end_us": 262634392, "result": false}
+{"operation": "spi", "start_us": 262634501, "end_us": 262634628, "result": "a2a20000", "tx": "12000000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262634786, "end_us": 262634843, "result": false}
+{"operation": "busy", "start_us": 262634978, "end_us": 262635025, "result": false}
+{"operation": "spi", "start_us": 262635142, "end_us": 262635225, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262635337, "end_us": 262635385, "result": false}
+{"operation": "busy", "start_us": 262635533, "end_us": 262635585, "result": false}
+{"operation": "spi", "start_us": 262635695, "end_us": 262635814, "result": "a2a2a2", "tx": "02ffff", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262635945, "end_us": 262636000, "result": false}
+{"operation": "busy", "start_us": 262636211, "end_us": 262636262, "result": false}
+{"operation": "spi", "start_us": 262636376, "end_us": 262636464, "result": "a222", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262636580, "end_us": 262636630, "result": false}
+{"operation": "edge", "start_us": 262636754, "end_us": 262636839, "result": null, "deadline_us": 262636741}
+{"operation": "busy", "start_us": 262636996, "end_us": 262637040, "result": false}
+{"operation": "spi", "start_us": 262637151, "end_us": 262637292, "result": "a2a2a2a2", "tx": "82000000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262637417, "end_us": 262637470, "result": true}
+{"operation": "busy", "start_us": 262637676, "end_us": 262637726, "result": true}
+{"operation": "busy", "start_us": 262637922, "end_us": 262637970, "result": true}
+{"operation": "busy", "start_us": 262638169, "end_us": 262638217, "result": true}
+{"operation": "busy", "start_us": 262638411, "end_us": 262638459, "result": true}
+{"operation": "busy", "start_us": 262638653, "end_us": 262638700, "result": true}
+{"operation": "busy", "start_us": 262638896, "end_us": 262638943, "result": true}
+{"operation": "busy", "start_us": 262639137, "end_us": 262639186, "result": true}
+{"operation": "busy", "start_us": 262639380, "end_us": 262639428, "result": true}
+{"operation": "busy", "start_us": 262639621, "end_us": 262639669, "result": true}
+{"operation": "busy", "start_us": 262639865, "end_us": 262639914, "result": true}
+{"operation": "busy", "start_us": 262640108, "end_us": 262640159, "result": true}
+{"operation": "busy", "start_us": 262640383, "end_us": 262640433, "result": true}
+{"operation": "busy", "start_us": 262640627, "end_us": 262640675, "result": true}
+{"operation": "busy", "start_us": 262640872, "end_us": 262640920, "result": true}
+{"operation": "busy", "start_us": 262641115, "end_us": 262641163, "result": true}
+{"operation": "busy", "start_us": 262641359, "end_us": 262641407, "result": true}
+{"operation": "busy", "start_us": 262641599, "end_us": 262641646, "result": true}
+{"operation": "busy", "start_us": 262641841, "end_us": 262641888, "result": true}
+{"operation": "busy", "start_us": 262642086, "end_us": 262642134, "result": true}
+{"operation": "busy", "start_us": 262642328, "end_us": 262642375, "result": true}
+{"operation": "busy", "start_us": 262642573, "end_us": 262642622, "result": false}
+{"operation": "busy", "start_us": 262642769, "end_us": 262642816, "result": false}
+{"operation": "spi", "start_us": 262642929, "end_us": 262643031, "result": "d252", "tx": "c000", "deadline_us": 263107995}
+{"operation": "busy", "start_us": 262643160, "end_us": 262643211, "result": false}
+{"operation": "edge", "start_us": 262643526, "end_us": 262643616, "result": null, "deadline_us": 262643513}
+{"operation": "busy", "start_us": 262645641, "end_us": 262645757, "result": false}
+{"operation": "spi", "start_us": 262645982, "end_us": 262646111, "result": "d2d2", "tx": "8000", "deadline_us": 263143706}
+{"operation": "busy", "start_us": 262646247, "end_us": 262646317, "result": false}
+{"operation": "busy", "start_us": 262646462, "end_us": 262646510, "result": false}
+{"operation": "spi", "start_us": 262646620, "end_us": 262646703, "result": "a222", "tx": "c000", "deadline_us": 263143706}
+{"operation": "busy", "start_us": 262646818, "end_us": 262646872, "result": false}
+{"operation": "busy", "start_us": 262647062, "end_us": 262647108, "result": false}
+{"operation": "spi", "start_us": 262647220, "end_us": 262647413, "result": "a2a2a2a2a2a2a2a2a2", "tx": "080000000000000000", "deadline_us": 263143706}
+{"operation": "busy", "start_us": 262647540, "end_us": 262647592, "result": false}
+{"operation": "busy", "start_us": 262647734, "end_us": 262647782, "result": false}
+{"operation": "spi", "start_us": 262647892, "end_us": 262647974, "result": "a222", "tx": "c000", "deadline_us": 263143706}
+{"operation": "busy", "start_us": 262648158, "end_us": 262648218, "result": false}
+{"operation": "busy", "start_us": 262648375, "end_us": 262648423, "result": false}
+{"operation": "spi", "start_us": 262648533, "end_us": 262648668, "result": "a2a20000", "tx": "12000000", "deadline_us": 263143706}
+{"operation": "busy", "start_us": 262648792, "end_us": 262648845, "result": false}
+{"operation": "busy", "start_us": 262648979, "end_us": 262649026, "result": false}
+{"operation": "spi", "start_us": 262649142, "end_us": 262649224, "result": "a222", "tx": "c000", "deadline_us": 263143706}
+{"operation": "busy", "start_us": 262649338, "end_us": 262649387, "result": false}
+{"operation": "busy", "start_us": 262649539, "end_us": 262649591, "result": false}
+{"operation": "spi", "start_us": 262649702, "end_us": 262649819, "result": "a2a2a2", "tx": "02ffff", "deadline_us": 263143706}
+{"operation": "busy", "start_us": 262649943, "end_us": 262650002, "result": false}
+{"operation": "busy", "start_us": 262650134, "end_us": 262650182, "result": false}
+{"operation": "spi", "start_us": 262650293, "end_us": 262650373, "result": "a222", "tx": "c000", "deadline_us": 263143706}
+{"operation": "busy", "start_us": 262650492, "end_us": 262650541, "result": false}
+{"operation": "edge", "start_us": 262650659, "end_us": 262650742, "result": null, "deadline_us": 262650645}
+{"operation": "busy", "start_us": 262650892, "end_us": 262650937, "result": false}
+{"operation": "spi", "start_us": 262651053, "end_us": 262651137, "result": "a222", "tx": "c000", "deadline_us": 263143706}
+{"operation": "busy", "start_us": 262651252, "end_us": 262651300, "result": false}
+{"operation": "close", "start_us": 262651408, "end_us": 262651625, "result": null}

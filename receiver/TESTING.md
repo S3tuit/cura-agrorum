@@ -129,7 +129,11 @@ Register and enforce these pytest markers strictly:
 - `slow`: deliberately unsuitable for the ordinary validation loop;
 - `destructive`: may change system time, write the RTC, reboot the Pi, disturb
   a service or exercise a bounded failure filesystem;
-- `rf_peer`: requires the separately controlled radio peer and RF fixture.
+- `rf_peer`: requires the separately controlled radio peer and RF fixture;
+- `radio`: requires the fitted, operator-confirmed SX1262 carrier;
+- `radio_fault`: requires its isolated BUSY fault gate (currently deferred); and
+- `radio_busy_held`: requires the isolated manual BUSY-high selector and a run
+  containing only that startup-failure case.
 
 Hardware tests run serially. They must fail clearly when an explicitly selected
 fixture is missing rather than silently turn a requested hardware run into a
@@ -158,8 +162,11 @@ make test-receiver-hardware-destructive \
 ```
 
 Individual destructive fixtures add their own configuration, service, device
-and restoration interlocks when they are implemented. RF-peer execution remains
-deferred and has no Make target yet.
+and restoration interlocks when they are implemented. Full receiver end-to-end
+RF execution remains deferred. The Radio component may have an explicitly
+selected RF-peer fixture entry point when its production backend and tests
+arrive; it exercises that component without the complete receiver service.
+Ordinary hardware targets continue to exclude `rf_peer`.
 
 ## Test implementation rules
 
@@ -191,9 +198,16 @@ deferred and has no Make target yet.
   assertions use documented asymmetric tolerance and record the raw samples;
   they do not assume laboratory-grade determinism from Linux scheduling.
 - A failed persistence test preserves the database, WAL and shared-memory files
-  together when they are evidence. Hardware failures additionally retain
+  together while investigating the failure. Hardware failures additionally capture
   relevant configuration, service journal, device trace, test seed and host
   metadata without retaining secret keys.
+
+Permanent [hardware evidence](tests/hardware/evidence/README.md) keeps costly
+results, their source/fixture and limitations, useful failure lessons and the
+minimum supporting captures. After validating a result or resolving a failure,
+curate that record and delete redundant raw runs, including ignored files.
+Keep unresolved diagnostic inputs only while they remain useful; complete
+failed-session bundles and routine host logs are not permanent requirements.
 
 The current low-level `FakeOsClock` is manually controlled. Reading monotonic or
 realtime never advances either value. Tests call `advance_elapsed_us()` to move
@@ -250,24 +264,31 @@ end-to-end ACK deadline.
 
 - **Initialization profile:** Use a transcript-recording fake SX1262 backend and verify initialization installs the complete protocol `UPLINK_RX_PROFILE`, clears or accounts for IRQs, confirms `SetRx` and only then enters `RX_SINGLE`.
 - **Initialization terminals:** Distinguish absent/unreachable resources as `HARDWARE_MISSING` from reachable hardware whose bounded initialization exhausts as `INITIALIZATION_FAILED`; neither state may transmit or transition again in the same process.
+- **Post-reset status:** Reproduce the captured initial `0x2A` through the real command backend, require fresh standby confirmation, accept only the startup `0x0020` device-error bit, and require clean errors after calibration. Reject malformed/missing status, wrong reset mode, later command failures and every other device-error bit.
+- **Failed-startup cleanup:** Preserve the fatal initialization cause and terminal state while reporting actual safe-state/handle-release success or failure. Cover safe standby failure, close failure, both failures, absent assessment and the remaining startup deadline; retain separate precise fatal cleanup episodes. Terminal shutdown must return retained safety without I/O. Held-BUSY has fatal INITIALIZE and CLEANUP timeout episodes and an unconfirmed safety result.
+- **Resource lifecycle evidence:** Through the production Linux adapter/backend/owner, fail GPIO/SPI acquisition and both resource releases independently and together. Preserve the primary and each release errno/stage in immutable lifecycle evidence and distinct cleanup episodes, attempt each acquired resource once, and cover controlled shutdown and subsequent no-op close. Unexpected exceptions remain CORE failures, including mixed expected/unexpected cleanup failures.
 - **RX event classification:** Parameterize RxDone, header error, CRC error, TX-timeout and unexpected IRQ combinations and verify exact clearing, packet-copy and recovery behavior without treating ordinary IRQ outcomes as diagnostics.
+- **Correlated event confirmation:** Replay IRQ `0x0200` with status `0x26` for finite RX and TX timeout, including completion before active mode is sampled. Require immutable IRQ/status/device-error evidence, a fresh correctly timed edge, standby fallback, preserved immediate edges and fresh confirmed standby before later writes. Reject wrong mode, mixed/absent IRQ, device errors, processing/execution failures, stale/missing/future/late edges and malformed reads. Retain confirmed TX outcomes if later cleanup/restoration fails; ordinary command failures remain strict.
 - **Pi-owned packet snapshot:** Mutate the fake radio buffer immediately after `ReadBuffer` and prove authentication, profiling and persistence use the independent bytes copied before later radio commands.
 - **Response-free RX rearm:** For every silent or airtime-suppressed outcome, verify the complete receive profile is restored and `SetRx` confirmed before `RX_SINGLE` is asserted.
-- **ACK profile transition:** Verify the exact order `WriteBuffer`, complete inverted-IQ `ACK_TX_PROFILE`, allowance consumption, `SetTx`, terminal IRQ handling, complete normal-IQ boosted `UPLINK_RX_PROFILE`, and confirmed `SetRx`.
-- **Definite pre-SetTx failure:** Fail every operation before `SetTx` can take effect and require no `TX_ACTIVE`, reclaimed tentative allowance when permitted, no false transmitted result and bounded restoration or recovery.
-- **Started or uncertain SetTx:** Return confirmed-start and uncertain command outcomes and require `TX_ACTIVE` semantics, retained airtime charge and recovery before any new `SetRx` under a possibly partial profile.
-- **Missing or delayed TxDone:** Exercise no terminal IRQ, a terminal IRQ at the deadline and one after it; verify terminal profiling, charge retention, recovery reason and bounded exit without an unbounded wait.
+- **ACK profile transition:** Verify the exact order `WriteBuffer`, external tentative allowance consumption, complete inverted-IQ `ACK_TX_PROFILE`, `SetTx`, terminal IRQ handling, complete normal-IQ boosted `UPLINK_RX_PROFILE`, and confirmed `SetRx`.
+- **Definite pre-SetTx failure:** Fail every operation before `SetTx` can take effect and require no `TX_ACTIVE`, reclaimed tentative allowance when permitted, `SET_TX_FAILED` with T4 absent before any SetTx attempt, no false transmitted result and bounded restoration or recovery.
+- **Started or uncertain SetTx:** Return confirmed-start and uncertain command outcomes and require `TX_ACTIVE` semantics, retained airtime charge and recovery before any new `SetRx` under a possibly partial profile. Separately inject TX-profile uncertainty before SetTx and require retained charge, absent T4, and `TX_UNCONFIRMED` even when recovery restores RX.
+- **Missing or delayed TxDone:** Exercise no terminal IRQ, a terminal IRQ at the deadline and one after it; verify `TX_UNCONFIRMED` for an unconfirmed terminal outcome, distinguish a confirmed timeout IRQ's `TX_TIMEOUT`, and verify charge retention, recovery reason and bounded exit without an unbounded wait.
 - **BUSY and SPI failures:** Inject BUSY timeouts and SPI failures at every semantic operation and assert command-effect certainty, one recovery episode, exact diagnostic root cause and no continuation under an assumed mode.
 - **Soft and hard recovery:** Cover soft success, soft failure followed by reset/full-initialization success, absent hardware during recovery and final exhaustion; require exactly one episode diagnostic and a confirmed receive profile before success.
 - **Event immediately after recovery:** Raise DIO1 as recovery confirms `SetRx` and prove the event becomes `RX_EVENT_PENDING` instead of being cleared as stale.
+- **GPIO stream recovery:** Compose the production Linux adapter, SX1262 backend and owner over their physical dependency fakes. Lose an event, reject the gap, recover and deliver subsequent packets without restarting. Cover stale events queued during recovery, soft and hard resynchronization, strict normal reads, malformed/regressing/future metadata, failed reads, deadline/buffer exhaustion, low-DIO1 checks and immediate SetRx completion. Failed stream synchronization must not increment recovery success or erase the original episode.
 - **Diagnostic catalogue enforcement:** Attempt every allowed radio operation/error/context family and representative undefined combinations, requiring exact fixed context bytes for allowed cases and construction failure for undefined cases.
 - **Controlled radio shutdown:** From each non-terminal state, request shutdown and verify new TX suppression, conservative active-operation termination, safe configured radio state and terminal `SHUTDOWN` without relying on later cleanup for correctness.
+- **Interrupted recovery accounting:** Stop at owner-controlled primitive boundaries before or during either recovery level; require exactly one original episode completed in `SHUTDOWN`, one failure count, truthful attempted-level results and retained actual failure evidence. Safe cleanup uses `ERROR`, unsafe cleanup `FATAL`; an actual cleanup failure has its separate diagnostic. Include unresolved startup/cleanup IRQs in the allowed catalogue matrix.
 - **Radio state-machine properties:** Generate valid and faulted operation sequences against a small reference model and assert that `RX_SINGLE` always implies a confirmed complete receive profile and that terminal states have no outgoing transition.
 
 ### Hardware tests
 
 - **Device and permission probe:** Open the configured SPI device and GPIO lines as the receiver service user, verify direction/edge configuration and report missing or inaccessible resources within the configured startup deadline.
 - **Real initialization:** Reset and initialize the attached SX1262, install the complete uplink profile and confirm bounded entry into receive mode using production adapters.
+- **Manual held-BUSY startup:** With the raw radio BUSY disconnected and only the Pi input tied high, require bounded INITIALIZATION_FAILED, the fatal INITIALIZE / BUSY_TIMEOUT episode, no SPI transfer/RX entry/TX attempt and handle release. Run the case alone; retain unconfirmed safe cleanup as a failed session requiring powered-off selector restoration and a fresh nominal run. Manual restart is not runtime recovery evidence.
 - **Real BUSY behavior:** Measure BUSY assertion and release around representative commands, prove every wait is bounded and retain the command trace when a timeout occurs.
 - **DIO1 timestamp path:** Trigger controlled radio IRQs and verify libgpiod delivers rising edges with ordered kernel monotonic timestamps that populate the expected profiling fields.
 - **Normal-IQ uplink reception:** With the component RF peer, receive a reviewed payload under the exact protocol sync word/profile and verify length, bytes, IRQs and plausible RSSI/SNR without imposing exact RF-strength assertions.
@@ -276,6 +297,42 @@ end-to-end ACK deadline.
 - **Radio timing characterization:** Measure SetTx-to-TxDone and receive-deadline behavior against calculated airtime and the documented asymmetric hardware tolerance, recording raw monotonic samples.
 - **Hardware reset recovery:** Force a safe recoverable fault with a controllable fixture, require soft recovery or reset/full initialization as appropriate, and prove the final known state rather than only checking a return code.
 - **Safe-state teardown:** End tests from RX, TX-adjacent, recovery and ordinary idle conditions and verify the module reaches the configured safe shutdown state; an uncertain state aborts later radio cases.
+
+The operator has deferred component RF-peer implementation until a real-node
+strategy is defined. Only a multimeter is currently available. Peer-dependent
+cases and waveform/timestamp acceptance therefore remain required but deferred;
+do not add a speculative peer port or treat voltage readings as edge timing.
+The host backend/state-machine work and non-peer component cases may proceed.
+The operator has also deferred the unavailable SN74LVC1G32 BUSY fault gate.
+Its synchronized physical soft/hard recovery cases remain required but unrun;
+nominal non-peer cases do not require the gate. A static held-BUSY startup
+failure cannot substitute for those runtime recovery cases.
+The agreed manual carrier has only `radio_nominal` (selector 1-2) and
+`radio_busy_held` (2-3). Fixture input must explicitly select and confirm the
+matching wiring before device access; old gate-based confirmations are invalid.
+Use the existing 50 ms service-latency allowance for the manual case's 2 s
+startup-return check, retaining raw monotonic samples separately from the
+deferred independent timing qualification.
+
+The implemented non-peer cases and their explicit fixture/source-staging
+procedure are in [hardware/RADIO_TESTS.md](tests/hardware/RADIO_TESTS.md).
+The [coverage map](tests/RADIO_COVERAGE.md) separates host evidence, unrun
+physical cases and communicator-only admission obligations.
+Required radio evidence belongs under `tests/hardware/evidence/radio/` in the
+development checkout. Treat Pi storage and `/tmp` as volatile; copy and verify
+needed captures before they disappear, then follow the permanent retention
+policy above. Summarize resolved failures and retain one source identity per
+tested tree instead of archiving every session.
+
+When a capture instrument is available, retain its independent timebase and
+NSS/BUSY/DIO1/RESET samples alongside kernel timestamps. The approved initial
+relative rate allowance is 5,000 ppm plus measured capture quantization.
+For the 61,696 us ACK airtime, allow that amount early and additionally 5 ms
+TCXO startup plus 10 ms command/ramp margin late when measuring from NSS end
+to TxDone. Finite RX-timeout measurements additionally account for the radio's
+15.625 us timer quantum and oscillator startup. Record Python service latency
+separately with a 50 ms late-only budget. These thresholds require the actual
+instrument specification; there is no current physical timing result.
 
 ## PersistQueue
 
@@ -342,7 +399,7 @@ The bounded test caller does not implement the production communicator. Full
 service signals, radio safe-state/airtime settlement, live time policy and
 physical power interruption remain with their owning components/fixtures.
 See the [worker evidence](tests/hardware/evidence/persistence_worker/README.md)
-for source identity, commands, timing limits and retained raw results.
+for source identity, timing limits, costly-test results and failure lessons.
 
 The ordinary storage destructive fixture mounts only a dedicated 4 MiB tmpfs
 below the marked test root, retains its bounded artifacts and unmounts in
@@ -690,7 +747,7 @@ deterministically.
 
 - **Valid reading to durable row:** Inject a reviewed authenticated frame through the fake radio, obtain the deterministic accepted ACK transcript, drain persistence and verify the exact canonical reading and complete occurrence profile.
 - **Lost-ACK retransmission:** Complete persistence but hide TX completion from the simulated node, inject the identical retry and verify another admitted profile plus `RETRANSMISSION` without a second canonical reading.
-- **Failed ACK transmission:** Fail after `SetTx` may have started, require retained charge and published `UNKNOWN_INTERRUPTED` or exact terminal result, then retry and persist normally.
+- **Failed ACK transmission:** Fail after `SetTx` may have started, require retained charge and published `TX_UNCONFIRMED` after bounded radio recovery or the exact confirmed terminal result, then retry and persist normally. Separately cover the fatal exception path with `UNKNOWN_INTERRUPTED` and a terminal receiver state.
 - **Current-to-backlog conversion:** Inject distinct current and backlog transport messages carrying one exact sample and require one canonical row, one noncanonical matching row and `DUPLICATE_SAME_CONTENT` evidence.
 - **Persistence unavailable:** Stall or fail SQLite, verify admission closes, response-eligible packets select retry-later without reservations, retained work recovers and later health exposes aggregate outage evidence when possible.
 - **Airtime-suppressed acceptance:** Exhaust the durable ACK allowance, inject a valid reading and prove it is accepted, published and persisted without radio transmission.

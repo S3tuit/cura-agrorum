@@ -913,12 +913,22 @@ SET_TX_FAILED
 TX_TIMEOUT
 TX_DONE
 UNKNOWN_INTERRUPTED
+TX_UNCONFIRMED
 ```
 
 `UNKNOWN_INTERRUPTED` is used only when the running communicator regains
 control but cannot determine the attempted ACK's terminal radio outcome. A hard
 process crash or power loss before publication leaves no partial profiling row
 because queue reservations are volatile.
+
+The receiver uses `TX_UNCONFIRMED` for bounded radio handling whose
+TX-profile/SetTx effect or terminal TX IRQ remains unconfirmed, including when
+recovery restores reception. `TX_TIMEOUT` requires a confirmed radio timeout
+IRQ. A definite failure before SetTx uses `SET_TX_FAILED`; T4 remains absent
+if SetTx was never attempted. `UNKNOWN_INTERRUPTED` remains the exceptional
+terminal-instance path. These are receiver profiling results, not ACK domains
+or changes to the radio frame encoding; exact values belong to
+[`receiver/INTERFACE.md`](../../receiver/INTERFACE.md#acktxresult).
 
 When an ACK is constructed, its exact 23-byte frame is stored in `ack_frame`
 whether or not transmission succeeds. Separating `processing_result`,

@@ -50,3 +50,10 @@ class LinuxOsClock:
             minimum_us=_INT64_MIN,
             maximum_us=_INT64_MAX,
         )
+
+    def wait_until_monotonic_us(self, deadline_monotonic_us: int) -> None:
+        """Polling/reset delay; recheck the absolute bound after an early wake."""
+        if type(deadline_monotonic_us) is not int or not 0 <= deadline_monotonic_us <= _UINT64_MAX:
+            raise ValueError("invalid monotonic wait deadline")
+        while (remaining := deadline_monotonic_us - self.now_monotonic_us()) > 0:
+            time.sleep(min(remaining, 1_000_000) / 1_000_000)

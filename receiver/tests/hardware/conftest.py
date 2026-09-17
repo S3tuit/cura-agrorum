@@ -74,6 +74,16 @@ def pytest_collection_finish(session: pytest.Session) -> None:
             "receiver hardware tests require the --receiver-hardware option"
         )
 
+    radio_items = [item for item in hardware_items if item.get_closest_marker("radio")]
+    if radio_items:
+        from tests.hardware.radio_fixture import validate_selection
+        if any(item.get_closest_marker("radio_fault") for item in radio_items):
+            raise pytest.UsageError("radio_fault gate tests are deferred; the manual carrier cannot run them")
+        held_items = [item for item in radio_items if item.get_closest_marker("radio_busy_held")]
+        if held_items and len(session.items) != 1:
+            raise pytest.UsageError("radio_busy_held must run alone; power-off nominal restoration is required afterward")
+        validate_selection(config, required_state="radio_busy_held" if held_items else "radio_nominal")
+
     if any(item.get_closest_marker("destructive") for item in hardware_items):
         if not config.getoption("confirm_receiver_destructive"):
             raise pytest.UsageError(

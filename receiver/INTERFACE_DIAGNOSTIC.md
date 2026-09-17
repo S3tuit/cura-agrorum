@@ -196,7 +196,7 @@ Radio diagnostics use only these operations:
 | `TRANSMIT` | ACK profile installation, buffer write, `SetTx` and terminal TX handling |
 | `RECEIVE` | Receive-profile installation, `SetRx`, DIO1/IRQ handling and packet copying |
 | `RECOVER` | A recovery episode whose initial trigger occurs while no earlier semantic operation applies |
-| `CLEANUP` | Establishing the configured safe radio state, including any sleep command, during controlled shutdown |
+| `CLEANUP` | Establishing the configured safe radio state and releasing handles during controlled shutdown or failed-startup cleanup |
 
 Low-level `READ`, `WRITE` and private command names are encoded as context
 stages/opcodes while the operation retains the enclosing semantic action. When
@@ -213,7 +213,7 @@ The valid error-code/operation combinations are closed rather than advisory:
 | `BUSY_TIMEOUT` | `INITIALIZE`, `TRANSMIT`, `RECEIVE`, `RECOVER`, `CLEANUP` |
 | `COMMAND_STATUS` | `INITIALIZE`, `TRANSMIT`, `RECEIVE`, `RECOVER`, `CLEANUP` |
 | `DEADLINE` | `INITIALIZE`, `TRANSMIT`, `RECEIVE`, `RECOVER`, `CLEANUP` |
-| `UNEXPECTED_IRQ` | `TRANSMIT`, `RECEIVE`, `RECOVER` |
+| `UNEXPECTED_IRQ` | `INITIALIZE`, `TRANSMIT`, `RECEIVE`, `RECOVER`, `CLEANUP` |
 | `DEVICE_ERROR` | `INITIALIZE`, `TRANSMIT`, `RECEIVE`, `RECOVER`, `CLEANUP` |
 | `MALFORMED_RESPONSE` | `INITIALIZE`, `TRANSMIT`, `RECEIVE`, `RECOVER`, `CLEANUP` |
 
@@ -231,6 +231,13 @@ to a confirmed safe operational state and `FATAL` when the receiver instance
 terminates because of it. Initialization failure, including missing hardware,
 is therefore `FATAL`; a definite pre-`SetTx` failure followed by confirmed RX
 restoration is `ERROR`.
+
+Unresolved DIO1/IRQ reconciliation during initialization or cleanup retains
+`UNEXPECTED_IRQ`. Successfully accounted stale IRQs are normal. Failed
+initialization is `FATAL`; a cleanup failure is `ERROR` if the bounded reset
+fallback establishes safety, and `FATAL` otherwise. Intentional shutdown of
+an open recovery episode likewise uses `ERROR` when safe standby is confirmed
+and `FATAL` otherwise; it does not claim operational RX restoration.
 
 ### Context-schema assignments
 
@@ -340,7 +347,9 @@ an operation failed:
 For a diagnostic that never enters `RECOVERING`, both level results are
 `NOT_APPLICABLE` and `recovery_reason = 0`. In a recovery episode, an unneeded
 later level is `NOT_ATTEMPTED`; for example, hard recovery is not attempted
-after soft recovery succeeds.
+after soft recovery succeeds. A level started but interrupted by intentional
+shutdown is `FAILED` because it did not restore RX; an unstarted level remains
+`NOT_ATTEMPTED`. Interruption does not fabricate a backend failure detail.
 
 `recovery_reason` describes why the communicator had to leave its normal state,
 not the error-code namespace and not every failure encountered afterward. When
@@ -399,7 +408,8 @@ to finalization time and is zero only when both monotonic reads were equal.
 `terminal_state` is the communicator's best-known `RadioState` at diagnostic
 finalization. A directly handled nonfatal anomaly normally records confirmed
 `RX_SINGLE`; a recovery episode records `RX_SINGLE`, `RECOVERY_EXHAUSTED` or
-`HARDWARE_MISSING`; and another fatal path records the terminal state selected
+`HARDWARE_MISSING`, or `SHUTDOWN` when intentional shutdown interrupts recovery;
+and another fatal path records the terminal state selected
 before process exit. It never claims `RX_SINGLE` unless the complete receive
 profile and `SetRx` have been confirmed.
 
@@ -421,7 +431,9 @@ fields; they never emit independent diagnostics.
 The same entry increments `radio_recovery_attempts` and exactly one
 `radio_recovery_attempts_by_reason` slot. Returning to confirmed `RX_SINGLE`
 increments `radio_recovery_successes`; entering `RECOVERY_EXHAUSTED` or
-`HARDWARE_MISSING` increments `radio_recovery_failures`. Soft and hard levels
+`HARDWARE_MISSING` increments `radio_recovery_failures`. Intentional shutdown
+of an unfinished recovery also increments `radio_recovery_failures` once,
+because RX was not restored. Soft and hard levels
 do not independently increment those episode counters.
 
 When recovery reaches `RX_SINGLE`, `RECOVERY_EXHAUSTED` or `HARDWARE_MISSING`,
@@ -432,6 +444,14 @@ measurement/profile or profile-only unit, then attempts a separate ordinary
 diagnostic reservation. Diagnostic failure cannot invalidate or delay the
 profile publication.
 
+Intentional shutdown at the next owner-controlled primitive boundary stops
+further recovery and finalizes the original episode exactly once with terminal
+state `SHUTDOWN`, retaining its trigger, reason and correlations. It uses
+`ERROR` after confirmed safe cleanup and `FATAL` otherwise. Preserve the last
+actual recovery failure when present; cancellation alone does not invent one.
+An actual cleanup failure has its separate `CLEANUP` episode. Cleanup shares
+the configured 500 ms shutdown bound, including its optional reset fallback.
+
 A radio anomaly handled without entering `RECOVERING` creates one diagnostic
 directly with `recovery_reason = 0` and both recovery results
 `NOT_APPLICABLE`. The closed severity rules above determine whether it is
@@ -440,6 +460,39 @@ diagnostic with terminal state `INITIALIZATION_FAILED` or `HARDWARE_MISSING`.
 A controlled-shutdown cleanup failure creates one `ERROR` unless the receiver
 is terminating because it cannot establish any safe radio state, in which case
 it is `FATAL`.
+
+Failed-startup cleanup preserves the original fatal `INITIALIZE` episode and
+terminal `INITIALIZATION_FAILED` or `HARDWARE_MISSING`. Each actual safe-state
+or handle-release failure has a separate `FATAL` `CLEANUP` episode retaining
+its precise evidence and that same terminal state. Successful cleanup emits
+no extra episode. The result retains confirmed safety/release independently
+of the initialization failure; terminal shutdown cannot redo cleanup. A held
+BUSY input therefore produces the original `INITIALIZE / BUSY_TIMEOUT` and
+the subsequent `CLEANUP / BUSY_TIMEOUT`, with safety unconfirmed.
+
+Partial acquisition uses the same rule: preserve the original acquisition error
+as `INITIALIZE` and each release failure as its own fatal `CLEANUP` episode.
+SPI close and GPIO release failures retain their separate errno/stage evidence.
+Controlled shutdown likewise retains each release failure, independently of an
+earlier safe-state failure. Emit each once from the operation's lifecycle result;
+a subsequent close or terminal call emits no duplicate. Unexpected implementation
+exceptions propagate for CORE handling rather than becoming radio failure codes.
+
+The initial post-reset status is inspected before any host command is issued;
+its command-status bits alone do not create `COMMAND_STATUS`. Validate its
+structure/mode and the startup device-error mask under the radio interface.
+Confirmed failures of subsequently issued commands remain `COMMAND_STATUS`;
+unexpected device-error bits remain `DEVICE_ERROR` with their exact mask.
+
+Runtime status attribution uses the correlated radio-event observation. A
+matching fresh timeout IRQ, standby fallback and clean device-error mask can
+explain command-status timeout; it does not mean `GetIrqStatus` failed. An
+unexpected RX timeout is `RECEIVE + UNEXPECTED_IRQ`; a confirmed timely TX
+timeout is the ordinary `TX_TIMEOUT` result without a timeout diagnostic.
+Processing/execution status failures and unexplained command-status timeout
+remain `COMMAND_STATUS`, retaining observed IRQ/status/device-error evidence.
+Malformed, contradictory, stale or late evidence retains the existing error,
+recovery and conservative TX-outcome rules.
 
 If the process crashes during recovery, the in-RAM builder may be lost. If
 diagnostic admission or SQLite is unavailable at finalization, the completed
@@ -459,16 +512,18 @@ they do not relax radio recovery, airtime charging or terminal-state policy.
 | Confirmed SX1262 command-status failure | Current semantic operation plus `COMMAND_STATUS` | Preserve opcode and chip status; use command-outcome context to decide recovery and conservative airtime treatment |
 | Nonzero SX1262 device-error bits | Current semantic operation plus `DEVICE_ERROR` | Preserve raw bits and enter bounded recovery unless the architecture explicitly proves the operation and receive state unaffected |
 | DIO1/IRQ combination invalid for the active state | `RECEIVE` or `TRANSMIT` plus `UNEXPECTED_IRQ` | If IRQ clear and RX re-arm succeed directly, emit one `WARN`; otherwise make it the trigger of one recovery diagnostic |
+| Unresolved DIO1/IRQ reconciliation during startup or shutdown | `INITIALIZE` or `CLEANUP` plus `UNEXPECTED_IRQ` | Preserve the IRQ evidence; initialization failure is `FATAL`; cleanup failure is `ERROR` after safe fallback or `FATAL` without confirmed safety |
 | PHY header error, CRC error or confirmed TX-timeout IRQ followed by successful RX re-arm | No diagnostic | Record the normal radio/profile outcome and counters; do not duplicate it in `DiagnosticV1` |
 | Structurally invalid packet-status, buffer-status or command response | Current semantic operation plus `MALFORMED_RESPONSE` | Discard untrusted returned fields, preserve raw status only when its validity is known, and recover if the radio state cannot be confirmed |
-| Definite failure before `SetTx` can take effect | `TRANSMIT` plus the precise trigger code | Reclaim tentative airtime, record `SET_TX_FAILED`, restore confirmed RX, and emit one `ERROR`; if restoration becomes uncertain, continue the same diagnostic as a recovery episode |
-| `SetTx` or a TX-profile command crossed SPI but its effect is uncertain | `TRANSMIT` plus the precise trigger code and command outcome `UNCERTAIN` | Retain the complete airtime charge, record the terminal profiling outcome, and enter one recovery episode; do not create a separate “uncertain TX” diagnostic code |
-| No valid terminal TX IRQ before the bound | `TRANSMIT + DEADLINE` | Retain the charge when TX may have started and enter recovery; a confirmed timeout IRQ handled normally is the no-diagnostic case above |
+| Definite failure before `SetTx` can take effect, with no preceding TX-profile uncertainty | `TRANSMIT` plus the precise trigger code | Reclaim tentative airtime, record `SET_TX_FAILED` with T4 absent if `SetTx` was never attempted, restore confirmed RX, and emit one `ERROR`; if restoration becomes uncertain, continue the same diagnostic as a recovery episode |
+| `SetTx` or a TX-profile command crossed SPI but its effect is uncertain | `TRANSMIT` plus the precise trigger code and command outcome `UNCERTAIN` | Retain the complete airtime charge consumed before TX-profile installation, record `TX_UNCONFIRMED`, and enter one recovery episode; T4 remains absent if `SetTx` was never attempted; do not create a separate “uncertain TX” diagnostic code |
+| No valid terminal TX IRQ before the bound | `TRANSMIT + DEADLINE` | Retain the charge, record `TX_UNCONFIRMED`, and enter recovery; a confirmed timeout IRQ handled normally records `TX_TIMEOUT` and is the no-diagnostic case above |
 | RX-profile restoration or `SetRx` fails on the normal path | `RECEIVE` plus the precise trigger code | Select `RX_PROFILE_RESTORE_FAILED` or `SET_RX_FAILED` as recovery reason and enter one recovery episode |
 | Soft recovery fails | Keep the original operation/error code | Set soft result to `FAILED`, retain its detail as the last recovery failure, increment health counters, and attempt the one bounded hard recovery without emitting another diagnostic |
 | Soft recovery succeeds | Keep the original operation/error code | Set soft result to `SUCCEEDED`, hard result to `NOT_ATTEMPTED`, return to confirmed `RX_SINGLE`, and emit the one completed `ERROR` diagnostic |
 | Hard recovery succeeds | Keep the original operation/error code | Set hard result to `SUCCEEDED`, return to confirmed `RX_SINGLE`, and emit the one completed `ERROR` diagnostic |
 | Hard recovery fails or hardware becomes unreachable | Keep the original operation/error code | Preserve the final recovery failure detail, enter `RECOVERY_EXHAUSTED` or `HARDWARE_MISSING`, emit the one completed `FATAL` diagnostic, then terminate the receiver instance |
+| Intentional shutdown interrupts recovery | Keep the original operation/error code | Stop recovery, perform bounded cleanup, count one unsuccessful episode and finalize it in `SHUTDOWN`; use `ERROR` if safe, otherwise `FATAL`, without fabricating a recovery failure detail |
 | Safe-state or sleep command fails during controlled shutdown | `CLEANUP` plus the precise trigger code | Emit one best-effort diagnostic and continue bounded shutdown; correctness must not depend on its persistence |
 
 A synchronous communicator-state settlement failure that follows an uncertain

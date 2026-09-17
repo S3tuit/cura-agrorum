@@ -142,6 +142,7 @@ _ALLOWED_ENUM_MEMBERS: dict[str, dict[str, int]] = {
         "TX_TIMEOUT": 4,
         "TX_DONE": 5,
         "UNKNOWN_INTERRUPTED": 6,
+        "TX_UNCONFIRMED": 7,
     },
     "cura_receiver.generated.receiver_enums_generated.DiagnosticErrorDomain": {
         "NONE": 0,

@@ -29,8 +29,10 @@ detection for the queue's real-thread tests. `fakes/kernel_clock.py`,
 `fakes/chrony.py` and `fakes/ds3231.py` implement the existing production time
 ports. Each was introduced with its first runtime state-machine test. They
 supply explicit queued outcomes and named call hooks; they never infer policy,
-advance time or acknowledge persistence. SX1262 and other fakes still wait for
-their production interfaces and component tests.
+advance time or acknowledge persistence. The SX1262 physical-port fake in `fakes/radio_io.py` was moved from its local
+command test only when the owner tests reused it. It models peripheral storage
+and explicit SPI/GPIO effects, with no receiver policy or expected profiles.
+Other fakes still wait for their production interfaces and component tests.
 
 The ordinary-persistence suites now share reviewed literal entity inputs in
 `builders/persistence.py`. Their real-file host fixture is local to the host

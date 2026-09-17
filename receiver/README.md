@@ -20,6 +20,10 @@ interfaces, Python package, schema sources, generators, and tests.
   retention, oscillator-stop and recovery checks with evidence requirements.
   [Recorded results](hardware/ds3231/results/README.md) retain dated outcomes
   and raw evidence alongside the procedure in Git.
+- [`tests/hardware/RADIO_TESTS.md`](tests/hardware/RADIO_TESTS.md) describes
+  explicit SX1262 component-fixture selection, source staging and evidence.
+  The [carrier schematic](hardware/TEST_CARRIER.md#proposed-sx1262-extension)
+  remains a proposal until the operator fits and checks the board.
 
 The protocol contract remains under
 [`../protocol/protocol-v2-lora/`](../protocol/protocol-v2-lora/).

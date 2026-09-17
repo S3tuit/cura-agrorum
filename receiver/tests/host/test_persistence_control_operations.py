@@ -181,7 +181,7 @@ def test_invalid_text_archive_preserves_exact_values(controls, column, invalid_t
             "SELECT calculated_blob_sha256, preserved_by_receiver_instance_id, preserved_at_monotonic_us, database_schema_version "
             "FROM quarantined_communicator_states ORDER BY quarantined_state_id"
         ).fetchall()
-        == [(expected_digest, INSTANCE, 100, 11)] * 2
+        == [(expected_digest, INSTANCE, 100, 12)] * 2
     )
     assert operations.load_state(command(Kind.LOAD_STATE)).state == synthetic()
 

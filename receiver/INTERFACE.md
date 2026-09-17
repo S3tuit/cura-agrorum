@@ -1019,6 +1019,106 @@ The timestamp fields are present only in the states that use them. This state
 is rebuilt after process restart and is never added to
 `CommunicatorStateV1`.
 
+### Radio backend configuration
+
+The pilot radio configuration uses these physical-duration bounds. Maximum
+lifetimes use `maximum_lifetime_monotonic_us()` and minimum reset assertion
+uses `minimum_wait_monotonic_us()` before checked absolute-deadline addition.
+The earlier enclosing or caller-supplied deadline always wins.
+
+| Setting | Pilot value |
+|---|---:|
+| SPI mode / bits / speed | 0 / 8 / 1,000,000 Hz |
+| Reset assertion, minimum | 1,000 us |
+| Startup, one reset/full-initialization attempt | 2,000,000 us |
+| One BUSY wait | 100,000 us |
+| Ordinary receive/profile operation | 500,000 us |
+| SX1262 ACK TX timeout | 100,000 us, 6,400 radio ticks |
+| Host terminal-TX-event bound | 250,000 us |
+| Soft recovery, at most once per episode | 500,000 us |
+| Hard recovery, at most once per episode | 2,000,000 us |
+| Complete shutdown, including its optional reset fallback | 500,000 us |
+| DIO3 oscillator control / startup | 1.7 V / 5,000 us |
+
+DIO2 controls the module's RF switch. The module uses DCDC regulation and
+the standard SX1262 PA configuration with protocol output power +14 dBm and
+40 us ramp. Idle reception is single-receive `SetRx(0)`; absence of traffic
+is normal, not a radio deadline diagnostic. A terminal DIO1 edge at the
+inclusive host TX deadline is timely; a later edge is not. T0/T5 come only
+from kernel edge timestamps, never a userspace reconstruction. The caller's
+airtime-grant deadline also bounds SetTx submission.
+
+The first post-reset status is retained as `initial_reset_status`, separately
+from subsequent command status. A structurally valid `STDBY_RC` status may
+carry a historical execution-failure indication (for example `0x2A`). It is
+not confirmation of a host command. A fresh `SetStandby(0)` must be confirmed
+before setup. The startup device-error mask permits only `XOSC_START_ERR = 0x0020`; any other bit fails initialization with the exact observed mask.
+After oscillator configuration, error clearing and calibration, device errors
+must be zero. Ordinary command-status timeout/processing/execution failures
+remain rejected. Repeated post-reset `0x00`/`0xFF` retains the missing-hardware
+classification.
+
+`RadioEventObservation` is an immutable component value with `irq_status`
+(`u16`), `chip_status` (`u8`) and `device_errors` (`u16`). It groups bounded
+sequential device reads, not an atomic hardware snapshot. Structural validation
+still applies to the GetStatus byte. Status command bits `3` (for example
+`0x26`) can represent timeout completion only when the observation has exactly
+`IRQ_TIMEOUT = 0x0200`, mode `STDBY_RC = 2`, zero device errors, and a fresh edge
+correlated to the active operation. Command bits `4`/`5` remain processing/
+execution errors. Other status/IRQ mismatches cannot prove completion.
+
+RX terminal evidence is RxDone/header/CRC error (without unrelated IRQ bits),
+or the isolated timeout IRQ; TX terminal evidence is exactly TxDone or timeout.
+Terminal evidence requires the configured standby fallback. Immediate completion
+uses an edge no earlier than command submission and no later than the enclosing
+deadline (also the 250 ms host bound for TX); preserve that edge for subsequent
+owner handling. No observed edge may be in the future relative to capture time.
+The observation path does not relax ordinary command-result validation.
+
+An unexpected RX timeout retains `UNEXPECTED_IRQ` and requires complete RX
+restoration. A timely matching TX timeout retains `TX_TIMEOUT`, absent T5 and
+its airtime charge. Capture completion facts before fresh standby/IRQ clearing;
+a subsequent restore failure cannot erase an already confirmed TX outcome.
+
+`RadioResult.safe_shutdown` is `True` only when configured radio safety and
+successful handle release are both confirmed, `False` after an unsuccessful
+or unconfirmed cleanup assessment, and `None` when no safety assessment was
+attempted. This result also applies to failed-startup cleanup. It never changes
+`INITIALIZATION_FAILED` or `HARDWARE_MISSING` into `SHUTDOWN`, and subsequent
+terminal calls cannot perform device I/O. Failed-startup cleanup uses only
+the remaining 2 s startup bound, without an additional reset/retry budget.
+
+`RadioLifecycleFailure` is immutable, with optional `primary_failure: RadioFailure`
+and `release_failures: tuple[RadioFailure, ...]`. The primary records an acquisition
+failure; the ordered tuple records SPI close followed by GPIO release failures,
+at most two. At least one failure is required. `RadioLifecycleError` carries this
+value through the backend exception boundary; its ordinary `failure` projection
+is the primary when present, otherwise the first release failure. Consumers of
+lifecycle operations must preserve the complete value rather than just that
+projection. Failed `open` releases acquired resources before raising; failed
+`close` has no acquisition primary. Handles are detached once even when release
+fails, and subsequent close neither retries nor replays failures. A lone unexpected
+exception propagates unchanged; multiple failures involving an unexpected exception
+propagate together as a `BaseExceptionGroup` for CORE handling.
+
+`RadioIo.resynchronize_events(deadline_monotonic_us=...)` is an explicit physical
+port operation used by soft/hard recovery in confirmed standby, after IRQs are
+accounted for/cleared and before SetRx. The backend requires low DIO1 before and
+after it. A normal sequence gap retains structurally valid consumed metadata but
+does not advance the accepted baseline; further normal reads fail until explicit
+resynchronization succeeds. Resynchronization polls without waiting for traffic,
+drains at most 64 stale events, and commits the latest consumed sequence/timestamp
+only after an empty queue is observed. Every syscall is bounded before/after by
+the existing enclosing deadline; queued events after SetRx are never drained here.
+The retained/drained records must have the configured DIO1 line, rising edge,
+positive increasing sequence, nondecreasing valid monotonic timestamp and no
+future timestamp relative to its original capture (using the existing microsecond
+precision), even if recovery runs after that timestamp.
+Forward sequence gaps are allowed only while accounting stale recovery events.
+Malformed/regressing records or an event read failure with unknown consumption
+leave the stream untrusted; an empty queue alone cannot repair missing baseline
+evidence. Failed synchronization cannot be hidden by resetting the SX1262.
+
 ### `RadioState`
 
 | Value | Name | Meaning |
@@ -1193,9 +1293,27 @@ The nonzero values equal the protocol ACK-domain bytes.
 | `4` | `TX_TIMEOUT` |
 | `5` | `TX_DONE` |
 | `6` | `UNKNOWN_INTERRUPTED` |
+| `7` | `TX_UNCONFIRMED` |
 
 Value `0` is permitted only in private pre-TX communicator state. Every
 published profile contains a terminal value.
+
+`SET_TX_FAILED` means a definite failure before `SetTx` could take effect.
+T4 is absent when preparation failed before any `SetTx` attempt, and present
+when that command was attempted but definitely did not take effect. T5 is
+absent in both cases; a preparation timestamp must not be substituted for T4.
+
+`TX_TIMEOUT` requires a confirmed radio timeout IRQ. A host deadline without
+a valid terminal IRQ, uncertain `SetTx`, or an uncertain TX-profile command
+uses `TX_UNCONFIRMED`. This result retains the complete tentative airtime
+charge and may complete after confirmed RX restoration or in a terminal
+receiver state. T4 is present exactly when `SetTx` was attempted; profile
+uncertainty before that attempt leaves T4 absent. T5 is absent because no
+valid TxDone edge establishes completion. The completed radio episode records
+the precise trigger and command-effect certainty separately.
+
+`UNKNOWN_INTERRUPTED` remains the exceptional terminal-instance result; it
+does not describe an ordinary bounded radio recovery that restores RX.
 
 ### `PersistenceClassification`
 
@@ -1493,6 +1611,9 @@ at completion. There is no default assumption that reception was restored.
 | `INITIALIZING`, `INITIALIZATION_FAILED`, `TX_ACTIVE`, `RECOVERING` | Cannot complete a copied packet occurrence. |
 
 The existing ACK/timestamp consistency and event ordering checks also apply.
+`SET_TX_FAILED` and `TX_UNCONFIRMED` permit absent T4 under the rules in
+[`AckTxResult`](#acktxresult); both forbid T5. `TX_TIMEOUT` requires T4 and
+forbids T5, while `TX_DONE` requires both T4 and the kernel TxDone edge T5.
 `UNKNOWN_INTERRUPTED` accompanies a terminal receiver state, as required by
 the exceptional finalization path in `ARCHITECTURE.md`. A timestamp never
 substitutes for confirmation of the reported state. The radio owner establishes
@@ -2607,8 +2728,11 @@ that process-local ownership metadata is serialized.
 At the bucket boundary, or earlier when a new grant is needed, settlement keeps
 the loaded baseline unchanged and replaces only the current process's
 provisional increment with airtime actually or possibly transmitted under that
-increment. A definite failure before `SetTx` can take effect permits reclaiming
-the corresponding unused part. The same atomic next-generation commit may
+increment. Tentative consumption precedes the first TX-profile command, after
+the ACK buffer write. A definite failure before `SetTx` can take effect permits
+reclaiming the corresponding unused part only when no preceding TX-profile
+command has an uncertain effect. Profile uncertainty retains the complete
+charge even if `SetTx` was never attempted. The same atomic next-generation commit may
 precharge the next grid bucket. No later TX uses the next increment before that
 commit is acknowledged. An unknown commit outcome suppresses TX until an exact
 load reconciles the installed generation and bytes.
@@ -3067,6 +3191,12 @@ validated archive or backup procedure, creates a fresh database, and installs
 it only after validation. Startup never drops, upgrades or rewrites an
 incompatible database. Complete automatic retention applies inside one active
 epoch; earlier epochs remain read-only archives.
+
+Schema epoch 12 appends `AckTxResult.TX_UNCONFIRMED = 7` to the persisted
+catalogue. Existing ACK result assignments and the communicator-state encoding
+are unchanged. Databases from epoch 11 remain archived under the same
+fresh-database deployment rule; adding the catalogue entry in place is not a
+supported migration.
 
 SQLite `application_id = 0x43555252` (`CURR`, decimal `1129665106`) remains the
 separate SQLite-header file-type marker. `database_metadata` is the single

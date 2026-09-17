@@ -29,6 +29,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption("--airtime-reboot-phase", choices=("prepare", "verify"))
     group.addoption("--airtime-reboot-mode", choices=("trusted", "unavailable"))
     group.addoption("--airtime-reboot-session", metavar="PATH")
+    group.addoption("--receiver-radio-fixture", metavar="PATH")
+    group.addoption("--receiver-radio-evidence", metavar="PATH")
 
 
 def pytest_configure(config: pytest.Config) -> None:

@@ -914,6 +914,93 @@ The communicator requests DIO1 as an input with rising-edge detection and blocks
 
 BUSY may initially be polled rather than handled through a separate edge-event mechanism. Every BUSY wait must have a timeout.
 
+The pilot Linux backend uses the [documented Waveshare carrier](hardware/TEST_CARRIER.md#proposed-sx1262-extension),
+SPI0 CE0 at 1 MHz (mode 0, eight bits, MSB first), and libgpiod v2 with
+kernel monotonic DIO1 timestamps. The radio owner calls its backend on one
+thread. An operation reports command certainty separately from an error;
+expected OS failures preserve errno, while unexpected implementation exceptions
+remain CORE failures. Neither backend nor state machine admits queue entities
+or acquires/settles an airtime grant.
+
+The configured shutdown state is confirmed `STDBY_RC`, with IRQ routing
+disabled and pending IRQs accounted for before resource release. If direct
+confirmation fails, one reset-to-standby attempt is permitted within the same
+shutdown deadline. An unconfirmed state is never reported safe. Standby is
+chosen over cold sleep so status can be checked without waking the radio.
+Shutdown suppresses further TX and preserves conservative facts for any active
+operation; terminal states cannot be revived by cleanup.
+
+The finite bounds in [the radio backend interface](INTERFACE.md#radio-backend-configuration)
+apply to every enclosing operation and its primitives. Checking an absolute
+deadline before and after a syscall does not make a Linux SPI ioctl preemptible
+or promise hard real-time scheduling. Missing devices produce
+`HARDWARE_MISSING`; permission denial retains its exact errno and fails startup
+as `INITIALIZATION_FAILED`. Repeated all-zero/all-one status after reset is
+unresponsive-hardware evidence, not proof of a particular chip identity.
+
+Status decoding is separate from confirmation of an issued command. After
+reset, preserve the initial status and validate its structure and `STDBY_RC`
+mode; its command-status field does not confirm a host command. Require a
+fresh confirmed `SetStandby(STDBY_RC)` before module setup. Inspect device
+errors, allowing only the documented TCXO startup error, then configure the
+oscillator, clear the startup errors and recalibrate. Clean device errors and
+the complete receive profile are required before RX. Later command failures
+remain errors; startup adds no reset attempt or extension of its bound.
+
+Failed initialization retains its original terminal state and fatal episode.
+Before returning that terminal result, attempt safe standby when hardware is
+reachable and release handles within the remaining startup bound, without a
+new reset or retry. Preserve the actual safety/release result and any separate
+cleanup failure; successful cleanup does not turn initialization into success.
+Shutdown of that terminal instance returns retained facts without further I/O.
+
+Resource acquisition and release report immutable lifecycle failure evidence.
+The Linux adapter releases every acquired handle once when opening fails and
+reports both the original acquisition failure and all release failures in that
+same operation. A later close never replays those errors or retries detached
+handles. Failed startup and controlled shutdown preserve each release failure
+as its own cleanup episode; release failure makes safety unconfirmed. Unexpected
+implementation exceptions remain CORE failures, including when cleanup also fails.
+
+Command confirmation must account for immediate completion: a fresh expected
+terminal IRQ with the expected fallback mode can prove a submitted RX/TX
+command completed before its active mode was sampled. Stale IRQs cannot prove
+a new command. Complete profile confirmation is still required before RX
+rearm can succeed.
+
+Runtime event handling first captures an immutable observation of IRQ status,
+chip status and device errors. Reading that evidence does not interpret old
+command-status bits as confirmation of the read itself. The owner reconciles
+the observation with its active RX/TX operation and fresh kernel edge, including
+submission time and the applicable deadline. A timeout indication is completion
+only with the matching timeout IRQ, standby fallback and clean device errors.
+Processing/execution failures, malformed or contradictory evidence, stale edges
+and late TX edges retain their failure/recovery behavior. An unexpected timeout
+during idle single RX remains an unexpected-IRQ anomaly requiring full rearm.
+
+The same evidence confirms immediate completion of a submitted RX/TX command
+when its active mode was missed. Preserve the consumed kernel edge for the
+owner; neither discard it nor synthesize a timestamp. After preserving a proven
+terminal observation, confirm a fresh standby command before packet-side
+register writes, IRQ clearing or profile mutation. Ordinary command confirmation
+remains strict, independently of this event observation boundary.
+
+The implemented component is `cura_receiver.radio.Radio`, called synchronously
+by its owning thread over `Sx1262` and the physical `RadioIo` port. `initialize`
+and `receive` return immutable state/packet facts; a response-free path calls
+`rearm`. The ACK path is `prepare_ack`, the caller's airtime charge, then
+`start_ack` and `finish_ack`. A returned `RECOVERING` state requires `recover`
+or intentional shutdown before another packet/ACK operation. Completed episode
+results have no diagnostic identity or queue reservation; the caller can use
+`radio_diagnostic` after allocating its own identity/sequence.
+
+`request_shutdown` only sets a thread-safe intent flag. The owner checks it
+between physical primitives; `shutdown` confirms safe standby and detaches
+resources on that owner. An idle receive wait is clipped to one ordinary
+operation bound so the owner can revisit shutdown intent. Unexpected Python
+exceptions propagate for CORE handling; they are not radio status values.
+A complete packet snapshot remains available if subsequent IRQ clearing fails.
+
 ### Required radio profiles and IQ transitions
 
 The complete profile in [Protocol v2 LoRa: LoRa PHY framing](../protocol/protocol-v2-lora/README.md#lora-phy-framing) is normative for receiver interoperability. Receiver initialization, normal operation and recovery must apply that profile exactly; its frequency, modulation, packet, sync-word, CRC, gain, ramp and direction-specific IQ requirements are not deferred implementation choices. Hardware configuration may add module-specific regulator, TCXO, calibration, RF-switch and PA details, but it must not override the protocol PHY profile without a protocol revision.
@@ -931,8 +1018,8 @@ ACK frame construction changes only Pi-owned bytes. It does not configure the ra
 
 ```text
 write the exact ACK frame to the SX1262 buffer
-  -> install ACK_TX_PROFILE, including inverted IQ
   -> tentatively consume the charged airtime allowance
+  -> install ACK_TX_PROFILE, including inverted IQ
   -> issue SetTx
   -> handle the terminal TX outcome
   -> reinstall UPLINK_RX_PROFILE, including normal IQ and boosted RX
@@ -941,6 +1028,16 @@ write the exact ACK frame to the SX1262 buffer
 ```
 
 If ACK TX-profile installation definitely fails before `SetTx` can take effect, no transmission started; the communicator restores `UPLINK_RX_PROFILE` and re-arms RX, or enters `RECOVERING` if it cannot confirm that state. If any profile command or `SetTx` has an uncertain outcome, the communicator must not issue `SetRx` under a possibly inverted-IQ or otherwise partial configuration. It enters bounded recovery, retains any required conservative airtime charge, restores the complete receive profile and only then confirms `SetRx`.
+
+The communicator consumes tentative allowance before the first TX-profile
+command so a profile-uncertainty path already has a charge to retain. The radio
+component reports command and completion facts; it owns neither grant
+acquisition nor refund/settlement policy. A definite pre-`SetTx` failure with no
+uncertain preceding TX-profile command permits refund and records
+`SET_TX_FAILED`, with T4 absent if `SetTx` was never attempted. Uncertain
+TX-profile/`SetTx` effects or a missing terminal IRQ record `TX_UNCONFIRMED`
+after bounded recovery, whether RX is restored or recovery reaches a terminal
+state. A confirmed radio timeout IRQ alone records `TX_TIMEOUT`.
 
 ## SX1262 state model
 
@@ -1295,9 +1392,10 @@ deadline. Transmission follows this ordering:
 prune fully expired buckets
   -> require acknowledged current-process allowance for the complete ACK charge
   -> tentatively consume that allowance
+  -> install and confirm ACK_TX_PROFILE
   -> issue SetTx
-  -> retain the charge if SetTx started or its effect is uncertain
-  -> reclaim the tentative charge only after a definite pre-SetTx failure
+  -> retain the charge if SetTx started or a TX-profile/SetTx effect is uncertain
+  -> reclaim only after a definite pre-SetTx failure with no profile uncertainty
 ```
 
 At the bucket boundary the communicator freezes the grant and requests one
@@ -1408,8 +1506,8 @@ Check acknowledged airtime bucket grant
   |
   `--> available
           -> write exact selected ACK frame to the SX1262 buffer
-          -> install and confirm ACK_TX_PROFILE, including inverted IQ
           -> tentatively consume charged allowance
+          -> install and confirm ACK_TX_PROFILE, including inverted IQ
           -> SetTx
           -> T4 = SetTx issued or attempted
           -> TxDone / DIO1
@@ -2336,7 +2434,10 @@ Examples:
 - TX failure:
   - do not retract the already admitted measurement candidate or occurrence profile;
   - retain the airtime charge when `SetTx` started or its effect is uncertain;
-  - reclaim tentative allowance only after a definite pre-`SetTx` failure;
+  - reclaim tentative allowance only after a definite pre-`SetTx` failure with
+    no uncertain preceding TX-profile command;
+  - publish `TX_UNCONFIRMED` after an uncertain TX-profile/`SetTx` effect or a
+    missing terminal IRQ, including when bounded recovery restores RX;
   - after a known terminal TX IRQ, restore `UPLINK_RX_PROFILE` and return directly to `RX_SINGLE` only after `SetRx` is confirmed;
   - enter `RECOVERING` when the TX outcome or resulting radio mode or profile is uncertain, or receive-profile restoration or RX re-arming fails;
   - allow a node retry to repeat the normal queue-reservation path and deterministic ACK construction later.
@@ -2374,7 +2475,9 @@ The first bounded level is soft resynchronization:
 3. Read and record IRQ and device-error information where possible.
 4. Clear the relevant IRQs.
 5. Restore the complete protocol-defined `UPLINK_RX_PROFILE` and required IRQ routing.
-6. Issue and confirm `SetRx`.
+6. In confirmed standby, account for/clear IRQs and explicitly resynchronize the
+   Linux DIO1 event stream within the same recovery deadline.
+7. Issue and confirm `SetRx`.
 
 Successful restoration of `UPLINK_RX_PROFILE` followed by confirmation of `SetRx` returns the state to `RX_SINGLE`, unless a new DIO1 event requires an immediate transition to `RX_EVENT_PENDING`.
 
@@ -2382,15 +2485,37 @@ If soft resynchronization fails, perform bounded hard recovery:
 
 1. Toggle the SX1262 reset signal.
 2. Repeat the complete initialization sequence, including the module-specific setup and the protocol-defined `UPLINK_RX_PROFILE`.
-3. Clear or account for pending IRQs.
+3. Clear or account for pending IRQs and explicitly resynchronize the Linux
+   DIO1 event stream within the hard-recovery deadline.
 4. Issue and confirm `SetRx`.
 
 The pilot should attempt one soft resynchronization followed by one hardware reset and full reinitialization. These counts may become configuration values, but must remain finite. If required hardware becomes unavailable, enter `HARDWARE_MISSING`. If hard recovery completes without confirming `RX_SINGLE`, enter `RECOVERY_EXHAUSTED`. Recovery must never become an unbounded reset loop.
+
+A radio reset cannot repair the Linux adapter's sequence bookkeeping. A missing
+GPIO event rejects the affected receive/TX observation and requires recovery.
+Keep structurally valid consumed-event metadata as recovery evidence, separately
+from the accepted sequence baseline. Before rearm, explicit stream resynchronization
+may adopt this evidence and drain stale queued events after IRQ clearing. It must
+confirm an empty queue and low DIO1 within its bounds; malformed or regressing
+metadata cannot establish synchronization. Report recovery success only after
+both stream synchronization and the complete radio receive state are confirmed.
+An event generated after the new SetRx remains pending for the owner.
 
 Returning to confirmed `RX_SINGLE`, entering `HARDWARE_MISSING` or entering
 `RECOVERY_EXHAUSTED` finalizes exactly one diagnostic for the complete recovery
 episode. Recovery-stage failures update the builder and health counters rather
 than emitting separate diagnostics.
+
+Intentional shutdown also terminates an open recovery episode. Suppress TX
+immediately and stop further recovery at the next owner-controlled primitive
+boundary. Within the shared shutdown bound, establish safe standby and release
+resources. Finalize the original episode once in `SHUTDOWN`, count one recovery
+failure (no return to RX), and preserve the original trigger and correlations.
+A started but interrupted recovery level is failed; an unstarted level remains
+not attempted. Keep actual last-failure evidence without inventing a backend
+error for cancellation. The diagnostic is `ERROR` after safe cleanup or
+`FATAL` without confirmed safety; an actual cleanup failure has its own
+`CLEANUP` episode under the diagnostic contract.
 
 ## Concurrency model
 

@@ -852,6 +852,13 @@ class ProtocolIngress:
                 )
         elif terminal.ack_tx_result in {
             AckTxResult.SET_TX_FAILED,
+            AckTxResult.TX_UNCONFIRMED,
+        }:
+            if t5 is not None:
+                raise ProtocolIngressInterfaceError(
+                    "failed or unconfirmed TX forbids T5"
+                )
+        elif terminal.ack_tx_result in {
             AckTxResult.TX_TIMEOUT,
             AckTxResult.UNKNOWN_INTERRUPTED,
         }:

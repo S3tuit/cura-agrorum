@@ -223,7 +223,7 @@ def test_schema_fingerprint_is_exact_schema_sql_sha256() -> None:
         hashlib.sha256(schema_bytes).digest() == generated.DATABASE_SCHEMA_FINGERPRINT
     )
     assert generated.SQLITE_APPLICATION_ID == 0x43555252
-    assert generated.DATABASE_SCHEMA_VERSION == 11
+    assert generated.DATABASE_SCHEMA_VERSION == 12
 
 
 # Requires every declared catalogue, entity table, and trigger in assembled SQL.

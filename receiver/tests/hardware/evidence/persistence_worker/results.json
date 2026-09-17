@@ -1,0 +1,334 @@
+{
+  "kind": "Curated results; JSON values and JUnit outcomes extracted from original captures on 2026-09-17",
+  "provenance": "original_path fields identify historical inputs, which may be deleted; original_sha256 identifies their captured bytes. These are not live links or claims of retaining the original file.",
+  "date": "2026-09-08",
+  "source_manifest_sha256": "997444effaad8a468a65480f6d56e7ac06e43a72a4b970725d1e9efd256b3ed2",
+  "component": {
+    "original_path": "persistence_worker/2026-09-08/target-results-v2.xml",
+    "original_sha256": "bc3d933c7956e5b6e74a0a0a1aff99971fa9cf18918422d88eb627ef093f39c0",
+    "extracted": {
+      "tests": 29,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "cases": [
+        {
+          "name": "test_target_mixed_ordinary_workload[1]",
+          "seconds": "1.309",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_mixed_ordinary_workload[7]",
+          "seconds": "0.514",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_mixed_ordinary_workload[32]",
+          "seconds": "0.377",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_ordinary_process_kill[after_profile_write]",
+          "seconds": "1.028",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_ordinary_process_kill[before_commit]",
+          "seconds": "1.001",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_ordinary_process_kill[after_commit]",
+          "seconds": "1.003",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_ordinary_process_kill[after_acknowledgement]",
+          "seconds": "1.008",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_corrupt_artifacts_and_maintenance",
+          "seconds": "0.549",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_production_queue_preallocates_and_uses_all_500_slots",
+          "seconds": "0.059",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_queue_pressure_recovers_after_consumer_acknowledgement",
+          "seconds": "0.032",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_sustained_handoff_wraparound_latency_and_close_drain",
+          "seconds": "1.468",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_control_latency[idle]",
+          "seconds": "0.280",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_control_latency[commit]",
+          "seconds": "0.293",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_control_latency[backoff]",
+          "seconds": "0.274",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_threshold_checkpoint_stall",
+          "seconds": "0.615",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_worker_process_kill[startup_after_commit]",
+          "seconds": "1.092",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_worker_process_kill[state_after_archive]",
+          "seconds": "1.147",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_worker_process_kill[state_after_commit]",
+          "seconds": "1.162",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_worker_process_kill[marker_before_commit]",
+          "seconds": "1.091",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_worker_process_kill[marker_after_commit]",
+          "seconds": "1.112",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_worker_process_kill[ordinary_before_ack]",
+          "seconds": "1.264",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_worker_process_kill[before_close]",
+          "seconds": "1.131",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_worker_mixed_race_soak",
+          "seconds": "30.760",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_runtime_processes_reviewed_readings_without_radio[ \\x01\\x01\\x02\\x03\\x04\\x05\\x06\\x07\\x08D3\"\\x11\\xad\\xaew\\xb2\\xafVN\\xeaa\\x86\\x17D\\xee\\xf3'1c}\\x1d\\x12\\xac\\x8b\\x18o\\xe3c\\x88\\xc2\\xed\\xed\\x90\\xd5A\\xbb\\x93\\x0fT\\x83\\x08\\xb9]",
+          "seconds": "0.005",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_runtime_processes_reviewed_readings_without_radio[ \\x02\\x01\\x02\\x03\\x04\\x05\\x06\\x07\\x08D3\"\\x11\\x0b\\xad\\xc9\\x935\\xdbt\\x91\\x0f7\\x8a\\xea\\xc4\\x18\\x92\\x87KBY\\xd5\\x99\\xb5Y\\x14\\xddC\\xec\\xc7P&\\xb7C\\xe3k\\xb7\\x87adNw]",
+          "seconds": "0.005",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_runtime_rejects_invalid_authenticated_frame_without_radio",
+          "seconds": "0.003",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_sqlite_capabilities",
+          "seconds": "0.176",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_configuration_and_boot_identity",
+          "seconds": "0.007",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_process_restart_identities",
+          "seconds": "1.134",
+          "outcome": "passed"
+        }
+      ]
+    }
+  },
+  "destructive": {
+    "original_path": "persistence_worker/2026-09-08/destructive-results-v2.xml",
+    "original_sha256": "fb17fda994ab79d20b288f68b91f44d8b9899bdb0155b8d4c41cceaaf69c26a3",
+    "extracted": {
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "cases": [
+        {
+          "name": "test_target_bounded_full_recovery",
+          "seconds": "2.556",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_access_recovery[permissions]",
+          "seconds": "0.964",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_access_recovery[readonly_mount]",
+          "seconds": "1.088",
+          "outcome": "passed"
+        }
+      ]
+    }
+  },
+  "timing_summary": {
+    "original_path": "persistence_worker/2026-09-08-summary.json",
+    "original_sha256": "ac654c431f49a69ed925725744e0510da6838a80a9e5cd37af83079a106e7f17",
+    "data": {
+      "fixture_mounts_after_teardown": [],
+      "percentiles": "nearest rank",
+      "metrics": {
+        "target-tests-v2/test_target_control_latency_ba0/worker-evidence.json": {
+          "phase": "backoff",
+          "control_latency_us": [
+            1333
+          ]
+        },
+        "target-tests-v2/test_target_control_latency_co0/worker-evidence.json": {
+          "phase": "commit",
+          "control_latency_us": [
+            13938
+          ]
+        },
+        "target-tests-v2/test_target_control_latency_id0/worker-evidence.json": {
+          "phase": "idle",
+          "control_latency_us": [
+            1482
+          ]
+        },
+        "target-tests-v2/test_target_threshold_checkpoi0/worker-evidence.json": {
+          "publication_64_entities_us": 7467,
+          "checkpoint_us": {
+            "count": 2,
+            "min": 22522,
+            "p50": 22522,
+            "p95": 23049,
+            "max": 23049
+          }
+        },
+        "target-tests-v2/test_target_worker_mixed_race_0/worker-evidence.json": {
+          "seed": 805031,
+          "accepted": 830,
+          "rejected": 1175,
+          "iterations": 2005,
+          "injected_failures": 52,
+          "commit_us": {
+            "count": 2191,
+            "min": 2050,
+            "p50": 2526,
+            "p95": 7168,
+            "max": 242012
+          },
+          "checkpoint_us": {
+            "count": 118,
+            "min": 2383,
+            "p50": 12623,
+            "p95": 27684,
+            "max": 66790
+          },
+          "control_pair_latency_us": {
+            "count": 2005,
+            "min": 5564,
+            "p50": 10926,
+            "p95": 32170,
+            "max": 250928
+          }
+        }
+      }
+    }
+  },
+  "checkpoint": {
+    "original_path": "persistence_worker/2026-09-08/target-tests-v2/test_target_threshold_checkpoi0/worker-evidence.json",
+    "original_sha256": "54a1859fc61d333eaea450fb5b5c16f4df34fc8d8e62a039cd73d8cb54b2f9c3",
+    "data": {
+      "trace": [
+        "control",
+        "ordinary",
+        "ordinary",
+        "ordinary",
+        "ordinary",
+        "ordinary",
+        "ordinary",
+        "ordinary",
+        "ordinary",
+        "checkpoint"
+      ],
+      "wal_sizes_bytes": [
+        61832,
+        173072
+      ],
+      "checkpoint_us": [
+        22522,
+        23049
+      ],
+      "publication_64_entities_us": 7467,
+      "python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+      "sqlite": "3.46.1",
+      "platform": "Linux-6.18.39+rpt-rpi-v8-aarch64-with-glibc2.41",
+      "control_deadline_us": 5000000,
+      "caller_scheduling_tolerance_us": 500000,
+      "thread_stacks": {
+        "547656440736": [
+          "  File \"<frozen runpy>\", line 198, in _run_module_as_main\n",
+          "  File \"<frozen runpy>\", line 88, in _run_code\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pytest/__main__.py\", line 9, in <module>\n    raise SystemExit(_console_main())\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/config/__init__.py\", line 253, in _console_main\n    code = _main(prog=_get_prog_name(sys.argv))\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/config/__init__.py\", line 229, in _main\n    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_hooks.py\", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_manager.py\", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_callers.py\", line 121, in _multicall\n    res = hook_impl.function(*args)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/main.py\", line 377, in pytest_cmdline_main\n    return wrap_session(config, _main)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/main.py\", line 330, in wrap_session\n    session.exitstatus = doit(config, session) or 0\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/main.py\", line 384, in _main\n    config.hook.pytest_runtestloop(session=session)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_hooks.py\", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_manager.py\", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_callers.py\", line 121, in _multicall\n    res = hook_impl.function(*args)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/main.py\", line 408, in pytest_runtestloop\n    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_hooks.py\", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_manager.py\", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_callers.py\", line 121, in _multicall\n    res = hook_impl.function(*args)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/runner.py\", line 118, in pytest_runtest_protocol\n    runtestprotocol(item, nextitem=nextitem)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/runner.py\", line 139, in runtestprotocol\n    reports.append(call_and_report(item, \"call\", log))\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/runner.py\", line 249, in call_and_report\n    call = CallInfo.from_call(\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/runner.py\", line 361, in from_call\n    result: TResult | None = func()\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/runner.py\", line 250, in <lambda>\n    lambda: runtest_hook(item=item, **kwds),\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_hooks.py\", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_manager.py\", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_callers.py\", line 121, in _multicall\n    res = hook_impl.function(*args)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/runner.py\", line 184, in pytest_runtest_call\n    item.runtest()\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/python.py\", line 1707, in runtest\n    self.ihook.pytest_pyfunc_call(pyfuncitem=self)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_hooks.py\", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_manager.py\", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_callers.py\", line 121, in _multicall\n    res = hook_impl.function(*args)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/python.py\", line 167, in pytest_pyfunc_call\n    result = testfunction(**testargs)\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/receiver/tests/hardware/test_persistence_worker.py\", line 260, in test_target_threshold_checkpoint_stall\n    evidence(\n",
+          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/receiver/tests/hardware/test_persistence_worker.py\", line 95, in evidence\n    str(key): traceback.format_stack(frame)\n"
+        ]
+      }
+    }
+  },
+  "soak": {
+    "original_path": "persistence_worker/2026-09-08/target-tests-v2/test_target_worker_mixed_race_0/worker-evidence.json",
+    "sha256": "df6871da50c2cc991abbcfa82ebd99d63b2cb91d148ae447f1f2fee3bb7a6931"
+  },
+  "limits": [
+    "Historical source archive and crash databases were not copied here.",
+    "Process kill is not physical power-loss proof."
+  ]
+}

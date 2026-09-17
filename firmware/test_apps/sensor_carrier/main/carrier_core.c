@@ -119,6 +119,14 @@ static void print_body(const char *name, const uint8_t *body) {
 
 void carrier_core_run(const uint64_t roms[2], unsigned ds_mask, bool bme_present,
                       carrier_core_observation_t *out) {
+  /* Test labels overlap production flash. Erasing them destroys any prior
+   * production counters and logs; the disposable identity below cannot protect
+   * that earlier lifetime. Production reuse requires a new node ID AND key. */
+  puts("CARRIER_STORAGE_ERASE WARNING: reading erases nvs_test and storage_test "
+       "before and after this case, including any prior production counters "
+       "and logs. Before production reuse, provision a NEW node ID AND key; "
+       "never restore the old identity or counter backup.");
+  fflush(stdout);
   hwtest_erase_state();
   memset(out, 0, sizeof(*out));
   memset(&s_cycle, 0, sizeof(s_cycle));

@@ -65,6 +65,30 @@ when an earlier passing file is retained. Missing required evidence means
 pending coverage. Git retains earlier committed versions. Keep dates, measured
 results and pass/fail history in the original evidence records.
 
+## Destructive test storage
+
+The `reading` operation erases NVS and formats LittleFS before and after each
+case. Its test partition labels occupy the **same physical flash ranges** as
+production storage; they do not preserve a previously installed node's state:
+
+| Test / production label | Physical range, end exclusive |
+|---|---|
+| `nvs_test` / `nvs` | `0x9000` through `0xf000` |
+| `storage_test` / `storage` | `0x110000` through `0x3f0000` |
+
+Before running `reading`, treat all prior node-local counters, pending readings
+and logs as disposable. A warning is printed immediately before the first
+erase. Avoiding whole-flash erasure does **not** preserve these partitions.
+
+Each reading case creates a fresh disposable test node ID/key, used only for
+local frame validation and never in production. If the board previously held
+a production identity, erasing its counters ends that identity lifetime:
+**provision a new production node ID and key before any production transmission**.
+Follow the existing [identity replacement procedure](../../../protocol/protocol-v2-lora/README.md#revocation-and-identity-replacement).
+Do not restore the old production image/identity or a counter backup; counter
+rollback can reuse a CCM nonce. Changing the test identity does not make the
+previous production identity safe to reuse.
+
 ## Build and inspect configuration
 
 All commands run from the repository root. Building does not access the DUT.
@@ -124,9 +148,11 @@ fixture; no code rejects its ROM.
 
 The logical interface still has two DS channels. Other builds must explicitly
 configure their actual probes, rebuild and record the build; checked-in defaults
-remain unprovisioned. The app has an app-only partition table,
-opens no persistent storage and uses no radio identity. Never use whole-flash
-erasure for these commands.
+remain unprovisioned. Only `reading` accesses persistent storage and uses a
+disposable test identity, with the [destructive effects above](#destructive-test-storage).
+No operation loads the private production identity. The carrier commands do not
+require whole-flash erasure; returning to production follows the separate
+identity replacement procedure.
 
 ## Discovery and physical probe labeling
 
@@ -318,8 +344,9 @@ idf.py -C firmware/test_apps/sensor_carrier build
     --record-build firmware/test_apps/sensor_carrier/build
 ```
 
-The image contains isolated `nvs_test` and `storage_test` partitions. Only the
-reading case erases those test partitions before and after its scenario; it
+The image uses `nvs_test` and `storage_test` labels over production flash ranges;
+review [destructive test storage](#destructive-test-storage) before these commands.
+Only the reading case erases those partitions before and after its scenario; it
 uses a fresh disposable identity/key and the production sample/message counter
 claims. No production identity header is required or read. No key is emitted.
 The local radio adapter captures the production current frame and reports a

@@ -261,15 +261,19 @@ static void fresh_acquisition(uint64_t configured[2]) {
 }
 
 static err_curag_t acquire_sample(node_sensor_sample_t *sample,
-                                 diagn_context_t *diagnostic) {
+                                 diagn_context_t *diagnostic,
+                                 int64_t *duration_us) {
   memset(diagnostic, 0xa5, sizeof(*diagnostic));
   const int64_t start_us = esp_timer_get_time();
   const err_curag_t result = node_sensors_sample_all(sample, diagnostic);
-  const int64_t duration_us = esp_timer_get_time() - start_us;
-  print_sample(*sample, *diagnostic, result, duration_us);
+  *duration_us = esp_timer_get_time() - start_us;
+  print_sample(*sample, *diagnostic, result, *duration_us);
+  return result;
+}
+
+static void assert_acquisition_duration(int64_t duration_us) {
   TEST_ASSERT_TRUE_MESSAGE(duration_us >= 0 && duration_us <= 30000000,
                            "production sample did not return within 30 seconds");
-  return result;
 }
 
 static void print_observation(void) {
@@ -314,11 +318,13 @@ static void fixture_acquisition(unsigned expected_ds_mask, bool bme_present) {
   node_sensor_sample_t sample;
   diagn_context_t diagnostic;
   carrier_observer_begin(configured[0], configured[1]);
-  const err_curag_t result = acquire_sample(&sample, &diagnostic);
+  int64_t duration_us;
+  const err_curag_t result = acquire_sample(&sample, &diagnostic, &duration_us);
   print_observation();
   /* No sensor/gate operation after return, including on a failed sample. */
   TEST_ASSERT_TRUE_MESSAGE(carrier_hold_wait("sample-return", mode),
                            "guided hold incomplete: valid acknowledgement required");
+  assert_acquisition_duration(duration_us);
   carrier_assert_sample(&sample, &diagnostic, result, expected_ds_mask, true, bme_present);
   assert_observation(&sample, expected_ds_mask, bme_present);
 }
@@ -412,7 +418,9 @@ TEST_CASE("carrier BME280 sleep observation", "[sensor_carrier]") {
   node_sensor_sample_t sample;
   diagn_context_t diagnostic;
   carrier_observer_begin(configured[0], configured[1]);
-  const err_curag_t result = acquire_sample(&sample, &diagnostic);
+  int64_t duration_us;
+  const err_curag_t result = acquire_sample(&sample, &diagnostic, &duration_us);
+  assert_acquisition_duration(duration_us);
   print_observation();
   assert_sample(&sample, &diagnostic, result, true);
   assert_observation(&sample, 3, true);
@@ -436,7 +444,9 @@ TEST_CASE("carrier repeated nominal acquisition", "[sensor_carrier]") {
     node_sensor_sample_t sample;
     diagn_context_t diagnostic;
     carrier_observer_begin(configured[0], configured[1]);
-    const err_curag_t result = acquire_sample(&sample, &diagnostic);
+    int64_t duration_us;
+    const err_curag_t result = acquire_sample(&sample, &diagnostic, &duration_us);
+    assert_acquisition_duration(duration_us);
     print_observation();
     assert_sample(&sample, &diagnostic, result, true);
     assert_observation(&sample, 3, true);
@@ -455,7 +465,9 @@ TEST_CASE("carrier final cleanup hold", "[sensor_carrier]") {
   TEST_ASSERT_TRUE_MESSAGE(mode >= 0, "missing/invalid hold mode");
   node_sensor_sample_t sample, retained;
   diagn_context_t diagnostic, cleanup[2];
-  const err_curag_t result = acquire_sample(&sample, &diagnostic);
+  int64_t duration_us;
+  const err_curag_t result = acquire_sample(&sample, &diagnostic, &duration_us);
+  assert_acquisition_duration(duration_us);
   assert_sample(&sample, &diagnostic, result, true);
   memcpy(&retained, &sample, sizeof(sample));
   carrier_observer_begin(configured[0], configured[1]);
@@ -485,10 +497,12 @@ TEST_CASE("carrier reference acquisition and sample-return hold", "[sensor_carri
   fresh_acquisition(configured);
   node_sensor_sample_t sample;
   diagn_context_t diagnostic;
-  const err_curag_t result = acquire_sample(&sample, &diagnostic);
+  int64_t duration_us;
+  const err_curag_t result = acquire_sample(&sample, &diagnostic, &duration_us);
   /* External references bypass the air-probe range only. Production acquisition
    * still performs its real gate stabilization and calibrated ADC averaging. */
   observation_hold("sample-return");
+  assert_acquisition_duration(duration_us);
   assert_sample(&sample, &diagnostic, result, false);
 }
 

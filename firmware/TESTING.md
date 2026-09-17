@@ -744,9 +744,17 @@ sensor results preserve every independent valid field in the reading. Exact
 missing-fixture diagnostics and sensor timing remain as specified below.
 Reference integration requires fresh meter observations and the existing
 guided A/B acceptance criteria; no unattended ADC-reference pass is assigned.
-Each independent scenario uses a fresh test identity/key lifetime and isolated
-storage. Erasing its counters retires that identity. Existing electrical holds
-remain separate: core's final cleanup cannot establish sampling-owned shutdown.
+Each independent scenario uses a fresh disposable test identity/key lifetime
+and erases storage under test-specific partition labels. These labels occupy
+the same physical NVS/LittleFS ranges as production: prior counters, pending
+readings and logs are destroyed. Erasing counters retires their identity;
+returning the board to production requires a new production node ID and key
+under the existing [identity replacement procedure](../protocol/protocol-v2-lora/README.md#revocation-and-identity-replacement).
+The carrier documents this [destructive boundary](test_apps/sensor_carrier/README.md#destructive-test-storage)
+and prints a warning before its first erase. Test identities are never used in
+production; restoring the old production identity or counter backup is prohibited.
+Existing electrical holds remain separate: core's final cleanup cannot establish
+sampling-owned shutdown.
 
 - **All groups acquired:** with the complete fixture, one call sets all five
   component validity bits and returns values from the expected physical

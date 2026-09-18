@@ -91,6 +91,8 @@ def configure_audit(monkeypatch, *, launch=LAUNCH, process=LAUNCH, precheck=PREC
     values = {
         "ExecStart": service_command(launch),
         "ExecStartPre": service_command(precheck, ignore=ignore),
+        "ExecStartEx": service_command(launch).replace("ignore_errors=no", "flags=no-setuid"),
+        "User": "_chrony",
         "MainPID": "123", "ActiveState": active, "Type": "forking", "Restart": "on-failure",
     }
 
@@ -126,6 +128,20 @@ def test_documented_launch_passes_and_retains_arguments(tmp_path, monkeypatch):
     assert json.loads((tmp_path / "writer-audit.json").read_text())["process_arguments"] == LAUNCH
 
 
+@pytest.mark.parametrize("flags", ["", "ignore-failure", "privileged", "no-setuid ignore-failure"])
+def test_audit_rejects_changed_launch_privilege_even_with_matching_arguments(tmp_path, monkeypatch, flags):
+    values = configure_audit(monkeypatch)
+    values["ExecStartEx"] = values["ExecStartEx"].replace("flags=no-setuid", "flags=" + flags)
+    with pytest.raises(AssertionError, match="privileged launch"):
+        fixture.test_deployment_time_writer_audit(tmp_path)
+
+
+def test_shipped_dropin_preserves_vendor_privileged_launch():
+    dropin = Path(__file__).resolve().parents[2] / "hardware/ds3231/chrony-runtime.conf"
+    launch = [line for line in dropin.read_text().splitlines() if line.startswith("ExecStart=")]
+    assert launch == ["ExecStart=", "ExecStart=!" + " ".join(LAUNCH)]
+
+
 # F-002: a safe default file cannot hide a different configured or actually running launch.
 @pytest.mark.parametrize("which", ["launch", "process", "precheck"])
 def test_audit_rejects_different_configuration(tmp_path, monkeypatch, which):
@@ -156,3 +172,20 @@ def test_audit_requires_enforced_check_and_sole_writer(tmp_path, monkeypatch, in
         values["ExecStartPre"] += " " + service_command(["/bin/true"])
     with pytest.raises(AssertionError):
         fixture.test_deployment_time_writer_audit(tmp_path)
+
+
+def test_reply_socket_permissions_use_one_post_start_command():
+    root = Path(__file__).resolve().parents[2]
+    dropin = (root / 'hardware/ds3231/chrony-runtime.conf').read_text()
+    commands = [line for line in dropin.splitlines() if line.startswith('ExecStartPost=')]
+    # systemd resets RuntimeDirectory ownership/mode before every command.
+    assert len(commands) == 1
+    assert commands[0].startswith('ExecStartPost=+/bin/sh -c ')
+    assert '/usr/bin/chgrp cura-receiver /run/chrony /run/chrony/chronyd.sock' in commands[0]
+    assert '/usr/bin/chmod 01770 /run/chrony' in commands[0]
+    assert '/usr/bin/chmod 0660 /run/chrony/chronyd.sock' in commands[0]
+    assert 'RuntimeDirectoryMode=0700' in dropin
+    unit = (root / 'deploy/systemd/cura-receiver.service').read_text()
+    assert 'ReadWritePaths=/var/lib/cura-agrorum -/run/chrony' in unit
+    assert 'After=local-fs.target cura-rtc-bootstrap.service chrony.service' in unit
+    assert 'Requires=chrony.service' not in unit

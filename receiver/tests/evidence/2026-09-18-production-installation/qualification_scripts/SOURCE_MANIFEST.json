@@ -1,0 +1,12 @@
+{
+  "check-final-boot.py": "9df59e72655bf74ae6854572ae61fd70b33b148d1d7365243a074be477de206b",
+  "check-live-chrony-restart.py": "a0385971cf3e0ea6eeb7a9650ad1ef72eee4d6f405bf2c2d07527edca3539954",
+  "check-offline-boot.py": "16ba73a72edbdb2128c1e910b6f08839578d76ff8a460d5babb8eea31a315b89",
+  "check-time-root.py": "6a684de5a2dc301e1c17297cf0d38a87b5d4524d3b6b0dd3b753817bb6aae1c2",
+  "check-time-user.py": "c05bf18d8ce6949b7e5b2914324271511e0e63da6e23029259b2e6c11efb363b",
+  "crash-check.py": "b0542c5e527178e535c166851b8b95cbfc0b4c0a3e6d1f808f718a0f18f089da",
+  "lifecycle-check.py": "2fc5557834cbc597b42e0c6853052c0b71b356f35c4f22fac3e39fc5c642a237",
+  "missing-device-check.py": "958154ffcdd641cce188b58082d784b4f96f9fd58f78914a378b84a5f09cde8e",
+  "prepare-offline-boot.py": "87fc8b90602f95bf8821577b3698faf1035668f28cc5b6270432d6774c217f3b",
+  "prepare-unclean-reboot.py": "4b4c7b05550cd5b25ba20325220983c7ce924919ae6f8a87042870ec1d1fe749"
+}

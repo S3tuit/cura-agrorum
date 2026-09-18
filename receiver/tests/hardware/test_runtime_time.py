@@ -363,6 +363,7 @@ def test_deployment_time_writer_audit(tmp_path):
     service = command(
         "systemctl", "show", "chrony.service", "-p", "ExecStart", "-p", "ExecStartPre",
         "-p", "ActiveState", "-p", "MainPID", "-p", "Type", "-p", "Restart",
+        "-p", "ExecStartEx", "-p", "User",
     ).stdout
     properties = dict(line.split("=", 1) for line in service.splitlines() if "=" in line)
     assert properties["ActiveState"] == "active"
@@ -378,6 +379,12 @@ def test_deployment_time_writer_audit(tmp_path):
         assert configured.startswith(
             "{ path=" + argv[0] + " ; argv[]=" + " ".join(argv) + " ; ignore_errors=no ;"
         ), f"{name} must use the documented launch procedure"
+    privileged_launch = properties["ExecStartEx"]
+    assert privileged_launch.count("argv[]=") == 1
+    assert privileged_launch.startswith(
+        "{ path=" + launch[0] + " ; argv[]=" + " ".join(launch)
+        + " ; flags=no-setuid ;"
+    ), "Chrony must retain the documented privileged launch prefix"
     pid = int(properties["MainPID"])
     assert pid > 0
     process_arguments = chrony_process_arguments(pid)

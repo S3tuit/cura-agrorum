@@ -201,3 +201,30 @@ def test_real_child_virtual_deadline(monkeypatch):
 def test_reject_socket_fallback(path):
     with pytest.raises(ValueError):
         L.LinuxChronyControl(FakeOsClock(), socket_path=path, deadline_monotonic_us=100)
+
+
+@pytest.mark.parametrize("changes,expected", [
+    ({}, Q.UNAVAILABLE),
+    ({"returncode": 0}, Q.INVALID_RESPONSE),
+    ({"returncode": 2}, Q.INVALID_RESPONSE),
+    ({"stdout": b"unexpected"}, Q.INVALID_RESPONSE),
+    ({"stderr": b"Could not open connection to daemon"}, Q.INVALID_RESPONSE),
+    ({"stderr": b"Could not open connection to daemon\nextra"}, Q.INVALID_RESPONSE),
+    ({"overflow": True}, Q.INVALID_RESPONSE),
+    ({"timed_out": True}, Q.DEADLINE_EXCEEDED),
+])
+def test_pinned_connection_failure(monkeypatch, changes, expected):
+    adapter, _, _, replies = configured(monkeypatch)
+    fields = dict(returncode=1, stdout=b"",
+                  stderr=b"Could not open connection to daemon\n", started=True)
+    fields.update(changes)
+    replies[0] = L._ChildResult(**fields)
+    assert adapter.read_tracking(deadline_monotonic_us=100).status is expected
+    assert adapter.apply_pending_correction_by_step(
+        deadline_monotonic_us=100).disposition is D.OUTCOME_UNKNOWN
+
+
+def test_connection_failure_at_deadline(monkeypatch):
+    adapter, clock, _, replies = configured(monkeypatch)
+    replies[0] = L._ChildResult(1, b"", b"Could not open connection to daemon\n", started=True)
+    assert adapter.read_tracking(deadline_monotonic_us=clock.now_monotonic_us()).status is Q.DEADLINE_EXCEEDED

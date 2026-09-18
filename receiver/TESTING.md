@@ -18,8 +18,10 @@ process-kill recovery and isolated capacity/access/corruption recovery.
 Runtime time/Chrony/DS3231, durable airtime and the production radio stack are
 implemented with host and source-bound Pi component evidence; retained target
 results do not qualify every later source/configuration change. Communicator
-orchestration, its observability producers and the complete service lifecycle
-remain unimplemented; their integration coverage arrives with that work.
+orchestration, observability and the service lifecycle are implemented with
+host coverage. Source-bound [installed pre-radio qualification](tests/evidence/2026-09-18-production-installation/README.md#final-qualification)
+covers the isolated Pi deployment; full-service RF and later runtime time/storage
+acceptance remain separate.
 
 ## Purpose and authority
 
@@ -59,6 +61,28 @@ deferred physical tests. Any change to behavior, protocol, identity/counters,
 timing or evidence standards still requires an explicit decision.
 
 ## Framework and organization
+
+### Pilot production fixture and installed qualification
+
+The approved 2026-09-18 production qualification batch uses the
+[receiver carrier](hardware/TEST_CARRIER.md) in `radio_nominal`, without
+JP_RTC_SCL_FAULT and JP_RTC_SDA_FAULT. Both fault paths are disconnected;
+the nominal I2C pull-ups, radio connections and other schematic requirements
+remain. This assembly supplies no stuck-bus physical-fault evidence. Requiring
+a removed fault connection means reporting the physical action to the operator
+before execution, not silently emulating its electrical assertion.
+
+Reviewed package, time, storage and disposable group inputs precede isolated
+installation. Stage the current local source tree in a fresh Pi directory and
+verify its manifest before running target tests; use the installed package and
+actual service UID for installed-service assertions. Preserve the original
+configuration and restoration controls before changing services or privileges.
+Installed package/database checks, installed time/privilege checks and pre-radio
+boot/offline/missing-device/restart checks are distinct phases. Keep the C6
+from transmitting during this pre-radio qualification. Later runtime time,
+storage and full-system RF acceptance remain open until separately verified.
+
+### Suite layout
 
 Receiver host and Pi-local component suites use pytest, with Hypothesis for
 suitable independent policy/model exploration. Joint RF scenarios use laptop
@@ -744,6 +768,8 @@ control, RTC bootstrap, process-local communicator counters or Pi reboot.
 - **Terminal initialization/recovery diagnostic:** Enter each terminal radio failure, finalize at most one best-effort fatal diagnostic when admission permits and never claim that diagnostic durability is guaranteed.
 - **Static systemd/chrony contract:** Validate packaged unit/config artifacts for required mounts, RTC-bootstrap completion ordering, no network-online dependency, restart delay/rate limit, bounded stop timeout, service identity and suspend prevention.
 - **No pilot-data dependency:** Verify every test configuration points at dedicated test paths and refuses an accidentally supplied production database, receiver-group file or service name.
+- **Shared installed path inputs:** Exercise runtime and storage preflight with the same complete `CURA_RECEIVER_CONFIGURATION`/`CURA_RECEIVER_DATABASE`/`SQLITE_TMPDIR` environment. Reject partial, empty, relative, traversing or overlapping paths before hardware/storage access. With `CURA_RECEIVER_TEST_ROOT`, reject paths outside the root and roots overlapping production directories, including Linux double-leading-slash aliases. Verify the real isolated SQLite preflight and unchanged policy defaults; installed unit permissions/mounts and nonsymlink target directories require separate target verification.
+- **Chrony startup privilege:** Preserve the vendor's privileged `!` launch prefix in the configuration-checking drop-in. Audit `ExecStartEx` for the exact command and `no-setuid` flag as well as actual MainPID arguments; removing the prefix under inherited `User=_chrony` must fail qualification. Confirm successful startup on the installed target; argv checks alone cannot qualify privilege.
 
 ### Hardware tests
 
@@ -840,3 +866,23 @@ stop during pre-read, after invalidation, during possibly applied write, between
 read retries and during unknown provenance commit; assert at most one external
 action per turn, radio priority between actions, retained failure root and actual
 write counters, conservative provenance, and the original shutdown deadline.
+
+### Pinned Chrony connection failure regression
+
+Verify tracking maps chronyc4.6.1 exit1, empty stdout and exact connection-error
+stderr to UNAVAILABLE. Altered envelopes/overflow remain invalid and deadline
+expiry takes precedence; step uncertainty remains unchanged. On the Pi, use a
+deliberately absent isolated socket with real chronyc and the installed adapter.
+Also verify the real socket under the service UID after persistent access
+permissions are installed; a root-only query cannot establish that access.
+
+
+### Pilot Chrony reply-socket access
+
+Under the installed receiver UID and actual systemd sandbox, require successful
+real tracking, cleanup of receiver-created reply sockets, and rejection of
+unlink/rename of daemon-owned socket entries and writes outside allowed paths.
+Verify directory01770 and daemon socket0660 with Chrony ownership and receiver
+group after each daemon restart. Missing Chrony must remain compatible with
+untrusted offline startup. PERM-001 in deploy/README.md defers a broader permissions
+review until after the pilot; these checks do not establish command-level isolation.

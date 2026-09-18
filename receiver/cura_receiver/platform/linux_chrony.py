@@ -116,6 +116,13 @@ class LinuxChronyControl:
             return ChronyTrackingResult(Q.DEADLINE_EXCEEDED, start, finish)
         if not result.started or result.stdout.strip() == b"506 Cannot talk to daemon":
             return ChronyTrackingResult(Q.UNAVAILABLE, start, finish)
+        if (
+            result.returncode == 1
+            and not result.overflow
+            and result.stdout == b""
+            and result.stderr == b"Could not open connection to daemon\n"
+        ):
+            return ChronyTrackingResult(Q.UNAVAILABLE, start, finish)
         if result.returncode != 0 or result.overflow or result.stderr:
             return ChronyTrackingResult(Q.INVALID_RESPONSE, start, finish)
         try:

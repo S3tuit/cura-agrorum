@@ -82,7 +82,8 @@ above. No unit depends on `network-online.target`.
 
 Create the trusted deployment environment file
 `/etc/cura-agrorum/deployment.env` with `RTC_HELPER_SHA256` equal to the digest of
-the installed, reviewed native helper and `RTC_KERNEL_BOUND_US` equal to the
+the installed, reviewed native helper (64 lowercase hexadecimal characters,
+as emitted by `sha256sum`) and `RTC_KERNEL_BOUND_US` equal to the
 validated target kernel/device operation bound. Both are required inputs; no
 sample digest or unqualified bound is substituted. Bootstrap uses the same bound,
 a maximum of three reads and a five-second total episode, supervised at six
@@ -103,3 +104,62 @@ database; use the existing offline database initializer with the supplied group.
 Installation, enabling units, changing privileges/devices/Chrony and actual
 boot/restart/RF qualification are separate later phases. These files are not
 installed by the bundle builder or by host tests.
+
+## Shared paths for isolated installation
+
+Runtime and storage preflight both read the same path environment. The shared
+loader provides production defaults when the entire path set is absent. The
+unit does not prepopulate path variables, so a partial environment-file override
+cannot silently combine test and production paths. To install a test instance,
+set all of these in its trusted deployment environment file:
+
+```ini
+CURA_RECEIVER_TEST_ROOT=/var/lib/cura-pilot-test
+CURA_RECEIVER_CONFIGURATION=/var/lib/cura-pilot-test/config/receiver-group.json
+CURA_RECEIVER_DATABASE=/var/lib/cura-pilot-test/data/receiver.sqlite3
+SQLITE_TMPDIR=/var/lib/cura-pilot-test/data/tmp
+```
+
+Use a new dedicated root/service name for the actual run. The example is not
+authorization to reuse an existing directory. Partial overrides, empty or
+relative paths, parent traversal, and test roots/paths overlapping the default
+production directories fail before device access. The optional test-root guard
+is lexical: before installation verify each real directory/file is nonsymlink,
+has the intended trusted ownership and cannot alias production storage. Group
+file validation still uses the strict protocol loader under the service UID.
+
+Both unit commands inherit these values; SQLite receives the same temporary
+directory checked by preflight. Keep the initializer's group/database arguments
+identical to those values. Update `EnvironmentFile`, `PYTHONPATH`, executable
+paths, `RequiresMountsFor` and `ReadWritePaths` in the dedicated installed unit
+to match the staged package and test roots. A path override does not update
+systemd mount/permission directives. Keep the production unit unchanged on the
+host; never replace its group or database for a test.
+
+Defaults are available for direct invocations only when all three path variables
+are absent; `CURA_RECEIVER_TEST_ROOT` requires explicit paths. RTC helper/time
+inputs, radio settings, persistence policy and service ownership remain unchanged.
+
+
+## Pilot Chrony socket permissions
+
+Pinned chronyc creates its reply socket beside `/run/chrony/chronyd.sock`.
+The Chrony drop-in starts with a private runtime directory, then grants
+`cura-receiver` group access: directory01770 and daemon socket0660, both still
+owned by the daemon user. The sticky bit protects daemon-owned entries against
+receiver unlink/rename; receiver-created reply sockets can be removed normally.
+The receiver unit permits `/run/chrony` writes and orders startup after the local
+Chrony start attempt, without requiring synchronization or Internet access.
+A missing directory is tolerated by the sandbox; unavailable Chrony remains an
+ordinary untrusted runtime input. No membership in the daemon's group is needed.
+Verify real tracking, reply-socket cleanup, rejection of daemon-socket removal
+and unrelated writes, and permission restoration after daemon restart.
+
+## Deferred post-pilot permissions review
+
+**PERM-001 — deferred, not qualified:** review permissions generally after the
+pilot, including replacing direct Chrony socket access with a narrow local
+coordinator. The pilot uses the approved shared runtime directory; this leaves
+broader Chrony command authority with the receiver identity. Revisit before
+post-pilot deployment or earlier if permission requirements change. No coordinator
+or command-level privilege isolation is implemented or claimed.

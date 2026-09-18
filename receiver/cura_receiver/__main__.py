@@ -2,10 +2,11 @@
 
 import argparse
 import os
+import re
 import signal
 
 from .application import ReceiverApplication
-from .application_settings import ApplicationSettings
+from .application_environment import settings_from_environment
 from .persistence_worker import PersistenceWorker
 from .platform.linux_chrony import LinuxChronyControl
 from .platform.linux_clocks import LinuxOsClock
@@ -17,12 +18,22 @@ from .receiver_startup import create_receiver_instance
 from .sx1262 import Sx1262
 
 
+def helper_digest(value):
+    if re.fullmatch(r'[0-9a-f]{64}', value) is None:
+        raise argparse.ArgumentTypeError('helper digest must be 64 lowercase hexadecimal characters')
+    return bytes.fromhex(value)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--rtc-helper-sha256', required=True)
+    parser.add_argument('--rtc-helper-sha256', type=helper_digest, required=True)
     parser.add_argument('--rtc-kernel-bound-us', type=int, required=True)
     args = parser.parse_args()
-    settings = ApplicationSettings()
+    try:
+        settings = settings_from_environment(os.environ)
+    except ValueError:
+        parser.error('invalid receiver deployment paths')
+    os.environ['SQLITE_TMPDIR'] = str(settings.sqlite_temporary_directory)
     clock = LinuxOsClock()
     instance = create_receiver_instance(clock)
     rtc = LinuxDs3231Control(clock, kernel_operation_bound_us=args.rtc_kernel_bound_us,

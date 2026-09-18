@@ -20,6 +20,13 @@ tests remain in receiver/tests/hardware/; protocol verification remains in
 protocol/protocol-v2-lora/tests/. A component peer does not establish full
 receiver acceptance.
 
+The [retained destructive firmware results](../../firmware/tests/evidence/README.md)
+and [installed Pi pre-radio qualification](../../receiver/tests/evidence/2026-09-18-production-installation/README.md#final-qualification)
+record historical execution within their stated limits. Fast firmware checks
+and builds have no permanent archive; rerun them when their results are needed.
+These records do not close RF-019/RF-020, RF-027/RF-028 or later runtime time/storage
+gates. Destructive-test identity handover must precede authenticated TX.
+
 Future runs require explicit cases, fixture readiness, isolated identities and
 storage, bounded local scheduling and airtime accounting at both transmitters.
 SSH coordinates readiness; independent endpoint clocks are not synchronized.
@@ -35,6 +42,21 @@ and defers DEP-007 plus RF-029's firmware-ledger assertions. The receiver's
 durable airtime policy remains unchanged.
 
 ## Run a selected component case
+
+The approved production qualification assembly is the nominal C6 carrier
+without JP_REF_ENABLE/R5/R6/R7/R8 and the nominal Pi carrier without
+JP_RTC_SCL_FAULT/JP_RTC_SDA_FAULT. These removed fault/reference branches remain
+disconnected; all other nominal schematic requirements apply. See
+[firmware sequencing and sensor scope](../../firmware/TESTING.md#pilot-production-fixture-and-configuration-sequencing)
+and [installed Pi qualification](../../receiver/TESTING.md#pilot-production-fixture-and-installed-qualification).
+Final sensor selection and placement are not new pilot gates; technical
+configuration, selected nominal assertions and same-acquisition RF oracles
+remain required. Removed test circuitry cannot supply new physical-fault proof.
+
+The production build/provisioning sequence permits reviewed sensor, board/layout
+and disposable identity inputs before the final image. Built-image, installed
+service and RF verification follow their respective prerequisites. This is not
+production identity handover or authority to erase existing live identity state.
 
 Read [EPISODES.md](EPISODES.md) for the simple packet/charge table, local timing
 and bounded cleanup. The operator handles admission and pacing. Keep the manual

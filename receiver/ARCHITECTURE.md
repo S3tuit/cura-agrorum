@@ -78,6 +78,19 @@ These rules avoid locks around radio state and prevent SQLite latency from delay
 
 ## Receiver configuration
 
+Installed runtime and storage preflight share one startup path configuration.
+`CURA_RECEIVER_CONFIGURATION`, `CURA_RECEIVER_DATABASE` and `SQLITE_TMPDIR`
+are supplied together or all omitted for the production defaults. Parsing is
+pure and finishes before hardware access; it does not load credentials or
+change persistence ownership. Both processes receive the same environment.
+An isolated test deployment additionally supplies `CURA_RECEIVER_TEST_ROOT`;
+all three paths must lie strictly beneath that root and the root must not
+overlap the production configuration/data directories. Installation verifies
+actual filesystem isolation, trusted ownership and absence of symlink aliases;
+the lexical startup guard is not a substitute for that verification.
+The configured temporary directory also supplies SQLite's process environment
+before persistence starts. Policy, time and radio defaults are unchanged.
+
 Receiver configuration is operator-controlled input and is separate from the receiver-owned durable state. The development default is `receiver/receiver-group.json`; deployments may configure another path so that production does not depend on a repository working tree. The file uses the strict `receiver-group.json` format defined by the protocol provisioning tools.
 
 The persistence thread is the sole disk owner and loads the configuration before the communicator enters RX. It must reject a configuration that:

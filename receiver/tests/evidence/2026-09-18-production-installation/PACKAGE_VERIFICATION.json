@@ -1,0 +1,70 @@
+{
+  "uid": 999,
+  "gid": 985,
+  "groups": [
+    105,
+    985,
+    986,
+    989
+  ],
+  "python": "3.13.5 (main, Aug 10 2026, 12:06:59) [GCC 14.2.0]",
+  "sqlite": "3.46.1",
+  "cryptography": "49.0.0",
+  "pragmas": {
+    "journal_mode": "wal",
+    "synchronous": 2,
+    "foreign_keys": 1,
+    "busy_timeout": 250
+  },
+  "group_id": "038a54770d58c85a",
+  "free_bytes": 24287981568,
+  "reserve_bytes": 1073741824,
+  "real_preflight": "PASS",
+  "database_integrity": "ok",
+  "production_module": "/opt/cura-pilot-vuh7p781/receiver/cura_receiver",
+  "mounts": {
+    "/opt/cura-pilot-vuh7p781": "/ /dev/mmcblk0p2 ext4 rw,noatime",
+    "/var/lib/cura-pilot-vuh7p781/config": "/ /dev/mmcblk0p2 ext4 rw,noatime",
+    "/var/lib/cura-pilot-vuh7p781/data": "/ /dev/mmcblk0p2 ext4 rw,noatime",
+    "/var/lib/cura-pilot-vuh7p781/data/tmp": "/ /dev/mmcblk0p2 ext4 rw,noatime"
+  },
+  "permissions": {
+    "/var/lib/cura-pilot-vuh7p781": {
+      "uid": 0,
+      "gid": 985,
+      "mode": "0o750",
+      "nonsymlink": true
+    },
+    "/var/lib/cura-pilot-vuh7p781/config": {
+      "uid": 0,
+      "gid": 985,
+      "mode": "0o750",
+      "nonsymlink": true
+    },
+    "/var/lib/cura-pilot-vuh7p781/config/receiver-group.json": {
+      "uid": 999,
+      "gid": 985,
+      "mode": "0o600",
+      "nonsymlink": true
+    },
+    "/var/lib/cura-pilot-vuh7p781/data": {
+      "uid": 999,
+      "gid": 985,
+      "mode": "0o700",
+      "nonsymlink": true
+    },
+    "/var/lib/cura-pilot-vuh7p781/data/receiver.sqlite3": {
+      "uid": 999,
+      "gid": 985,
+      "mode": "0o600",
+      "nonsymlink": true
+    },
+    "/var/lib/cura-pilot-vuh7p781/data/tmp": {
+      "uid": 999,
+      "gid": 985,
+      "mode": "0o700",
+      "nonsymlink": true
+    }
+  },
+  "installed_source_files_verified": 89
+}

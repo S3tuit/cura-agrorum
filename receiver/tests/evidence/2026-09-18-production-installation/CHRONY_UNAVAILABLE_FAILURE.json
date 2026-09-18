@@ -1,0 +1,24 @@
+{
+  "socket": "/run/cura-pilot-deliberately-absent.sock",
+  "chronyc_version": "chronyc (chrony) version 4.6.1 (+READLINE +SECHASH +IPV6 -DEBUG)",
+  "returncode": 1,
+  "stdout": "",
+  "stderr": "Could not open connection to daemon\n",
+  "expected": "UNAVAILABLE",
+  "actual": "INVALID_RESPONSE",
+  "real_socket": {
+    "/run/chrony": {
+      "mode": "0o750",
+      "uid": 102,
+      "gid": 105
+    },
+    "/run/chrony/chronyd.sock": {
+      "mode": "0o755",
+      "uid": 102,
+      "gid": 105
+    }
+  },
+  "receiver_state": "ActiveState=inactive\nUnitFileState=disabled\n",
+  "chrony_active": "active",
+  "scope": "Read-only missing-socket reproduction; no makestep or RF operation. Socket installation permissions remain incomplete."
+}

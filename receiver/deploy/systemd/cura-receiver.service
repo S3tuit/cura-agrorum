@@ -1,7 +1,7 @@
 [Unit]
 Description=Cura Agrorum receiver
-Wants=cura-rtc-bootstrap.service
-After=local-fs.target cura-rtc-bootstrap.service
+Wants=cura-rtc-bootstrap.service chrony.service
+After=local-fs.target cura-rtc-bootstrap.service chrony.service
 RequiresMountsFor=/etc/cura-agrorum /var/lib/cura-agrorum /var/lib/cura-agrorum/tmp /opt/cura-agrorum
 StartLimitIntervalSec=60
 StartLimitBurst=5
@@ -13,7 +13,6 @@ Group=cura-receiver
 SupplementaryGroups=gpio spi
 EnvironmentFile=/etc/cura-agrorum/deployment.env
 Environment=PYTHONPATH=/opt/cura-agrorum/receiver:/opt/cura-agrorum/protocol/protocol-v2-lora/python
-Environment=SQLITE_TMPDIR=/var/lib/cura-agrorum/tmp
 ExecStartPre=/opt/cura-agrorum/venv/bin/python -m cura_receiver.storage_preflight
 ExecStart=/usr/bin/systemd-inhibit --what=sleep --mode=block --who=cura-receiver --why=Receiver-clock-and-radio-deadlines /opt/cura-agrorum/venv/bin/python -m cura_receiver --rtc-helper-sha256 ${RTC_HELPER_SHA256} --rtc-kernel-bound-us ${RTC_KERNEL_BOUND_US}
 Restart=on-failure
@@ -26,7 +25,7 @@ NoNewPrivileges=no
 UMask=0077
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/var/lib/cura-agrorum
+ReadWritePaths=/var/lib/cura-agrorum -/run/chrony
 
 [Install]
 WantedBy=multi-user.target

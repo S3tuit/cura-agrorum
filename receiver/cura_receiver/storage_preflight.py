@@ -2,7 +2,7 @@
 
 import os
 import tempfile
-from .application_settings import ApplicationSettings
+from .application_environment import settings_from_environment
 
 
 def check_storage(settings):
@@ -26,7 +26,9 @@ def check_storage(settings):
 
 def main():
     try:
-        check_storage(ApplicationSettings())
+        settings = settings_from_environment(os.environ)
+        os.environ['SQLITE_TMPDIR'] = str(settings.sqlite_temporary_directory)
+        check_storage(settings)
     except (OSError, ValueError):
         print('receiver storage preflight failed')
         return 1

@@ -216,10 +216,28 @@ sudo install -D -m 0644 -o root -g root receiver/hardware/ds3231/chrony-runtime.
 sudo systemctl daemon-reload
 ```
 
+Before starting this pilot drop-in, create the dedicated `cura-receiver` group
+and service identity using the [deployment profile](../../deploy/README.md).
+The drop-in also provisions the pilot reply-socket permissions described there:
+one post-start command sets the sticky directory and daemon socket modes.
+A missing receiver group makes that command fail. Do not split its adjustments
+across separate commands, because systemd reapplies RuntimeDirectory settings
+before each command. Verify the effective distro unit retains `RuntimeDirectoryPreserve=restart`,
+and exercise tracking across a daemon restart from an already-running receiver
+namespace: preserving the directory inode matters for its sandbox mount.
+The post-pilot permission redesign is deferred as PERM-001.
+
 `ExecStartPre` checks the expanded configuration before every manual or
 automatic start; failure prevents Chrony from starting. `ExecStart` explicitly
 uses that same `/etc/chrony/chrony.conf`, retaining `-F 1` without reading
-`DAEMON_OPTS`. `Restart=on-failure` enables crash recovery; an explicit stop
+`DAEMON_OPTS`. Preserve the vendor's `!` command prefix: it permits Chrony to
+start with root credentials and perform its own privilege drop even when the
+inherited unit sets `User=_chrony`. It does not remove the unit's other sandbox
+or capability bounds. Omitting it on this Pi causes `Not superuser` before
+daemon startup. Verify `systemctl show chrony.service -p ExecStartEx -p User`
+reports the exact documented arguments and `flags=no-setuid`, then verify
+actual service startup and MainPID arguments. Argument inspection alone does
+not establish startup privilege. `Restart=on-failure` enables crash recovery; an explicit stop
 leaves it stopped. This is a trusted-operator procedure: keep configuration
 inputs unchanged while running; for later edits, stop the unit, edit, then
 start it through systemd. We accept the check/use interval and keep no

@@ -1,0 +1,6 @@
+{
+  "argument_type": "str",
+  "argument_length": 64,
+  "actual_validator_error": "trusted helper SHA256 required",
+  "scope": "Host reproduction through real CLI parsing and real validator type check; clock/instance/RTC construction and trusted filesystem metadata supplied at boundaries; no hardware access."
+}

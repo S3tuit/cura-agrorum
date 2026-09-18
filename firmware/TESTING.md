@@ -9,6 +9,43 @@ implements real sensor component and core-reading integration cases, including
 operator-guided fixtures. Its [coverage/evidence index](test_apps/sensor_carrier/COVERAGE.md)
 distinguishes implementation, prior component evidence and pending mapping runs.
 
+## Evidence retention
+
+Use [tests/evidence/](tests/evidence/README.md) only for destructive tests, tests
+requiring physical intervention, or runs lasting at least ten minutes. Retain
+a concise result, device/build identity, essential observations and restoration
+or acceptance limits. Fast host checks, ordinary builds and easily repeated
+nominal runs need no permanent evidence archive. Do not retain full dependency
+manifests, duplicate reports or verbose logs merely to prove execution. Removing
+routine captures does not erase historical outcomes or turn partial acceptance
+into PASS.
+
+## Pilot production fixture and configuration sequencing
+
+The approved 2026-09-18 production qualification batch uses the
+[sensor carrier](test_apps/on_device/SENSOR_CARRIER.md) in its nominal state,
+without the disconnected reference-voltage branch: JP_REF_ENABLE and R5, R6,
+R7 and R8 are not fitted. Other nominal connections and protection components
+remain required. This assembly cannot execute `adc_reference`; removing that
+unused branch supplies no new ADC-reference or electrical measurement result.
+
+This pilot validates the LoRa system and design. Final probe selection, soil
+sensor identifiers, placement and calibration are not additional entry gates.
+The production implementation still needs its actual GPIO/channel and DS ROM
+configuration, and selected nominal tests retain their acquisition, validity,
+mapping and cleanup assertions. Record the attached probes only as technical
+test inputs; do not fabricate identities or use unprovisioned ROM defaults as
+evidence of nominal acquisition. A requested change to those assertions needs
+an agreed contract update before execution.
+
+Board/partition, sensor and isolated test-identity inputs may be prepared before
+the final production build. Verify the resolved image/configuration and actual
+assembly afterward. Ordinary rebuilds preserve valid counters; destructive
+test storage and identity replacement retain their existing authorization and
+reset requirements. Test-to-production identity handover is a later phase.
+Historical evidence is reusable only for unchanged applicable inputs; changes
+to test-only branches do not by themselves qualify the assembled image.
+
 ## Philosophy and build
 
 Host tests use the production `node_core` with fake persistence, sensor, radio,
@@ -388,8 +425,9 @@ The repository contains a dedicated ESP32-C6 test application under
 production `node_core`, `node_persistence`, `node_platform_esp` and protocol
 codec/crypto code and use:
 
-- a 24 KiB `nvs_test` partition and a 2,944 KiB `storage_test` LittleFS
-  partition, separate from production labels;
+- a 24 KiB `nvs_test` partition at `0x9000` and a 2,944 KiB `storage_test`
+  LittleFS partition at `0x110000`, with different labels but exactly the same
+  physical ranges as production NVS and LittleFS;
 - deterministic reading and event values;
 - reduced logical log quotas so retention behavior can be exercised quickly;
 - the real ESP-IDF NVS, LittleFS and software-reset paths; and
@@ -400,6 +438,15 @@ codec/crypto code and use:
 New RTC and `node_core` terminal sleeps are 250 ms only in this test build. The
 production radio-cycle, airtime, ACK-wait and retry-jitter constants remain
 unchanged; the deterministic clock advances them without wall-clock waiting.
+
+Before flashing/running this app, record board/UART identity and explicit
+operator permission to destroy its existing application and storage, following
+the [destructive-storage procedure](test_apps/on_device/README.md#destructive-test-storage).
+The existing Make targets do not enforce that permission. After erasure, require
+a new node ID/key and the full contracted NVS/LittleFS/RTC identity-state reset
+before authenticated transmission; never resume an old identity with erased
+counters or migrate its backlog. Physical partition geometry and test semantics
+remain unchanged.
 
 Test state is erased before and after a scenario, but is preserved between the
 reset/deep-sleep stages of that scenario. A test-only storage inspector may read

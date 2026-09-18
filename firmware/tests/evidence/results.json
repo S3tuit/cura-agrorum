@@ -1,0 +1,143 @@
+{
+  "date": "2026-09-18",
+  "scope": "Historical proof of destructive test execution; curated from original records, not a source-reproduction archive or current qualification.",
+  "device": {
+    "base_mac": "cc8da2fc0224",
+    "chip": "ESP32-C6FH4 rev 0.2",
+    "connection": "UART-labelled USB, /dev/ttyUSB0"
+  },
+  "runs": [
+    {
+      "case": "bare-c6-all",
+      "retained_because": "Erases production-overlapping NVS/LittleFS and replaces the existing application.",
+      "command": "CCACHE_DISABLE=1 make test-hardware-all PORT=/dev/ttyUSB0",
+      "operator_authority": "User confirmed connected nominal C6; existing app and storage may be erased. New identity required before later authenticated TX.",
+      "result": {
+        "status": "PASS",
+        "unity_cases": 43,
+        "failures": 0,
+        "ignored": 0,
+        "duration_seconds": 181.75
+      },
+      "build": {
+        "git_commit": "9f9a2cf313fd19719849ff3a2239d0fb97a441a7",
+        "elf_sha256": "86eee26021a8a333b6d7c3655566acc48a34e2deb6210455ddf8b4db350f23cb",
+        "config_sha256": "a5bcbe12d2a9e1c57e88bb27dca0b937debb35628aa5ef471d90cf73d99dc9d1"
+      },
+      "cases_passed": [
+        "node core accepts current reading across deep sleep",
+        "node core converts unacknowledged current to drained backlog",
+        "node core quarantines permanently rejected current",
+        "node core retry later retains current and backlog",
+        "node core carries previous metrics into the next reading",
+        "node core restart after RTC consumption does not reuse metrics",
+        "persistence sample IDs are monotonic across software restarts",
+        "a successful persistence claim is committed before return",
+        "persistence sample ID exhaustion survives restart",
+        "persistence message IDs are monotonic across software restarts",
+        "a successful message claim is committed before return",
+        "persistence message ID exhaustion survives restart",
+        "sample and message counters advance independently",
+        "persistence initializes NVS and LittleFS independently",
+        "pending reading round trip survives software restart",
+        "bound backlog reuses exact frame across software restart",
+        "pending selection and removal are newest first",
+        "pending removal requires the expected sample ID",
+        "removed pending data stays removed across restart",
+        "quarantined reading survives restart with exact encoding",
+        "delivery events are durable before successful return",
+        "diagnostics become durable after sync all",
+        "sync all closes handles without unregistering LittleFS",
+        "LittleFS removes a representative torn pending tail",
+        "LittleFS removes a complete CRC-invalid pending tail",
+        "LittleFS removes unsupported pending type and version tails",
+        "LittleFS removes a semantically invalid pending tail",
+        "LittleFS preserves an unprovable pending boundary",
+        "persistence append repairs corruption before appending",
+        "stale pending compact file is never promoted",
+        "pending compaction retains the newest half",
+        "full non-pending logs reject without changing old data",
+        "persistence churn matches a reference model across restarts",
+        "platform clock is nondecreasing",
+        "platform randomness respects inclusive ranges",
+        "platform timer deep sleep lasts one minute and reports deep-sleep reset",
+        "RTC committed record survives timer deep sleep",
+        "RTC software reset is rejected and platform reports software reset",
+        "RTC consumed record stays invalid after software restart",
+        "RTC new commit replaces the previous commit",
+        "RTC accepts consecutive sample claimed from real NVS",
+        "RTC rejects nonconsecutive sample claimed from real NVS",
+        "RTC repeats exactly 20 retained deep-sleep round trips"
+      ],
+      "end_state": "Bare-C6 test image remains installed at Unity menu; fake radio only. Prior storage erased; authenticated operation requires new identity and full identity-state reset.",
+      "discarded_input_sha256": {
+        "bare-c6.xml": "bf87a1274e0626f2eef61085726a87fc7ad4823d0063ae179b9a2670707e10cf",
+        "bare-c6-uart.log": "8300972808f9f77225b405d90798e96e2bff6a08d90d541e7d7e523c585047bd"
+      }
+    },
+    {
+      "case": "sensor-carrier-nominal-reading",
+      "retained_because": "Erases NVS and formats LittleFS before and after the reading case.",
+      "run_id": "c4fcc2bdb5b44ddeafe51cc7eb6abaf9",
+      "at_utc": "2026-09-18T20:32:50.909128+00:00",
+      "fixture": "SENSOR_CARRIER nominal production; JP_REF_ENABLE/R5/R6/R7/R8 absent; operator confirmed 2026-09-18",
+      "operation": "reading",
+      "status": "software_passed_operator_acceptance_pending",
+      "build": {
+        "source_version": "9f9a2cf-dirty",
+        "elf_sha256": "7ae79bee132a495140965e90e907503f3c59fc692191fd068ab6c4a6b5f2921a",
+        "config_sha256": "9a551aa40f4360b5c52d404aaa64d7ad909809d1a1ed4c2380e2ba55eded110d"
+      },
+      "observations": {
+        "sample": {
+          "result": 0,
+          "duration_us": 1351199,
+          "validity": 31,
+          "soil0_mv": 2584,
+          "soil1_mv": 2584,
+          "temp0_centi_c": 2563,
+          "temp1_centi_c": 2550,
+          "enclosure_centi_c": 2514,
+          "pressure_pa": 96587,
+          "humidity_centi_pct": 6692
+        },
+        "reading": {
+          "sample_id": 0,
+          "run_ms": 1361,
+          "soil0_mv": 2584,
+          "soil1_mv": 2584,
+          "temp0_centi_c": 2563,
+          "temp1_centi_c": 2550,
+          "enclosure_centi_c": 2514,
+          "pressure_pa": 96587,
+          "humidity_centi_pct": 6692,
+          "reset_reason": 1,
+          "previous_current_tx_attempts": 0,
+          "previous_awake_ms": 0,
+          "previous_current_delivery_ms": 0,
+          "previous_cycle_tx_attempts": 0,
+          "previous_cycle_accepted_readings": 0,
+          "flags": 254
+        },
+        "body": "000000005105180a180a030af609d2094b790100241a0100000000000000fe00",
+        "pending_body": "000000005105180a180a030af609d2094b790100241a0100000000000000fe00",
+        "samples": 1,
+        "tx_calls": 1,
+        "rx_calls": 0,
+        "terminal_calls": 1,
+        "sleep_us": 900000000
+      },
+      "serial_excerpt": [
+        "CARRIER_STORAGE_ERASE WARNING: reading erases nvs_test and storage_test before and after this case, including any prior production counters and logs. Before production reuse, provision a NEW node ID AND key; never restore the old identity or counter backup.",
+        "CARRIER_READING samples=1 tx_calls=1 rx_calls=0 terminal_calls=1 sleep_us=900000000 body=000000005105180a180a030af609d2094b790100241a0100000000000000fe00 pending_body=000000005105180a180a030af609d2094b790100241a0100000000000000fe00",
+        "CARRIER_SAMPLE result=00000000 duration_us=1351199 validity=1f soil0_mv=2584 soil1_mv=2584 temp0_centi_c=2563 temp1_centi_c=2550 enclosure_centi_c=2514 pressure_pa=96587 humidity_centi_pct=6692",
+        "./main/test_sensor_carrier.c:383:carrier nominal core reading:PASS"
+      ],
+      "limits": "Software pass only; no new electrical/operator acceptance. TX and sleep calls use the test adapter, not RF transmission or a measured 900-second sleep.",
+      "end_state": "Nontransmitting sensor-carrier menu; production image not flashed. Fresh node ID/key and full identity-state reset required before authenticated transmission.",
+      "discarded_input_sha256": {
+        "SENSOR_READING.json": "6184d15f6262bc77fa23475b5efd08b5631d2b6a2ba5b70bc03a2c7e951ca5a6"
+      }
+    }
+  ]
+}

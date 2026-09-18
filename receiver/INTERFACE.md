@@ -763,6 +763,12 @@ receiver-group execution, absence of set-ID/world/group-write permissions,
 and exactly `cap_sys_time=ep`; it also requires a capability-free receiver
 parent, the retained bounding capability and `NoNewPrivileges=0`.
 
+The installed receiver CLI accepts `--rtc-helper-sha256` as exactly 64
+lowercase hexadecimal characters, converts it to 32 bytes during argument
+parsing, and passes those bytes to the adapter. Malformed input fails before
+clock/device construction without echoing the supplied value. The adapter's
+strict digest type, ELF identity and privilege checks are unchanged.
+
 Deployment supplies a finite validated RTC kernel-operation bound; the
 adapter refuses to start a read without enough remaining deadline for that
 bound. It still records late actual completion as `DEADLINE_EXCEEDED`.
@@ -878,6 +884,16 @@ configuration, not a per-call argument. The backend pins and startup-checks a
 supported chronyc output version before time quality can become
 `NETWORK_SYNCED`.
 
+The pilot permits chronyc reply sockets in `/run/chrony`. After daemon startup,
+that directory is owned by the Chrony daemon user with group `cura-receiver`
+and mode 01770; the sticky bit prevents the receiver from removing/replacing
+the daemon-owned socket. `chronyd.sock` retains daemon ownership, group
+`cura-receiver` and mode 0660. Reapply these permissions after every start.
+The receiver sandbox permits writes only to its data directory and this runtime
+directory. An absent runtime directory must not itself prevent offline startup.
+This grants direct Chrony command access to the receiver identity; it is not
+command-level privilege isolation.
+
 The initial deployment pins chronyc 4.6.1 and its 14-field CSV tracking output.
 All fields are structurally validated, including unused finite numeric fields;
 local mode (`7F7F0101`) and an absent reference cannot establish network trust.
@@ -989,6 +1005,12 @@ provenance commit.
 | `UNAVAILABLE` | chronyd or its command socket was unavailable |
 | `DEADLINE_EXCEEDED` | The operation did not complete by its deadline |
 | `INVALID_RESPONSE` | Output or values did not match the supported contract |
+
+For pinned chronyc 4.6.1, a completed tracking command with exit status 1,
+empty stdout and exactly `Could not open connection to daemon\n` on stderr
+is `UNAVAILABLE`. Deadline expiry takes precedence; overflow or any different
+response envelope is not accepted by this connection-error rule. This tracking
+classification does not change clock-step submission uncertainty.
 
 `apply_pending_correction_by_step()` executes only the fixed privileged
 equivalent of `chronyc makestep`, which asks chronyd to apply its current
@@ -2585,6 +2607,26 @@ defined in [`INTERFACE_DIAGNOSTIC.md`](INTERFACE_DIAGNOSTIC.md); diagnostic
 admission remains best effort and never controls recovery.
 
 ### Receiver configuration loading
+
+Installed entry points share these startup environment inputs:
+
+| Variable | Default when the entire path set is omitted |
+|---|---|
+| `CURA_RECEIVER_CONFIGURATION` | `/etc/cura-agrorum/receiver-group.json` |
+| `CURA_RECEIVER_DATABASE` | `/var/lib/cura-agrorum/receiver.sqlite3` |
+| `SQLITE_TMPDIR` | `/var/lib/cura-agrorum/tmp` |
+
+If any path variable is present, all three must be present, nonempty absolute
+paths without parent traversal or NUL bytes. Configuration file, database file
+and temporary directory must be distinct. Invalid inputs fail before hardware
+or storage access. With `CURA_RECEIVER_TEST_ROOT`, explicit paths are required,
+each strictly beneath the absolute nonempty root. The root cannot overlap
+`/etc/cura-agrorum` or `/var/lib/cura-agrorum` in either direction. Checks are
+lexical; target installation separately rejects symlink aliases and verifies
+trusted ownership/permissions. Error messages do not echo environment values.
+Runtime and storage preflight use the same loader and set `SQLITE_TMPDIR` to
+the resolved temporary directory before starting storage operations. Existing
+configuration-loader and SQLite validation remain authoritative.
 
 `receiver-group.json` remains operator-controlled configuration, not SQLite
 state. `load_receiver_configuration()` is startup-only and returns the

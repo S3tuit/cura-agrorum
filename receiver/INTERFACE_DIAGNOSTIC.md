@@ -54,6 +54,16 @@ communicator to map through the `PERSISTENCE_CONTROL` or caller-violation
 `CORE` catalogue, but it never creates a diagnostic identity or inserts a
 persistence-created diagnostic.
 
+All emission requirements below apply only while ordinary producer admission
+remains open. Closing `PersistQueue` also closes diagnostics: later failures,
+including clean-stop commit failure or an unresolved outcome, may lose their
+`DiagnosticV1`. Do not reserve, allocate a new diagnostic identity for an
+admission attempt, or increment admission counters after closure. Discard any
+completed diagnostic episode still awaiting admission at closure; bounded
+service evidence remains permitted. Do not reopen the queue or use an alternate
+write path. Exact clean-stop reconciliation remains bounded by the existing
+shutdown deadline and does not restore diagnostic admission.
+
 Diagnostics are immutable once published. Failure to admit a diagnostic never
 recursively creates another diagnostic. The communicator increments exactly
 the original `DIAGNOSTIC` entity-kind/admission-result matrix cell and takes no
@@ -1201,11 +1211,15 @@ The valid error-code/operation combinations are closed:
 | `REPRESENTATION_INVARIANT` | `ENCODE`, `DECODE`, `APPEND` |
 | `PERSIST_QUEUE_CONTRACT` | `APPEND`, `CLEANUP` |
 | `PERSISTENCE_CONTROL_CONTRACT` | `READ`, `WRITE`, `CLEANUP` |
-| `MEMORY_EXHAUSTED` | `INITIALIZE`, `ENCODE`, `DECODE`, `APPEND`, `TRANSMIT`, `RECEIVE`, `CLEANUP` |
+| `MEMORY_EXHAUSTED` | Every defined non-`NONE` `DiagnosticOperation` |
 | `CODEC_BACKEND` | `ENCODE`, `DECODE` |
 | `CRYPTO_BACKEND` | `ENCODE`, `DECODE` |
 | `ARITHMETIC_RANGE` | `VALIDATE`, `ENCODE`, `DECODE` |
-| `UNEXPECTED_EXCEPTION` | `INITIALIZE`, `VALIDATE`, `ENCODE`, `DECODE`, `APPEND`, `TRANSMIT`, `RECEIVE`, `RECOVER`, `CLEANUP` |
+| `UNEXPECTED_EXCEPTION` | Every defined non-`NONE` `DiagnosticOperation` |
+
+For these two generic implementation-failure codes, retain the actual operation;
+phase and stage identify the action more precisely. `NONE` remains invalid, and
+the specific error codes retain their narrow operation allowlists.
 
 An expected OS/driver error must first be normalized by its owning adapter and
 uses that domain. `UNEXPECTED_EXCEPTION` is reserved for a genuine code-path
@@ -1379,12 +1393,17 @@ otherwise forbids.
 
 ## Core diagnostic emission contract
 
-A core failure creates at most one best-effort diagnostic. If a packet unit is
-already reserved and its required terminal profiling fields can still be
-completed, the communicator first finalizes and publishes that unit as
-`UNKNOWN_INTERRUPTED`, then attempts the separate diagnostic. It attempts the
-documented safe radio state and terminates regardless of either admission
-result.
+A core failure creates at most one best-effort diagnostic. The communicator
+first inhibits new TX and performs bounded terminal radio cleanup. Once packet
+handling has reached a terminal receiver state, it finalizes and publishes any
+still-sound reserved packet unit using the actual ACK facts under
+[`INTERFACE.md`](INTERFACE.md#protocol-ingress-lifecycle), then attempts the
+separate diagnostic and terminates regardless of either publication result.
+Known ACK outcomes survive a later core failure; `UNKNOWN_INTERRUPTED` applies
+only to an attempted ACK whose terminal outcome remains unknown. Definite
+pre-SetTx abortion uses `SET_TX_FAILED` without inventing T4. Failed or unknown
+hardware cleanup does not forbid truthful terminal profiling, but must never
+be represented as confirmed radio safety or authorize a clean-stop marker.
 
 A producer-side queue violation may use `PersistQueue` for its diagnostic only
 when the rejected operation is known not to have mutated queue ownership and
@@ -1421,7 +1440,7 @@ failure.
 | Required checked non-time arithmetic exceeds its allowed representation | Emit the applicable operation plus `ARITHMETIC_RANGE` and terminate |
 | Process-level memory allocation fails | Attempt one allocation-free/preallocated `MEMORY_EXHAUSTED` diagnostic only if feasible, then terminate; inability to admit it creates no recursion |
 | An exception escapes an adapter or communicator phase with no defined operational mapping | Emit one `UNEXPECTED_EXCEPTION` with phase/stage only, perform exception finalization and terminate; implementation review must decide whether a later catalogue revision should normalize it |
-| Top-level packet exception leaves ACK terminal outcome unknown | Complete the reserved profile as `UNKNOWN_INTERRUPTED` when possible, publish it before the diagnostic, establish a safe radio state and terminate |
+| Top-level packet exception | Inhibit TX and perform bounded terminal cleanup; publish the sound reserved profile with preserved ACK facts (UNKNOWN_INTERRUPTED only for attempted TX with unknown terminal outcome), then attempt the diagnostic and terminate |
 | Diagnostic reservation or publication itself fails | Do not construct another diagnostic or make another capacity attempt; preserve the original failure through service logging when possible and terminate |
 
 ## Required core-diagnostic tests
@@ -1438,8 +1457,12 @@ At minimum, test:
   poison isolation producing no core diagnostic;
 - queue-known-sound violation allowing at most one best-effort diagnostic and
   queue-uncertain violation making no further queue call;
-- post-acceptance top-level exception publishing an `UNKNOWN_INTERRUPTED`
-  profile before the diagnostic when publication remains safe;
+- post-acceptance top-level exceptions before SetTx, during uncertain attempted
+  TX and after confirmed TxDone/timeout: bounded terminal cleanup precedes
+  publication, actual ACK facts and timestamps are preserved, and profile
+  publication precedes the diagnostic when queue ownership remains sound;
+- failed terminal cleanup permitting truthful profiling without a false
+  safe-radio result or clean-stop marker;
 - codec, crypto and arithmetic backend failures distinguished from malformed
   external input;
 - unclassified adapter exception selecting `CORE` without also creating a

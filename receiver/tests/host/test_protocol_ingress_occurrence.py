@@ -6,6 +6,7 @@ from dataclasses import replace
 
 import pytest
 
+from cura_receiver.producer_admission import ProducerAdmission
 from cura_receiver.generated.receiver_enums_generated import (
     AckSelection,
     AckTxResult,
@@ -49,7 +50,7 @@ def _context(
         assert reserved.reservation is not None
         reserved.reservation.publish(object())
     ingress = ProtocolIngress(
-        queue=queue,
+        queue=ProducerAdmission(queue),
         monotonic_clock=FakeOsClock(monotonic_us=20, realtime_us=0),
         auth_node_keys={REVIEWED_NODE_ID: REVIEWED_NODE_KEY},
     )
@@ -198,3 +199,43 @@ def test_active_occurrence_blocks_begin_until_completion(
     assert queue.snapshot() == before
     assert ingress._active_occurrence is following
     ingress.finalize(following, _terminal(following))
+
+
+@pytest.mark.parametrize('variant', [1, 2, 3])
+def test_all_profile_variants_precede_reservation(monkeypatch, variant):
+    from cura_receiver.protocol_ingress import ProtocolIngressPreTxProfileV1
+    queue, ingress = _context()
+    original = ProtocolIngressPreTxProfileV1.__post_init__
+    calls = 0
+    def fail_selected(profile):
+        nonlocal calls
+        calls += 1
+        assert queue.snapshot().reserved_entities == 0
+        original(profile)
+        if calls == variant:
+            raise RuntimeError('injected construction failure')
+    with monkeypatch.context() as patch:
+        patch.setattr(ProtocolIngressPreTxProfileV1, '__post_init__', fail_selected)
+        with pytest.raises(RuntimeError):
+            ingress.begin(ingress_packet())
+    assert calls == variant
+    assert ingress.active_occurrence is None
+    assert queue.snapshot().reserved_entities == queue.snapshot().published_entities == 0
+    assert all(cell == 0 for row in ingress.admission.counts for cell in row)
+    occurrence = ingress.begin(ingress_packet())
+    ingress.finalize(occurrence, _terminal(occurrence))
+    assert queue.snapshot().published_entities == 1
+
+
+def test_occurrence_allocation_failure_precedes_reservation(monkeypatch):
+    queue, ingress = _context()
+    from cura_receiver.protocol_ingress import ProtocolIngressOccurrenceV1
+    def fail(*args, **kwargs):
+        raise MemoryError()
+    monkeypatch.setattr(ProtocolIngressOccurrenceV1, '_create', fail)
+    with pytest.raises(MemoryError):
+        ingress.begin(ingress_packet())
+    assert ingress.active_occurrence is None
+    assert queue.snapshot().reserved_entities == 0
+    queue.close()
+    assert queue.snapshot().closed_and_drained

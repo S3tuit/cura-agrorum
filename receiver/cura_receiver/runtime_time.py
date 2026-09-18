@@ -3,6 +3,7 @@
 from dataclasses import dataclass, replace
 from enum import Enum, auto
 
+from .producer_admission import ProducerAdmission
 from .airtime_ledger import AirtimeCorrelation
 
 from .elapsed_duration import (
@@ -109,6 +110,7 @@ class RtcRefreshStatus(Enum):
     READBACK_MISMATCH = auto()
     PERSISTENCE_FAILED = auto()
     VERIFIED = auto()
+    SHUTDOWN_CANCELLED = auto()
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +122,60 @@ class RtcRefreshResult:
     commit_result: CommunicatorStateCommitResult | None = None
     reconciliation_result: CommunicatorStateLoadResult | None = None
     prewrite_read_result: Ds3231ReadResult | None = None
+
+
+class _RtcCancelled(Exception):
+    """Internal episode cancellation; never an adapter failure."""
+
+
+class _RtcSourceInvalidated(Exception):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class _RtcAction:
+    operation: E.DiagnosticOperation
+    execute: object
+
+
+class RtcRefreshEpisode:
+    """Retained policy continuation; advance executes at most one external call.
+
+    Results are processed immediately after that call, before returning to the
+    scheduler. Thus cancellation retains observed roots and actual dispositions.
+    """
+
+    def __init__(self, steps):
+        self._steps = steps
+        self.result = None
+        self._action = None
+        self._resume(next, steps)
+
+    def _resume(self, function, value):
+        try:
+            self._action = function(value)
+        except StopIteration as done:
+            self.result = done.value
+            self._action = None
+
+    @property
+    def operation(self):
+        return None if self._action is None else self._action.operation
+
+    def advance(self):
+        if self.result is None:
+            try:
+                value = self._action.execute()
+            except (_RtcSourceInvalidated, OverflowError) as error:
+                self._resume(self._steps.throw, error)
+            else:
+                self._resume(self._steps.send, value)
+        return self.result
+
+    def cancel(self):
+        if self.result is None:
+            self._resume(self._steps.throw, _RtcCancelled())
+        return self.result
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,6 +241,8 @@ class RuntimeTime:
         state_owner=None,
         settings=None,
     ):
+        if type(queue) is not ProducerAdmission:
+            raise TypeError("runtime time requires communicator ProducerAdmission")
         ReceiverInstanceStart(receiver_instance_id, 0)
         self.instance = receiver_instance_id
         self.clock, self.kernel, self.queue, self.policy = clock, kernel, queue, policy
@@ -222,6 +280,28 @@ class RuntimeTime:
         self.rtc_trust_invalidated_count = 0
         self.rtc_write_counts = {disposition: 0 for disposition in W}
         self.rtc_readback_verified_count = 0
+        self.rtc_refresh_episode = None
+
+    @property
+    def state(self):
+        return self._state
+
+    @state.setter
+    def state(self, value):
+        previous = getattr(self, "_state", None)
+        if previous is None:
+            self.time_quality_transition_count = self.rtc_health_transition_count = 0
+            self.last_time_quality_transition_monotonic_us = None
+            self.last_rtc_health_transition_monotonic_us = None
+        else:
+            now = self.clock.now_monotonic_us()
+            if value.quality is not previous.quality:
+                self.time_quality_transition_count = min((1 << 64) - 1, self.time_quality_transition_count + 1)
+                self.last_time_quality_transition_monotonic_us = now
+            if value.rtc_health is not previous.rtc_health:
+                self.rtc_health_transition_count = min((1 << 64) - 1, self.rtc_health_transition_count + 1)
+                self.last_rtc_health_transition_monotonic_us = now
+        self._state = value
 
     @property
     def durable_state(self):
@@ -680,38 +760,89 @@ class RuntimeTime:
             return max(self.next_rtc_attempt_monotonic_us, due - lead)
         return self.next_rtc_attempt_monotonic_us
 
-    def _commit_rtc_state(self, provenance, snapshot, generation):
-        """The callback supplies the real state owner's complete immutable snapshot."""
-        now = self.clock.now_monotonic_us()
-        utc = checked_correlated_utc(self.sample.utc_us, self.sample.monotonic_us, now)
-        requested = snapshot(
-            provenance=provenance,
-            snapshot_monotonic_us=now,
-            snapshot_utc_us=utc,
-            previous_state=self.durable_state,
-        )
-        if requested is None:
-            return False, None, None
-        require_immutable_state(requested)
-        if (
-            requested.rtc_provenance != provenance
-            or requested.airtime_snapshot_utc_us != utc
-        ):
-            raise ValueError("complete state callback violated the time handoff")
-        if self.state.generation != generation or not self._rtc_source_valid(
-            generation, allow_health_pending=True
-        ):
-            return False, None, None
-        result = self.state_owner.commit(
-            requested,
-            deadline_monotonic_us=self.deadline(self.settings.control_budget_us),
-        )
+    def _commit_rtc_state(self, provenance, snapshot, generation, on_commit):
+        """Build fresh complete state at submission; reconciliation is another turn."""
+        def submit():
+            if not self._rtc_source_valid(generation, allow_health_pending=True):
+                return None, None
+            now = self.clock.now_monotonic_us()
+            utc = checked_correlated_utc(self.sample.utc_us, self.sample.monotonic_us, now)
+            requested = snapshot(provenance=provenance, snapshot_monotonic_us=now,
+                snapshot_utc_us=utc, previous_state=self.durable_state)
+            if requested is None:
+                return None, None
+            require_immutable_state(requested)
+            if requested.rtc_provenance != provenance or requested.airtime_snapshot_utc_us != utc:
+                raise ValueError("complete state callback violated the time handoff")
+            if not self._rtc_source_valid(generation, allow_health_pending=True):
+                return None, None
+            result = self.state_owner.commit(requested,
+                purpose=E.PersistenceControlPurpose.RTC_PROVENANCE,
+                deadline_monotonic_us=self.deadline(self.settings.control_budget_us))
+            return requested, result
+
+        requested, result = yield _RtcAction(E.DiagnosticOperation.WRITE, submit)
+        on_commit(result, None)
         loaded = None
-        if result.disposition is CD.OUTCOME_UNKNOWN:
-            loaded = self.state_owner.reconcile(
-                deadline_monotonic_us=self.deadline(self.settings.control_budget_us)
-            )
-        return self.state_owner.state == requested, result, loaded
+        if result is not None and result.disposition is CD.OUTCOME_UNKNOWN:
+            loaded = yield _RtcAction(E.DiagnosticOperation.READ,
+                lambda: self.state_owner.reconcile(
+                    deadline_monotonic_us=self.deadline(self.settings.control_budget_us)))
+        on_commit(result, loaded)
+        return requested is not None and self.state_owner.state == requested, result, loaded
+
+    def _recover_rtc_steps(self, rtc, on_result):
+        """The recovery window includes scheduler time; never restart it per turn."""
+        start = self.clock.now_monotonic_us()
+        deadline = self.deadline(self.settings.rtc_recovery_window_us)
+        attempts = 0
+        first_failure = None
+        result = Ds3231ReadResult(R.DEADLINE_EXCEEDED, start, start)
+        now = start
+        while now < deadline:
+            def read():
+                # Radio work may have consumed the remaining retry window.
+                if self.clock.now_monotonic_us() >= deadline:
+                    return None
+                return rtc.read_time(deadline_monotonic_us=self.deadline(self.settings.rtc_read_budget_us))
+            attempt = yield _RtcAction(E.DiagnosticOperation.READ, read)
+            now = self.clock.now_monotonic_us()
+            if attempt is not None:
+                result = attempt
+                attempts += 1
+                checked_monotonic_elapsed(result.operation_finished_at_monotonic_us, now)
+                if first_failure is None and result.status in (R.IO_ERROR, R.DEADLINE_EXCEEDED):
+                    first_failure = result
+            if now >= deadline:
+                result = replace(result, status=R.DEADLINE_EXCEEDED, rtc_utc_s=None)
+            if first_failure is None and result.status is R.DEADLINE_EXCEEDED:
+                first_failure = result
+            recovery = RtcReadRecoveryResult(result, start, now, attempts, first_failure)
+            on_result(recovery)
+            if now >= deadline or result.status in (R.OK, R.INVALID):
+                return recovery
+        recovery = RtcReadRecoveryResult(result, start, now, attempts, first_failure)
+        on_result(recovery)
+        return recovery
+
+    def advance_rtc_refresh(self, rtc, snapshot, *, stop_requested=False, shutdown_deadline=None):
+        if self.rtc_refresh_episode is None:
+            if stop_requested or (shutdown_deadline is not None and self.clock.now_monotonic_us() >= shutdown_deadline):
+                return RtcRefreshResult(RtcRefreshStatus.SHUTDOWN_CANCELLED)
+            self.rtc_refresh_episode = RtcRefreshEpisode(self._refresh_rtc_steps(rtc, snapshot))
+        episode = self.rtc_refresh_episode
+        result = (episode.cancel() if stop_requested or (shutdown_deadline is not None
+            and self.clock.now_monotonic_us() >= shutdown_deadline) else episode.advance())
+        if result is not None:
+            self.rtc_refresh_episode = None
+        return result
+
+    def cancel_rtc_refresh(self):
+        if self.rtc_refresh_episode is None:
+            return None
+        result = self.rtc_refresh_episode.cancel()
+        self.rtc_refresh_episode = None
+        return result
 
     def _rtc_source_valid(self, generation, *, allow_health_pending=False):
         if (
@@ -735,7 +866,14 @@ class RuntimeTime:
         )
 
     def refresh_rtc(self, rtc, snapshot):
-        """One invalidate/write/read-back/provenance episode; no blind device retries."""
+        """Synchronous component harness; the application advances one step per turn."""
+        result = None
+        while result is None:
+            result = self.advance_rtc_refresh(rtc, snapshot)
+        return result
+
+    def _refresh_rtc_steps(self, rtc, snapshot):
+        """One retained invalidate/write/read-back/provenance episode."""
         before = self.state
         generation = before.generation
         start = self.clock.now_monotonic_us()
@@ -783,6 +921,10 @@ class RuntimeTime:
                 status, root, write, read, commit, reconciliation, prewrite
             )
 
+        def record_commit(result, loaded):
+            nonlocal commit, reconciliation
+            commit, reconciliation = result, loaded
+
         def record_read_failure(recovery, stage):
             nonlocal root
             trigger = recovery.first_failure
@@ -813,9 +955,9 @@ class RuntimeTime:
             if self.state_owner is not None and self.state_owner.pending is not None:
                 if start < self.next_rtc_attempt_monotonic_us:
                     return RtcRefreshResult(RtcRefreshStatus.DEFERRED)
-                reconciliation = self.state_owner.reconcile(
-                    deadline_monotonic_us=self.deadline(self.settings.control_budget_us)
-                )
+                reconciliation = yield _RtcAction(E.DiagnosticOperation.READ,
+                    lambda: self.state_owner.reconcile(
+                        deadline_monotonic_us=self.deadline(self.settings.control_budget_us)))
                 if self.state_owner.pending is not None:
                     return finish(RtcRefreshStatus.PERSISTENCE_FAILED)
             if self.durable_state is None or not self._rtc_source_valid(generation):
@@ -827,9 +969,11 @@ class RuntimeTime:
             )
             if due is None or start < due or start < self.next_rtc_attempt_monotonic_us:
                 return RtcRefreshResult(RtcRefreshStatus.DEFERRED)
-            recovered = self.recover_rtc(rtc)
-            prewrite = recovered.result
-            record_read_failure(recovered, E.TimeFailureStage.READ_RTC)
+            def prewrite_result(recovery):
+                nonlocal prewrite
+                prewrite = recovery.result
+                record_read_failure(recovery, E.TimeFailureStage.READ_RTC)
+            yield from self._recover_rtc_steps(rtc, prewrite_result)
             if generation != self.state.generation:
                 return finish(RtcRefreshStatus.TRUST_INVALIDATED)
             if prewrite.status is not R.OK:
@@ -844,8 +988,8 @@ class RuntimeTime:
             if not self._rtc_source_valid(generation):
                 return finish(RtcRefreshStatus.TRUST_INVALIDATED)
             if self.durable_state.rtc_provenance is not None:
-                acknowledged, commit, reconciliation = self._commit_rtc_state(
-                    None, snapshot, generation
+                acknowledged, commit, reconciliation = yield from self._commit_rtc_state(
+                    None, snapshot, generation, record_commit
                 )
                 if not acknowledged:
                     if not self._rtc_source_valid(
@@ -859,18 +1003,22 @@ class RuntimeTime:
                     )
             if not self._rtc_source_valid(generation):
                 return finish(RtcRefreshStatus.TRUST_INVALIDATED)
-            value = (
-                checked_correlated_utc(
-                    self.sample.utc_us,
-                    self.sample.monotonic_us,
-                    self.clock.now_monotonic_us(),
+            def write_device():
+                if not self._rtc_source_valid(generation):
+                    raise _RtcSourceInvalidated()
+                value = (
+                    checked_correlated_utc(
+                        self.sample.utc_us,
+                        self.sample.monotonic_us,
+                        self.clock.now_monotonic_us(),
+                    )
+                    // 1_000_000
                 )
-                // 1_000_000
-            )
-            write = rtc.write_time(
-                rtc_utc_s=value,
-                deadline_monotonic_us=self.deadline(self.settings.command_budget_us),
-            )
+                return rtc.write_time(
+                    rtc_utc_s=value,
+                    deadline_monotonic_us=self.deadline(self.settings.command_budget_us),
+                )
+            write = yield _RtcAction(E.DiagnosticOperation.WRITE, write_device)
             self.rtc_write_counts[write.disposition] = min(
                 (1 << 63) - 1, self.rtc_write_counts[write.disposition] + 1
             )
@@ -911,9 +1059,11 @@ class RuntimeTime:
             if write.disposition is W.NOT_APPLIED:
                 return finish(RtcRefreshStatus.WRITE_FAILED)
             # Read-back is mandatory after possible application, even if the generation changed.
-            recovered = self.recover_rtc(rtc)
-            read = recovered.result
-            record_read_failure(recovered, E.TimeFailureStage.READ_BACK_RTC)
+            def readback_result(recovery):
+                nonlocal read
+                read = recovery.result
+                record_read_failure(recovery, E.TimeFailureStage.READ_BACK_RTC)
+            yield from self._recover_rtc_steps(rtc, readback_result)
             matched &= generation == self.state.generation
             if matched:
                 health = rtc_health(read)
@@ -993,8 +1143,8 @@ class RuntimeTime:
             )
             if provenance is None:
                 return finish(RtcRefreshStatus.TRUST_INVALIDATED)
-            acknowledged, commit, reconciliation = self._commit_rtc_state(
-                provenance, snapshot, generation
+            acknowledged, commit, reconciliation = yield from self._commit_rtc_state(
+                provenance, snapshot, generation, record_commit
             )
             if not acknowledged:
                 if not self._rtc_source_valid(generation, allow_health_pending=True):
@@ -1008,6 +1158,10 @@ class RuntimeTime:
                 return finish(RtcRefreshStatus.TRUST_INVALIDATED)
             self.last_refresh_monotonic_us = self.clock.now_monotonic_us()
             return finish(RtcRefreshStatus.VERIFIED)
+        except _RtcCancelled:
+            return finish(RtcRefreshStatus.SHUTDOWN_CANCELLED)
+        except _RtcSourceInvalidated:
+            return finish(RtcRefreshStatus.TRUST_INVALIDATED)
         except OverflowError:
             if root is None:
                 root = self._failure(

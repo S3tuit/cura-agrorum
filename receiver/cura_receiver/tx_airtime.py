@@ -3,6 +3,7 @@
 from dataclasses import dataclass, replace
 from enum import Enum, auto
 
+from .generated import receiver_enums_generated as E
 from .airtime_ledger import AirtimeCorrelation, AirtimeLedger, SnapshotDeferred
 from .communicator_state_persistence import (
     COMMUNICATOR_STATE_BUCKET_CAPACITY as CAPACITY,
@@ -178,6 +179,11 @@ class TxAirtimePolicy:
     @property
     def state(self):
         return self.owner.state
+
+    @property
+    def outstanding_bucket_expiration_utc_us(self):
+        """Diagnostic correlation only; this does not authorize spending."""
+        return None if self._grant is None else self._grant.expiration
 
     @property
     def available_charge_us(self):
@@ -434,7 +440,8 @@ class TxAirtimePolicy:
             return AirtimeUpdate(AirtimeReason.INVALID_STATE)
         self._pending_requested = requested
         result = self.owner.commit(
-            requested, deadline_monotonic_us=deadline_monotonic_us
+            requested, deadline_monotonic_us=deadline_monotonic_us,
+            purpose=E.PersistenceControlPurpose.AIRTIME_HISTORY_RECOVERY
         )
         return self._adopt_recovery_result(result, requested)
 
@@ -648,6 +655,10 @@ class TxAirtimePolicy:
         )
         self._pending_requested = requested
         result = self.owner.commit(
-            requested, deadline_monotonic_us=deadline_monotonic_us
+            requested, deadline_monotonic_us=deadline_monotonic_us,
+            purpose=(E.PersistenceControlPurpose.AIRTIME_BUCKET_GRANT if grant is not None
+                     else E.PersistenceControlPurpose.AIRTIME_BUCKET_SETTLEMENT),
+            bucket_expiration_utc_us=(grant.expiration if grant is not None
+                else self._grant.expiration if self._grant is not None else None),
         )
         return self._finish_transition(committed=result)

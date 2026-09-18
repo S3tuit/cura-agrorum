@@ -2,6 +2,7 @@ from dataclasses import replace
 
 import pytest
 
+from cura_receiver.producer_admission import ProducerAdmission
 from cura_receiver.generated import receiver_enums_generated as E
 from cura_receiver.persist_queue import PersistQueue, PersistenceAdmissionSnapshot
 from cura_receiver.ports.chrony import ChronyTrackingResult, ChronyQueryStatus as Q
@@ -28,7 +29,7 @@ def runtime(*, capacity=100, health=R.OK):
         receiver_instance_id=bytes.fromhex("00112233445546778899aabbccddeeff"),
         clock=clock,
         kernel=kernel,
-        queue=queue,
+        queue=ProducerAdmission(queue),
         policy=TimePolicy(maximum_network_skew_ppb=1000),
         startup_rtc_result=rtc,
     )
@@ -322,7 +323,9 @@ def test_step_deadline_during_trusted_reservation(monkeypatch, completion_offset
         return result
 
     monkeypatch.setattr(PersistQueue, "try_reserve_one", delayed_reservation)
+    before_count = rt.queue.counts[4][0]
     result = rt.poll_chrony(chrony)
+    assert rt.queue.counts[4][0] - before_count == (1 if completion_offset < 0 else 2)
     assert queue.snapshot().reserved_entities == 0
     assert queue.snapshot().published_entities == 2  # Boundary plus trusted recovery or timeout.
     assert rt.state.generation == 2  # One step transition and one tracking completion.
@@ -425,7 +428,7 @@ def prepared_rtc_runtime(tmp_path):
     rt.state_owner = CommunicatorStateOwner(
         control=worker.control, initial_state=loaded.state
     )
-    rt.queue = worker.queue
+    rt.queue = ProducerAdmission(worker.queue)
     sample(rt, kernel)
     rt.sample_network(tracking(rt))
     rtc = FakeDs3231Control()
@@ -1200,7 +1203,7 @@ def step_crash_child(root, milestone, pipe):
     )
     worker.start()
     assert worker.wait_started(deadline_monotonic_us=5_001_000).database_failure is None
-    rt.queue = worker.queue
+    rt.queue = ProducerAdmission(worker.queue)
     chrony = FakeChronyControl()
     chrony.tracking_results.append(tracking(rt, correction=40_000_000))
     boundary = rt.poll_chrony(chrony)
@@ -1302,7 +1305,7 @@ def test_step_publication_process_crash_restart(tmp_path, milestone, committed):
                 ).fetchone()[0] == int(committed == 2)
             kernel = FakeKernelClock()
             rt = RuntimeTime(
-                receiver_instance_id=new_id, clock=clock, kernel=kernel, queue=worker.queue,
+                receiver_instance_id=new_id, clock=clock, kernel=kernel, queue=ProducerAdmission(worker.queue),
                 policy=TimePolicy(maximum_network_skew_ppb=1000),
                 startup_rtc_result=Ds3231ReadResult(R.OK, 2000, 2000, UTC // 1_000_000),
             )

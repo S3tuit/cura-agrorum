@@ -548,8 +548,9 @@ finishes after its deadline. Neither method reads `CLOCK_REALTIME`, changes
 Linux system time, performs persistence I/O or retries without returning to
 communicator policy.
 
-The pilot communicator uses `recover_rtc_read()` for ordinary RTC reads,
-pre-write communication checks and post-write verification. It repeatedly
+The pilot communicator applies the `recover_rtc_read()` policy to ordinary RTC
+reads, pre-write communication checks and post-write verification; refresh
+advances individual attempts in separate scheduler turns. The policy repeatedly
 calls this single-attempt port during a 3000000-us recovery window, stopping
 on the first `OK` or `INVALID`. Other read results permit another attempt while
 the window remains open. Each call has its own 5000000-us deadline budget,
@@ -676,6 +677,25 @@ commit. A mismatch, invalid read, failed read-back or invalidated generation
 creates no provenance, and an unknown write is never retried blindly. A
 physical write may therefore succeed without becoming trusted; a later stable
 eligible episode overwrites and verifies it.
+
+RTC refresh is one retained incremental episode. Each scheduler turn performs
+at most one bounded RTC adapter or persistence-control action; read retries and
+exact unknown-commit reconciliation are separate actions. Ready radio work and
+stop intent are checked between actions. Retry windows include intervening
+scheduler time, and the existing per-call bounds remain unchanged.
+
+Once shutdown is requested, no further refresh action is submitted. An in-flight
+bounded primitive returns normally; the episode then reports runtime-only
+`SHUTDOWN_CANCELLED`, retaining actual results, counters and any observed failure
+root. Cancellation itself is not a TIME failure. This explicitly permits skipping
+remaining read-back/verification during shutdown, even after a possibly applied
+write. Provenance is unchanged before invalidation, absent after acknowledged
+invalidation, and unusable while invalidation or a later commit is unresolved.
+An already-submitted verified-provenance commit is reconciled exactly by the
+state owner; cancellation does not retract it or manufacture a new commit.
+No unverified update establishes RTC trust. The absolute application shutdown
+deadline is shared across subsequent cleanup and is never restarted per action.
+
 
 ### Pilot Linux backend and privilege boundary
 
@@ -1079,6 +1099,16 @@ An unexpected RX timeout retains `UNEXPECTED_IRQ` and requires complete RX
 restoration. A timely matching TX timeout retains `TX_TIMEOUT`, absent T5 and
 its airtime charge. Capture completion facts before fresh standby/IRQ clearing;
 a subsequent restore failure cannot erase an already confirmed TX outcome.
+
+`RadioResult.receive_event` is absent for an idle wait or an event whose edge
+metadata is untrusted. Otherwise it is one immutable `RadioReceiveEvent` for
+both success and failure: actual `edge_timestamp_ns` and T1, optional IRQ/device
+errors, optional copied `frame` and actual T2, optional RSSI/SNR and BUSY metrics.
+`usable_for_ingress` becomes true only after the complete receive path, including
+IRQ clearing, succeeds. Copied bytes remain evidence if any subsequent operation
+fails; they do not authorize ingress. Header/CRC failures have no copied frame.
+The event is returned once with the receive result; callers retain it across
+bounded recovery before profiling. Later recovery results do not repeat it.
 
 `RadioResult.safe_shutdown` is `True` only when configured radio safety and
 successful handle release are both confirmed, `False` after an unsuccessful
@@ -1567,11 +1597,34 @@ When multiple event timestamps are present, their values must follow the
 ordering permitted by the receive-to-ACK flow. Missing error-path timestamps
 remain explicitly absent rather than being reconstructed.
 
+Failed reception before ingress uses `processing_result = RADIO_ERROR`,
+`ack_selected = NONE`, `ack_tx_result = NOT_APPLICABLE` and absent `ack_frame`.
+It never creates an authenticated reading candidate. Successfully copied frame
+bytes remain evidence with their actual length and the normal zero padding;
+absence of a usable packet does not erase bytes that were actually copied.
+Claimed-header fields, when available, retain their existing length-based
+meaning, with `header_authenticated = false` and absent `decoded_sample_id`.
+T3/T4/T5 are absent. T2 is present only when packet copying completed, and T6
+only when `SetRx` was issued. Mandatory T0/T1 and optional metadata must come
+from the captured receive event, never reconstruction from counters or later
+clock reads. Publish the profile only after bounded receive restoration or
+terminal handling, subject to ordinary admission and the explicit pending
+clock-boundary exception. A receive event without trustworthy mandatory T0/T1
+cannot produce a profile; existing diagnostic/recovery rules still apply.
+
 `persistence_classification` is deliberately absent. Persistence creates the
 stored profiling row by adding its derived classification without mutating the
 queued value.
 
 ## Protocol ingress lifecycle
+
+The communicator calls ingress only after any required pending clock observation
+has been published. While that observation is blocked it pauses packet
+processing. A snapshot copied before discovering the block is discarded before
+`begin()`, followed by bounded RX rearm/recovery and no ACK. No occurrence,
+reservation, fabricated admission result or packet-profile row is created for
+that loss. An already accepted occurrence instead completes its existing
+reservation; the next clock task runs outside its packet-to-ACK critical path.
 
 `ProtocolIngress.begin(packet)` returns one opaque
 `ProtocolIngressOccurrenceV1` handle. Its read-only `pre_tx_profile`,
@@ -1579,6 +1632,17 @@ queued value.
 established during validation and admission. The handle privately owns any
 queue reservation. It is not a queue entity and cannot be constructed, copied,
 serialized or replaced as a dataclass through its public interface.
+Before reservation, ingress prepares and validates the bounded normal and
+retry-later profiles, candidate, admission values and completion handles.
+The reservation boundary selects prepared facts and binds the returned token;
+it performs no further entity construction before returning. A preparation
+failure therefore has no reservation or acceptance to cancel. Each actual
+reservation result still contributes exactly one admission count.
+`ProtocolIngress.active_occurrence` exposes the same owned completion handle
+if an implementation exception escapes after binding but before the caller
+receives it. The communicator uses that handle only for the existing terminal
+CORE completion path; reading it does not transfer or duplicate authority.
+
 The stateful `ProtocolIngress` owner is also non-copyable so a second owner
 cannot inherit completion authority by copying its active-handle reference.
 
@@ -1610,6 +1674,12 @@ at completion. There is no default assumption that reception was restored.
 | `SHUTDOWN`, `RECOVERY_EXHAUSTED`, `HARDWARE_MISSING` | Packet handling is finished in a terminal receiver state; T6 is present exactly when `SetRx` was issued. |
 | `INITIALIZING`, `INITIALIZATION_FAILED`, `TX_ACTIVE`, `RECOVERING` | Cannot complete a copied packet occurrence. |
 
+Successful initialization/rearm/recovery returns confirmed `RX_SINGLE` before
+polling for the next GPIO event. Complete the preceding occurrence before the
+next receive call, which owns pending-event consumption and any new stream
+failure. Preserve queued/cached edges and their original timestamps; do not
+remove pre-SetRx stream synchronization or the event checks within an active TX.
+
 The existing ACK/timestamp consistency and event ordering checks also apply.
 `SET_TX_FAILED` and `TX_UNCONFIRMED` permit absent T4 under the rules in
 [`AckTxResult`](#acktxresult); both forbid T5. `TX_TIMEOUT` requires T4 and
@@ -1620,6 +1690,29 @@ substitutes for confirmation of the reported state. The radio owner establishes
 the hardware facts and owns subsequent state transitions; ingress validates
 the report before any deferred admission or publication. The reported radio
 state is completion evidence only and adds no field to the persisted profile.
+
+Fatal completion first inhibits new TX and performs bounded terminal cleanup;
+the reported terminal state must already be established before publication.
+It preserves the selected ACK and authenticated candidate, and uses these
+terminal facts rather than replacing every result with `UNKNOWN_INTERRUPTED`:
+
+| Facts at fatal completion | `ack_tx_result` and timestamps |
+|---|---|
+| No ACK selected | `NOT_APPLICABLE`; T4/T5 absent. |
+| ACK already suppressed for lack of airtime | `SUPPRESSED_AIRTIME_BUDGET`; T4/T5 absent. |
+| Selected ACK definitely aborted before `SetTx` could take effect | `SET_TX_FAILED`; T4 present only if the command was attempted; T5 absent. This includes fatal pre-TX interruption. |
+| TX-profile command uncertain before any `SetTx` attempt | `TX_UNCONFIRMED`; T4/T5 absent; retain the tentative charge. |
+| Attempted TX has a confirmed terminal IRQ | Preserve `TX_DONE` with T4/T5, or `TX_TIMEOUT` with T4 and absent T5. |
+| Attempted TX has no established terminal outcome when fatal handling ends | `UNKNOWN_INTERRUPTED`; actual T4 present, T5 absent; retain the tentative charge. |
+
+T6 remains present exactly when `SetRx` was issued and must obey the existing
+event-ordering rules. Never fabricate T4 to describe interruption or discard a
+known T5 to fit `UNKNOWN_INTERRUPTED`. A terminal software state may coexist
+with failed or unknown hardware cleanup (`safe_shutdown` is not true); that
+permits truthful terminal profiling but never a clean-stop claim. If queue
+ownership or required completion facts are not sound, do not attempt unsafe
+publication. Profile publication precedes the separate diagnostic, not the
+terminal cleanup that establishes its completion evidence.
 
 ## Queue entity values
 
@@ -1729,6 +1822,14 @@ its columns are ordered by `AdmissionResult` values `0` through `2`. After one
 `try_reserve_one()` call returns an operational result, the communicator
 increments exactly one corresponding cell; the queue does not own or mutate
 the matrix.
+One communicator-owned `ProducerAdmission` adapter is shared by all ordinary
+producers, including ingress and runtime time. It delegates each reservation to
+the real `PersistQueue`, increments the corresponding saturating counter after
+an operational result returns, and returns that same result. Components do not
+count their final return values again. The adapter adds no gating, capacity or
+FIFO policy; persistence retains the real queue. Cancelled reservations remain
+counted, and interface exceptions without an operational result are not counted.
+
 The counting unit is one logical queue-unit reservation attempt, not one radio
 packet, SQLite row, encoded byte or eventual publication. In particular,
 `MeasurementProfileUnitV1` is one attempt and not separate measurement and
@@ -3095,6 +3196,13 @@ communicator_state_generation: u64
 Analysis may derive stop UTC and its source observation later through the same
 correlation contract without updating the lifecycle row. Generation zero is
 permitted when conservative generation zero is the known authoritative state.
+
+Producer closure also closes diagnostic admission. A subsequent clean-stop or
+other terminal failure may have no `DiagnosticV1`; make no reservation call and
+record no admission-result counter. Closing diagnostics does not cancel the
+bounded exact-request reconciliation of an unknown clean-stop commit. An
+unresolved result is not a confirmed clean stop. No diagnostic placeholder,
+queue reopening or alternate diagnostic write path is permitted.
 
 The communicator calls `commit_receiver_clean_stop()` only after:
 

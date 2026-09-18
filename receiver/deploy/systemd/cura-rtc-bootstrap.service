@@ -1,0 +1,24 @@
+[Unit]
+Description=Cura boot-scoped provisional RTC bootstrap
+Before=chrony.service cura-receiver.service
+After=local-fs.target
+RequiresMountsFor=/opt/cura-agrorum /etc/cura-agrorum
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+EnvironmentFile=/etc/cura-agrorum/deployment.env
+Environment=PYTHONPATH=/opt/cura-agrorum/receiver:/opt/cura-agrorum/protocol/protocol-v2-lora/python
+RuntimeDirectory=cura-agrorum-rtc-bootstrap
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+ExecStart=/opt/cura-agrorum/venv/bin/python -m cura_receiver.rtc_bootstrap --rtc-kernel-bound-us ${RTC_KERNEL_BOUND_US}
+TimeoutStartSec=6
+CapabilityBoundingSet=CAP_SYS_TIME
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

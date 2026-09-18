@@ -3,6 +3,7 @@ from threading import Event, current_thread
 
 import pytest
 
+from cura_receiver.producer_admission import ProducerAdmission
 from cura_receiver.generated.receiver_enums_generated import (
     AckSelection,
     AckTxResult,
@@ -305,7 +306,7 @@ def test_ingress_and_resource_ownership_during_disk_stall(create, monkeypatch):
     try:
         assert arrived.wait(5)
         ingress = ProtocolIngress(
-            queue=owner.queue,
+            queue=ProducerAdmission(owner.queue),
             monotonic_clock=FakeOsClock(monotonic_us=20),
             auth_node_keys={REVIEWED_NODE_ID: REVIEWED_NODE_KEY},
         )

@@ -10,6 +10,7 @@ from .generated.receiver_enums_generated import (
     AdmissionResult,
     PersistenceAdmissionState,
     PersistQueueEntityKind,
+    PersistQueueViolationDetailCode as QueueDetail,
 )
 from .persist_queue_entities import (
     SUPPORTED_PERSIST_QUEUE_ENTITY_SPECS,
@@ -30,7 +31,12 @@ class PersistQueueConfigurationError(PersistQueueError, ValueError):
 
 
 class PersistQueueInterfaceError(PersistQueueError, RuntimeError):
-    """A caller violated queue ownership or state-machine rules."""
+    """Closed failure evidence; absence of soundness forbids further queue calls."""
+
+    def __init__(self, message, *, detail_code=None, queue_known_sound=False):
+        super().__init__(message)
+        self.detail_code = detail_code
+        self.queue_known_sound = queue_known_sound
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,11 +260,11 @@ class PersistQueue:
     ) -> PersistQueueReserveResult:
         with self._lock:
             if self._closed:
-                raise PersistQueueInterfaceError("PersistQueue producer is closed")
+                raise PersistQueueInterfaceError("PersistQueue producer is closed", detail_code=QueueDetail.PRODUCER_CLOSED)
             self._require_supported_spec(spec)
             if self._reservation is not None:
                 raise PersistQueueInterfaceError(
-                    "PersistQueue already has an outstanding reservation"
+                    "PersistQueue already has an outstanding reservation", detail_code=QueueDetail.DOUBLE_TRANSITION
                 )
 
             admission_snapshot = self._admission_snapshot
@@ -445,8 +451,7 @@ class PersistQueue:
                 ),
             )
 
-    @staticmethod
-    def _require_supported_spec(spec: PersistQueueEntitySpec) -> None:
+    def _require_supported_spec(self, spec: PersistQueueEntitySpec) -> None:
         if (
             type(spec) is not PersistQueueEntitySpec
             or type(spec.kind) is not PersistQueueEntityKind
@@ -457,7 +462,9 @@ class PersistQueue:
                 for supported in SUPPORTED_PERSIST_QUEUE_ENTITY_SPECS
             )
         ):
-            raise PersistQueueInterfaceError("unsupported PersistQueue entity spec")
+            raise PersistQueueInterfaceError("unsupported PersistQueue entity spec",
+                detail_code=QueueDetail.INVALID_SPEC,
+                queue_known_sound=not self._closed and self._reservation is None)
 
     def _require_empty_slot(self, slot_index: int) -> None:
         if (
@@ -472,11 +479,14 @@ class PersistQueue:
         reservation: PersistQueueReservation,
     ) -> None:
         if type(reservation) is not PersistQueueReservation:
-            raise PersistQueueInterfaceError("invalid PersistQueue reservation")
+            raise PersistQueueInterfaceError("invalid PersistQueue reservation", detail_code=QueueDetail.INVALID_TOKEN,
+                queue_known_sound=not self._closed and self._reservation is None)
         if reservation._queue is not self:
-            raise PersistQueueInterfaceError("foreign PersistQueue reservation")
+            raise PersistQueueInterfaceError("foreign PersistQueue reservation", detail_code=QueueDetail.INVALID_TOKEN,
+                queue_known_sound=not self._closed and self._reservation is None)
         if not reservation._active or self._reservation is not reservation:
-            raise PersistQueueInterfaceError("stale PersistQueue reservation")
+            raise PersistQueueInterfaceError("stale PersistQueue reservation", detail_code=QueueDetail.USE_AFTER_TRANSFER,
+                queue_known_sound=not self._closed and self._reservation is None)
         slot_index = reservation._slot_index
         if type(slot_index) is not int or not 0 <= slot_index < self.capacity_entities:
             raise PersistQueueInterfaceError(
@@ -487,7 +497,7 @@ class PersistQueue:
             or self._spec_slots[slot_index] is not reservation._spec
         ):
             raise PersistQueueInterfaceError(
-                "PersistQueue reservation metadata does not match its slot"
+                "PersistQueue reservation metadata does not match its slot", detail_code=QueueDetail.BUFFER_SPEC_MISMATCH
             )
 
     def _require_live_lease(self, lease: PersistQueueBatchLease) -> None:

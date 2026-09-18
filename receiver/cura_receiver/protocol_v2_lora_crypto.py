@@ -15,6 +15,8 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 
 from .generated import protocol_v2_lora_generated as schema
+from .generated import receiver_enums_generated as E
+from .core_diagnostics import CoreFault
 
 
 MIN_BODY_SIZE = schema.ACK_BODY_SIZE
@@ -81,10 +83,14 @@ def seal_frame(
     except (AttributeError, schema.CodecError) as exc:
         raise CryptoError(f"invalid clear header: {exc}") from exc
 
-    encrypted_body_and_tag = AESCCM(
-        key,
-        tag_length=schema.TAG_SIZE,
-    ).encrypt(nonce, body, associated_data)
+    try:
+        encrypted_body_and_tag = AESCCM(key, tag_length=schema.TAG_SIZE).encrypt(nonce, body, associated_data)
+    except MemoryError:
+        raise
+    except Exception as error:
+        raise CoreFault(E.CoreDiagnosticErrorCode.CRYPTO_BACKEND, E.DiagnosticOperation.ENCODE,
+            E.CorePhase.ACK_PREPARATION, E.CoreFailureStage.ENCRYPT_ACK) from error
+
     return associated_data + encrypted_body_and_tag
 
 
@@ -114,6 +120,11 @@ def open_frame(node_key: bytes, frame: bytes) -> AuthenticatedFrame:
         ).decrypt(nonce, encrypted_body_and_tag, associated_data)
     except InvalidTag as exc:
         raise AuthenticationError("frame authentication failed") from exc
+    except MemoryError:
+        raise
+    except Exception as error:
+        raise CoreFault(E.CoreDiagnosticErrorCode.CRYPTO_BACKEND, E.DiagnosticOperation.DECODE,
+            E.CorePhase.PACKET_PROCESSING, E.CoreFailureStage.AUTHENTICATE_FRAME) from error
 
     return AuthenticatedFrame(
         header=header,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Mapping
 
@@ -16,7 +16,10 @@ from .generated.receiver_enums_generated import (
     ProcessingResult,
     RadioState,
 )
-from .persist_queue import PersistQueue, PersistQueueReservation
+from .persist_queue import PersistQueueReservation
+from .producer_admission import ProducerAdmission
+from .core_diagnostics import CoreFault
+from .generated import receiver_enums_generated as E
 from .persist_queue_entities import (
     MEASUREMENT_PROFILE_V1_SPEC,
     PROFILE_ONLY_V1_SPEC,
@@ -52,6 +55,18 @@ class ProtocolIngressConfigurationError(ProtocolIngressError, ValueError):
 
 class ProtocolIngressInterfaceError(ProtocolIngressError, RuntimeError):
     """A caller supplied invalid occurrence or terminal radio facts."""
+
+
+def _representation(factory, *args, _phase=E.CorePhase.PACKET_PROCESSING, **kwargs):
+    """Validated protocol facts failed an internal representation boundary."""
+    try:
+        return factory(*args, **kwargs)
+    except (MemoryError, CoreFault):
+        raise
+    except Exception as error:
+        raise CoreFault(E.CoreDiagnosticErrorCode.REPRESENTATION_INVARIANT,
+            E.DiagnosticOperation.ENCODE, _phase,
+            E.CoreFailureStage.CONSTRUCT_ENTITY) from error
 
 
 def _require_int_range(
@@ -474,13 +489,13 @@ class ProtocolIngress:
     def __init__(
         self,
         *,
-        queue: PersistQueue,
+        queue: ProducerAdmission,
         monotonic_clock: MonotonicClock,
         auth_node_keys: Mapping[bytes, bytes],
     ) -> None:
-        if type(queue) is not PersistQueue:
+        if type(queue) is not ProducerAdmission:
             raise ProtocolIngressConfigurationError(
-                "queue must be the production PersistQueue"
+                "queue must be the communicator ProducerAdmission"
             )
         if not isinstance(monotonic_clock, MonotonicClock):
             raise ProtocolIngressConfigurationError(
@@ -517,6 +532,11 @@ class ProtocolIngress:
 
     def __deepcopy__(self, memo: object) -> ProtocolIngress:
         raise TypeError("protocol-ingress owners are not copyable")
+
+    @property
+    def admission(self):
+        """Shared communicator-owned producer boundary."""
+        return self._queue
 
     def begin(self, packet: ProtocolIngressPacketV1) -> ProtocolIngressOccurrenceV1:
         """Validate one copied frame and make its pre-radio admission decision."""
@@ -584,6 +604,11 @@ class ProtocolIngress:
                     except protocol.CodecError:
                         processing_result = ProcessingResult.REJECTED_MALFORMED_BODY
                         ack_selected = AckSelection.REJECTED_MALFORMED
+                    except MemoryError:
+                        raise
+                    except Exception as error:
+                        raise CoreFault(E.CoreDiagnosticErrorCode.CODEC_BACKEND, E.DiagnosticOperation.DECODE,
+                            E.CorePhase.PACKET_PROCESSING, E.CoreFailureStage.DECODE_FRAME) from error
                     else:
                         decoded_sample_id = reading.sample_id
                         processing_result = ProcessingResult.ACCEPTED
@@ -602,44 +627,7 @@ class ProtocolIngress:
             claimed_message_id=claimed_message_id,
             ack_selected=ack_selected,
         )
-        admission: ProtocolIngressAdmissionV1 | None = None
-        reservation: PersistQueueReservation | None = None
-
-        if ack_selected is not AckSelection.NONE:
-            requested_spec = (
-                MEASUREMENT_PROFILE_V1_SPEC
-                if processing_result is ProcessingResult.ACCEPTED
-                else PROFILE_ONLY_V1_SPEC
-            )
-            reserve_result = self._queue.try_reserve_one(requested_spec)
-            admission = ProtocolIngressAdmissionV1(
-                entity_kind=requested_spec.kind,
-                result=reserve_result.status,
-            )
-            if reserve_result.status is AdmissionResult.RESERVED:
-                if reserve_result.reservation is None:
-                    raise ProtocolIngressInterfaceError(
-                        "reserved queue result omitted its reservation"
-                    )
-                reservation = reserve_result.reservation
-            else:
-                if reserve_result.reservation is not None:
-                    raise ProtocolIngressInterfaceError(
-                        "failed queue admission returned a reservation"
-                    )
-                processing_result = self._retry_processing_result(
-                    reserve_result.status
-                )
-                ack_selected = AckSelection.RETRY_LATER
-                ack_frame = self._build_ack(
-                    node_key=node_key,
-                    claimed_node_id=claimed_node_id,
-                    claimed_message_id=claimed_message_id,
-                    ack_selected=ack_selected,
-                )
-                candidate = None
-
-        pre_tx_profile = ProtocolIngressPreTxProfileV1(
+        pre_tx_profile = _representation(ProtocolIngressPreTxProfileV1,
             receiver_instance_id=packet.receiver_instance_id,
             occurrence_sequence=packet.occurrence_sequence,
             received_at_monotonic_us=packet.received_at_monotonic_us,
@@ -671,14 +659,57 @@ class ProtocolIngress:
             ),
             t3_authentication_completed_monotonic_us=t3,
         )
-        occurrence = ProtocolIngressOccurrenceV1._create(
-            pre_tx_profile=pre_tx_profile,
-            candidate=candidate,
-            admission=admission,
-            reservation=reservation,
-        )
+        # Prepare every operational result before acquiring publication authority.
+        # Representation/crypto/allocation failures here cannot strand a token.
+        if ack_selected is AckSelection.NONE:
+            occurrence = _representation(ProtocolIngressOccurrenceV1._create,
+                pre_tx_profile=pre_tx_profile, candidate=candidate,
+                admission=None, reservation=None)
+            self._active_occurrence = occurrence
+            return occurrence
+
+        requested_spec = (MEASUREMENT_PROFILE_V1_SPEC
+            if processing_result is ProcessingResult.ACCEPTED else PROFILE_ONLY_V1_SPEC)
+        retry_ack = self._build_ack(node_key=node_key, claimed_node_id=claimed_node_id,
+            claimed_message_id=claimed_message_id, ack_selected=AckSelection.RETRY_LATER)
+        prepared = {}
+        for status in AdmissionResult:
+            profile = pre_tx_profile if status is AdmissionResult.RESERVED else _representation(replace,
+                pre_tx_profile, processing_result=self._retry_processing_result(status),
+                ack_selected=AckSelection.RETRY_LATER, ack_frame=retry_ack)
+            prepared[status] = _representation(ProtocolIngressOccurrenceV1._create,
+                pre_tx_profile=profile,
+                candidate=candidate if status is AdmissionResult.RESERVED else None,
+                admission=_representation(ProtocolIngressAdmissionV1, requested_spec.kind, status),
+                reservation=None)
+
+        occurrence = prepared[AdmissionResult.RESERVED]
         self._active_occurrence = occurrence
-        return occurrence
+        try:
+            result = self._queue.try_reserve_one(requested_spec)
+            if result.status is AdmissionResult.RESERVED:
+                occurrence._reservation = result.reservation
+                if result.reservation is None:
+                    raise ProtocolIngressInterfaceError('reserved queue result omitted its reservation')
+            else:
+                if result.reservation is not None:
+                    raise ProtocolIngressInterfaceError('failed queue admission returned a reservation')
+                occurrence = prepared[result.status]
+                self._active_occurrence = occurrence
+            return occurrence
+        except Exception:
+            if occurrence._reservation is None:
+                self._active_occurrence = None
+            raise
+
+    @property
+    def active_occurrence(self) -> ProtocolIngressOccurrenceV1 | None:
+        """Owned completion authority, including after an exceptional begin return.
+
+        Reading this does not transfer ownership or authorize a second begin.
+        The communicator uses it for terminal completion after a CORE failure.
+        """
+        return self._active_occurrence
 
     def finalize(
         self,
@@ -706,17 +737,17 @@ class ProtocolIngress:
         published_entity: MeasurementProfileUnitV1 | ProfileOnlyUnitV1 | None = None
 
         if occurrence.admission is None:
+            prepared_entity = _representation(ProfileOnlyUnitV1, profile=profile, _phase=E.CorePhase.POST_RESPONSE_FINALIZATION)
+            prepared_admissions = {status: _representation(ProtocolIngressAdmissionV1,
+                PersistQueueEntityKind.PROFILE_ONLY, status) for status in AdmissionResult}
             reserve_result = self._queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
-            admission = ProtocolIngressAdmissionV1(
-                entity_kind=PersistQueueEntityKind.PROFILE_ONLY,
-                result=reserve_result.status,
-            )
+            admission = prepared_admissions[reserve_result.status]
             if reserve_result.status is AdmissionResult.RESERVED:
                 if reserve_result.reservation is None:
                     raise ProtocolIngressInterfaceError(
                         "reserved queue result omitted its reservation"
                     )
-                published_entity = ProfileOnlyUnitV1(profile=profile)
+                published_entity = prepared_entity
                 reserve_result.reservation.publish(published_entity)
             elif reserve_result.reservation is not None:
                 raise ProtocolIngressInterfaceError(
@@ -729,9 +760,9 @@ class ProtocolIngress:
                     "reserved ingress occurrence lost its queue reservation"
                 )
             if occurrence.candidate is None:
-                published_entity = ProfileOnlyUnitV1(profile=profile)
+                published_entity = _representation(ProfileOnlyUnitV1, profile=profile, _phase=E.CorePhase.POST_RESPONSE_FINALIZATION)
             else:
-                published_entity = MeasurementProfileUnitV1(
+                published_entity = _representation(MeasurementProfileUnitV1, _phase=E.CorePhase.POST_RESPONSE_FINALIZATION,
                     candidate=occurrence.candidate,
                     profile=profile,
                 )
@@ -789,6 +820,13 @@ class ProtocolIngress:
             raise ProtocolIngressInterfaceError(
                 "ACK selection has no protocol domain/status mapping"
             ) from exc
+        try:
+            body = protocol.encode_ack(protocol.Ack(status=status.value))
+        except MemoryError:
+            raise
+        except Exception as error:
+            raise CoreFault(E.CoreDiagnosticErrorCode.CODEC_BACKEND, E.DiagnosticOperation.ENCODE,
+                E.CorePhase.ACK_PREPARATION, E.CoreFailureStage.CONSTRUCT_ACK) from error
         return seal_frame(
             node_key,
             protocol.ClearHeader(
@@ -797,7 +835,7 @@ class ProtocolIngress:
                 node_id=claimed_node_id,
                 message_id=claimed_message_id,
             ),
-            protocol.encode_ack(protocol.Ack(status=status.value)),
+            body,
         )
 
     @staticmethod
@@ -894,7 +932,7 @@ class ProtocolIngress:
         pre_tx: ProtocolIngressPreTxProfileV1,
         terminal: ProtocolIngressTerminalV1,
     ) -> MessageProfilingV1:
-        return MessageProfilingV1(
+        return _representation(MessageProfilingV1, _phase=E.CorePhase.POST_RESPONSE_FINALIZATION,
             receiver_instance_id=pre_tx.receiver_instance_id,
             occurrence_sequence=pre_tx.occurrence_sequence,
             received_at_monotonic_us=pre_tx.received_at_monotonic_us,

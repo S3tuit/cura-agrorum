@@ -2,6 +2,7 @@
 
 import pytest
 
+from cura_receiver.producer_admission import ProducerAdmission
 from cura_receiver.communicator_state_owner import CommunicatorStateOwner
 from cura_receiver.generated.receiver_enums_generated import (
     AckSelection,
@@ -46,7 +47,7 @@ def test_budget_suppression_preserves_real_ingress_acceptance(airtime_component)
         is R.BUDGET_EXHAUSTED
     )
     ingress = ProtocolIngress(
-        queue=worker.queue,
+        queue=ProducerAdmission(worker.queue),
         monotonic_clock=clock,
         auth_node_keys={REVIEWED_NODE_ID: REVIEWED_NODE_KEY},
     )
@@ -84,7 +85,7 @@ def test_runtime_rtc_commit_preserves_airtime_owner_and_allowance(
         receiver_instance_id=INSTANCE,
         clock=clock,
         kernel=kernel,
-        queue=worker.queue,
+        queue=ProducerAdmission(worker.queue),
         policy=TimePolicy(maximum_network_skew_ppb=1000),
         startup_rtc_result=Ds3231ReadResult(DR.OK, 100, 100, 1_800_000_000),
         state_owner=policy.owner,

@@ -208,8 +208,8 @@ def execute(case, backend, radio, stop, started):
         if radio:
             result = healthy(radio.receive(deadline_monotonic_us=min(deadline, quiet_end)),
                              State.RX_SINGLE, State.RX_EVENT_PENDING)
-            packet = result.packet
-            if packet is None:
+            packet = result.receive_event
+            if packet is None or not packet.usable_for_ingress:
                 continue
             frame = packet.frame
         else:

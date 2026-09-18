@@ -4,6 +4,7 @@ from dataclasses import FrozenInstanceError, fields, replace
 
 import pytest
 
+from cura_receiver.producer_admission import ProducerAdmission
 from cura_receiver.generated import protocol_v2_lora_generated as protocol
 from cura_receiver.generated.receiver_enums_generated import (
     AckSelection,
@@ -97,7 +98,7 @@ def _queue(
 
 def _ingress(queue: PersistQueue) -> ProtocolIngress:
     return ProtocolIngress(
-        queue=queue,
+        queue=ProducerAdmission(queue),
         monotonic_clock=FakeOsClock(monotonic_us=20, realtime_us=0),
         auth_node_keys={REVIEWED_NODE_ID: REVIEWED_NODE_KEY},
     )
@@ -547,3 +548,63 @@ def test_private_radio_construction_does_not_escape_before_completion() -> None:
     assert finalized.published_entity.profile.t6_set_rx_issued_monotonic_us == 23
     with pytest.raises(FrozenInstanceError):
         finalized.published_entity.profile.t6_set_rx_issued_monotonic_us = 99  # type: ignore[misc]
+
+
+# Fatal completion preserves known ACK facts instead of forcing UNKNOWN_INTERRUPTED.
+@pytest.mark.parametrize(
+    ("result", "t4", "t5"),
+    (
+        (AckTxResult.SET_TX_FAILED, None, None),
+        (AckTxResult.SET_TX_FAILED, 21, None),
+        (AckTxResult.TX_UNCONFIRMED, None, None),
+        (AckTxResult.SUPPRESSED_AIRTIME_BUDGET, None, None),
+        (AckTxResult.TX_TIMEOUT, 21, None),
+        (AckTxResult.TX_DONE, 21, 22),
+        (AckTxResult.UNKNOWN_INTERRUPTED, 21, None),
+    ),
+)
+def test_fatal_terminal_completion_retains_actual_ack_facts(result, t4, t5):
+    queue = _queue(state=PersistenceAdmissionState.AVAILABLE)
+    ingress = _ingress(queue)
+    occurrence = ingress.begin(ingress_packet())
+    candidate = occurrence.candidate
+    finalized = ingress.finalize(
+        occurrence,
+        ProtocolIngressTerminalV1(result, t4, t5, None, radio_state=RadioState.SHUTDOWN),
+    )
+    entity = finalized.published_entity
+    assert isinstance(entity, MeasurementProfileUnitV1)
+    assert entity.candidate is candidate
+    assert entity.profile.processing_result is ProcessingResult.ACCEPTED
+    assert entity.profile.ack_selected is AckSelection.ACCEPTED
+    assert entity.profile.ack_tx_result is result
+    assert entity.profile.t4_set_tx_attempted_monotonic_us == t4
+    assert entity.profile.t5_tx_done_monotonic_us == t5
+    assert entity.profile.t6_set_rx_issued_monotonic_us is None
+    assert queue.snapshot().reserved_entities == 0
+    assert queue.snapshot().published_entities == 1
+
+
+# A fatal report must establish terminal handling and cannot invent missing TX facts.
+@pytest.mark.parametrize(
+    ("state", "t4", "t5", "message"),
+    (
+        (RadioState.TX_ACTIVE, 21, None, "terminal receiver state"),
+        (RadioState.SHUTDOWN, None, None, "requires T4 and forbids T5"),
+        (RadioState.SHUTDOWN, 21, 22, "requires T4 and forbids T5"),
+    ),
+)
+def test_invalid_fatal_completion_leaves_accepted_reservation_intact(state, t4, t5, message):
+    queue = _queue(state=PersistenceAdmissionState.AVAILABLE)
+    ingress = _ingress(queue)
+    occurrence = ingress.begin(ingress_packet())
+    before = queue.snapshot()
+    with pytest.raises(ProtocolIngressInterfaceError, match=message):
+        ingress.finalize(
+            occurrence,
+            ProtocolIngressTerminalV1(
+                AckTxResult.UNKNOWN_INTERRUPTED, t4, t5, None, radio_state=state,
+            ),
+        )
+    assert queue.snapshot() == before
+    assert queue.snapshot().published_entities == 0

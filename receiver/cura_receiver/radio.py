@@ -45,16 +45,17 @@ def _operation(*states):
 
 
 @dataclass(frozen=True, slots=True)
-class RadioPacket:
-    frame: bytes
-    rssi_dbm_x2: int
-    snr_db_x4: int
-    irq_status: int
-    device_errors: int
+class RadioReceiveEvent:
     edge_timestamp_ns: int
     t1_handler_started_monotonic_us: int
-    t2_packet_copied_monotonic_us: int
-    busy: BusyMetrics
+    usable_for_ingress: bool = False
+    frame: bytes | None = None
+    rssi_dbm_x2: int | None = None
+    snr_db_x4: int | None = None
+    irq_status: int | None = None
+    device_errors: int | None = None
+    t2_packet_copied_monotonic_us: int | None = None
+    busy: BusyMetrics = BusyMetrics()
 
     @property
     def received_at_monotonic_us(self):
@@ -82,7 +83,7 @@ class RadioTxResult:
 @dataclass(frozen=True, slots=True)
 class RadioResult:
     state: State
-    packet: RadioPacket | None = None
+    receive_event: RadioReceiveEvent | None = None
     episodes: tuple = ()
     t6_set_rx_issued_monotonic_us: int | None = None
     busy: BusyMetrics = BusyMetrics()
@@ -135,8 +136,8 @@ class Radio:
         if self.state not in states:
             raise RuntimeError("invalid radio operation state")
 
-    def _result(self, *, packet=None, episodes=()):
-        result = RadioResult(self.state, packet, self._completed + episodes, self._t6, self.backend.metrics, self._tx, self._safe_shutdown)
+    def _result(self, *, receive_event=None, episodes=()):
+        result = RadioResult(self.state, receive_event, self._completed + episodes, self._t6, self.backend.metrics, self._tx, self._safe_shutdown)
         self._completed = ()
         return result
 
@@ -163,7 +164,7 @@ class Radio:
             return Reason.UNEXPECTED_IRQ
         return Reason.STATUS_UNCONFIRMED
 
-    def _recovering(self, operation, failure, *, episode=None, restoring=False, tx_uncertain=False, packet=None):
+    def _recovering(self, operation, failure, *, episode=None, restoring=False, tx_uncertain=False, receive_event=None):
         self._episode = episode or self._builder(operation, failure)
         reason = self._reason(failure, restoring=restoring, tx_uncertain=tx_uncertain)
         self._episode.enter_recovery(reason)
@@ -173,13 +174,7 @@ class Radio:
         reasons = list(self._counters.recovery_attempts_by_reason)
         reasons[reason.value - 1] = integer(reasons[reason.value - 1] + 1)
         self._counters = replace(self._counters, recovery_attempts_by_reason=tuple(reasons))
-        return self._result(packet=packet)
-
-    def _pending_edge(self):
-        edge = self.backend.wait_edge(deadline_monotonic_us=self.clock.now_monotonic_us())
-        if edge is not None:
-            self._edge = edge
-            self._state = State.RX_EVENT_PENDING
+        return self._result(receive_event=receive_event)
 
     @_operation(State.INITIALIZING)
     def initialize(self):
@@ -192,7 +187,6 @@ class Radio:
             self.backend.arm_receive(deadline)
             self._t6 = self.backend.last_set_rx_issued_us
             self._state = State.RX_SINGLE
-            self._pending_edge()
             return self._result()
         except RadioBackendError as error:
             episode = self._builder(Operation.INITIALIZE, error.failure)
@@ -249,10 +243,6 @@ class Radio:
             self._restore(self.backend.deadline(500_000))
         except RadioBackendError as error:
             return self._recovering(Operation.RECEIVE, error.failure, restoring=True)
-        try:
-            self._pending_edge()
-        except RadioBackendError as error:
-            return self._recovering(Operation.RECEIVE, error.failure)
         return self._result()
 
     @_operation(State.RX_SINGLE, State.RX_EVENT_PENDING)
@@ -260,7 +250,7 @@ class Radio:
         self._require(State.RX_SINGLE, State.RX_EVENT_PENDING)
         if self.state is State.RX_EVENT_PENDING and self._can_ack:
             return self._invalid(Error.INVALID_STATE)
-        packet = None
+        receive_event = None
         try:
             integer(deadline_monotonic_us)
         except (TypeError, ValueError):
@@ -282,8 +272,10 @@ class Radio:
             started = self.clock.now_monotonic_us()
             if edge.timestamp_ns > started * 1000 + 999 or edge.monotonic_us < self.backend.last_set_rx_issued_us:
                 raise RadioBackendError(RadioFailure(Error.MALFORMED_RESPONSE, Stage.CAPTURE_TIME, hardware_touched=True))
+            receive_event = RadioReceiveEvent(edge.timestamp_ns, started)
             deadline = self.backend.deadline(500_000)
             event = self.backend.observe_event(deadline)
+            receive_event = replace(receive_event, irq_status=event.irq_status, device_errors=event.device_errors)
             self.backend.validate_event(event, transmit=False)
             irq = event.irq_status
             if not irq or irq & ~(IRQ_RX_DONE | IRQ_HEADER_ERROR | IRQ_CRC_ERROR):
@@ -294,10 +286,10 @@ class Radio:
                     self.backend.clear_irq(irq, deadline)
                     self._restore(deadline)
                 except RadioBackendError as error:
-                    return self._recovering(Operation.RECEIVE, error.failure, episode=episode, restoring=True)
+                    return self._recovering(Operation.RECEIVE, error.failure, episode=episode, restoring=True,
+                                            receive_event=replace(receive_event, busy=self.backend.metrics))
                 self._completed = (episode.finish(State.RX_SINGLE, self.clock.now_monotonic_us()),)
-                self._pending_edge()
-                return self._result()
+                return self._result(receive_event=replace(receive_event, busy=self.backend.metrics))
             self.backend.standby(deadline)
             if irq & (IRQ_HEADER_ERROR | IRQ_CRC_ERROR):
                 if irq & IRQ_HEADER_ERROR:
@@ -305,15 +297,26 @@ class Radio:
                 if irq & IRQ_CRC_ERROR:
                     self._bump("crc_errors")
                 self.backend.clear_irq(irq, deadline)
-                return self.rearm()
-            frame, rssi, snr, copied = self.backend.read_packet(deadline)
-            packet = RadioPacket(frame, rssi, snr, irq, self.backend.last_device_errors,
-                                 edge.timestamp_ns, started, copied, self.backend.metrics)
+                restored = self.rearm()
+                return replace(restored, receive_event=replace(receive_event, busy=self.backend.metrics))
+            frame, copied = self.backend.copy_packet(deadline)
+            receive_event = replace(receive_event, frame=frame, t2_packet_copied_monotonic_us=copied)
+            rssi, snr = self.backend.read_packet_status(deadline)
+            receive_event = replace(receive_event, rssi_dbm_x2=rssi, snr_db_x4=snr)
+            self.backend.finish_receive(deadline)
             self.backend.clear_irq(irq, deadline)
             self._can_ack = True
-            return self._result(packet=packet)
+            return self._result(receive_event=replace(receive_event, usable_for_ingress=True, busy=self.backend.metrics))
         except RadioBackendError as error:
-            return self._recovering(Operation.RECEIVE, error.failure, packet=packet)
+            if receive_event is not None:
+                receive_event = replace(receive_event, busy=self.backend.metrics)
+            return self._recovering(Operation.RECEIVE, error.failure, receive_event=receive_event)
+
+        except _ShutdownRequested:
+            terminal = self.shutdown()
+            if receive_event is not None:
+                receive_event = replace(receive_event, busy=self.backend.metrics)
+            return replace(terminal, receive_event=receive_event)
 
     def _tx_failure(self, failure, *, uncertain):
         self._can_ack = False
@@ -333,10 +336,6 @@ class Radio:
         except RadioBackendError as error:
             return self._recovering(Operation.TRANSMIT, error.failure, episode=episode, restoring=True)
         self._completed = (episode.finish(State.RX_SINGLE, self.clock.now_monotonic_us()),)
-        try:
-            self._pending_edge()
-        except RadioBackendError as error:
-            return self._recovering(Operation.RECEIVE, error.failure)
         return self._result()
 
     @_operation(State.RX_EVENT_PENDING)
@@ -425,10 +424,6 @@ class Radio:
             self._restore(deadline)
         except RadioBackendError as error:
             return self._recovering(Operation.RECEIVE, error.failure, restoring=True)
-        try:
-            self._pending_edge()
-        except RadioBackendError as error:
-            return self._recovering(Operation.RECEIVE, error.failure)
         return self._result()
 
     def _recovery_terminal(self, state):
@@ -475,10 +470,6 @@ class Radio:
                 self._bump("recovery_successes")
                 self._completed += (self._episode.finish(State.RX_SINGLE, self.clock.now_monotonic_us()),)
                 self._episode = None
-                try:
-                    self._pending_edge()
-                except RadioBackendError as error:
-                    return self._recovering(Operation.RECEIVE, error.failure)
                 return self._result()
             finally:
                 if self.backend.last_set_rx_issued_us is not None:
@@ -507,7 +498,7 @@ class Radio:
         result = self.shutdown()
         return replace(result, episodes=result.episodes + (episode.finish(State.SHUTDOWN, self.clock.now_monotonic_us(), safe=False),))
 
-    def shutdown(self):
+    def shutdown(self, *, deadline_monotonic_us=None):
         self._claim()
         if self.state in _TERMINAL:
             return self._result()
@@ -527,6 +518,8 @@ class Radio:
         if self._episode is not None:
             self._episode.interrupt()
         deadline = self.backend.deadline(500_000)
+        if deadline_monotonic_us is not None:
+            deadline = min(deadline, deadline_monotonic_us)
         cleanup = []
         safe = False
         try:

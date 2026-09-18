@@ -268,7 +268,7 @@ def test_gap_recovery_restores_packet_delivery(component, hard, queued, immediat
     chip.irq, chip.status = 2, 0x24
     queue_edge(deps, clock, 2)
     result = radio.receive(deadline_monotonic_us=clock.now_monotonic_us() + 1000)
-    assert result.state is State.RECOVERING and result.packet is None
+    assert result.state is State.RECOVERING and result.receive_event is None
     assert radio.backend.io._last_sequence == 0
     if queued:
         queue_edge(deps, clock, 3)
@@ -293,7 +293,7 @@ def test_gap_recovery_restores_packet_delivery(component, hard, queued, immediat
                 queue_edge(deps, clock, next_sequence)
         chip.after_transfer = immediately_done
     result = radio.recover()
-    assert result.state is (State.RX_EVENT_PENDING if immediate else State.RX_SINGLE)
+    assert result.state is State.RX_SINGLE
     assert sync_observations and all(pair == (0x24, 0) for pair in sync_observations)
     assert len(result.episodes) == 1
     episode = result.episodes[0]
@@ -306,7 +306,7 @@ def test_gap_recovery_restores_packet_delivery(component, hard, queued, immediat
             chip.irq, chip.status = 2, 0x24
             queue_edge(deps, clock, sequence)
         packet = radio.receive(deadline_monotonic_us=clock.now_monotonic_us() + 1000)
-        assert packet.packet.frame == b"packet" and packet.episodes == ()
+        assert packet.receive_event.frame == b"packet" and packet.episodes == ()
         assert radio.rearm().state is State.RX_SINGLE
     assert (radio.counters.recovery_attempts, radio.counters.recovery_successes, radio.counters.recovery_failures) == (1, 1, 0)
 

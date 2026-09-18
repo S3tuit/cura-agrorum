@@ -5,6 +5,7 @@ from collections.abc import Callable
 import pytest
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 
+from cura_receiver.producer_admission import ProducerAdmission
 from cura_receiver.generated import protocol_v2_lora_generated as protocol
 from cura_receiver.generated.receiver_enums_generated import (
     AckSelection,
@@ -61,7 +62,7 @@ def _queue(
 
 def _ingress(queue: PersistQueue | None = None) -> ProtocolIngress:
     return ProtocolIngress(
-        queue=_queue() if queue is None else queue,
+        queue=ProducerAdmission(_queue() if queue is None else queue),
         monotonic_clock=FakeOsClock(monotonic_us=20, realtime_us=0),
         auth_node_keys={REVIEWED_NODE_ID: REVIEWED_NODE_KEY},
     )
@@ -195,8 +196,8 @@ def test_tampered_authenticated_data_never_reaches_ack_or_queue_admission(
     assert decision.candidate is None
     assert decision.admission is None
     assert dict(ingress._auth_node_keys) == auth_map_before
-    assert ingress._queue.snapshot().reserved_entities == 0
-    assert ingress._queue.snapshot().published_entities == 0
+    assert ingress._queue._queue.snapshot().reserved_entities == 0
+    assert ingress._queue._queue.snapshot().published_entities == 0
 
 
 # Preserves length rejection and lets a complete header/tag reach node lookup.
@@ -253,7 +254,7 @@ def test_authentication_failures_are_silent_without_candidate_reservation(
     assert decision.pre_tx_profile.decoded_sample_id is None
     assert decision.candidate is None
     assert decision.admission is None
-    assert ingress._queue.snapshot().reserved_entities == 0
+    assert ingress._queue._queue.snapshot().reserved_entities == 0
 
 
 MALFORMED_BODY_CASES = (

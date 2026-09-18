@@ -6,6 +6,7 @@ from inspect import signature
 
 import pytest
 
+from cura_receiver.producer_admission import ProducerAdmission
 from cura_receiver.generated.receiver_enums_generated import AckTxResult, RadioState
 from cura_receiver.persist_queue import PersistQueue
 from cura_receiver.protocol_ingress import (
@@ -133,7 +134,7 @@ def test_terminal_facts_require_an_explicit_radio_state() -> None:
 def test_ingress_snapshots_the_minimal_authentication_map() -> None:
     node_keys = {NODE_ID: NODE_KEY}
     ingress = ProtocolIngress(
-        queue=PersistQueue(capacity_entities=1),
+        queue=ProducerAdmission(PersistQueue(capacity_entities=1)),
         monotonic_clock=FakeOsClock(monotonic_us=0, realtime_us=0),
         auth_node_keys=node_keys,
     )
@@ -161,7 +162,7 @@ def test_ingress_rejects_invalid_startup_authentication_material(
 ) -> None:
     with pytest.raises(ProtocolIngressConfigurationError):
         ProtocolIngress(
-            queue=PersistQueue(capacity_entities=1),
+            queue=ProducerAdmission(PersistQueue(capacity_entities=1)),
             monotonic_clock=FakeOsClock(monotonic_us=0, realtime_us=0),
             auth_node_keys=node_keys,  # type: ignore[arg-type]
         )

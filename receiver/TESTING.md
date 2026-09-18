@@ -281,6 +281,7 @@ end-to-end ACK deadline.
 - **Failed-startup cleanup:** Preserve the fatal initialization cause and terminal state while reporting actual safe-state/handle-release success or failure. Cover safe standby failure, close failure, both failures, absent assessment and the remaining startup deadline; retain separate precise fatal cleanup episodes. Terminal shutdown must return retained safety without I/O. Held-BUSY has fatal INITIALIZE and CLEANUP timeout episodes and an unconfirmed safety result.
 - **Resource lifecycle evidence:** Through the production Linux adapter/backend/owner, fail GPIO/SPI acquisition and both resource releases independently and together. Preserve the primary and each release errno/stage in immutable lifecycle evidence and distinct cleanup episodes, attempt each acquired resource once, and cover controlled shutdown and subsequent no-op close. Unexpected exceptions remain CORE failures, including mixed expected/unexpected cleanup failures.
 - **RX event classification:** Parameterize RxDone, header error, CRC error, TX-timeout and unexpected IRQ combinations and verify exact clearing, packet-copy and recovery behavior without treating ordinary IRQ outcomes as diagnostics.
+- **Failed reception before ingress:** Cover header/CRC rejection and failures before/during/after packet copying, including IRQ-clear failure after a complete copy. Require RADIO_ERROR, no authentication, candidate, acceptance or ACK; preserve successfully copied bytes and actual T0/T1/T2/IRQ metadata. Verify bounded restoration/termination before profile-only publication, ordinary admission failure and the pending-clock-boundary exception. Missing or untrusted T0/T1 must never be fabricated. Later failure after acceptance must retain that accepted reservation instead.
 - **Correlated event confirmation:** Replay IRQ `0x0200` with status `0x26` for finite RX and TX timeout, including completion before active mode is sampled. Require immutable IRQ/status/device-error evidence, a fresh correctly timed edge, standby fallback, preserved immediate edges and fresh confirmed standby before later writes. Reject wrong mode, mixed/absent IRQ, device errors, processing/execution failures, stale/missing/future/late edges and malformed reads. Retain confirmed TX outcomes if later cleanup/restoration fails; ordinary command failures remain strict.
 - **Pi-owned packet snapshot:** Mutate the fake radio buffer immediately after `ReadBuffer` and prove authentication, profiling and persistence use the independent bytes copied before later radio commands.
 - **Response-free RX rearm:** For every silent or airtime-suppressed outcome, verify the complete receive profile is restored and `SetRx` confirmed before `RX_SINGLE` is asserted.
@@ -290,7 +291,7 @@ end-to-end ACK deadline.
 - **Missing or delayed TxDone:** Exercise no terminal IRQ, a terminal IRQ at the deadline and one after it; verify `TX_UNCONFIRMED` for an unconfirmed terminal outcome, distinguish a confirmed timeout IRQ's `TX_TIMEOUT`, and verify charge retention, recovery reason and bounded exit without an unbounded wait.
 - **BUSY and SPI failures:** Inject BUSY timeouts and SPI failures at every semantic operation and assert command-effect certainty, one recovery episode, exact diagnostic root cause and no continuation under an assumed mode.
 - **Soft and hard recovery:** Cover soft success, soft failure followed by reset/full-initialization success, absent hardware during recovery and final exhaustion; require exactly one episode diagnostic and a confirmed receive profile before success.
-- **Event immediately after recovery:** Raise DIO1 as recovery confirms `SetRx` and prove the event becomes `RX_EVENT_PENDING` instead of being cleared as stale.
+- **Event immediately after recovery:** Raise DIO1 as recovery confirms `SetRx`; prove restoration returns `RX_SINGLE`, the preceding occurrence completes, and the next receive turn consumes the retained event with its original timestamp. Inject repeated post-restoration polling failures and prove they cannot retain the previous packet reservation or accumulate its deferred diagnostics.
 - **GPIO stream recovery:** Compose the production Linux adapter, SX1262 backend and owner over their physical dependency fakes. Lose an event, reject the gap, recover and deliver subsequent packets without restarting. Cover stale events queued during recovery, soft and hard resynchronization, strict normal reads, malformed/regressing/future metadata, failed reads, deadline/buffer exhaustion, low-DIO1 checks and immediate SetRx completion. Failed stream synchronization must not increment recovery success or erase the original episode.
 - **Diagnostic catalogue enforcement:** Attempt every allowed radio operation/error/context family and representative undefined combinations, requiring exact fixed context bytes for allowed cases and construction failure for undefined cases.
 - **Controlled radio shutdown:** From each non-terminal state, request shutdown and verify new TX suppression, conservative active-operation termination, safe configured radio state and terminal `SHUTDOWN` without relying on later cleanup for correctness.
@@ -614,6 +615,7 @@ arithmetic failure for TIME diagnostics without duplicating the equations.
 - **RTC source threshold:** Require the stricter five-second source-error bound both at refresh start and before commit, independently of the broader network-trust threshold.
 - **Clock-step state machine:** Cover boundary publication failure, command rejection, confirmed submission, unknown command outcome, stable-time polling, deadline and bounded retry without blind resubmission after an unknown result.
 - **Step-boundary FIFO:** Prove no explicit step precedes complete boundary publication, later ordinary entities cannot overtake it, and an isolated boundary failure closes admission without quarantine.
+- **Pending clock boundary and packets:** Fill the real queue, retain an expired/step boundary, release capacity and verify no later ordinary admission overtakes it. Pause new packet processing while blocked; if expiry is discovered after packet copy, rearm without ingress, ACK or a profile. Verify stop responsiveness, no fabricated reservation counts, no loss of accepted reservations and resumption after boundary publication.
 - **UTC correlation segments:** Select the latest preceding or permitted first later trusted observation within one receiver instance, reject cross-instance/boot correlation and permanently exclude the half-open step-discontinuity gap.
 - **Process-start boundary:** Verify a durable new instance start closes the previous instance and permits later-observation backfill only to its own start when no explicit step boundary intervenes.
 - **Realtime-step immunity:** Step the fake realtime clock forward and backward while monotonic deadlines, retry waits and live event intervals continue unchanged; bounded slew affects only conservative elapsed-rate calculations.
@@ -758,6 +760,9 @@ control, RTC bootstrap, process-local communicator counters or Pi reboot.
 
 ## End-to-end receiver behavior
 
+The [application coverage map](tests/APPLICATION_COVERAGE.md) tracks production
+owners, initial component coverage and remaining integration obligations.
+
 End-to-end host tests use the complete production communicator and persistence
 components with injected platform adapters. They are implemented before the RF
 suite because they can establish the complete application contract
@@ -767,7 +772,7 @@ deterministically.
 
 - **Valid reading to durable row:** Inject a reviewed authenticated frame through the fake radio, obtain the deterministic accepted ACK transcript, drain persistence and verify the exact canonical reading and complete occurrence profile.
 - **Lost-ACK retransmission:** Complete persistence but hide TX completion from the simulated node, inject the identical retry and verify another admitted profile plus `RETRANSMISSION` without a second canonical reading.
-- **Failed ACK transmission:** Fail after `SetTx` may have started, require retained charge and published `TX_UNCONFIRMED` after bounded radio recovery or the exact confirmed terminal result, then retry and persist normally. Separately cover the fatal exception path with `UNKNOWN_INTERRUPTED` and a terminal receiver state.
+- **Failed ACK transmission:** Fail after `SetTx` may have started, require retained charge and published `TX_UNCONFIRMED` after bounded radio recovery or the exact confirmed terminal result, then retry and persist normally. Separately cover fatal exceptions before SetTx, during attempted TX with unknown outcome and after confirmed TxDone/timeout. Require bounded terminal cleanup before profile publication, preserved known ACK facts, UNKNOWN_INTERRUPTED only for unknown attempted TX, and profile publication before the diagnostic. Failed cleanup must not fabricate radio safety or a clean-stop marker.
 - **Current-to-backlog conversion:** Inject distinct current and backlog transport messages carrying one exact sample and require one canonical row, one noncanonical matching row and `DUPLICATE_SAME_CONTENT` evidence.
 - **Persistence unavailable:** Stall or fail SQLite, verify admission closes, response-eligible packets select retry-later without reservations, retained work recovers and later health exposes aggregate outage evidence when possible.
 - **Airtime-suppressed acceptance:** Exhaust the durable ACK allowance, inject a valid reading and prove it is accepted, published and persisted without radio transmission.
@@ -816,3 +821,22 @@ remains deferred NOT RUN and numerical uncertainty is unmeasured. Existing
 receiver production airtime enforcement and operator-owned component-test
 accounting remain unchanged. This approval does not close service or aggregate
 deployment acceptance.
+
+Application shutdown diagnostic boundary: close the real ordinary queue, then
+exercise definite and unknown clean-stop failures. Require no diagnostic
+reservation, no diagnostic identity allocation or admission-counter increment,
+no reopening or alternate write, and bounded exact-marker reconciliation.
+Previously queued diagnostics still drain normally. An unresolved marker is
+never reported as confirmed; this permitted diagnostic loss is distinct from
+QUEUE_FULL or PERSISTENCE_UNAVAILABLE.
+
+Ingress admission ownership regressions construct every normal/retry variant before
+reservation. Injected construction/allocation failure leaves no reservation or
+admission count; an exception after successful binding retains the exact owned
+handle for terminal completion, preserving acceptance without fabricated TX times.
+
+RTC refresh cancellation coverage must use incremental production episodes:
+stop during pre-read, after invalidation, during possibly applied write, between
+read retries and during unknown provenance commit; assert at most one external
+action per turn, radio priority between actions, retained failure root and actual
+write counters, conservative provenance, and the original shutdown deadline.

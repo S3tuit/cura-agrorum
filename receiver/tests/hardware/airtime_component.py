@@ -9,6 +9,7 @@ import shutil
 import sqlite3
 import sys
 
+from cura_receiver.producer_admission import ProducerAdmission
 from cura_receiver.communicator_state_owner import CommunicatorStateOwner
 from cura_receiver.generated.receiver_entities_generated import (
     TxAirtimeBucketV1 as Bucket,
@@ -75,7 +76,7 @@ def component(root, *, trusted=True, seed_remaining_us=None):
             receiver_instance_id=instance.receiver_instance_id,
             clock=clock,
             kernel=LinuxKernelClock(clock),
-            queue=worker.queue,
+            queue=ProducerAdmission(worker.queue),
             policy=TimePolicy(maximum_network_skew_ppb=10_000),
             startup_rtc_result=probe,
         )

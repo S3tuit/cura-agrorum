@@ -176,7 +176,7 @@ def test_idle_receive(owner):
     radio.initialize()
     before = len(io.commands)
     result = radio.receive(deadline_monotonic_us=20000)
-    assert result.state is State.RX_SINGLE and result.packet is None and result.episodes == ()
+    assert result.state is State.RX_SINGLE and result.receive_event is None and result.episodes == ()
     assert len(io.commands) == before
 
 
@@ -193,15 +193,15 @@ def test_packet_snapshot_and_rearm(owner):
     io.after_transfer = mutate
     result = radio.receive(deadline_monotonic_us=20000)
     assert result.state is State.RX_EVENT_PENDING
-    assert result.packet.frame == b"packet"
-    assert result.packet.received_at_monotonic_us == 11004
-    assert result.packet.rssi_dbm_x2 == -200 and result.packet.snr_db_x4 == -12
-    assert result.packet.t1_handler_started_monotonic_us <= result.packet.t2_packet_copied_monotonic_us
+    assert result.receive_event.frame == b"packet"
+    assert result.receive_event.received_at_monotonic_us == 11004
+    assert result.receive_event.rssi_dbm_x2 == -200 and result.receive_event.snr_db_x4 == -12
+    assert result.receive_event.t1_handler_started_monotonic_us <= result.receive_event.t2_packet_copied_monotonic_us
     assert io.irq == 0
     result2 = radio.rearm()
     assert result2.state is State.RX_SINGLE
     assert result2.t6_set_rx_issued_monotonic_us == 11004
-    assert result.packet.frame == b"packet"
+    assert result.receive_event.frame == b"packet"
 
 
 # Header/CRC combinations discard bytes, clear exact bits and rearm without diagnostics.
@@ -212,7 +212,9 @@ def test_normal_rx_error_irq(owner, irq):
     io.commands.clear()
     signal(io, clock, irq)
     result = radio.receive(deadline_monotonic_us=20000)
-    assert result.state is State.RX_SINGLE and result.packet is None and result.episodes == ()
+    assert result.state is State.RX_SINGLE and result.episodes == ()
+    assert result.receive_event is not None and not result.receive_event.usable_for_ingress
+    assert result.receive_event.frame is None and result.receive_event.irq_status == irq
     assert b"\x02" + irq.to_bytes(2, "big") in io.commands
     assert not any(command[0] == 0x1E for command in io.commands)
     assert radio.counters.header_errors == bool(irq & 0x20)
@@ -242,10 +244,10 @@ def test_receive_fault_enters_recovery(owner, opcode):
     io.hooks[opcode] = fail(outcome=Outcome.UNCERTAIN)
     result = radio.receive(deadline_monotonic_us=20000)
     assert result.state is State.RECOVERING and not result.episodes
-    # A complete copied snapshot survives a subsequent IRQ-clear failure.
-    assert (result.packet is not None) is (opcode == 0x02)
-    if result.packet is not None:
-        assert result.packet.frame == b"packet"
+    assert result.receive_event is not None and not result.receive_event.usable_for_ingress
+    copied = opcode in (0x14, 0x0D, 0x1D, 0x02)
+    assert result.receive_event.frame == (b"packet" if copied else None)
+    assert (result.receive_event.t2_packet_copied_monotonic_us is not None) is copied
     assert radio.counters.recovery_attempts == 1
     assert radio.counters.recovery_attempts_by_reason == (0, 1, 0, 0, 0, 0, 0, 0)
 
@@ -263,7 +265,7 @@ def test_rearm_failure_reason(owner, opcode, reason):
     assert radio.counters.recovery_attempts_by_reason[reason.value - 1] == 1
 
 
-# A new edge raised by SetRx survives its confirmation and becomes pending immediately.
+# A new edge raised by SetRx survives confirmation for the next receive turn.
 def test_immediate_rx_edge(owner):
     radio, io, clock = owner
 
@@ -272,8 +274,8 @@ def test_immediate_rx_edge(owner):
             signal(io, clock)
 
     io.after_transfer = complete
-    assert radio.initialize().state is State.RX_EVENT_PENDING
-    assert radio.receive(deadline_monotonic_us=20000).packet.frame == b"packet"
+    assert radio.initialize().state is State.RX_SINGLE
+    assert radio.receive(deadline_monotonic_us=20000).receive_event.frame == b"packet"
 
 
 def received(owner):
@@ -424,7 +426,8 @@ def test_captured_timeout_observation(owner, transmit):
         assert result.tx.t5_tx_done_monotonic_us is None
         assert result.episodes == ()
     else:
-        assert result.tx is None and result.packet is None
+        assert result.tx is None and not result.receive_event.usable_for_ingress
+        assert result.receive_event.irq_status == 0x200
         assert len(result.episodes) == 1
         assert result.episodes[0].error_code is Error.UNEXPECTED_IRQ
         assert result.episodes[0].context.trigger_detail.irq_status == 0x200
@@ -447,7 +450,7 @@ def test_immediate_timeout_reaches_owner_once(owner, transmit):
             io.edges.append(edge)
     io.after_transfer = complete
     started = radio.start_ack(RadioTxAuthorization(1000000)) if transmit else radio.initialize()
-    assert started.state is (State.TX_ACTIVE if transmit else State.RX_EVENT_PENDING)
+    assert started.state is (State.TX_ACTIVE if transmit else State.RX_SINGLE)
     assert not io.edges  # The backend/owner has retained, not lost, this edge.
     result = radio.finish_ack() if transmit else radio.receive(deadline_monotonic_us=1000000)
     assert result.state is State.RX_SINGLE
@@ -627,10 +630,16 @@ def test_event_immediately_after_recovery(owner):
     radio, io, clock = needs_recovery(owner)
     io.after_transfer = lambda command: signal(io, clock) if command[0] == 0x82 else None
     result = radio.recover()
-    assert result.state is State.RX_EVENT_PENDING
+    assert result.state is State.RX_SINGLE
     assert result.episodes[0].context.terminal_state is State.RX_SINGLE
     assert io.irq == 2
-    assert radio.receive(deadline_monotonic_us=clock.now_monotonic_us()).packet is not None
+    captured = clock.now_monotonic_us()
+    io.after_transfer = None
+    clock.advance_elapsed_us(1000)
+    event = radio.receive(deadline_monotonic_us=clock.now_monotonic_us()).receive_event
+    assert event is not None
+    assert event.received_at_monotonic_us == captured
+    assert event.t1_handler_started_monotonic_us >= captured + 1000
 
 
 # A permanently high BUSY exhausts one soft and one hard attempt within their bounds.
@@ -795,7 +804,7 @@ def test_new_packet_does_not_inherit_prior_tx(owner):
     signal(io, clock, 1)
     assert radio.finish_ack().tx.ack_tx_result is AckTxResult.TX_DONE
     signal(io, clock, 2)
-    assert radio.receive(deadline_monotonic_us=clock.now_monotonic_us()).packet is not None
+    assert radio.receive(deadline_monotonic_us=clock.now_monotonic_us()).receive_event is not None
     assert radio.shutdown().tx is None
 
 
@@ -875,7 +884,7 @@ def test_discarded_episode_independence(owner):
     assert radio.state is State.RX_SINGLE and io.status == 0x54
     assert radio.counters.recovery_successes == 1
     signal(io, clock, 2)
-    assert radio.receive(deadline_monotonic_us=clock.now_monotonic_us()).packet is not None
+    assert radio.receive(deadline_monotonic_us=clock.now_monotonic_us()).receive_event is not None
 
 
 # Successful command submission cannot spend beyond the host terminal-confirmation bound.
@@ -924,3 +933,35 @@ def test_every_tx_setup_transaction_failure(owner, index):
     if uncertain:
         result = radio.recover()
     assert len(result.episodes) == 1 and result.episodes[0].error_code is Error.IO
+
+
+# Copy progress survives failure at status confirmation, before packet metadata exists.
+def test_receive_status_failure_retains_copied_bytes(owner):
+    radio, io, clock = owner
+    radio.initialize()
+    signal(io, clock)
+    def after(command):
+        if command[0] == 0x1e:
+            io.hooks[0xc0] = fail()
+    io.after_transfer = after
+    result = radio.receive(deadline_monotonic_us=20000)
+    event = result.receive_event
+    assert not event.usable_for_ingress and event.frame == b"packet"
+    assert event.t2_packet_copied_monotonic_us is not None
+    assert event.rssi_dbm_x2 is None and event.snr_db_x4 is None
+    assert result.state is State.RECOVERING
+
+
+# Stop between copy and status preserves evidence with a terminal software state.
+def test_receive_stop_after_copy_retains_event(owner):
+    radio, io, clock = owner
+    radio.initialize()
+    signal(io, clock)
+    def after(command):
+        if command[0] == 0x14:
+            radio.request_shutdown()
+    io.after_transfer = after
+    result = radio.receive(deadline_monotonic_us=20000)
+    assert result.state is State.SHUTDOWN
+    assert result.receive_event.frame == b"packet"
+    assert not result.receive_event.usable_for_ingress

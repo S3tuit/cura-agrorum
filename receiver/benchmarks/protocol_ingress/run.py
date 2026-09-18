@@ -26,6 +26,7 @@ from typing import Any, Sequence
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "receiver"))
 
+from cura_receiver.producer_admission import ProducerAdmission
 from cura_receiver.generated import protocol_v2_lora_generated as protocol
 from cura_receiver.generated.receiver_enums_generated import (
     AckSelection,
@@ -600,7 +601,7 @@ def _run_benchmark(
     )
     clock = LinuxOsClock()
     ingress = ProtocolIngress(
-        queue=persist_queue,
+        queue=ProducerAdmission(persist_queue),
         monotonic_clock=clock,
         auth_node_keys={inputs["node_id"]: inputs["node_key"]},
     )

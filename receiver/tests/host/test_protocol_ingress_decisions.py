@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 import pytest
 
+from cura_receiver.producer_admission import ProducerAdmission
 from cura_receiver.generated import protocol_v2_lora_generated as protocol
 from cura_receiver.generated.receiver_enums_generated import (
     AckSelection,
@@ -38,7 +39,7 @@ def _ingress() -> ProtocolIngress:
         )
     )
     return ProtocolIngress(
-        queue=queue,
+        queue=ProducerAdmission(queue),
         monotonic_clock=FakeOsClock(monotonic_us=20, realtime_us=0),
         auth_node_keys={NODE_ID: NODE_KEY},
     )

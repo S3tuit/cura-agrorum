@@ -5,6 +5,7 @@ import struct
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 from hypothesis import example, given, settings, strategies as st
 
+from cura_receiver.producer_admission import ProducerAdmission
 from cura_receiver.generated.receiver_enums_generated import (
     PersistenceAdmissionState,
 )
@@ -183,7 +184,7 @@ def _queue_for(admission_result: str) -> PersistQueue:
 def _actual(frame: bytes, admission_result: str):
     queue = _queue_for(admission_result)
     ingress = ProtocolIngress(
-        queue=queue,
+        queue=ProducerAdmission(queue),
         monotonic_clock=FakeOsClock(monotonic_us=20, realtime_us=0),
         auth_node_keys={REVIEWED_NODE_ID: REVIEWED_NODE_KEY},
     )

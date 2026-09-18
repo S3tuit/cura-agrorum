@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from cura_receiver.producer_admission import ProducerAdmission
 from cura_receiver.generated import protocol_v2_lora_generated as protocol
 from cura_receiver.generated.receiver_enums_generated import (
     AckTxResult,
@@ -39,7 +40,7 @@ def _context() -> tuple[PersistQueue, ProtocolIngress]:
         )
     )
     ingress = ProtocolIngress(
-        queue=queue,
+        queue=ProducerAdmission(queue),
         monotonic_clock=FakeOsClock(monotonic_us=20, realtime_us=0),
         auth_node_keys={REVIEWED_NODE_ID: REVIEWED_NODE_KEY},
     )

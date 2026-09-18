@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from cura_receiver.producer_admission import ProducerAdmission
 from cura_receiver.generated.receiver_enums_generated import (
     AckSelection,
     AckTxResult,
@@ -43,7 +44,7 @@ def _context() -> tuple[PersistQueue, ProtocolIngress, LinuxOsClock]:
     )
     clock = LinuxOsClock()
     ingress = ProtocolIngress(
-        queue=queue,
+        queue=ProducerAdmission(queue),
         monotonic_clock=clock,
         auth_node_keys={REVIEWED_NODE_ID: REVIEWED_NODE_KEY},
     )

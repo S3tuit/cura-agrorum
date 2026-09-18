@@ -4,6 +4,7 @@ from dataclasses import replace
 
 import pytest
 
+from cura_receiver.producer_admission import ProducerAdmission
 from cura_receiver.generated.receiver_enums_generated import AckTxResult, RadioState
 from cura_receiver.ordinary_persistence import OrdinaryBatchCommitOutcome
 from cura_receiver.protocol_ingress import (
@@ -28,7 +29,7 @@ from cura_receiver.sx1262 import Sx1262
 
 def _begin(queue):
     ingress = ProtocolIngress(
-        queue=queue,
+        queue=ProducerAdmission(queue),
         monotonic_clock=FakeOsClock(monotonic_us=20, realtime_us=0),
         auth_node_keys={REVIEWED_NODE_ID: REVIEWED_NODE_KEY},
     )
@@ -154,8 +155,8 @@ def test_radio_snapshot_through_real_ingress_and_sqlite(setup):
             io.buffer[:] = bytes(len(REVIEWED_CURRENT_FRAME))
 
     io.after_transfer = mutate
-    snapshot = radio.receive(deadline_monotonic_us=10000).packet
-    ingress = ProtocolIngress(queue=queue, monotonic_clock=clock,
+    snapshot = radio.receive(deadline_monotonic_us=10000).receive_event
+    ingress = ProtocolIngress(queue=ProducerAdmission(queue), monotonic_clock=clock,
                               auth_node_keys={REVIEWED_NODE_ID: REVIEWED_NODE_KEY})
     occurrence = ingress.begin(ingress_packet(
         receiver_instance_id=INSTANCE, frame=snapshot.frame,

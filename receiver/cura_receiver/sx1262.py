@@ -452,17 +452,29 @@ class Sx1262:
             raise
         self.set_tx_outcome = Outcome.CONFIRMED_APPLIED
 
-    def read_packet(self, deadline):
+    def copy_packet(self, deadline):
         length, offset = self._read(0x13, 2, deadline, Stage.READ_BUFFER)
         raw = self._raw(b"\x1e" + bytes((offset, 0)) + bytes(length), deadline, Stage.READ_BUFFER)
         frame = bytes(raw[3:])
         copied_at = self.clock.now_monotonic_us()
+        return frame, copied_at
+
+    def read_packet_status(self, deadline):
         self._confirm_status(deadline)
         status = self._read(0x14, 3, deadline, Stage.READ_PACKET_STATUS)
         rssi = -status[0]
         snr = status[1] if status[1] < 128 else status[1] - 256
+        return rssi, snr
+
+    def finish_receive(self, deadline):
         self.write_register(0x0902, b"\x00", deadline)
         self._bits(0x0944, 0x02, 0x02, deadline)  # Semtech RX-done RTC workaround.
+
+    def read_packet(self, deadline):
+        """Convenience for component peers that require only complete reads."""
+        frame, copied_at = self.copy_packet(deadline)
+        rssi, snr = self.read_packet_status(deadline)
+        self.finish_receive(deadline)
         return frame, rssi, snr, copied_at
 
     def soft_restore(self, deadline):

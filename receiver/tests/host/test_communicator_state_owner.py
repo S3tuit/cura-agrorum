@@ -170,3 +170,32 @@ def test_owner_requires_baseline_and_finite_next_generation(running):
     with pytest.raises(ValueError):
         owner.commit(state(generation=1 << 63), deadline_monotonic_us=5_000_100)
     assert owner.pending is None
+
+
+# One lost control reply plus exact reconciliation yields one original diagnostic root.
+def test_observed_unknown_commit_is_one_episode(running):
+    from cura_receiver.control_diagnostics import ControlEpisodeTracker
+    from cura_receiver.generated import receiver_enums_generated as E
+    worker, _, loaded = running
+    tracker = ControlEpisodeTracker()
+    events = []
+    def observe(event):
+        events.append(event)
+        tracker(event)
+    owner = CommunicatorStateOwner.from_load(control=LostReply(worker.control, installed=True),
+        loaded=loaded, clock=worker._clock, observer=observe)
+    owner.commit(synthetic(), deadline_monotonic_us=5_000_100,
+                 purpose=E.PersistenceControlPurpose.AIRTIME_HISTORY_RECOVERY)
+    assert tracker.take_ready() == ()
+    assert owner.pending is not None
+    owner.reconcile(deadline_monotonic_us=5_000_100)
+    episodes = tracker.take_ready()
+    assert len(episodes) == 1 and owner.pending is None
+    assert episodes[0].context.disposition is E.PersistenceControlDisposition.OUTCOME_UNKNOWN
+    assert episodes[0].context.requested_generation == 1
+    assert episodes[0].context.authoritative_generation_before == 0
+    assert episodes[0].context.purpose is E.PersistenceControlPurpose.AIRTIME_HISTORY_RECOVERY
+    assert [e.command for e in events] == [E.PersistenceControlCommand.COMMIT_COMMUNICATOR_STATE,
+                                         E.PersistenceControlCommand.LOAD_COMMUNICATOR_STATE]
+    assert all(e.finished >= e.started for e in events)
+    assert tracker.take_ready() == ()

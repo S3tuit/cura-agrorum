@@ -27,6 +27,7 @@ from uuid import UUID
 
 import pytest
 
+from cura_receiver.producer_admission import ProducerAdmission
 from cura_receiver.generated import receiver_enums_generated as E
 from cura_receiver.generated.receiver_entities_generated import ClockObservationV1
 from cura_receiver.platform.linux_chrony import LinuxChronyControl
@@ -906,7 +907,7 @@ def execute_component(case, value):
             receiver_instance_id=instance.receiver_instance_id,
             clock=clock,
             kernel=LinuxKernelClock(clock),
-            queue=owner.queue,
+            queue=ProducerAdmission(owner.queue),
             policy=TimePolicy(maximum_network_skew_ppb=1_000_000),
             startup_rtc_result=probe,
             settings=RuntimeTimeSettings(

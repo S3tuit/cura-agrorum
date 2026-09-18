@@ -57,3 +57,14 @@ class LinuxOsClock:
             raise ValueError("invalid monotonic wait deadline")
         while (remaining := deadline_monotonic_us - self.now_monotonic_us()) > 0:
             time.sleep(min(remaining, 1_000_000) / 1_000_000)
+
+
+def set_bootstrap_utc_seconds(seconds: int) -> None:
+    """Privileged boot component only; never used by the receiver runtime.
+
+    The separate bootstrap process owns once-per-boot authorization and Chrony
+    ordering. The unprivileged receiver retains read-only clock capabilities.
+    """
+    if type(seconds) is not int or not _INT64_MIN <= seconds * 1_000_000 <= _INT64_MAX:
+        raise ValueError("bootstrap UTC is outside the signed microsecond range")
+    time.clock_settime_ns(time.CLOCK_REALTIME, seconds * 1_000_000_000)

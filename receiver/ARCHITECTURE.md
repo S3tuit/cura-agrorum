@@ -344,6 +344,24 @@ refresh is ordered:
 7. Only after acknowledgement may a later Pi boot or runtime holdover
    observation use that update for `RTC_HOLDOVER`.
 
+RTC refresh is one retained incremental episode. Each scheduler turn performs
+at most one bounded RTC adapter or persistence-control action; read retries and
+exact unknown-commit reconciliation are separate actions. Ready radio work and
+stop intent are checked between actions. Retry windows include intervening
+scheduler time, and the existing per-call bounds remain unchanged.
+
+Once shutdown is requested, no further refresh action is submitted. An in-flight
+bounded primitive returns normally; the episode then reports runtime-only
+`SHUTDOWN_CANCELLED`, retaining actual results, counters and any observed failure
+root. Cancellation itself is not a TIME failure. This explicitly permits skipping
+remaining read-back/verification during shutdown, even after a possibly applied
+write. Provenance is unchanged before invalidation, absent after acknowledged
+invalidation, and unusable while invalidation or a later commit is unresolved.
+An already-submitted verified-provenance commit is reconciled exactly by the
+state owner; cancellation does not retract it or manufacture a new commit.
+No unverified update establishes RTC trust. The absolute application shutdown
+deadline is shared across subsequent cleanup and is never restarted per action.
+
 Read recovery belongs to communicator policy; each adapter call remains a
 single attempt. The retry window stops new attempts after three seconds, while
 a final in-flight call retains its separate deployment-validated operation
@@ -526,6 +544,19 @@ no later ordinary FIFO entity becomes durable ahead of the boundary. The boundar
 non-quarantinable and non-bypassable, so an isolated persistence rejection
 retains it and all following work, closes admission as incompatible and cannot
 silently create a durable correlation gap.
+
+While a required clock observation remains unpublished, the communicator pauses
+new packet processing and all later ordinary queue producers. It retries the
+retained observation with bounded scheduling and remains responsive to stop
+intent. If the gate closes after a packet was copied but before ingress
+admission, discard that unaccepted snapshot, perform bounded RX rearm/recovery
+and send no ACK. The pilot explicitly permits that packet-profile gap and
+packets timing out or being lost during the pause; nodes use normal retries.
+Never discard an accepted reservation, invent a persistence-unavailable result
+or count a queue reservation that was not attempted. Resume normal packet
+processing only after the required observation has been published. A pending
+boundary does not authorize clock-observation priority, eviction or an unbounded
+wait on an active packet-to-ACK path.
 
 Successful FIFO publication is intentionally not a durability acknowledgement.
 If the process exits before the boundary commits, all later volatile FIFO work
@@ -895,6 +926,15 @@ committed yields an unknown outcome and is reconciled by repeating that exact
 request. If any prerequisite or commit cannot complete in time, the process
 exits without claiming a clean stop; remaining volatile queue units are lost
 and unresolved airtime state is recovered conservatively on the next instance.
+Closing `PersistQueue` also ends diagnostic admission for this receiver instance.
+Failures observed afterwards, including a failed or unresolved clean-stop commit,
+may lose their `DiagnosticV1`. Do not reopen the queue, pre-reserve a diagnostic
+placeholder, add another persistence path or increment an admission counter for
+an attempt that never occurred. Bounded service evidence may still be recorded.
+The final clean-stop commit remains best effort; repeat an unknown result's exact
+request only within the remaining shutdown budget, and never claim a confirmed
+clean stop while its outcome remains unresolved.
+
 A checkpoint or database-close failure does not invalidate an already durable
 clean-stop marker. The supervisor may then finish stopping or restarting the
 service. No shutdown-time RTC write is required.
@@ -1102,7 +1142,22 @@ Any non-terminal state
   -> intentional shutdown -> SHUTDOWN
 ```
 
-If DIO1 reports a new RX event immediately after recovery confirms `SetRx`, the communicator transitions to `RX_EVENT_PENDING` and handles the event rather than discarding it as stale.
+If DIO1 reports a new RX event immediately after recovery confirms `SetRx`, retain it with its original timestamp. Complete the preceding occurrence first; the next receive turn transitions to `RX_EVENT_PENDING` and handles the event rather than discarding it as stale.
+
+A receive failure before protocol ingress does not become an application
+acceptance merely because some or all packet bytes reached Pi memory. Header
+or CRC rejection, or a failed receive operation before ingress (including
+IRQ clearing after a successful copy), produces `RADIO_ERROR`, no authenticated
+candidate and no ACK. Retain successfully copied bytes as receive evidence;
+never authenticate or admit that failed receive as a valid reading. After
+bounded restoration or terminal handling, attempt one complete profile-only
+publication under the existing admission and pending-clock-boundary rules.
+Only actual captured timestamps and metadata may be used. When mandatory T0/T1
+cannot be established, do not fabricate a profile; applicable radio diagnostic
+and recovery behavior still applies. Header/CRC outcomes remain ordinary radio
+outcomes and do not acquire exceptional diagnostics solely to retain a profile.
+A failure after ingress acceptance instead preserves its existing reservation
+and follows the terminal ACK/profile rules.
 
 The normal path is:
 
@@ -1537,7 +1592,23 @@ selection.
 
 If persistence admission is unavailable or profile reservation fails, the detailed packet-occurrence record cannot be retained. The pilot explicitly permits this exception and selects `ACK_RETRY_LATER_DOWNLINK` for an authenticated packet that is eligible for a response. The reservation attempt has already incremented exactly one `persist_queue_admission_counts` cell for the selected profile-unit kind and returned `AdmissionResult`; no overlapping profiling-failure counter is maintained. Packets that cannot be authenticated remain silent. The communicator offers the cumulative matrix in a later `ReceiverHealthRequest`; a crash before successful admission may lose the increments under the documented persistence-unavailable observability limitation.
 
-If the communicator regains control after an exception but cannot determine the attempted ACK's terminal radio outcome, it finalizes the reserved profile as `UNKNOWN_INTERRUPTED` before entering a terminal receiver state. A hard process crash or power loss drops the volatile reservation and leaves no partial SQLite row. This deliberately gives up persistence of pre-TX partial records and does not weaken the pilot's existing non-durable ACK guarantee.
+If the communicator regains control after a fatal exception, it first inhibits
+new TX and performs bounded terminal radio cleanup. After packet handling has
+reached a terminal receiver state, it finalizes any still-sound reservation
+using the actual ACK facts, then attempts the one separate core diagnostic and
+terminates. Known ACK outcomes remain unchanged; a definite abort before
+`SetTx` uses `SET_TX_FAILED` with absent T4/T5. An attempted ACK whose terminal
+outcome remains unknown uses `UNKNOWN_INTERRUPTED`, with actual T4 and absent
+T5. No timestamp may be invented, and confirmed TxDone must not be discarded.
+The complete result rules are in `INTERFACE.md`'s protocol-ingress lifecycle.
+
+Terminal software state does not assert electrical safety. Failed bounded
+cleanup must retain its unsafe/unknown safety result and cannot authorize a
+clean-stop marker. When queue ownership is uncertain or required facts cannot
+be completed truthfully, make no unsafe publication; terminate with the
+bounded service evidence available. A hard process crash or power loss drops
+the volatile reservation and leaves no partial SQLite row. This does not
+weaken the pilot's existing non-durable ACK guarantee.
 
 The radio-independent ingress boundary retains the exact opaque handle for its
 one active occurrence. Accepted candidate and protocol facts are fixed before
@@ -2295,6 +2366,14 @@ not correctness state in `CommunicatorStateV1`.
 
 The request sequence and communicator sampling time are the communicator heartbeat: they prove that the communicator event loop reached the periodic health task. No separate high-frequency heartbeat is required. `health_sequence` advances before every reservation attempt, so a gap in persisted sequence values exposes a missed or failed sample. The `RECEIVER_HEALTH_REQUEST` failure cells distinguish known queue-full and persistence-unavailable losses once a later request succeeds. A successfully admitted request includes its own `RESERVED` attempt because the communicator updates the matrix before constructing and publishing the immutable request.
 
+One communicator-owned `ProducerAdmission` adapter is shared by all ordinary
+producers, including ingress and runtime time. It delegates each reservation to
+the real `PersistQueue`, increments the corresponding saturating counter after
+an operational result returns, and returns that same result. Components do not
+count their final return values again. The adapter adds no gating, capacity or
+FIFO policy; persistence retains the real queue. Cancelled reservations remain
+counted, and interface exceptions without an operational result are not counted.
+
 The matrix counts reservation calls, not packets, SQL rows, bytes or durable
 entities. `RESERVED` means capacity was obtained even if the process later
 dies or the communicator legally cancels before publication. Aggregate totals
@@ -2479,7 +2558,15 @@ The first bounded level is soft resynchronization:
    Linux DIO1 event stream within the same recovery deadline.
 7. Issue and confirm `SetRx`.
 
-Successful restoration of `UPLINK_RX_PROFILE` followed by confirmation of `SetRx` returns the state to `RX_SINGLE`, unless a new DIO1 event requires an immediate transition to `RX_EVENT_PENDING`.
+Successful restoration of `UPLINK_RX_PROFILE` followed by confirmation of `SetRx`
+returns `RX_SINGLE`. Initialization, rearm and recovery do not then poll for the
+next GPIO event. The communicator first completes the preceding occurrence and
+its completed diagnostic episodes. The next receive turn consumes any event
+already captured by the backend or queued by Linux, preserving its original
+kernel timestamp, and transitions to `RX_EVENT_PENDING`. A failure of that poll
+belongs to the new receive operation; it cannot reopen the preceding occurrence.
+Required pre-SetRx IRQ accounting and event-stream resynchronization remain part
+of restoration. This boundary adds no wait and preserves radio-first scheduling.
 
 If soft resynchronization fails, perform bounded hard recovery:
 

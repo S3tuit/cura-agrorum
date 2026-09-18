@@ -17,6 +17,7 @@ import time
 
 import pytest
 
+from cura_receiver.producer_admission import ProducerAdmission
 from cura_receiver.generated import receiver_enums_generated as E
 from cura_receiver.generated.receiver_entities_generated import RtcProvenanceV1
 from cura_receiver.clock_correlation import AnalysisInstance, ClockCorrelation
@@ -290,7 +291,7 @@ def test_offline_component_startup(tmp_path, proven):
             receiver_instance_id=instance.receiver_instance_id,
             clock=clock,
             kernel=LinuxKernelClock(clock),
-            queue=owner.queue,
+            queue=ProducerAdmission(owner.queue),
             policy=TimePolicy(maximum_network_skew_ppb=1000),
             startup_rtc_result=probe,
             state_owner=CommunicatorStateOwner(

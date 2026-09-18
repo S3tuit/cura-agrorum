@@ -6,6 +6,29 @@
 		benchmark-receiver-protocol-ingress-load
 
 PORT ?= /dev/ttyUSB0
+.DEFAULT_GOAL := test-host
+RF_ARGS ?=
+RF_TEST_PYTHON := $(abspath .venv/bin/python)
+
+.PHONY: test-rf-build test-rf-host test-rf-component-nominal \
+        test-rf-component-dio1_disconnected test-rf-component-radio_absent
+
+test-rf-build:
+	idf.py -C firmware/test_apps/radio build
+	$(RF_TEST_PYTHON) tests/rf/inputs.py --seal-build firmware/test_apps/radio/build
+
+test-rf-host:
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(RF_TEST_PYTHON) -m pytest -c tests/rf/pytest.ini tests/rf/host
+
+test-rf-component-nominal:
+	$(RF_TEST_PYTHON) tests/rf/run.py --fixture-state nominal $(RF_ARGS)
+
+test-rf-component-dio1_disconnected:
+	$(RF_TEST_PYTHON) tests/rf/run.py --fixture-state dio1_disconnected $(RF_ARGS)
+
+test-rf-component-radio_absent:
+	$(RF_TEST_PYTHON) tests/rf/run.py --fixture-state radio_absent $(RF_ARGS)
+
 HARDWARE_TEST_APP := $(abspath firmware/test_apps/on_device)
 HARDWARE_TEST_BUILD := $(HARDWARE_TEST_APP)/build
 HARDWARE_TEST_PYTEST := $(abspath .venv/bin/python) -m pytest

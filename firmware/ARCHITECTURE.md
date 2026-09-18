@@ -111,8 +111,23 @@ that sleep. The current pilot therefore depends on uninterrupted normal cadence
 for its intended hourly margin and does not independently enforce the 1% limit
 across resets.
 
-Before production compliance is claimed, add a durable per-band rolling ledger
-with these fail-conservative properties:
+Pilot decision (2026-09-18, DEC-002): the operator accepts the existing
+per-wake budget and normal sleep cadence as a sufficient heuristic for this
+limited field pilot, citing 30 days of prior testing. This is operator-reported
+experience; no source/configuration-bound report or reset history was supplied
+with the decision. It does not establish reset-safe rolling-hour enforcement.
+The firmware behavior remains unchanged. A more elaborate reset-spanning
+mechanism and its verification are deferred under DEP-007 and the firmware
+ledger portion of RF-029; they are not prerequisites for this pilot.
+
+Revisit this deferral on repeated/unexpected resets, changed wake cadence or
+retry budgets, a requirement for independent reset-safe enforcement, or resumed
+ledger work. Test airtime is separately managed by the operator; test pacing
+does not add reset-spanning enforcement to deployed firmware. The receiver's
+existing durable airtime policy is unchanged.
+
+The retained future mechanism, required before claiming reset-safe production
+compliance, must provide these fail-conservative properties:
 
 - retain charged transmissions until they age out of the continuous one-hour
   window rather than resetting at a clock-hour boundary;

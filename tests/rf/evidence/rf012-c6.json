@@ -1,0 +1,123 @@
+[
+  {
+    "boot": 54144664,
+    "continuation": 0,
+    "dut": "cc8da2fc0224",
+    "elf": "6e8acd2deb2a2eefc53ddc7aa2d08a05cd44b478d3037df33f1873567c61cd3a",
+    "kind": "boot",
+    "previous_boot": 0,
+    "previous_case": "",
+    "previous_run": "",
+    "reset": 1
+  },
+  {
+    "boot": 54144664,
+    "case": "RF-012.disconnected",
+    "kind": "begin",
+    "phase": 0,
+    "run": "c34e68d18b964f5c846a6ec372355b7f"
+  },
+  {
+    "boot": 54144664,
+    "bytes": 67,
+    "elapsed_us": 442,
+    "kind": "command"
+  },
+  {
+    "after": 4850035,
+    "before": 2843975,
+    "deadline": 4843975,
+    "diagnostic": "01000b0800000000000000000000",
+    "done": false,
+    "error": 131078,
+    "kind": "result",
+    "operation": 16,
+    "payload": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435",
+    "rssi": 0,
+    "rx_done": 0,
+    "rx_outcome": 0,
+    "set_tx": 2865676,
+    "snr": 0,
+    "started": true,
+    "tx": true,
+    "tx_done": 0
+  },
+  {
+    "after": 2865050,
+    "argument": 868100000,
+    "before": 2844017,
+    "kind": "trace",
+    "operation": "initialize",
+    "result": 1
+  },
+  {
+    "after": 2865297,
+    "argument": 54,
+    "before": 2865072,
+    "kind": "trace",
+    "operation": "set_packet_params",
+    "result": 2
+  },
+  {
+    "after": 2865417,
+    "argument": 513,
+    "before": 2865303,
+    "kind": "trace",
+    "operation": "configure_irq",
+    "result": 2
+  },
+  {
+    "after": 2865527,
+    "argument": 17407,
+    "before": 2865428,
+    "kind": "trace",
+    "operation": "clear_irq",
+    "result": 2
+  },
+  {
+    "after": 2871044,
+    "argument": 126291,
+    "before": 2865729,
+    "kind": "trace",
+    "operation": "start_tx",
+    "result": 2
+  },
+  {
+    "after": 4859864,
+    "argument": 0,
+    "before": 4859769,
+    "kind": "trace",
+    "operation": "set_standby",
+    "result": 2
+  },
+  {
+    "after": 4859919,
+    "argument": 0,
+    "before": 4859870,
+    "kind": "trace",
+    "operation": "set_sleep_cold",
+    "result": 2
+  },
+  {
+    "boot": 54144664,
+    "case": "RF-012.disconnected",
+    "cleanup_diagnostic": "",
+    "cleanup_error": 0,
+    "cleanup_operation": 0,
+    "failed": 0,
+    "kind": "end",
+    "phase": 0,
+    "run": "c34e68d18b964f5c846a6ec372355b7f"
+  },
+  {
+    "boot": 1734555862,
+    "continuation": 0,
+    "dut": "cc8da2fc0224",
+    "elf": "6e8acd2deb2a2eefc53ddc7aa2d08a05cd44b478d3037df33f1873567c61cd3a",
+    "kind": "boot",
+    "previous_boot": 54144664,
+    "previous_case": "RF-012.disconnected",
+    "previous_run": "c34e68d18b964f5c846a6ec372355b7f",
+    "reset": 8
+  }
+]

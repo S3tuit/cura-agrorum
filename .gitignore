@@ -98,7 +98,11 @@ firmware/main/build*/
 
 # personal notes
 *.notes
+*.notes.*
 analysis_*/
 WORKPLAN*.md
 REVIEW*.md
 .workplans-archive/
+
+# Disposable joint RF captures and session state
+/tests/rf/raw/

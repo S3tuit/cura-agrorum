@@ -26,8 +26,15 @@ ground rail from physical pin 6. Both modules use these rails, with one 100 nF
 and one 10 uF capacitor in parallel across them. Keep both RTC fault shunts
 open. The radio keeps its 10 kohm RESET and CS pull-ups to the same 3.3 V rail.
 
-RF peer strategy is deferred to a real-node fixture. The available multimeter
-can support supply/static-level checks; it cannot qualify BUSY, DIO1, CS or
+The approved peer is the real C6 radio application, coordinated from laptop
+tests/rf/ with a separate Pi component process in
+receiver/test_apps/radio_peer/. Reuse the production Pi radio components where
+their fixed profile and state contract applies; deliberate alternative-profile
+cases identify the lower layer they exercise. Peer implementation and RF
+execution are still pending. Independent waveform/timestamp qualification and
+controlled BUSY-gate recovery retain their separate deferred status.
+
+The available multimeter can support supply/static-level checks; it cannot qualify BUSY, DIO1, CS or
 RESET waveforms, kernel timestamp accuracy or RF airtime. Those obligations
 remain pending. The finite RX-timeout case below is a functional IRQ/rearm
 check, not independent timestamp or timing acceptance. TX-adjacent physical

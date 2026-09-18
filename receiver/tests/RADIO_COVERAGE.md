@@ -129,8 +129,14 @@ builders, command encoders, or state transitions.
 The [carrier proposal](../hardware/TEST_CARRIER.md#proposed-sx1262-extension)
 defines connections and fault states. Selected missing hardware fails; there
 is no runtime skip or host result that satisfies a physical obligation.
-The operator has deferred the RF peer until a real-node strategy is agreed;
-waveform and timing acceptance also await an instrument beyond the available
+The approved peer is the real C6 radio application, coordinated from laptop
+tests/rf/ with a separate Pi component process in
+receiver/test_apps/radio_peer/. Reuse the production Pi radio components where
+their fixed profile and state contract applies; deliberate alternative-profile
+cases identify the lower layer they exercise. Peer implementation and RF
+execution are still pending. Independent waveform/timestamp qualification and
+controlled BUSY-gate recovery retain their separate deferred status.
+Waveform and timing acceptance await an instrument beyond the available
 multimeter. No peer placeholder or RF acceptance is provided.
 The unavailable SN74LVC1G32 gate and its synchronized physical soft/hard
 recovery execution are also operator-deferred. Nominal non-peer cases remain

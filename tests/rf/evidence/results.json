@@ -1,0 +1,185 @@
+{
+  "build": {
+    "external_dependency_count": 1815,
+    "files": {
+      "bootloader/bootloader.bin": "152e3cc975732028b96a749c8f7f495f23dcd1a171426d0ddc1439c5582f8d45",
+      "compile_commands.json": "6a1c9c8ffc3a62ea722ae88f64ed1fff0ea72dc9abe361f164afd45be96e8bdb",
+      "config/sdkconfig.json": "d29f78fad4ed7dcf98f35a635f092ce4bf5b532226ac631896e620b5aced0bdf",
+      "cura_radio_component.bin": "946378c5310575c19d5105d245a335895f4ab9b4364dcb7ef0227b5dfc5108a8",
+      "cura_radio_component.elf": "6e8acd2deb2a2eefc53ddc7aa2d08a05cd44b478d3037df33f1873567c61cd3a",
+      "flasher_args.json": "563a4aa303211cc7f24ba376ce14e999ca3a7f5a76e227945e10d06db629a28a",
+      "partition_table/partition-table.bin": "76d98d0e02b929c3dbdb1d1a433dce832f0c6f5a14a1a3923339f43ba2098676",
+      "project_description.json": "c118553b30c36d064db99878c2e451d81f681788072bcdf3d60551ff0a9ee745"
+    },
+    "original_build_sha256": "3d2352e0a305d8ec894a253af0fff6b4f7c7b00f9a689db4209e8e8d70ba6d81"
+  },
+  "cases": {
+    "RF-012.disconnected": {
+      "capture": {
+        "c6": "rf012-c6.json",
+        "pi": "rf012-pi.jsonl",
+        "source": "rf012-source.json"
+      },
+      "date": "2026-09-18",
+      "elf": "6e8acd2deb2a2eefc53ddc7aa2d08a05cd44b478d3037df33f1873567c61cd3a",
+      "fixture": {
+        "antennas_checked": true,
+        "c6_dut": "cc8da2fc0224",
+        "c6_fixture": "dio1_disconnected",
+        "c6_transmitter": "C6 cc8da2fc0224 fitted Waveshare EU868 module",
+        "c6_uart": "/dev/ttyUSB0",
+        "exclusive_radios": true,
+        "manual_fault_confirmed": true,
+        "operating_envelope_reference": "tests/rf/evidence/2026-09-18-envelope/README.md; DEC-003/DEP-023 approved documented hardware/configuration at configured +14 dBm",
+        "operator": "user 2026-09-18: RN5 restored MCU-side GPIO20 to GND; radio DIO1 disconnected; powered on, ready for RF-012 rerun",
+        "pi_board_id": "00000000e0027211",
+        "pi_fixture": "radio_nominal",
+        "pi_transmitter": "Pi 00000000e0027211 fitted Waveshare EU868 module",
+        "pi_user": "cura",
+        "power_checked": true,
+        "receiver_service_stopped": true,
+        "rtc_shunts_open": true,
+        "schema": 1,
+        "wiring_checked": true
+      },
+      "original_path": "tests/rf/evidence/2026-09-18-rf012/restored-run",
+      "original_run_sha256": "af2d409ceb702179f3808fec2807117a4547edf72e88f1fa7daf70e8a22df48c",
+      "original_verification": "PASS: original archive including prerequisite applicability, JUnit, endpoint assertions and peer exit verified before curation.",
+      "peer_exit": {
+        "exit": 0
+      },
+      "pytest_exit": 0,
+      "restoration": {
+        "elf": "6e8acd2deb2a2eefc53ddc7aa2d08a05cd44b478d3037df33f1873567c61cd3a",
+        "observations": {
+          "c6_set_tx_attempts": 1,
+          "c6_state": "radio cold sleep; MCU timer wake into non-transmitting readiness",
+          "cleanup": "confirmed",
+          "independent_verification": "PASS",
+          "operator_confirmed_unpowered_reconnection": true,
+          "pi_process_absent": true,
+          "pi_set_tx_attempts": 1,
+          "rn5_retained": true,
+          "run": "2fed662ab278406bb14a4ad6fd0907c2",
+          "status": "PASS"
+        },
+        "original_run_sha256": "965e94fdc851c828ecd6a27e0290252200b7fba165b372a66f8cde4b101121f9",
+        "pytest_exit": 0,
+        "results": [
+          {
+            "c6_attempts": 1,
+            "case": "RF-001.exchange",
+            "pi_attempts": 1,
+            "scope": "raw_component",
+            "status": "PASS"
+          }
+        ],
+        "run": "2fed662ab278406bb14a4ad6fd0907c2",
+        "source": "b9f823d28ad058c8bc4281ac01e99598ab40dd7e53f55d1cb09dd4c7e196b6f5",
+        "status": "PASS",
+        "verification": "Original archive checksums, JUnit, endpoint assertions and peer exit rechecked before curation; nominal raw captures discarded."
+      },
+      "results": [
+        {
+          "c6_attempts": 1,
+          "case": "RF-012.disconnected",
+          "pi_attempts": 0,
+          "scope": "raw_component",
+          "status": "PASS"
+        }
+      ],
+      "run": "c34e68d18b964f5c846a6ec372355b7f",
+      "source": "7cacf4ccbaf97fcb4dcea7dc100e1bd85af6a8ec9c244cfd131ccc3bca1f15af",
+      "status": "PASS"
+    },
+    "RF-013.absent": {
+      "capture": {
+        "c6": "rf013-c6.json",
+        "pi": "rf013-pi.jsonl",
+        "source": "rf013-source.json"
+      },
+      "date": "2026-09-18",
+      "elf": "6e8acd2deb2a2eefc53ddc7aa2d08a05cd44b478d3037df33f1873567c61cd3a",
+      "fixture": {
+        "antennas_checked": true,
+        "c6_dut": "cc8da2fc0224",
+        "c6_fixture": "radio_absent",
+        "c6_transmitter": "C6 cc8da2fc0224 associated Waveshare EU868 module; fully disconnected for declared radio_absent fixture",
+        "c6_uart": "/dev/ttyUSB0",
+        "exclusive_radios": true,
+        "manual_fault_confirmed": true,
+        "operating_envelope_reference": "tests/rf/evidence/2026-09-18-envelope/README.md; DEC-003/DEP-023 approved documented hardware/configuration at configured +14 dBm",
+        "operator": "user 2026-09-18: BUSY/MISO ties were inverted; wiring corrected with power removed, C6 powered on with radio absent; GPIO19 BUSY to 3.3 V, GPIO14 MISO to GND, RN5 retained",
+        "pi_board_id": "00000000e0027211",
+        "pi_fixture": "radio_nominal",
+        "pi_transmitter": "Pi 00000000e0027211 fitted Waveshare EU868 module",
+        "pi_user": "cura",
+        "power_checked": true,
+        "receiver_service_stopped": true,
+        "rtc_shunts_open": true,
+        "schema": 1,
+        "wiring_checked": true
+      },
+      "original_path": "tests/rf/evidence/2026-09-18-rf013/fixed-run",
+      "original_run_sha256": "12e574a9f4588dc66e27b29d6a2649520bcf5f1207f9c9aa2067d1069ce17e3a",
+      "original_verification": "PASS: original archive including prerequisite applicability, JUnit, endpoint assertions and peer exit verified before curation.",
+      "peer_exit": {
+        "exit": 0
+      },
+      "pytest_exit": 0,
+      "restoration": {
+        "elf": "6e8acd2deb2a2eefc53ddc7aa2d08a05cd44b478d3037df33f1873567c61cd3a",
+        "observations": {
+          "c6_state": "nominal fixture; radio cold sleep; MCU idle after timer deep sleep/wake",
+          "independent_verification": "PASS",
+          "operator_confirmed_both_ties_removed_unpowered": true,
+          "pi_process_absent": true,
+          "radio_reconnected": true,
+          "rn5_retained": true,
+          "run": "24b22d18638140498c668084dce08ec9",
+          "status": "PASS"
+        },
+        "original_run_sha256": "c31457a695560b6d90920d0c8223cfc0f8ff429236f46ac458ec393c067b3538",
+        "pytest_exit": 0,
+        "results": [
+          {
+            "c6_attempts": 1,
+            "case": "RF-001.exchange",
+            "pi_attempts": 1,
+            "scope": "raw_component",
+            "status": "PASS"
+          }
+        ],
+        "run": "24b22d18638140498c668084dce08ec9",
+        "source": "7a94b077079a6ac74bcee70dfb36c614ae65cd2e9247d02f6da9d1aa974e4e0c",
+        "status": "PASS",
+        "verification": "Original archive checksums, JUnit, endpoint assertions and peer exit rechecked before curation; nominal raw captures discarded."
+      },
+      "results": [
+        {
+          "c6_attempts": 0,
+          "case": "RF-013.absent",
+          "pi_attempts": 0,
+          "scope": "raw_component",
+          "status": "PASS"
+        }
+      ],
+      "run": "0673c31eb0a948259e1c96533aff2dfa",
+      "source": "986fb9ca0fab1a66bda6baf6de272b2f7917766e3516dac19f5b7920a3ffdf32",
+      "status": "PASS"
+    }
+  },
+  "curation": "Historical results condensed from verified original archives; not a new hardware run.",
+  "limits": "Raw-component results only. Nominal prerequisite/restoration archives, routine wiring failures, host/build logs and full external compiler dependency inventory discarded after verification. Historical paths/hashes identify provenance and are not live dependencies.",
+  "schema": 1,
+  "sources": {
+    "archive": "source.tar.gz",
+    "head": "ee55b737b0bc90e2a467814ddccc688a08c8a06a",
+    "layout": "rf012/ is the complete first manifest; overlay rf013/ for the second manifest. The three changed files are documentation only.",
+    "rf013_overrides": [
+      "tests/rf/COVERAGE.md",
+      "tests/rf/README.md",
+      "tests/rf/test_suite.notes.md"
+    ]
+  }
+}

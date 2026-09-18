@@ -985,9 +985,11 @@ duplicate controller policy already covered by host fakes.
 The radio circuit and manual connection states are documented in
 [SENSOR_CARRIER.md](test_apps/on_device/SENSOR_CARRIER.md#sx1262-radio-fixture).
 Assembly/static preflight and the first RF operating envelope are specified
-below. All executable tests in this radio hardware section remain deferred:
-there is no radio test application, receiver-peer harness or retained RF
-acceptance run in the current implementation.
+below. The [component radio app](test_apps/radio/README.md), Pi peer and
+[joint runner](../tests/rf/README.md) implement RF-001/003/006/008/009/010/012/013.
+Their [runner instructions](../tests/rf/README.md) describe implemented cases;
+[manual-fixture evidence](../tests/rf/evidence/README.md) records costly physical results. Unselected cases retain their
+required coverage; component results do not establish full-service acceptance.
 
 SX1262 hardware tests exercise behavior that the fake backend cannot prove:
 real SPI/BUSY/DIO1 operation, RF interoperability, IRQ timestamps,
@@ -999,19 +1001,27 @@ The node DUT runs the production `sx1262_radio` component and ESP backend throug
 ESP-IDF Unity, with pytest-embedded as host orchestration. The selected pilot
 peer is the actual Pi 3B receiver hardware and its second Waveshare module,
 running separate component test code. Full receiver application readiness is
-not required for these component tests. The peer can:
+not required for these component tests. The peer implements the selected fixed
+profile cases; the following broader behaviors remain required as their cases
+are implemented. Wrong-IQ and alternate-sync adaptations are still deferred:
 
 - receive node uplinks with normal IQ and report exact payload bytes;
 - transmit arbitrary downlink payloads with inverted or normal IQ;
 - select the pilot or an intentionally different sync word; and
-- schedule transmissions relative to a pytest command and report its own
-  observations.
+- schedule timed transmissions locally from its observed uplink event, with
+  readiness handshakes for host triggers, and report its own observations.
 
-If the receiver is a Raspberry Pi, ordinary pytest fixtures control its test
-process while `pytest-embedded` controls the ESP32. If the receiver is another
-MCU, `pytest-embedded` may run it as a second DUT. The peer implementation is
-separate from the node component so the exchange tests two real ends rather
-than a node radio loopback.
+For field-pilot-v2, laptop pytest in tests/rf/ coordinates pytest-embedded
+over the C6 UART connector and SSH control of the separate Pi process. The C6
+Unity application/configuration lives in firmware/test_apps/radio/ and the Pi
+component peer in receiver/test_apps/radio_peer/. Use production Pi
+Radio/Sx1262/LinuxRadioIo where applicable, keeping helpers local until a
+second real use warrants sharing. Readiness handshakes, local event-based
+scheduling and bounded waits are mandatory; SSH is not precise RF timing, and
+endpoint monotonic clocks are independent. Ordinary receiver hardware tests
+remain Pi-local.
+The peer remains separate from the node component so exchanges exercise two
+real ends rather than a node radio loopback.
 
 Tests use antennas in fixed, repeatable positions at least a few metres apart;
 the +14 dBm radios are not placed immediately beside one another. Exact RSSI
@@ -1196,6 +1206,16 @@ carrier accuracy or unwanted emissions. Retain the specified kit antennas and
 PA settings; a different antenna or conflicting RF evidence requires renewed
 assessment. Lower duty cycle does not cure excessive instantaneous ERP.
 
+**Pilot envelope approval, 2026-09-18.** The operator accepts this existing
+source-based assessment and the documented firmware/receiver schematics at
+configured +14 dBm, explicitly including autonomous wakes, retries and resets.
+The [retained DEC-003/DEP-023 decision](../tests/rf/OPERATING_ENVELOPE.md)
+closes RF-018 disposition and defers physical measurement as NOT RUN. This is
+operator acceptance of the documented basis and remaining uncertainty, not a
+new numerical bound or measured compliance result. The initial component limits
+below, declared expanded episodes, existing production policies and operator
+ownership of test airtime remain distinct and unchanged.
+
 **Airtime and initial pacing.** The protocol's independently specified values
 are the expected results, not values copied from DUT output:
 
@@ -1221,10 +1241,18 @@ packets conservatively in an hour gives only 6.889 charged seconds at the node
 and 4.140 at the peer; the independent rolling ledger below still controls
 admission and includes any other recorded activity.
 
-**Per-transmitter accounting before emission.** For every session, the operator
-and later host orchestration must retain a separate journal for each physical
-transmitter, covering all its activity in this sub-band, including both test
-ends' earlier runs:
+**Operator-managed airtime for the first test phase (approved 2026-09-18).**
+The operator owns accounting, admission and pacing for both physical
+transmitters, including earlier runs in this sub-band. No automated runner
+ledger, allowance allocator or cross-run scheduler is required for this phase.
+A retained manual batch sheet is sufficient: record each end's conservative
+maximum episode charge, timing/history and the selected run/cases, including
+possible retries and uncertain outcomes. The harness declares those bounds,
+waits for operator readiness and records actual attempts; it does not need to
+parse or implement the operator's accounting. Future automation is DEP-028.
+
+The existing envelope and accounting rules still apply to the operator's
+records (individual packets may be conservatively grouped into whole batches):
 
 - Before any trigger capable of TX, durably reserve that end's full packet
   charge. Admit it only if the retained charges plus the new reservation are
@@ -1232,7 +1260,8 @@ ends' earlier runs:
   the latest possible end of its transmission, conservatively covering packets
   that straddle an observation-window boundary. Record the physical end,
   run/case, PHY/payload length, charge, trigger time, latest possible TX end,
-  outcome and running total. Update completion information without refunding
+  outcome and running total, or retain a conservative whole-batch reservation
+  with those bounds. Update completion information without refunding
   an attempted packet merely because its result failed.
 - Reserve both ends before an exchange if its command could cause both to
   transmit. Reserve every attempted or uncertain TX, including missing DIO1,
@@ -1254,9 +1283,13 @@ ends' earlier runs:
   exceeded the modeled packet, stop, remove power and retain the failure;
   bound the possible emission interval conservatively or use this fallback.
 
-This host-controlled component-test envelope does not claim that the node's
-production per-wake eight-second allowance enforces a rolling hour across
-resets. It does not replace the receiver's eventual production ledger either.
+An additional LoRa receiver may cross-check the records; decoded silence,
+including ten quiet minutes, is not the accounting method or a fresh allowance.
+This operator-controlled test envelope does not establish the node's
+reset-spanning production enforcement. DEC-002 accepts the existing per-wake
+heuristic for this pilot and defers DEP-007 plus RF-029's future firmware-ledger
+assertions. Current per-wake checks, receiver durable enforcement and selected
+RF verification remain required.
 Larger payloads, filtering bursts, transition cases and stress runs retain all
 their required coverage; their later run plans must account for every emission
 and establish suitable pacing before expanding beyond this initial envelope.

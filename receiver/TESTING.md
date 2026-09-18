@@ -15,8 +15,11 @@ coverage, including independent generated history and anchor-selection models.
 Pi component coverage includes queue/ingress, startup, ordinary transactions,
 worker control/checkpoint scheduling, a seeded CPU/storage-load soak,
 process-kill recovery and isolated capacity/access/corruption recovery.
-Communicator, live time/radio policy and complete service lifecycle coverage
-still arrive with their owning production components.
+Runtime time/Chrony/DS3231, durable airtime and the production radio stack are
+implemented with host and source-bound Pi component evidence; retained target
+results do not qualify every later source/configuration change. Communicator
+orchestration, its observability producers and the complete service lifecycle
+remain unimplemented; their integration coverage arrives with that work.
 
 ## Purpose and authority
 
@@ -34,26 +37,36 @@ Every test obligation below belongs to one of two suites:
   They contain the exhaustive policy, state-machine, fault-injection and SQLite
   matrices. They must not require Raspberry Pi devices, systemd, chronyd,
   privileged clock control or real elapsed-time sleeps.
-- **Hardware tests** run locally on the target Raspberry Pi and verify facts
-  that host fakes cannot establish: the deployed Python/SQLite/kernel stack,
-  SPI and GPIO behavior, the DS3231, chronyd integration, systemd lifecycle,
-  target storage and physical timing. They complement rather than repeat the
-  exhaustive host matrices.
+- **Hardware tests** verify facts that host fakes cannot establish: the
+  deployed Python/SQLite/kernel stack, SPI/GPIO, DS3231, chronyd, systemd,
+  storage and physical timing. They complement the exhaustive host matrices.
+  Ordinary receiver hardware tests run locally on the target Pi. Joint C6/Pi
+  scenarios are coordinated by laptop pytest in tests/rf/: pytest-embedded
+  controls the C6 over its actual UART connector, and SSH controls a separate Pi
+  process. Receiver production code and hardware operations execute on Pi.
 
-The complete end-to-end RF suite is deliberately deferred until all receiver
-production code and every other host and hardware test in this document have
-been implemented and pass. Component-level radio hardware tests may establish
-the SX1262 fixture before then, but they must not be presented as an
-end-to-end receiver result.
+Field-pilot-v2 deployment and full-system acceptance use the explicitly
+reviewed pilot-readiness gate, with selected requirement and test IDs,
+dependencies and required source-bound evidence recorded in the deployment
+record. Every production behavior needed by that pilot and every selected gate
+obligation must be implemented and verified. Other required coverage remains
+identified as deferred, with its reason, consequence and revisit condition;
+deferred is neither passed nor deleted. Component RF tests may run when their
+own prerequisites pass, before complete receiver service readiness.
+Full-system RF tests require the real production service and the relevant
+integration/lifecycle prerequisites, not automatic completion of all unrelated
+deferred physical tests. Any change to behavior, protocol, identity/counters,
+timing or evidence standards still requires an explicit decision.
 
 ## Framework and organization
 
-Both automated suites use `pytest`. Host property tests and model-based state-machine
-tests use Hypothesis where generated sequences add coverage beyond reviewed
-examples. The Raspberry Pi runs ordinary pytest directly because the receiver
-is a native Python program on that host. `pytest-embedded` is optional only
-when a later radio test also controls an ESP32 peer over serial; it is not the
-receiver test runner.
+Receiver host and Pi-local component suites use pytest, with Hypothesis for
+suitable independent policy/model exploration. Joint RF scenarios use laptop
+pytest and pytest-embedded for the C6; Pi-local pytest/component or service
+processes still execute on Pi. The C6 Unity app/configuration lives in
+firmware/test_apps/radio/, the separate Pi component peer in
+receiver/test_apps/radio_peer/, and joint scenarios/local orchestration in
+tests/rf/. Protocol verification remains in protocol/protocol-v2-lora/tests/.
 
 Physical DS3231 bring-up also has a separate
 [operator acceptance procedure](hardware/ds3231/OPERATOR_TESTS.md), covering
@@ -298,11 +311,18 @@ end-to-end ACK deadline.
 - **Hardware reset recovery:** Force a safe recoverable fault with a controllable fixture, require soft recovery or reset/full initialization as appropriate, and prove the final known state rather than only checking a return code.
 - **Safe-state teardown:** End tests from RX, TX-adjacent, recovery and ordinary idle conditions and verify the module reaches the configured safe shutdown state; an uncertain state aborts later radio cases.
 
-The operator has deferred component RF-peer implementation until a real-node
-strategy is defined. Only a multimeter is currently available. Peer-dependent
-cases and waveform/timestamp acceptance therefore remain required but deferred;
-do not add a speculative peer port or treat voltage readings as edge timing.
-The host backend/state-machine work and non-peer component cases may proceed.
+The approved peer is the real C6 radio application, coordinated from laptop
+tests/rf/ with a separate Pi component process in
+receiver/test_apps/radio_peer/. Reuse the production Pi radio components where
+their fixed profile and state contract applies; deliberate alternative-profile
+cases identify the lower layer they exercise. The component peer and
+[joint runner](../tests/rf/README.md) implement RF-001/003/006/008/009/010/012/013;
+their [manual-fixture evidence](../tests/rf/evidence/README.md) records costly
+physical results. Nominal tests are rerun when needed; host checks do not prove RF outcomes. RF-006's finite burst explicitly exercises Sx1262/LinuxRadioIo.
+Independent waveform/timestamp qualification and
+controlled BUSY-gate recovery retain their separate deferred status.
+Only a multimeter is currently available; voltage readings do not establish
+edge timing. Do not add a speculative peer port.
 The operator has also deferred the unavailable SN74LVC1G32 BUSY fault gate.
 Its synchronized physical soft/hard recovery cases remain required but unrun;
 nominal non-peer cases do not require the gate. A static held-BUSY startup
@@ -756,22 +776,43 @@ deterministically.
 
 ### Hardware tests
 
-All tests in this section are **deferred until every receiver production
-component and every other host and hardware test in this document have been
-implemented and pass**. Starting this section earlier requires explicit user
-agreement. The later suite runs the production receiver service on the Pi and a
-separately controlled real node/ESP32 peer; pytest runs on the Pi and may use
-`pytest-embedded` only to control that peer.
+These scenarios run the production receiver service on Pi and a separately
+controlled real C6 node. Laptop pytest coordinates them as described under
+Framework and organization. Each selected scenario requires the implemented
+production paths and applicable current host, component and deployment
+evidence listed by the approved pilot gate. Unselected scenarios remain
+explicit required deferred coverage with IDs and revisit conditions. A
+component peer result cannot establish complete receiver acceptance.
 
-- **First valid RF reading:** Transmit one reviewed current reading over the pilot PHY, require the exact authenticated accepted ACK at the node and verify the receiver's canonical SQLite row and complete profiling timestamps.
-- **Lost accepted ACK:** Suppress or miss the first downlink at the node, retransmit the identical uplink and verify deterministic ACK bytes, one canonical reading and two occurrence profiles with retransmission classification.
-- **Failed receiver TX outcome:** Force a controllable post-SetTx failure, verify conservative charge/profile/recovery behavior and prove the node's later retry succeeds without cached receiver history.
-- **Current then backlog RF identity:** Send the same sample first as current and later as a newly constructed backlog message and verify transport IDs differ while application classification and stored bodies remain correct.
-- **Authenticated rejection and silence matrix:** Send representative authenticated malformed, unsupported and wrong-direction packets plus unauthenticated traffic and verify exact rejection ACKs or required silence over RF and in persistence evidence.
-- **Queue and persistence backpressure:** Stall the isolated persistence path, fill the bounded queue, require retry-later responses only for eligible packets and verify nodes retain/retry readings after recovery.
-- **Airtime-suppressed RF acceptance:** Exhaust receiver ACK allowance legally, transmit a valid reading, observe no downlink and prove persistence still accepts the occurrence; retry later and verify duplicate classification.
-- **Profile transition interoperability:** Alternate normal-IQ node uplinks and inverted-IQ receiver ACKs across multiple episodes and prove neither side receives the wrong direction profile or stale IRQ/buffer contents.
-- **Clock and timestamp evidence:** Run online and approved offline-holdover episodes and verify stored monotonic events, trusted observations and derived direct/logical timestamps against independent test timing evidence.
-- **Receiver process restart:** Restart or crash the service between node attempts and verify new receiver identity, unchanged Linux boot identity, conservative airtime state and correct durable duplicate handling.
-- **Pi reboot:** Reboot between node attempts, verify both receiver and boot identities change, restore time/state conservatively and accept or suppress ACK exactly as the durable contracts require.
-- **Complete pilot soak:** Run a legally airtime-bounded mixed current/backlog workload with health sampling, checkpoints and controlled recoverable faults, then reconcile every transmitted logical message, ACK observation, SQLite identity, profile and diagnostic/health aggregate.
+- **First valid RF reading (RF-020):** Transmit one reviewed current reading over the pilot PHY, require the exact authenticated accepted ACK at the node and verify the receiver's canonical SQLite row and complete profiling timestamps.
+- **Lost accepted ACK (RF-021):** Suppress or miss the first downlink at the node, retransmit the identical uplink and verify deterministic ACK bytes, one canonical reading and two occurrence profiles with retransmission classification.
+- **Failed receiver TX outcome (RF-031):** Force a controllable post-SetTx failure, verify conservative charge/profile/recovery behavior and prove the node's later retry succeeds without cached receiver history.
+- **Current then backlog RF identity (RF-022):** Send the same sample first as current and later as a newly constructed backlog message and verify transport IDs differ while application classification and stored bodies remain correct.
+- **Authenticated rejection and silence matrix (RF-023):** Send representative authenticated malformed, unsupported and wrong-direction packets plus unauthenticated traffic and verify exact rejection ACKs or required silence over RF and in persistence evidence.
+- **Queue and persistence backpressure (RF-024):** Stall the isolated persistence path, fill the bounded queue, require retry-later responses only for eligible packets and verify nodes retain/retry readings after recovery.
+- **Airtime-suppressed RF acceptance (RF-025):** Exhaust receiver ACK allowance legally, transmit a valid reading, observe no downlink and prove persistence still accepts the occurrence; retry later and verify duplicate classification.
+- **Profile transition interoperability (RF-008 / RF-004):** Alternate normal-IQ node uplinks and inverted-IQ receiver ACKs across multiple episodes and prove neither side receives the wrong direction profile or stale IRQ/buffer contents.
+- **Clock and timestamp evidence (RF-026):** Run online and approved offline-holdover episodes and verify stored monotonic events, trusted observations and derived direct/logical timestamps against independent test timing evidence.
+- **Receiver process restart (RF-027):** Restart or crash the service between node attempts and verify new receiver identity, unchanged Linux boot identity, conservative airtime state and correct durable duplicate handling.
+- **Pi reboot (RF-028):** Reboot between node attempts, verify both receiver and boot identities change, restore time/state conservatively and accept or suppress ACK exactly as the durable contracts require.
+- **Complete pilot soak (RF-030):** Run a legally airtime-bounded mixed current/backlog workload with health sampling, checkpoints and controlled recoverable faults, then reconcile every transmitted logical message, ACK observation, SQLite identity, profile and diagnostic/health aggregate.
+
+Shared executions must retain every mapped ID's distinct assertions and
+source-bound evidence. RF-008/RF-020 cover positive transitions and stale
+contents; RF-004 retains both negative assertions: C6 rejection of normal IQ
+during downlink RX and Pi rejection of inverted IQ during normal uplink RX.
+Both negatives remain proposed deferred coverage, including full-service
+verification; component results cannot close that end-to-end obligation.
+RF-030 has separate bench and field results: the bench phase precedes deployment,
+and the at-least-one-week field phase follows first deployment.
+
+### Approved pilot RF envelope
+
+The [2026-09-18 DEC-003/DEP-023 decision](../tests/rf/OPERATING_ENVELOPE.md)
+approves the documented firmware and receiver schematics/configuration at
+configured +14 dBm, including autonomous wakes, retries and resets. RF-018
+source/configuration evidence disposition is accepted; physical measurement
+remains deferred NOT RUN and numerical uncertainty is unmeasured. Existing
+receiver production airtime enforcement and operator-owned component-test
+accounting remain unchanged. This approval does not close service or aggregate
+deployment acceptance.

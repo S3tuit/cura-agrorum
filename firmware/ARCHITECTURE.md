@@ -433,6 +433,14 @@ discarded rather than migrated; receiver-side historical records remain. This
 full-device rotation procedure is distinct from the ordinary LittleFS-only
 maintenance application.
 
+After a full-device erase, initialize an empty LittleFS filesystem by running
+that nontransmitting maintenance application and verifying its successful
+format/mount result. Then flash the new production application while preserving
+the initialized storage partition. Both builds must use the same actual storage
+layout and compatible filesystem settings. This explicit provisioning step does
+not authorize automatic formatting during production operation; see the
+[maintenance procedure](maintenance/erase_storage/README.md).
+
 ## RTC-state lifecycle
 
 Incoming and outgoing metrics are separate:
@@ -1104,6 +1112,13 @@ cryptographic guarantees; it is never used for identity or key material.
 `get_reset_reason` exposes the `u8` numeric value of `esp_reset_reason_t`; sleep
 wakeup causes are not collected. The system implementation performs the final
 board-safe transition and enters timer deep sleep for a relative duration.
+`CONFIG_NODE_DEEP_SLEEP_SECONDS` selects the relative sleep duration, default900
+seconds. Accelerated RF test builds select10 seconds without changing ACK, retry,
+sensor or persistence policy. `CONFIG_NODE_RF_SLEEP_OBSERVATION` is off in
+production; when enabled it emits `RF_NODE_SLEEP duration_us=<duration>` after
+controller finalization and successful timer configuration, immediately before
+the terminal sleep call. Tests treat this marker as sleep entry by operator
+agreement; it is not an electrical sleep/current measurement.
 From the controller's perspective `enter_deep_sleep_for` is terminal and cannot
 fail. Production configures timer wakeup and enters deep sleep; if wakeup
 configuration fails, the system adapter reports to the development console,

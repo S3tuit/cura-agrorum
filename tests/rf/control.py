@@ -1,19 +1,16 @@
 """Bounded SSH/process control and C6 UART event collection; no RF timing here."""
 from __future__ import annotations
-import io
 import json
-import os
 from pathlib import Path
 import queue
 import re
 import shlex
 import subprocess
 import sys
-import tarfile
 import threading
-import time
 
-from inputs import REPO, digest, write_json
+from evidence import write_json
+from transport import RemoteTransport
 
 
 def verify_uart_identity(fixture, root):
@@ -28,60 +25,7 @@ def verify_uart_identity(fixture, root):
         raise ValueError("UART factory MAC mismatch before flash")
 
 
-class Remote:
-    def __init__(self, host, user, run, root, host_key_alias=None, python="python3"):
-        if not re.fullmatch(r"[a-zA-Z0-9.-]+", host) or not re.fullmatch(r"[0-9a-f]{32}", run):
-            raise ValueError("invalid host/run")
-        self.host, self.user, self.run, self.root = host, user, run, Path(root)
-        self.remote = "/var/tmp/cura-rf-" + run
-        if python != "python3" and not python.startswith("/"):
-            raise ValueError("peer Python must be python3 or an absolute interpreter path")
-        self.python = python
-        self.env = os.environ.copy()
-        self.prefix = []
-        if password := self.env.pop("CURA_PI_PASSWORD", None):
-            self.env["SSHPASS"] = password
-            self.prefix = ["sshpass", "-e"]
-        self.options = ["-F", "/dev/null", "-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=5",
-                        "-o", "ServerAliveCountMax=2"]
-        if host_key_alias:
-            if not re.fullmatch(r"[a-zA-Z0-9.-]+", host_key_alias):
-                raise ValueError("invalid SSH host-key alias")
-            self.options += ["-o", "HostKeyAlias=" + host_key_alias]
-        self.counter = 0
-
-    def ssh(self, command):
-        return self.prefix + ["ssh", *self.options, self.user + "@" + self.host, command]
-
-    def command(self, command, timeout=30):
-        self.counter += 1
-        result = subprocess.run(self.ssh(command), env=self.env, capture_output=True, text=True, timeout=timeout)
-        write_json(self.root / f"remote-{self.counter}.json", dict(command=command, exit=result.returncode,
-                   stdout=result.stdout, stderr=result.stderr))
-        if result.returncode:
-            raise RuntimeError(f"remote command exited {result.returncode}: {result.stderr.strip()}")
-        return result
-
-    def stage(self, manifest, fixture):
-        archive = self.root / "source.tar.gz"
-        with tarfile.open(archive, "w:gz") as tar:
-            for name, expected in manifest["files"].items():
-                if digest(REPO / name) != expected:
-                    raise ValueError("source changed while staging")
-                tar.add(REPO / name, arcname=name, recursive=False)
-            for name, value in (("source-manifest.json", manifest), ("rf-fixture.json", fixture)):
-                data = (json.dumps(value, indent=2, sort_keys=True) + "\n").encode()
-                entry = tarfile.TarInfo(name); entry.size = len(data); entry.mode = 0o600
-                tar.addfile(entry, io.BytesIO(data))
-        self.command("mkdir -m 700 " + shlex.quote(self.remote))
-        result = subprocess.run(self.prefix + ["scp", *self.options, str(archive),
-            f"{self.user}@{self.host}:{self.remote}/source.tar.gz"], env=self.env,
-            capture_output=True, text=True, timeout=60)
-        write_json(self.root / "scp.json", dict(exit=result.returncode, stdout=result.stdout, stderr=result.stderr))
-        if result.returncode:
-            raise RuntimeError("source transfer failed")
-        self.command("tar -xzf " + shlex.quote(self.remote + "/source.tar.gz") + " -C " + shlex.quote(self.remote))
-
+class Remote(RemoteTransport):
     def peer(self, case, root, source_hash):
         args = [self.python, "receiver/test_apps/radio_peer/peer.py", "--case", case, "--run", self.run,
                 "--manifest", "source-manifest.json", "--fixture", "rf-fixture.json"]
@@ -95,9 +39,10 @@ class Remote:
 
 
 class Peer:
-    def __init__(self, argv, env, run, case, root, source_hash):
+    def __init__(self, argv, env, run, case, root, source_hash, *, lease_seconds=45):
         self.run, self.case, self.source_hash = run, case, source_hash
         self.root = Path(root)
+        self.lease_seconds = lease_seconds
         self.events, self.identity = [], None
         self.lines = queue.Queue(maxsize=8)
         self.raw = (self.root / "pi.jsonl").open("xb")
@@ -151,7 +96,7 @@ class Peer:
         return self.event("armed", 5)
 
     def finish(self):
-        result = self.event("complete", 48)
+        result = self.event("complete", self.lease_seconds + 3)
         code = self.process.wait(timeout=5)
         self.reader.join(timeout=2)
         trailing = self.lines.get(timeout=2)
@@ -182,7 +127,7 @@ class Peer:
                         self.process.kill(); self.process.wait(timeout=3)
             if not self.completed:
                 write_json(self.root / "restoration-required.json", dict(
-                    reason="run did not confirm complete peer cleanup", latest_peer_lease_seconds=45,
+                    reason="run did not confirm complete peer cleanup", latest_peer_lease_seconds=self.lease_seconds,
                     action="inhibit further triggers; confirm peer exit/safe state or remove power"))
         finally:
             self.reader.join(timeout=2)

@@ -1,0 +1,69 @@
+{
+  "clock_observations": [
+    [
+      0,
+      0,
+      12317470759
+    ],
+    [
+      1,
+      2,
+      12317577944
+    ]
+  ],
+  "database_sha256": "354b583f21892415fd50a092ebf98fe5fe72190109218ae045f0d6a9c0fd199d",
+  "driver_failure": "One-off driver incorrectly compared network quality to 1 (RTC_HOLDOVER), timed out, and cleaned up. Retained failed run; independent SQLite evaluation confirms NETWORK_SYNCED=2. No rerun.",
+  "host_tests": 3452,
+  "network_synced_enum": 2,
+  "scope": "T-030 installed production service time acquisition; no node start or received profiles; not RF acceptance",
+  "service_stop": {
+    "database": {
+      "clean_generation": 1,
+      "clean_stop": 12368665038,
+      "health": {
+        "communicator_sampled_at_monotonic_us": 12317567786,
+        "radio_state_id": 2
+      },
+      "instance": "e417b9b158cb474d8480a5cde2053bed",
+      "latest_packet_us": null,
+      "linux_boot_id": "c85ef9dd94b0462096932dbc36a38b08",
+      "observed_monotonic_us": 12372667757,
+      "ordinal": 6,
+      "profiles": 0,
+      "samples": 0,
+      "started": 12317369829,
+      "state_generation": 1,
+      "total_readings": 1
+    },
+    "invocation": "ef38ae1dd03d4ce79143d6b2778e0184",
+    "state": {
+      "ActiveState": "inactive",
+      "ControlGroup": "",
+      "DropInPaths": "",
+      "ExecMainCode": "2",
+      "ExecMainStatus": "15",
+      "FragmentPath": "/etc/systemd/system/cura-pilot-vuh7p781.service",
+      "Group": "cura-receiver",
+      "InvocationID": "ef38ae1dd03d4ce79143d6b2778e0184",
+      "MainPID": "0",
+      "NRestarts": "0",
+      "NeedDaemonReload": "no",
+      "Result": "success",
+      "SubState": "dead",
+      "User": "cura-receiver",
+      "board_id": "00000000e0027211",
+      "boot_id": "c85ef9dd-94b0-4620-9693-2dbc36a38b08",
+      "configuration_sha256": "172ee26c48824f6d12798fe16312806225dea65c9a2954a3a766cacb7a08d4c4",
+      "dependencies": {
+        "cryptography": "49.0.0",
+        "gpiod": "2.5.0",
+        "spidev": "3.8"
+      },
+      "environment_sha256": "a0b54877c7cb51c76725b7b79943ec2de1a4993eb64c6663c8cb11c3f43c9d05",
+      "receiver_inhibitors": [],
+      "remaining_pids": [],
+      "unit_sha256": "f2a71da2684e42b47aab455006b2d2b14d65e70c573286cae2a088fa76279811"
+    }
+  },
+  "source_sha256": "9be4047c762c5e8a54fcbc998a92e5c8419c5535286286e9382914525e285638"
+}

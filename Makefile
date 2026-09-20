@@ -10,7 +10,7 @@ PORT ?= /dev/ttyUSB0
 RF_ARGS ?=
 RF_TEST_PYTHON := $(abspath .venv/bin/python)
 
-.PHONY: test-rf-build test-rf-host test-rf-component-nominal \
+.PHONY: test-rf-build test-rf-production-build test-rf-node-ack test-rf-service test-rf-host test-rf-component-nominal \
         test-rf-component-dio1_disconnected test-rf-component-radio_absent
 
 test-rf-build:
@@ -19,6 +19,16 @@ test-rf-build:
 
 test-rf-host:
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(RF_TEST_PYTHON) -m pytest -c tests/rf/pytest.ini tests/rf/host
+
+test-rf-production-build:
+	idf.py -C firmware build
+	$(RF_TEST_PYTHON) tests/rf/production_node.py --seal-build firmware/build
+
+test-rf-node-ack:
+	$(RF_TEST_PYTHON) tests/rf/run_ack.py $(RF_ARGS)
+
+test-rf-service:
+	$(RF_TEST_PYTHON) tests/rf/run_service.py $(RF_ARGS)
 
 test-rf-component-nominal:
 	$(RF_TEST_PYTHON) tests/rf/run.py --fixture-state nominal $(RF_ARGS)

@@ -1,4 +1,4 @@
-/* Raw component tests. No identity, NVS, LittleFS or authenticated packets. */
+/* Bounded component tests; optional run-bound RF-023 credentials. No storage writes. */
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
@@ -13,6 +13,10 @@
 #include "node_platform_esp.h"
 #include "radio_observe.h"
 #include "radio_command.h"
+#include "radio_rejection.h"
+#ifdef RF023_ENABLED
+#include "rf023_inputs.h"
+#endif
 #include "sdkconfig.h"
 #include "sx1262_radio.h"
 #include "unity.h"
@@ -30,8 +34,9 @@
 static const char *const cases[] = {
   "RF-001.exchange", "RF-003.silence", "RF-006.invalid", "RF-008.silence",
   "RF-008.exchange", "RF-009.untouched", "RF-009.initialized", "RF-010.wake",
-  "RF-012.disconnected", "RF-013.absent"
+  "RF-012.disconnected", "RF-013.absent", RF023_CASE_NAMES
 };
+#define COMPONENT_CASE_COUNT 10u
 static unsigned selected, phase;
 static char run_id[33];
 static uint32_t boot_nonce;
@@ -50,6 +55,7 @@ typedef struct {
   sx1262_radio_tx_result_t tx;
   sx1262_radio_rx_result_t rx;
   uint8_t payload[54];
+  size_t payload_length;
   bool transmit;
 } result_t;
 static result_t results[8];
@@ -72,12 +78,14 @@ static void no_diagnostic(const diagn_context_t *d) {
   TEST_ASSERT_EQUAL_UINT8(0, d->context_schema);
   TEST_ASSERT_EQUAL_UINT8(0, d->context_length);
 }
-static result_t *transmit(uint8_t start, bool success) {
+static result_t *transmit_payload(const uint8_t *payload, size_t length, bool success) {
   result_t *r = new_result(true);
-  for (unsigned i = 0; i < 54; ++i) r->payload[i] = start + i;
+  TEST_ASSERT_TRUE(length > 0 && length <= sizeof(r->payload));
+  memcpy(r->payload, payload, length);
+  r->payload_length = length;
   r->before = now();
   r->deadline = r->before + 2000000;
-  r->error = sx1262_radio_transmit_uplink(r->payload, 54, r->deadline, &r->tx, &r->diagnostic);
+  r->error = sx1262_radio_transmit_uplink(r->payload, length, r->deadline, &r->tx, &r->diagnostic);
   r->after = now();
   TEST_ASSERT_TRUE(r->after <= r->deadline + 50000);
   if (success) {
@@ -87,10 +95,16 @@ static result_t *transmit(uint8_t start, bool success) {
     TEST_ASSERT_TRUE(r->before <= r->tx.set_tx_at_us && r->tx.set_tx_at_us > 0);
     TEST_ASSERT_TRUE(r->tx.tx_done_at_us <= r->after);
     uint64_t elapsed = r->tx.tx_done_at_us - r->tx.set_tx_at_us;
-    TEST_ASSERT_TRUE(elapsed >= 102656 && elapsed <= 112922);
+    uint64_t airtime = sx1262_radio_airtime_us(length);
+    TEST_ASSERT_TRUE(elapsed >= airtime && elapsed <= (airtime * 110 + 99) / 100);
     last_tx_done = r->tx.tx_done_at_us;
   }
   return r;
+}
+static result_t *transmit(uint8_t start, bool success) {
+  uint8_t payload[54];
+  for (unsigned i = 0; i < sizeof(payload); ++i) payload[i] = start + i;
+  return transmit_payload(payload, sizeof(payload), success);
 }
 static void receive_packet(uint64_t deadline, const uint8_t *expected, unsigned length) {
   result_t *r = new_result(false);
@@ -130,7 +144,17 @@ static void cold_sleep(void) {
   no_diagnostic(&d);
 }
 static void test_episode(void) {
-  if (selected == 5) {
+  if (selected >= COMPONENT_CASE_COUNT) {
+#ifdef RF023_ENABLED
+    rf023_packet_t packet;
+    TEST_ASSERT_TRUE(rf023_build(&rf023_config, selected - COMPONENT_CASE_COUNT, &packet));
+    transmit_payload(packet.frame, packet.frame_length, true);
+    receive_packet(last_tx_done + 500000, packet.ack_length ? packet.ack : NULL, (unsigned)packet.ack_length);
+    TEST_ASSERT_EQUAL_UINT(1, radio_observation().starts);
+#else
+    TEST_FAIL_MESSAGE("RF-023 disabled without private run-bound build inputs");
+#endif
+  } else if (selected == 5) {
     cold_sleep(); cold_sleep();
     TEST_ASSERT_EQUAL_UINT(0, radio_observation().calls);
     transmit(0, true);
@@ -200,7 +224,7 @@ static void dump_results(void) {
            r->tx.tx_started ? "true" : "false", r->tx.tx_done ? "true" : "false",
            r->tx.set_tx_at_us, r->tx.tx_done_at_us, r->rx.outcome, r->rx.rx_done_at_us,
            r->rx.rssi_dbm_x2, r->rx.snr_db_x4);
-    hex(r->transmit ? r->payload : r->rx.payload, r->transmit ? 54 : r->rx.payload_length);
+    hex(r->transmit ? r->payload : r->rx.payload, r->transmit ? r->payload_length : r->rx.payload_length);
     puts("\"}");
   }
 }
@@ -255,6 +279,14 @@ void app_main(void) {
       (phase && !(selected == 7 && sleep_wake && retained.continuation == 1 &&
                   strcmp(retained.run, run_id) == 0 && strcmp(retained.selection, command.selection) == 0))) {
     reject_command("unsupported_case_or_continuation", &line);
+  }
+  if (selected >= COMPONENT_CASE_COUNT) {
+#ifdef RF023_ENABLED
+    if (!rf023_authorized(&rf023_config, run_id, selected - COMPONENT_CASE_COUNT, phase))
+      reject_command("wrong_rf023_run_or_phase", &line);
+#else
+    reject_command("rf023_not_enabled", &line);
+#endif
   }
   /* A boot executes at most one command, then sleeps even when Unity fails. */
   memset(&retained, 0, sizeof(retained));

@@ -31,6 +31,10 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption("--airtime-reboot-session", metavar="PATH")
     group.addoption("--receiver-radio-fixture", metavar="PATH")
     group.addoption("--receiver-radio-evidence", metavar="PATH")
+    group.addoption("--receiver-storage-user", default="cura", metavar="USER",
+                    help="unprivileged account for root-supervised storage faults (default: cura)")
+    group.addoption("--receiver-time-user", default="cura", metavar="USER",
+                    help="unprivileged account for nominal/step time components (default: cura)")
 
 
 def pytest_configure(config: pytest.Config) -> None:

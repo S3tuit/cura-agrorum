@@ -11,6 +11,10 @@
 #include "protocol_v2_lora_crypto.h"
 #include "sx1262_radio.h"
 
+#ifdef ESP_PLATFORM
+#include "sdkconfig.h"
+#endif
+
 #ifdef NODE_CORE_TESTING
 void node_core_test_observe_rtc_precommit(const node_rtc_record_t *record);
 void node_core_test_after_rtc_take(const node_rtc_record_t *retained,
@@ -23,6 +27,9 @@ void node_core_test_after_rtc_take(const node_rtc_record_t *retained,
 #endif
 #define NODE_CORE_EFFECTIVE_DEEP_SLEEP_DURATION_US                             \
   NODE_CORE_TEST_DEEP_SLEEP_DURATION_US
+#elif defined(CONFIG_NODE_DEEP_SLEEP_SECONDS)
+#define NODE_CORE_EFFECTIVE_DEEP_SLEEP_DURATION_US \
+  (UINT64_C(1000000) * CONFIG_NODE_DEEP_SLEEP_SECONDS)
 #else
 #define NODE_CORE_EFFECTIVE_DEEP_SLEEP_DURATION_US                             \
   NODE_CORE_DEEP_SLEEP_DURATION_US

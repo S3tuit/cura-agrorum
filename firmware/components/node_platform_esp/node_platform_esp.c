@@ -4,6 +4,7 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #include "esp_err.h"
 #include "esp_log.h"
@@ -111,6 +112,10 @@ static void enter_deep_sleep_for(void *context, uint64_t duration_us) {
   (void)context;
   const esp_err_t status = esp_sleep_enable_timer_wakeup(duration_us);
   if (status == ESP_OK) {
+#ifdef CONFIG_NODE_RF_SLEEP_OBSERVATION
+    printf("RF_NODE_SLEEP duration_us=%" PRIu64 "\n", duration_us);
+    fflush(stdout);
+#endif
     esp_deep_sleep_start();
     abort();
   }

@@ -1,0 +1,30 @@
+{
+  "formatter_success": true,
+  "held_bytes": 0,
+  "held_seconds": 3,
+  "node_stopped": true,
+  "old_open_application_starts": 1,
+  "released_application_starts": 1,
+  "scope": "nontransmitting formatter UART open/hold/start qualification",
+  "status": "PASS",
+  "capture_root": "/tmp/cura-production-preparation-9b1tykup/uart-start-01dbc503afd84bd3aaaa00b4c69dbbd0",
+  "capture_sha256": {
+    "result.json": "9fb916e257198dfd82826e9548e6f1343ac683a4caa49f4f46cc5c6de693102e",
+    "final-stop.json": "920826be6a7b235873ee7166459584f205098ff79acec337907a473f59052437",
+    "held.bin": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "c6-uart.bin": "4f4eba0b0c406b92f19530eccead4db1781ab3546324b87415ab7bb454d612c0",
+    "old-stopped.json": "920826be6a7b235873ee7166459584f205098ff79acec337907a473f59052437",
+    "old-open.bin": "f762a2e6a0f961dd917164f211b144c4d432a6798eaa2e28fd32458be5cc7b18",
+    "formatter-flash.json": "bf17ffb21cfa38ccd242959fadc8e3df046ed325550d4394d3c6a92e0d2b6edb"
+  },
+  "fix": "NodeUART opens with DTR=False and RTS=True, holding EN low until existing explicit hard_reset releases it.",
+  "source_sha256": {
+    "tests/rf/production_node.py": "59ec9be3bb6f3aa5cc40546846578e25e16e7a9ee8b4fc57ac9b9cbc393cc78e",
+    "tests/rf/host/test_production_node.py": "05a010ab127433ed7e84e183d7db7bcd0520d3c658e8b8cb0be0db21ce679546"
+  },
+  "host_tests": 280,
+  "limits": [
+    "Nontransmitting formatter establishes serial control; full production RF-019 result remains pending.",
+    "No change to production firmware, identity or NVS."
+  ]
+}

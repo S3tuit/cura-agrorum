@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "disposition": "COMPLETE",
+  "physical_test": "NOT RUN",
+  "authorization": "DEC-001/DEC-006; workplan T-012",
+  "requirement": "full-service real post-SetTx uncertain terminal result, retained airtime charge and bounded recovery",
+  "reason": "No synchronized controllable Pi post-SetTx fault fixture/interface established",
+  "applicable_evidence": [
+    "RF020_QUALIFICATION.json: real nominal installed-service ACK TX/profile/clean stop",
+    "STORAGE.json and DURABILITY_DISPOSITION.json: host/real-SQLite/service-UID recovery and explicit physical limits",
+    "firmware147 host checks and receiver3452 host qualification: unchanged production ACK/recovery rules; RF test tooling is separate",
+    "RF-012 physical C6 missing-DIO1 uncertainty: opposite endpoint and component scope only"
+  ],
+  "not_proven": [
+    "Pi real post-SetTx uncertainty/recovery",
+    "physical power-loss durability",
+    "full RF-029 family"
+  ],
+  "revisit": [
+    "approved synchronized fault fixture available",
+    "unexplained TX outcome/recovery in bench/pilot",
+    "review requires physical proof for airtime safety"
+  ]
+}

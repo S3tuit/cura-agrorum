@@ -1,0 +1,92 @@
+{
+  "before.bin": {
+    "sha256": "98b1073e25792a7f074a4adb17841281bcc9c65180aa60b68b1ad94ce595a0c7",
+    "bytes": 3014656,
+    "gzip_bytes": 16622
+  },
+  "after.bin": {
+    "sha256": "0ea86d857ad939ea7c3d77758b584b05e1992b9c90b904ecd7466a071a002b4a",
+    "bytes": 3014656,
+    "gzip_bytes": 17028
+  },
+  "c6-uart.bin": {
+    "sha256": "671616cd6ece944d480bbce2515e0fc8494bee7d23f5b169c8e6a88044d3a5c9",
+    "bytes": 5651,
+    "gzip_bytes": 1383
+  },
+  "source-manifest.json": {
+    "sha256": "f82be262713a90e76d91a04a548fd5d7b23e86513168a9f11725ab36332cf8b4",
+    "bytes": 44640,
+    "gzip_bytes": 18719
+  },
+  "production-build.json": {
+    "sha256": "0e8f84f81ffc5b6789fce5bcca5d10448d2a0efc6cbb18fc02c1145f9e24ac02",
+    "bytes": 297650,
+    "gzip_bytes": 91782
+  },
+  "run.json": {
+    "sha256": "2f09519d9e5c678f0f0b74b357d5367d537e40577350676bbbde6afa2b475ffc",
+    "bytes": 1256,
+    "gzip_bytes": 622
+  },
+  "before-binding.json": {
+    "sha256": "10621f958073289de7524796e67a731896cb1bf795cd776d0582b92a11978bd6",
+    "bytes": 417,
+    "gzip_bytes": 282
+  },
+  "after-binding.json": {
+    "sha256": "d3368e1a33159d401aefb3e52ac7c33e061927202a7d3cecc59fc62323bef70f",
+    "bytes": 417,
+    "gzip_bytes": 281
+  },
+  "final-stop-mac.json": {
+    "sha256": "920826be6a7b235873ee7166459584f205098ff79acec337907a473f59052437",
+    "bytes": 947,
+    "gzip_bytes": 489
+  },
+  "sleep-observation.json": {
+    "sha256": "18ff5781daae84698a7a79abd4881dfc8a4a2c7c699ffc9891cd9b904a6aba9a",
+    "bytes": 172,
+    "gzip_bytes": 155
+  },
+  "reading-baseline.json": {
+    "sha256": "7b7bd530256804839e08c0f3101993964692983a68fa7fdb0c2dae6ec58675d0",
+    "bytes": 301,
+    "gzip_bytes": 219
+  },
+  "receiver.sqlite3": {
+    "sha256": "62c39e4795323634a2f29138e50a2fc36764cb91ca64712435568774636ac079",
+    "bytes": 229376,
+    "gzip_bytes": 13462
+  },
+  "snapshot.json": {
+    "sha256": "585bdd1414676dc2d48fbb02866696a38149f641afdbdcfa6ff140610d5abc39",
+    "bytes": 102,
+    "gzip_bytes": 105
+  },
+  "service-stop.json": {
+    "sha256": "3283c6d45bd98b71a1d0d5ce85e731e6c297e48ac25c1ecf638b0421c9daccf4",
+    "bytes": 1829,
+    "gzip_bytes": 881
+  },
+  "service-ready.json": {
+    "sha256": "a8f666c69ba20147cdbf762c179ddc43a0b96a4e09a6880702dd44fab86aa86c",
+    "bytes": 1753,
+    "gzip_bytes": 845
+  },
+  "service-before.json": {
+    "sha256": "a49d96322dcc88b8251c1f4e492f2187c8495fb1860f71173e9e04ba84e3aa31",
+    "bytes": 1718,
+    "gzip_bytes": 843
+  },
+  "service-after.json": {
+    "sha256": "ec490a655787d44443cab2406e4e13b9700a28d0e8eb337d742da02d65978622",
+    "bytes": 868,
+    "gzip_bytes": 520
+  },
+  "service-journal.txt": {
+    "sha256": "19c4e28b2f54ea8f217db4e622b0a5c758efa7b77ce2dc0394b6d159568c0b2e",
+    "bytes": 17,
+    "gzip_bytes": 37
+  }
+}

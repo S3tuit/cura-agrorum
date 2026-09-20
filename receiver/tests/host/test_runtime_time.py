@@ -55,6 +55,36 @@ def sample(rt, kernel, *, status=K.OK, hook=None):
     kernel.results.append(result)
 
 
+def test_scheduler_first_tracking_poll_with_advancing_clock(monkeypatch):
+    from types import SimpleNamespace
+    from cura_receiver.communicator_scheduler import CommunicatorScheduler, Work
+
+    rt, clock, kernel, _ = runtime()
+    read = clock.now_monotonic_us
+
+    def advancing_read():
+        clock.advance_elapsed_us(1)
+        return read()
+
+    monkeypatch.setattr(clock, "now_monotonic_us", advancing_read)
+    chrony = FakeChronyControl()
+    chrony.tracking_results.append(lambda: tracking(rt))
+    sample(rt, kernel)
+    communicator = SimpleNamespace(
+        time=rt, clock=clock, occurrence_sequence=0,
+        radio=SimpleNamespace(state=E.RadioState.RX_SINGLE),
+        receive_once=lambda **_: SimpleNamespace(finalization=None, radio_episodes=()),
+    )
+    scheduler = CommunicatorScheduler(communicator, chrony=chrony, rtc=None,
+                                      health_interval_us=60_000_000)
+    turn = scheduler.run_once()
+    assert turn.work is Work.TIME
+    assert len(chrony.calls) == 1 and chrony.calls[0][0] == "tracking"
+    assert rt.state.quality is E.SystemTimeQuality.NETWORK_SYNCED
+    assert turn.update.observation.system_time_quality is E.SystemTimeQuality.NETWORK_SYNCED
+    assert rt.next_tracking_start() > clock.now_monotonic_us()
+
+
 # Fresh kernel and tracking observations establish network time even with a missing RTC.
 @pytest.mark.parametrize("health", [R.OK, R.MISSING, R.INVALID])
 def test_network_independent_of_rtc(health):

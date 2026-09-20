@@ -7,40 +7,31 @@ from pathlib import Path
 import subprocess
 import time
 
-REPO = Path(__file__).resolve().parents[2]
+from evidence import REPO, digest, write_json
 APP = REPO / "firmware/test_apps/radio"
-
-
-def digest(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-
-def write_json(path, value):
-    path = Path(path)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
-    temporary.replace(path)
 
 
 def tree_sources():
     paths = []
     for name in ("firmware/components", "firmware/test_apps/radio/main", "receiver/cura_receiver",
                  "receiver/test_apps/radio_peer", "receiver/tests", "receiver/schemas", "receiver/db",
+                 "receiver/deploy", "receiver/native", "receiver/tools",
                  "protocol/protocol-v2-lora/python", "tests/rf"):
         paths.extend(p for p in (REPO / name).rglob("*") if p.is_file() and
                      not any(part in {"__pycache__", "runs", "raw", ".pytest_cache", "evidence"} for part in p.parts) and
-                     p.suffix in {".c", ".h", ".py", ".md", ".txt", ".cmake", ".yml", ".json", ".ini", ".sql"} and
+                     (p.name.startswith("Kconfig") or p.suffix in {".c", ".h", ".py", ".md", ".txt", ".cmake", ".yml", ".json", ".ini", ".sql", ".service", ".conf", ".rules"}) and
                      not p.name.startswith(("WORKPLAN", "REVIEW")))
     paths.extend(APP / name for name in ("CMakeLists.txt", "sdkconfig.defaults", "partitions.csv", "dependencies.lock"))
     paths.extend(REPO / name for name in ("Makefile", "firmware/TESTING.md", "firmware/INTERFACE.md",
         "firmware/ARCHITECTURE.md", "receiver/ARCHITECTURE.md", "receiver/INTERFACE.md", "receiver/TESTING.md",
-        "receiver/INTERFACE_DIAGNOSTIC.md", "receiver/requirements-radio.txt", "receiver/requirements-test.txt", "receiver/pytest.ini",
+        "receiver/INTERFACE_DIAGNOSTIC.md", "receiver/requirements-runtime.txt", "receiver/requirements-radio.txt", "receiver/requirements-test.txt", "receiver/pytest.ini",
+        "receiver/hardware/ds3231/chrony-runtime.conf",
         "receiver/hardware/TEST_CARRIER.md", "receiver/tests/hardware/RADIO_TESTS.md",
         "protocol/protocol-v2-lora/README.md", "deployment_remaining.notes.md"))
     return {str(p.relative_to(REPO)): digest(p) for p in sorted(set(paths))}
 
 
-def firmware_sources(build):
+def firmware_sources(build, app=APP):
     """Hash the actual compiler dependencies, including IDF and fetched headers."""
     result = subprocess.run(["ninja", "-C", str(build), "-t", "deps"], check=True,
                             capture_output=True, text=True)
@@ -53,17 +44,24 @@ def firmware_sources(build):
                 files.add(path.resolve())
     commands = json.loads((build / "compile_commands.json").read_text())
     files.update(Path(entry["file"]).resolve() for entry in commands)
-    files.update(APP / name for name in ("CMakeLists.txt", "main/CMakeLists.txt", "sdkconfig",
+    project = json.loads((build / "project_description.json").read_text())
+    files.add(Path(project["config_file"]).resolve())
+    for paths in project.get("config_environment", {}).values():
+        files.update(Path(name).resolve() for name in paths.split(";") if name)
+    files.update(app / name for name in ("CMakeLists.txt", "main/CMakeLists.txt",
                  "sdkconfig.defaults", "partitions.csv", "dependencies.lock"))
-    if APP / "main/radio_app.c" not in files or len(files) < 100:
+    main = "main/radio_app.c" if app == APP else "main/app_main.c"
+    if app / main not in files or len(files) < 100:
         raise ValueError("missing actual build dependency records")
     return {str(p): digest(p) for p in sorted(files)}
 
 
-def check_flash(build):
+def check_flash(build, application="cura_radio_component"):
+    if application not in {"cura_radio_component", "cura_agrorum_firmware"}:
+        raise ValueError("unreviewed application")
     args = json.loads((build / "flasher_args.json").read_text())
     expected = {"0x0": "bootloader/bootloader.bin", "0x8000": "partition_table/partition-table.bin",
-                "0x10000": "cura_radio_component.bin"}
+                "0x10000": application + ".bin"}
     if args["flash_files"] != expected or args["extra_esptool_args"]["chip"] != "esp32c6":
         raise ValueError("unapproved flash files or target")
     limits = {"0x0": 0x8000, "0x8000": 0x1000, "0x10000": 0x100000}
@@ -89,7 +87,7 @@ def check_flash(build):
         raise ValueError("resolved C6 radio pins differ")
     if config.get("ESP_CONSOLE_UART_NUM") != 0 or config.get("ESP_CONSOLE_UART_BAUDRATE") != 115200:
         raise ValueError("wrong resolved UART console")
-    return {name: digest(build / name) for name in (*expected.values(), "cura_radio_component.elf",
+    return {name: digest(build / name) for name in (*expected.values(), application + ".elf",
               "flasher_args.json", "config/sdkconfig.json", "compile_commands.json", "project_description.json")}
 
 

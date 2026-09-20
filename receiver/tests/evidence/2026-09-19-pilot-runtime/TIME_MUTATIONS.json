@@ -1,0 +1,422 @@
+{
+  "time-9428phr1": {
+    "fixture.json": {
+      "data": "/var/lib/cura-pilot-runtime-e27327753122/time-9428phr1/component",
+      "gid": 985,
+      "helper": "/usr/libexec/cura-receiver-time-9428phr1/ds3231-set",
+      "offset": 60,
+      "ready_tracking": [
+        "C32046C3",
+        "195.32.70.195",
+        "4",
+        "1789825094.622895192",
+        "59.781311035",
+        "0.011100636",
+        "0.015493137",
+        "-108.582",
+        "-0.000",
+        "801.731",
+        "0.094198294",
+        "0.072175615",
+        "16.0",
+        "Normal"
+      ],
+      "sha256": "1937c12800cfc8990c55719c087ba0f03c727a2e86809ae84069aba2d87b8096",
+      "socket": "/run/cura-receiver-time-9428phr1/chronyd.sock",
+      "supplementary_gids": [
+        105,
+        985,
+        986,
+        989
+      ],
+      "uid": 999
+    },
+    "restoration.json": {
+      "access": {
+        "actual_gid": 985,
+        "actual_mode": 432,
+        "actual_uid": 0,
+        "cleanup_errors": [],
+        "created_link_removed": true,
+        "device_gid": 985,
+        "device_mode": 432,
+        "device_uid": 0,
+        "helper_removed": true,
+        "restored": true
+      },
+      "baseline_tracking": [
+        "C32046C3",
+        "195.32.70.195",
+        "4",
+        "1789824962.532260453",
+        "0.000000005",
+        "0.001900066",
+        "0.001900066",
+        "12.198",
+        "2432.954",
+        "5.991",
+        "0.086911827",
+        "0.066769607",
+        "0.0",
+        "Normal"
+      ],
+      "offset": 60,
+      "restored": true,
+      "restored_tracking": [
+        "5D5E5832",
+        "93.94.88.50",
+        "3",
+        "1789825042.288074104",
+        "0.000000013",
+        "60.010391235",
+        "60.010391235",
+        "12.198",
+        "837.357",
+        "5.991",
+        "0.075598039",
+        "0.036207940",
+        "0.0",
+        "Normal"
+      ],
+      "saved_rtc": {
+        "operation_finished_at_monotonic_us": 5349858510,
+        "operation_started_at_monotonic_us": 5349854957,
+        "os_errno": null,
+        "rtc_utc_s": 1789824959,
+        "status": "Ds3231ReadStatus.OK"
+      }
+    },
+    "step-result.json": {
+      "observations": [
+        {
+          "clock_state_generation": 1,
+          "observation_sequence": 1,
+          "receiver_instance_id": "b'\\xb1\\x99\\xef-1\\xe2D\\x05\\xae\\xf0\\t\\x94\\xf2\\xde\\x14\\x9e'",
+          "rtc_health": "RtcHealth.PRESENT",
+          "sampled_at_monotonic_us": 5423543607,
+          "sampled_at_utc_us": null,
+          "step_discontinuity_boundary": true,
+          "system_time_quality": "SystemTimeQuality.UNTRUSTED"
+        },
+        {
+          "clock_state_generation": 2,
+          "observation_sequence": 2,
+          "receiver_instance_id": "b'\\xb1\\x99\\xef-1\\xe2D\\x05\\xae\\xf0\\t\\x94\\xf2\\xde\\x14\\x9e'",
+          "rtc_health": "RtcHealth.PRESENT",
+          "sampled_at_monotonic_us": 5423562361,
+          "sampled_at_utc_us": 1789825097109464,
+          "step_discontinuity_boundary": false,
+          "system_time_quality": "SystemTimeQuality.NETWORK_SYNCED"
+        }
+      ],
+      "persisted_rows": [
+        [
+          1,
+          1,
+          null
+        ],
+        [
+          2,
+          0,
+          1789825097109464
+        ]
+      ],
+      "step_delta_us": 59773359
+    }
+  },
+  "time-k3fhg3sk": {
+    "fixture.json": {
+      "data": "/var/lib/cura-pilot-runtime-e27327753122/time-k3fhg3sk/component",
+      "gid": 985,
+      "helper": "/usr/libexec/cura-receiver-time-k3fhg3sk/ds3231-set",
+      "offset": -60,
+      "ready_tracking": [
+        "5D5E5832",
+        "93.94.88.50",
+        "3",
+        "1789825037.978787060",
+        "-59.824512482",
+        "-0.000434105",
+        "0.006680894",
+        "135.954",
+        "0.000",
+        "911.950",
+        "0.082187474",
+        "0.038235012",
+        "16.0",
+        "Normal"
+      ],
+      "sha256": "1937c12800cfc8990c55719c087ba0f03c727a2e86809ae84069aba2d87b8096",
+      "socket": "/run/cura-receiver-time-k3fhg3sk/chronyd.sock",
+      "supplementary_gids": [
+        105,
+        985,
+        986,
+        989
+      ],
+      "uid": 999
+    },
+    "restoration.json": {
+      "access": {
+        "actual_gid": 985,
+        "actual_mode": 432,
+        "actual_uid": 0,
+        "cleanup_errors": [],
+        "created_link_removed": true,
+        "device_gid": 985,
+        "device_mode": 432,
+        "device_uid": 0,
+        "helper_removed": true,
+        "restored": true
+      },
+      "baseline_tracking": [
+        "5D5E5832",
+        "93.94.88.50",
+        "3",
+        "1789825042.288074104",
+        "0.000000012",
+        "60.010391235",
+        "60.010391235",
+        "12.198",
+        "837.357",
+        "5.991",
+        "0.075598039",
+        "0.036269255",
+        "0.0",
+        "Normal"
+      ],
+      "offset": -60,
+      "restored": true,
+      "restored_tracking": [
+        "B913B823",
+        "185.19.184.35",
+        "3",
+        "1789825108.129212702",
+        "-0.000000014",
+        "-59.996673584",
+        "59.996673584",
+        "12.198",
+        "-151.811",
+        "5.991",
+        "0.066069320",
+        "0.015720490",
+        "0.0",
+        "Normal"
+      ],
+      "saved_rtc": {
+        "operation_finished_at_monotonic_us": 5429583142,
+        "operation_started_at_monotonic_us": 5429579666,
+        "os_errno": null,
+        "rtc_utc_s": 1789825038,
+        "status": "Ds3231ReadStatus.OK"
+      }
+    },
+    "step-result.json": {
+      "observations": [
+        {
+          "clock_state_generation": 1,
+          "observation_sequence": 1,
+          "receiver_instance_id": "b'\\x82\\x1d\\xa8\\x9f\\xadwAM\\xafG7\\xca\\xef\\x8d@\\xd1'",
+          "rtc_health": "RtcHealth.PRESENT",
+          "sampled_at_monotonic_us": 5487203445,
+          "sampled_at_utc_us": null,
+          "step_discontinuity_boundary": true,
+          "system_time_quality": "SystemTimeQuality.UNTRUSTED"
+        },
+        {
+          "clock_state_generation": 2,
+          "observation_sequence": 2,
+          "receiver_instance_id": "b'\\x82\\x1d\\xa8\\x9f\\xadwAM\\xafG7\\xca\\xef\\x8d@\\xd1'",
+          "rtc_health": "RtcHealth.PRESENT",
+          "sampled_at_monotonic_us": 5487220635,
+          "sampled_at_utc_us": 1789825040940912,
+          "step_discontinuity_boundary": false,
+          "system_time_quality": "SystemTimeQuality.NETWORK_SYNCED"
+        }
+      ],
+      "persisted_rows": [
+        [
+          1,
+          1,
+          null
+        ],
+        [
+          2,
+          0,
+          1789825040940912
+        ]
+      ],
+      "step_delta_us": -59816494
+    }
+  },
+  "time-ke1pw2uv": {
+    "fixture.json": {
+      "data": "/var/lib/cura-pilot-runtime-e27327753122/time-ke1pw2uv/component",
+      "gid": 985,
+      "helper": "/usr/libexec/cura-receiver-time-ke1pw2uv/ds3231-set",
+      "offset": 0,
+      "ready_tracking": [
+        "C1CC72E8",
+        "193.204.114.232",
+        "2",
+        "1789824953.102007446",
+        "-0.006530324",
+        "0.006738911",
+        "0.005454797",
+        "137.023",
+        "0.000",
+        "900.083",
+        "0.055305444",
+        "0.005815455",
+        "16.0",
+        "Normal"
+      ],
+      "sha256": "1937c12800cfc8990c55719c087ba0f03c727a2e86809ae84069aba2d87b8096",
+      "socket": "/run/cura-receiver-time-ke1pw2uv/chronyd.sock",
+      "supplementary_gids": [
+        105,
+        985,
+        986,
+        989
+      ],
+      "uid": 999
+    },
+    "restoration.json": {
+      "access": {
+        "actual_gid": 985,
+        "actual_mode": 432,
+        "actual_uid": 0,
+        "cleanup_errors": [],
+        "created_link_removed": true,
+        "device_gid": 985,
+        "device_mode": 432,
+        "device_uid": 0,
+        "helper_removed": true,
+        "restored": true
+      },
+      "baseline_tracking": [
+        "C1CC72E8",
+        "193.204.114.232",
+        "2",
+        "1789824815.538982037",
+        "0.002084994",
+        "-0.002630978",
+        "0.003846551",
+        "12.198",
+        "-0.020",
+        "5.991",
+        "0.044525933",
+        "0.008000502",
+        "512.5",
+        "Normal"
+      ],
+      "offset": 0,
+      "restored": true,
+      "restored_rtc": {
+        "operation_finished_at_monotonic_us": 5349778683,
+        "operation_started_at_monotonic_us": 5349774988,
+        "os_errno": null,
+        "rtc_utc_s": 1789824959,
+        "status": "Ds3231ReadStatus.OK"
+      },
+      "restored_tracking": [
+        "C32046C3",
+        "195.32.70.195",
+        "4",
+        "1789824962.532260453",
+        "0.000000005",
+        "0.001900066",
+        "0.001900066",
+        "12.198",
+        "2432.954",
+        "5.991",
+        "0.086911827",
+        "0.066561997",
+        "0.0",
+        "Normal"
+      ],
+      "saved_rtc": {
+        "operation_finished_at_monotonic_us": 5284721962,
+        "operation_started_at_monotonic_us": 5284718464,
+        "os_errno": null,
+        "rtc_utc_s": 1789824894,
+        "status": "Ds3231ReadStatus.OK"
+      }
+    },
+    "rtc-result.json": {
+      "first": {
+        "commit_result": {
+          "disposition": "CommunicatorStateCommitDisposition.COMMITTED",
+          "failure_kind": "CommunicatorStateCommitFailureKind.NONE",
+          "interface_violation": "PersistenceControlInterfaceViolation.NONE",
+          "operation": "DiagnosticOperation.NONE",
+          "os_errno": null,
+          "sqlite_extended_code": null,
+          "sqlite_primary_code": null,
+          "state_condition": "CommunicatorStateCondition.NONE"
+        },
+        "failure": null,
+        "prewrite_read_result": {
+          "operation_finished_at_monotonic_us": 5342466815,
+          "operation_started_at_monotonic_us": 5342462294,
+          "os_errno": null,
+          "rtc_utc_s": 1789824951,
+          "status": "Ds3231ReadStatus.OK"
+        },
+        "read_result": {
+          "operation_finished_at_monotonic_us": 5342475808,
+          "operation_started_at_monotonic_us": 5342472062,
+          "os_errno": null,
+          "rtc_utc_s": 1789824956,
+          "status": "Ds3231ReadStatus.OK"
+        },
+        "reconciliation_result": null,
+        "status": "RtcRefreshStatus.VERIFIED",
+        "write_result": {
+          "disposition": "Ds3231WriteDisposition.COMPLETED",
+          "failure": "Ds3231Failure.NONE",
+          "operation_finished_at_monotonic_us": 5342471756,
+          "operation_started_at_monotonic_us": 5342467207,
+          "os_errno": null
+        }
+      },
+      "replacement": {
+        "commit_result": {
+          "disposition": "CommunicatorStateCommitDisposition.COMMITTED",
+          "failure_kind": "CommunicatorStateCommitFailureKind.NONE",
+          "interface_violation": "PersistenceControlInterfaceViolation.NONE",
+          "operation": "DiagnosticOperation.NONE",
+          "os_errno": null,
+          "sqlite_extended_code": null,
+          "sqlite_primary_code": null,
+          "state_condition": "CommunicatorStateCondition.NONE"
+        },
+        "failure": null,
+        "prewrite_read_result": {
+          "operation_finished_at_monotonic_us": 5343508288,
+          "operation_started_at_monotonic_us": 5343503797,
+          "os_errno": null,
+          "rtc_utc_s": 1789824957,
+          "status": "Ds3231ReadStatus.OK"
+        },
+        "read_result": {
+          "operation_finished_at_monotonic_us": 5343535706,
+          "operation_started_at_monotonic_us": 5343532882,
+          "os_errno": null,
+          "rtc_utc_s": 1789824957,
+          "status": "Ds3231ReadStatus.OK"
+        },
+        "reconciliation_result": null,
+        "status": "RtcRefreshStatus.VERIFIED",
+        "write_result": {
+          "disposition": "Ds3231WriteDisposition.COMPLETED",
+          "failure": "Ds3231Failure.NONE",
+          "operation_finished_at_monotonic_us": 5343532598,
+          "operation_started_at_monotonic_us": 5343528171,
+          "os_errno": null
+        }
+      },
+      "state_generation": 4
+    }
+  }
+}

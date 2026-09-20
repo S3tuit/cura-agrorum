@@ -1,0 +1,57 @@
+diff --git a/receiver/tests/conftest.py b/receiver/tests/conftest.py
+index d2abe3e..db0abf7 100644
+--- a/receiver/tests/conftest.py
++++ b/receiver/tests/conftest.py
+@@ -31,6 +31,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
+     group.addoption("--airtime-reboot-session", metavar="PATH")
+     group.addoption("--receiver-radio-fixture", metavar="PATH")
+     group.addoption("--receiver-radio-evidence", metavar="PATH")
++    group.addoption("--receiver-time-user", default="cura", metavar="USER",
++                    help="unprivileged account for nominal/step time components (default: cura)")
+ 
+ 
+ def pytest_configure(config: pytest.Config) -> None:
+diff --git a/receiver/tests/hardware/test_time_mutations.py b/receiver/tests/hardware/test_time_mutations.py
+index 308e555..13c2e57 100644
+--- a/receiver/tests/hardware/test_time_mutations.py
++++ b/receiver/tests/hardware/test_time_mutations.py
+@@ -1,7 +1,8 @@
+ """Destructive, isolated time component cases. See evidence/runtime_time/README.md.
+ 
+-The privileged fixture owns its mutations and restoration. Each component runs
+-as cura with no capabilities and with the pinned helper as its sole RTC writer.
++The privileged fixture owns its mutations and restoration. Nominal/step components
++use --receiver-time-user (cura by default), with no capabilities and the pinned
++helper as sole RTC writer. Physical controller fixtures retain their cura scope.
+ """
+ 
+ from contextlib import ExitStack, contextmanager
+@@ -180,15 +181,16 @@ def rtc_access(session, identity, restoration):
+ 
+ 
+ @contextmanager
+-def isolated_time(root, offset):
++def isolated_time(root, offset, *, user="cura"):
+     assert (
+         os.geteuid() == 0
+-    ), "privileged fixture must run as root; components drop to cura"
++    ), "privileged fixture must run as root; components drop to the selected user"
+     assert run("systemctl", "is-active", "chrony").stdout.strip() == "active"
+     baseline = csv_tracking(NORMAL_SOCKET)
+     assert baseline[13] == "Normal" and abs(Decimal(baseline[4])) < Decimal(".5")
+     source = str(ipaddress.ip_address(baseline[1]))
+-    identity, daemon_identity = pwd.getpwnam("cura"), pwd.getpwnam("_chrony")
++    identity, daemon_identity = pwd.getpwnam(user), pwd.getpwnam("_chrony")
++    assert identity.pw_uid != 0, "time component must use an unprivileged account"
+     session = Path(tempfile.mkdtemp(prefix="time-", dir=root))
+     session.chmod(0o755)
+     token = session.name
+@@ -347,7 +349,7 @@ def owned_time_fixture(request, offset):
+             os.environ.get("CURA_LAPTOP_REFERENCE") == "SSH_STDIO_V1"
+         ), "run the maximum-slew fixture through the laptop reference bridge"
+     with time_test_lock(request) as root:
+-        with isolated_time(root, offset) as descriptor:
++        with isolated_time(root, offset, user=request.config.getoption("receiver_time_user")) as descriptor:
+             yield descriptor
+ 
+ 

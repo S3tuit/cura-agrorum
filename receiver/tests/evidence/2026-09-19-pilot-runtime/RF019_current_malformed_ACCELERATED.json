@@ -1,0 +1,243 @@
+{
+  "schema": 1,
+  "status": "PASS",
+  "run": "62cf345dc7ce45bfaa3c973ea0419425",
+  "case": "RF-019.current.malformed",
+  "scope": "accelerated10-second production-source ACK policy; not production cadence or full receiver service",
+  "result": {
+    "cadence_scope": "accelerated ACK policy",
+    "case": "RF-019.current.malformed",
+    "host_deadline_assertion": "separate prerequisite",
+    "packets": 3,
+    "scope": "production_node_controlled_peer",
+    "sleep_seconds": 10,
+    "status": "PASS",
+    "wakes": 3
+  },
+  "raw_capture": "/tmp/cura-production-preparation-9b1tykup/RF-019-current-malformed-62cf345dc7ce45bfaa3c973ea0419425",
+  "sleep": {
+    "boundary": "cycle finalized, timer configured, entering sleep",
+    "case": "RF-019.current.malformed",
+    "run": "62cf345dc7ce45bfaa3c973ea0419425",
+    "sleep_seconds": 10,
+    "wakes": 3
+  },
+  "intervals_seconds": [
+    12.091497,
+    12.093986
+  ],
+  "observation": {
+    "currents": [
+      {
+        "message_id": 76,
+        "body": {
+          "sample_id": 73,
+          "run_ms": 1361,
+          "soil_0_mv": 2578,
+          "soil_1_mv": 2687,
+          "soil_temp_0_centi_c": 2969,
+          "soil_temp_1_centi_c": 2506,
+          "enclosure_centi_c": 2503,
+          "enclosure_pressure_pa": 97010,
+          "enclosure_humidity_centi_pct": 6505,
+          "reset_reason": 1,
+          "previous_current_tx_attempts": 0,
+          "previous_awake_ms": 0,
+          "previous_current_delivery_ms": 0,
+          "previous_cycle_tx_attempts": 0,
+          "previous_cycle_accepted_readings": 0,
+          "flags": 254
+        },
+        "bytes": "490000005105120a7f0a990bca09c709f27a010069190100000000000000fe00",
+        "at": 22487858207
+      },
+      {
+        "message_id": 77,
+        "body": {
+          "sample_id": 74,
+          "run_ms": 1361,
+          "soil_0_mv": 2577,
+          "soil_1_mv": 2687,
+          "soil_temp_0_centi_c": 2969,
+          "soil_temp_1_centi_c": 2513,
+          "enclosure_centi_c": 2504,
+          "enclosure_pressure_pa": 97003,
+          "enclosure_humidity_centi_pct": 6504,
+          "reset_reason": 8,
+          "previous_current_tx_attempts": 1,
+          "previous_awake_ms": 1770,
+          "previous_current_delivery_ms": 0,
+          "previous_cycle_tx_attempts": 1,
+          "previous_cycle_accepted_readings": 0,
+          "flags": 511
+        },
+        "bytes": "4a0000005105110a7f0a990bd109c809eb7a010068190801ea0600000100ff01",
+        "at": 22499949704
+      },
+      {
+        "message_id": 78,
+        "body": {
+          "sample_id": 75,
+          "run_ms": 1361,
+          "soil_0_mv": 2578,
+          "soil_1_mv": 2687,
+          "soil_temp_0_centi_c": 2956,
+          "soil_temp_1_centi_c": 2513,
+          "enclosure_centi_c": 2503,
+          "enclosure_pressure_pa": 97007,
+          "enclosure_humidity_centi_pct": 6499,
+          "reset_reason": 8,
+          "previous_current_tx_attempts": 1,
+          "previous_awake_ms": 1789,
+          "previous_current_delivery_ms": 0,
+          "previous_cycle_tx_attempts": 1,
+          "previous_cycle_accepted_readings": 0,
+          "flags": 511
+        },
+        "bytes": "4b0000005105120a7f0a8c0bd109c709ef7a010063190801fd0600000100ff01",
+        "at": 22512043690
+      }
+    ],
+    "attempts": {
+      "76": 1,
+      "77": 1,
+      "78": 1
+    },
+    "replies": {
+      "76": {
+        "action": "retry_later",
+        "frames": [
+          "2004fb25c40751b352564c000000a9c9c38785ad6fc83e"
+        ]
+      },
+      "77": {
+        "action": "malformed",
+        "frames": [
+          "2006fb25c40751b352564d00000051dcb0b2ae4c8a63c0"
+        ]
+      },
+      "78": {
+        "action": "retry_later",
+        "frames": [
+          "2004fb25c40751b352564e0000007b1fc4c403d0fa85b2"
+        ]
+      }
+    },
+    "backlog_seen": [],
+    "packet_count": 3
+  },
+  "after_records": {
+    "image_sha256": "2b931f8ac6bb80d1831b5bd439ec5503a485e2eccf6f82a15dceb9afd1b4aae3",
+    "logs": {
+      "delivery.log": [
+        {
+          "cycle_sample_id": 73,
+          "domain": 1,
+          "message_id": 76,
+          "offset": 0,
+          "payload": "49000000490000004c000000015d050000",
+          "sample_id": 73,
+          "start_offset_ms": 1373,
+          "type": 4
+        },
+        {
+          "attempt_count": 1,
+          "cycle_sample_id": 73,
+          "domain": 1,
+          "final_result": 2,
+          "message_id": 76,
+          "offset": 31,
+          "payload": "49000000490000004c000000010102",
+          "sample_id": 73,
+          "type": 5
+        },
+        {
+          "cycle_sample_id": 74,
+          "domain": 1,
+          "message_id": 77,
+          "offset": 60,
+          "payload": "4a0000004a0000004d0000000166050000",
+          "sample_id": 74,
+          "start_offset_ms": 1382,
+          "type": 4
+        },
+        {
+          "attempt_count": 1,
+          "cycle_sample_id": 74,
+          "domain": 1,
+          "final_result": 4,
+          "message_id": 77,
+          "offset": 91,
+          "payload": "4a0000004a0000004d000000010104",
+          "sample_id": 74,
+          "type": 5
+        },
+        {
+          "cycle_sample_id": 75,
+          "domain": 1,
+          "message_id": 78,
+          "offset": 120,
+          "payload": "4b0000004b0000004e0000000166050000",
+          "sample_id": 75,
+          "start_offset_ms": 1382,
+          "type": 4
+        },
+        {
+          "attempt_count": 1,
+          "cycle_sample_id": 75,
+          "domain": 1,
+          "final_result": 2,
+          "message_id": 78,
+          "offset": 151,
+          "payload": "4b0000004b0000004e000000010102",
+          "sample_id": 75,
+          "type": 5
+        }
+      ],
+      "diagnostic.log": null,
+      "pending.log": [
+        {
+          "offset": 0,
+          "payload": "490000005105120a7f0a990bca09c709f27a010069190100000000000000fe00",
+          "reading_body": "490000005105120a7f0a990bca09c709f27a010069190100000000000000fe00",
+          "sample_id": 73,
+          "type": 1
+        },
+        {
+          "offset": 46,
+          "payload": "4b0000005105120a7f0a8c0bd109c709ef7a010063190801fd0600000100ff01",
+          "reading_body": "4b0000005105120a7f0a8c0bd109c709ef7a010063190801fd0600000100ff01",
+          "sample_id": 75,
+          "type": 1
+        }
+      ],
+      "quarantine.log": [
+        {
+          "offset": 0,
+          "payload": "4a0000005105110a7f0a990bd109c809eb7a010068190801ea0600000100ff01",
+          "reading_body": "4a0000005105110a7f0a990bd109c809eb7a010068190801ea0600000100ff01",
+          "sample_id": 74,
+          "type": 2
+        }
+      ]
+    },
+    "schema": 1
+  },
+  "cleanup": {
+    "peer_safe_shutdown": true,
+    "c6_stopped_in_loader": true,
+    "temporary_credentials_removed": true
+  },
+  "hashes": {
+    "run.json": "ab8ab4634d168199f760815a729c8cceb4657aa8de62470c67de2cfe878dbf45",
+    "source-manifest.json": "4ff7a0507a1adf52dfc1c25c97822750b41f593b186185e592a4a4f3de68c04e",
+    "production-build.json": "0e8f84f81ffc5b6789fce5bcca5d10448d2a0efc6cbb18fc02c1145f9e24ac02",
+    "pi.jsonl": "d81cf3e17a0f7cdb385240d322946a20c73972b0ec08d5118fb3c56eaa08b5c1",
+    "c6-uart.bin": "06a71207c936dbea3d06e1615df6495539f64c1fc7534beda2a12c3ca97d9260",
+    "before.bin": "2b7db6ad86f9858fd08c7f274f3d9b8dc25c26a6846d11ab3506d30692125be6",
+    "after.bin": "2b931f8ac6bb80d1831b5bd439ec5503a485e2eccf6f82a15dceb9afd1b4aae3",
+    "host-deadline.json": "f531b584a3dbef06f602168b38a6be1bee7fd4ada779519e3a2544f540ff5d1b",
+    "sleep-observation.json": "e4ea5da666af21fdc9f03a7d2ac965952b6610ae412fb039d85da6868a2aac06",
+    "final-stop-mac.json": "920826be6a7b235873ee7166459584f205098ff79acec337907a473f59052437"
+  }
+}

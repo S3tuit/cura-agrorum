@@ -48,3 +48,9 @@ functional retention, not calibrated drift, trusted holdover or full service boo
 Rerun the relevant [time procedures](../../../../TESTING.md#time-policy-and-timestamp-analysis)
 when clock policy/adapters, Chrony/kernel configuration or the RTC fixture change.
 Selected JSON and manifests retain original bytes; duplicate reports/logs are gone.
+
+The [19 September current-source qualification](../../../evidence/2026-09-19-pilot-runtime/README.md)
+subsequently exercised the changed time/offline/step paths and installed helper
+access under the actual service UID. It documents which unchanged assertions
+reuse this older evidence; it does not turn these component/physical records
+into full-service or RF acceptance.

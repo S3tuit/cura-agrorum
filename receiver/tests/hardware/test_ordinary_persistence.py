@@ -4,8 +4,6 @@ import json
 import os
 import shutil
 import sqlite3
-import subprocess
-import tempfile
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -82,55 +80,15 @@ def _wait_due(owner):
         time.sleep(remaining / 1_000_000)
 
 
-def _sudo(*arguments):
-    # Optional credential is supplied only in the invoking process environment;
-    # never write it to source, artifact, stdout or the subprocess command line.
-    password = os.environ.get("CURA_RECEIVER_TEST_SUDO_PASSWORD")
-    result = subprocess.run(
-        ["sudo", "-S" if password else "-n", "--", *arguments],
-        input=None if password is None else password + "\n",
-        capture_output=True,
-        text=True,
-        timeout=20,
-    )
-    assert (
-        result.returncode == 0
-    ), f"isolated storage fixture command failed: {result.stderr}"
-
-
 @pytest.fixture
 def bounded_storage(request):
+    from tests.hardware.storage_fixture import bounded_storage as supervised_storage
+
     root = _validated_destructive_test_root(
         request.config.getoption("receiver_test_root")
     )
-    fixture = Path(tempfile.mkdtemp(prefix="ordinary-storage-", dir=root))
-    mount = fixture / "mount"
-    mount.mkdir()
-    mounted = False
-    try:
-        _sudo(
-            "mount",
-            "-t",
-            "tmpfs",
-            "-o",
-            f"size=4m,mode=0700,uid={os.getuid()},gid={os.getgid()}",
-            "cura-receiver-test",
-            str(mount),
-        )
-        mounted = True
-        assert mount.stat().st_dev != fixture.stat().st_dev
-        assert (
-            os.statvfs(mount).f_blocks * os.statvfs(mount).f_frsize <= 4 * 1024 * 1024
-        )
-        yield mount
-    finally:
-        if mounted:
-            # Retain bounded artifacts even for a failed assertion before unmount.
-            try:
-                shutil.copytree(mount, fixture / "artifacts", dirs_exist_ok=True)
-            finally:
-                _sudo("umount", str(mount))
-                assert mount.stat().st_dev == fixture.stat().st_dev
+    with supervised_storage(root, request.config.getoption("receiver_storage_user")) as fixture:
+        yield fixture
 
 
 # Real mixed entities on deployed storage retain exact identities, frames and health samples at several batch sizes.
@@ -250,6 +208,10 @@ def test_target_ordinary_process_kill(tmp_path, boundary):
 # A dedicated bounded filesystem produces real LOW_SPACE and FULL, preserves pending work and later recovers.
 @pytest.mark.destructive
 def test_target_bounded_full_recovery(bounded_storage):
+    bounded_storage.run(_check_bounded_full_recovery)
+
+
+def _check_bounded_full_recovery(bounded_storage, remount):
     path = bounded_storage / "receiver.db"
     filler = bounded_storage / "fixture-filler"
     filler.write_bytes(bytes(1024 * 1024))
@@ -307,6 +269,10 @@ def test_target_bounded_full_recovery(bounded_storage):
 @pytest.mark.destructive
 @pytest.mark.parametrize("mode", ["permissions", "readonly_mount"])
 def test_target_access_recovery(bounded_storage, mode):
+    bounded_storage.run(_check_access_recovery, mode)
+
+
+def _check_access_recovery(bounded_storage, remount, mode):
     assert os.geteuid() != 0, "access test requires the unprivileged receiver account"
     path = bounded_storage / "receiver.db"
     connection, queue, owner = _create(path)
@@ -318,7 +284,7 @@ def test_target_access_recovery(bounded_storage, mode):
             else:
                 # Linux requires writable handles closed before a read-only remount.
                 owner.close()
-                _sudo("mount", "-o", "remount,ro", str(bounded_storage))
+                remount("ro")
             for _ in range(2):
                 result = owner.attempt(max_entities=1)
                 assert result.failure.admission_state is State.UNAVAILABLE_IO
@@ -329,7 +295,7 @@ def test_target_access_recovery(bounded_storage, mode):
             if mode == "permissions":
                 path.chmod(0o600)
             else:
-                _sudo("mount", "-o", "remount,rw", str(bounded_storage))
+                remount("rw")
         assert owner.attempt(max_entities=1).acknowledged_entities == 1
         assert queue.snapshot().admission_snapshot.state is State.AVAILABLE
         observer = sqlite3.connect(f"file:{path}?mode=ro", uri=True)

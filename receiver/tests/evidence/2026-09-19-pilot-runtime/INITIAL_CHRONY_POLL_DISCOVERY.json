@@ -1,0 +1,28 @@
+{
+  "explanation": "run_once caches now before next_tracking_start obtains a later now while tracking_poll_deadline is None. The initial poll never becomes due under a strictly advancing clock.",
+  "results": [
+    {
+      "chrony_poll_dispatches": 100,
+      "clock_advances_each_read": false,
+      "turns": 100,
+      "work_counts": {
+        "TIME": 100
+      }
+    },
+    {
+      "chrony_poll_dispatches": 0,
+      "clock_advances_each_read": true,
+      "turns": 100,
+      "work_counts": {
+        "AIRTIME": 1,
+        "HEALTH": 1,
+        "RADIO": 98
+      }
+    }
+  ],
+  "scope": "Host reproduction of production scheduler first-poll starvation; clock advances 1us per read. Radio/airtime are inert stubs; RTC work excluded and poll dispatch counted without executing Chrony. No physical/RF qualification.",
+  "sources": {
+    "receiver/cura_receiver/communicator_scheduler.py": "e38f0c2c4c74a5eb423e1de74e4a010101581161639a98ff5222b8f55f76e885",
+    "receiver/cura_receiver/runtime_time.py": "42bf905867fd4f9273f931d7a2e7cb8bd1d025683c84b4c58429e10a2f2b7084"
+  }
+}

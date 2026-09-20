@@ -255,15 +255,19 @@ def main():
         print(json.dumps(dict(kind="preflight", source=seal, dependencies=installed, uid=os.geteuid(),
                               python=sys.executable, pi_board_id=fixture["pi_board_id"])))
         return 0
+    return run_session(args, fixture, seal, CASES[args.case][1], execute)
+
+
+def run_session(args, fixture, seal, maximum_tx, executor, *, lease_seconds=45, raw=None, io_class=TraceIo, control=None):
     # GPIO requests also enforce physical exclusivity against non-cooperating owners.
     lock_path = f"/tmp/cura-rf-radio-{os.geteuid()}.lock"
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         clock = LinuxOsClock()
-        io = TraceIo(clock, CASES[args.case][1])
+        io = io_class(clock, maximum_tx)
         backend = Sx1262(io, clock, clock, RadioConfiguration())
-        radio = None if args.case == "RF-006.invalid" else Radio(backend)
+        radio = None if (args.case == "RF-006.invalid" if raw is None else raw) else Radio(backend)
         stop = threading.Event()
         identity = dict(run=args.run, case=args.case, pid=os.getpid(),
                         boot=Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
@@ -278,8 +282,15 @@ def main():
                 radio.request_shutdown()
 
         def watch_control():
-            # GO is the only arming command; later EOF/STOP/malformed input cancels.
-            sys.stdin.readline()
+            # Optional bounded observation messages never arm another TX.
+            while True:
+                line = sys.stdin.readline(256)
+                try:
+                    if not line or control is None:
+                        break
+                    control(line)
+                except (ValueError, RuntimeError):
+                    break
             cancel()
 
         for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
@@ -298,11 +309,11 @@ def main():
             require(select.select([sys.stdin], [], [], 15)[0], "GO readiness timeout")
             require(sys.stdin.readline().strip() == f"GO {args.run} {args.case}", "invalid GO identity")
             started = clock.now_monotonic_us()
-            io.transmit_deadline = started + 44_500_000  # Includes watchdog/cleanup margin in 45-second envelope.
-            timer = threading.Timer(45, cancel); timer.daemon = True; timer.start()
+            io.transmit_deadline = started + lease_seconds * 1_000_000 - 500_000  # Reserve shutdown margin.
+            timer = threading.Timer(lease_seconds, cancel); timer.daemon = True; timer.start()
             threading.Thread(target=watch_control, daemon=True).start()
-            emit("armed", at=started, latest_end=started + 45_000_000)
-            outcome = execute(args.case, backend, radio, stop, started)
+            emit("armed", at=started, latest_end=started + lease_seconds * 1_000_000)
+            outcome = executor(args.case, backend, radio, stop, started)
         except BaseException as exc:
             failure = type(exc).__name__ + ": " + str(exc)
         finally:

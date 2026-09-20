@@ -1,5 +1,16 @@
 # Bounded component episodes
 
+Optional RF-023 cases are separate from the ten component episodes below.
+Each admitted command permits one C6 frame (at most 54 bytes), a two-second TX
+deadline and ACK/silence observation ending 500 ms after C6 TX_DONE, followed by
+cleanup and two-second deep sleep into a fresh command wait. Seven matrix cases
+expect one 23-byte Pi ACK each; five expect silence. Conservative whole-matrix
+charges are 1355064 us for twelve C6 attempts and 475062 us for seven Pi ACKs,
+using the maximum-frame charges below. These are planning bounds, not measured
+transmissions or automatic admission. Installed-service session orchestration
+and its stop/cleanup evidence remain deferred; the component peer's 45-second
+lease below does not govern RF-023. See [preparation](RF023_PREPARATION.md).
+
 The operator handles the suite's airtime admission and pacing. A manual batch
 sheet is enough: identify both physical transmitters, preceding activity, the
 selected cases, reservation, start/latest possible end and result. The runner

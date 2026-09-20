@@ -22,6 +22,12 @@ into PASS.
 
 ## Pilot production fixture and configuration sequencing
 
+The production main task explicitly uses an 8192-byte stack, matching the
+on-device and sensor-carrier test applications. The former 3584-byte default
+failed in the real LittleFS persistence call path. A successful host or test-app
+run does not qualify a differently configured production task; production wake
+and backlog qualification remains required after relevant configuration changes.
+
 The approved 2026-09-18 production qualification batch uses the
 [sensor carrier](test_apps/on_device/SENSOR_CARRIER.md) in its nominal state,
 without the disconnected reference-voltage branch: JP_REF_ENABLE and R5, R6,
@@ -37,6 +43,13 @@ mapping and cleanup assertions. Record the attached probes only as technical
 test inputs; do not fabricate identities or use unprovisioned ROM defaults as
 evidence of nominal acquisition. A requested change to those assertions needs
 an agreed contract update before execution.
+
+Production carrier defaults select BME280 SDA GPIO21 and SCL GPIO22, alongside
+the carrier radio pins. Verify the resolved configuration, not just defaults.
+For the operator-confirmed nominal fixture, physical DS2 maps to logical channel
+0 (`DF00000050F93828`) and DS1 to channel 1 (`7E000000540FA728`), as documented
+in the carrier procedure. Set those ROMs in the local production sdkconfig;
+portable defaults remain unprovisioned and do not assert an attached inventory.
 
 Board/partition, sensor and isolated test-identity inputs may be prepared before
 the final production build. Verify the resolved image/configuration and actual
@@ -110,6 +123,12 @@ are tested without real waiting.
   expected `retry_at`.
 - Multiple invalid ACKs followed by a valid ACK stay in one RX interval and do
   not restart that interval.
+  The exact unchanged absolute deadline is owned by the firmware host test
+  `invalid_acks_share_one_receive_interval` in
+  `tests/host/test_node_core_delivery.c`. Run it against the current source as
+  an RF-019 prerequisite; its assertions are not physical RF-019 results.
+  RF-019 owns real ACK rejection/acceptance and node-state consequences;
+  RF-006 separately owns its component receive-deadline RF assertions.
 - Parameterized invalid ACKs cover bad length, bad tag, foreign node, wrong
   message ID, unsupported control, uplink domain and domain/status mismatch.
 - An authenticated unknown ACK status is isolated from domain/status mismatch
@@ -215,6 +234,33 @@ are tested without real waiting.
   and deep sleep exactly once, with no operation after deep sleep.
 
 ## `node_persistence`
+
+### Offline production-node evidence capture
+
+For RF-019/RF-020, finish the complete observation sequence before entering the
+ROM bootloader to read the entire reviewed LittleFS `storage` partition to the
+laptop. RF-019/RF-020 functional sequences use10-second configured deep sleep,
+real deep-sleep resets and previous-wake metrics. Production900-second cadence
+validation belongs to the bench/pilot, not routine RF acceptance. The historical
+855–945-second RF observation remains source-bound evidence only. Bootloader entry is an
+explicit end-of-episode stop, not part of the measured wake sequence; account
+for its timing and any uncertain activity in the operator record. Leave the
+node stopped; never automatically resume production after reading flash.
+
+Bind the raw image to the actual DUT, reviewed binary partition table,
+source/build/configuration and run. Preserve it unchanged. Read only the
+storage partition; do not erase, restore counters, boot maintenance firmware,
+repair or mount the device filesystem. Offline extraction operates on the host
+image using the same LittleFS library with writes disabled at build time.
+Production record validation may be reused, while acceptance expectations and
+test vectors remain independently specified. Missing files, empty files,
+invalid records and incomplete captures remain distinct; none implies PASS.
+
+The initial decoder is `tests/rf/node_capture.py`. It supports only the reviewed
+pilot layout and fields needed by current RF assertions. Diagnostic context and
+reading/frame bytes remain available without speculative additional decoders.
+See `tests/rf/README.md` for offline usage. This procedure adds no production
+UART API and does not qualify physical power-loss behavior.
 
 Tests that do not depend on the pending/log record encoding cover:
 
@@ -772,6 +818,14 @@ sample returned to core; a local radio adapter captures the constructed frame
 and reports a non-started local error, leaving the reading pending. The terminal
 sleep port records the unchanged requested duration and returns for assertions.
 No RF or actual sleep behavior is claimed by this integration operation.
+
+These sensor-carrier checks own the independent same-acquisition sensor-to-packet
+assertions. Applicable passing evidence for the selected firmware sources and
+sensor configuration is a separate prerequisite to RF-020. RF-020 does not
+repeat acquisition observation or add a production sample observer; it checks
+the received sensor flags/ranges, authenticated frames, receiver persistence,
+ACK consequences and ordinary next wake. Neither result substitutes for the
+other's assertions.
 
 The opened frame plaintext must equal the actual pending record's canonical
 32-byte body. Each decoded sensor field must equal the same acquisition, with
@@ -1436,3 +1490,23 @@ measurement setup and remain deferred.
 - Receiver-peer command transport and scheduling details remain an
   implementation choice; the peer hardware, separate-code requirement and
   observable behaviors are fixed above.
+
+### Accelerated RF functional tests
+
+RF tests use the same production source with
+`CONFIG_NODE_DEEP_SLEEP_SECONDS=10` and `CONFIG_NODE_RF_SLEEP_OBSERVATION=y`.
+This includes RF-019 and RF-020; a prior900-second RF run is not required.
+The run/build seal records both settings. Require one exact sleep marker per
+boot, genuine SLEEP_WAKEUP resets between cycles and the expected wake count.
+The operator accepts the cycle-finished/timer-configured marker as sleep entry.
+RF-019 additionally forwards a matched run/case-bound final notification to its
+controlled peer. RF-020 observes the marker directly alongside service progress.
+This replaces the final35-second wait; all ACK/retry limits, packet/storage
+reconciliation and safe endpoint shutdown remain required.
+Received-current intervals are9.5..45.5s, allowing the unchanged30s radio-cycle
+budget and acquisition/finalization overhead, not claiming oscillator accuracy.
+The lease is50s per wake plus10s. Missing/duplicate/extra markers, unexpected
+resets, missing captures or cleanup fail without automatic retry.
+Production defaults remain900s with observation disabled. The bench/pilot owns
+cadence, endurance and real long-duration observation; accelerated RF results do
+not qualify those obligations. Shortening sleep does not increase airtime allowance.

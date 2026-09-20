@@ -1183,7 +1183,8 @@ class RuntimeTime:
         if self.step_state is ChronyStepState.RETRY_BACKOFF:
             return self.retry_not_before_monotonic_us
         if self.tracking_poll_deadline is None:
-            return self.clock.now_monotonic_us()
+            # Immediately due, even when the scheduler sampled its clock earlier.
+            return 0
         lead = maximum_lifetime_monotonic_us(
             self.settings.tracking_budget_us + self.settings.kernel_budget_us,
             rate_bound_ppm=self.policy.monotonic_elapsed_rate_bound_ppm,

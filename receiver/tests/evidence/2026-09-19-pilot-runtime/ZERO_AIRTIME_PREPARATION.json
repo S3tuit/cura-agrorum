@@ -1,0 +1,145 @@
+{
+  "after-preparation-snapshot.json": {
+    "bytes": 229376,
+    "sha256": "b4b3f4699546b70e4c20c14859080df5e231467945fceb024acaf6dd4f5466ad"
+  },
+  "host_tests": 269,
+  "installation.json": {
+    "archive": "/var/lib/cura-pilot-vuh7p781/before-zero-4aa33ea594714b698a05af152c69d3f6",
+    "prepared": {
+      "charged_airtime_us": 0,
+      "database": "/var/lib/cura-pilot-vuh7p781/data/prepared-4aa33ea594714b698a05af152c69d3f6.sqlite3",
+      "generation": 1,
+      "group_id": "3bd0869ccf36943f",
+      "prepared_at_monotonic_us": 12839039810,
+      "required_silence_us": 3613320000,
+      "rtc_provenance": null,
+      "schema": 1,
+      "scope": "offline test candidate; not installed; no live grant or clock trust asserted",
+      "sha256": "9c414d63560d55add43630f2850daac20700e2f9e5be5803fac0e6c5e6b05e46",
+      "silence": {
+        "all_pi_transmitters_remain_silent": true,
+        "board_id": "00000000e0027211",
+        "boot_id": "c85ef9dd-94b0-4620-9693-2dbc36a38b08",
+        "operator_record": "User confirms only these tests use the Pi radio and it remains unused for preparation. Since initial stopped rehearsal, all subsequent captured service histories have no SetTx attempts; 33 received profiles all suppressed. No component peer started.",
+        "schema": 1,
+        "silent_since_monotonic_us": 8545529960
+      }
+    }
+  },
+  "one_off_capture_failure": "Second snapshot destination already existed; original failure retained. Stopped database captured under new name without rerunning service.",
+  "scope": "T-029 offline fixture and T-027 shared prerequisites qualified on Pi; no C6 start or received profiles; no live grant or physical RF acceptance claim",
+  "service-prerequisites.json": {
+    "database": {
+      "airtime": {
+        "budget_us": 36000000,
+        "condition": "NONE",
+        "status": "LOADED",
+        "total_charged_us": 8000000
+      },
+      "clean_generation": null,
+      "clean_stop": null,
+      "clock": {
+        "clock_state_generation": 1,
+        "sampled_at_monotonic_us": 12852194244,
+        "system_time_quality_id": 2
+      },
+      "health": {
+        "communicator_sampled_at_monotonic_us": 12852185600,
+        "radio_state_id": 2
+      },
+      "instance": "d191e6245d404f798fa5ff8cdd36557a",
+      "latest_packet_us": null,
+      "linux_boot_id": "c85ef9dd94b0462096932dbc36a38b08",
+      "observed_monotonic_us": 12862737288,
+      "ordinal": 1,
+      "profiles": 0,
+      "samples": 0,
+      "started": 12851983958,
+      "state_generation": 2,
+      "total_readings": 0
+    },
+    "reasons": [],
+    "scope": "preconditions only; not live grant or ACK delivery proof"
+  },
+  "service-stop.json": {
+    "database": {
+      "airtime": {
+        "budget_us": 36000000,
+        "condition": "NONE",
+        "status": "LOADED",
+        "total_charged_us": 0
+      },
+      "clean_generation": 3,
+      "clean_stop": 12866047330,
+      "clock": {
+        "clock_state_generation": 1,
+        "sampled_at_monotonic_us": 12852194244,
+        "system_time_quality_id": 2
+      },
+      "health": {
+        "communicator_sampled_at_monotonic_us": 12852185600,
+        "radio_state_id": 2
+      },
+      "instance": "d191e6245d404f798fa5ff8cdd36557a",
+      "latest_packet_us": null,
+      "linux_boot_id": "c85ef9dd94b0462096932dbc36a38b08",
+      "observed_monotonic_us": 12870718937,
+      "ordinal": 1,
+      "profiles": 0,
+      "samples": 0,
+      "started": 12851983958,
+      "state_generation": 3,
+      "total_readings": 0
+    },
+    "invocation": "216a9001a7a44cf294e41b17a901ce8f",
+    "state": {
+      "ActiveState": "inactive",
+      "ControlGroup": "",
+      "DropInPaths": "",
+      "ExecMainCode": "2",
+      "ExecMainStatus": "15",
+      "FragmentPath": "/etc/systemd/system/cura-pilot-vuh7p781.service",
+      "Group": "cura-receiver",
+      "InvocationID": "216a9001a7a44cf294e41b17a901ce8f",
+      "MainPID": "0",
+      "NRestarts": "0",
+      "NeedDaemonReload": "no",
+      "Result": "success",
+      "SubState": "dead",
+      "User": "cura-receiver",
+      "board_id": "00000000e0027211",
+      "boot_id": "c85ef9dd-94b0-4620-9693-2dbc36a38b08",
+      "configuration_sha256": "172ee26c48824f6d12798fe16312806225dea65c9a2954a3a766cacb7a08d4c4",
+      "dependencies": {
+        "cryptography": "49.0.0",
+        "gpiod": "2.5.0",
+        "spidev": "3.8"
+      },
+      "environment_sha256": "a0b54877c7cb51c76725b7b79943ec2de1a4993eb64c6663c8cb11c3f43c9d05",
+      "receiver_inhibitors": [],
+      "remaining_pids": [],
+      "unit_sha256": "f2a71da2684e42b47aab455006b2d2b14d65e70c573286cae2a088fa76279811"
+    }
+  },
+  "zero-preparation.json": {
+    "charged_airtime_us": 0,
+    "database": "/var/lib/cura-pilot-vuh7p781/data/prepared-4aa33ea594714b698a05af152c69d3f6.sqlite3",
+    "generation": 1,
+    "group_id": "3bd0869ccf36943f",
+    "prepared_at_monotonic_us": 12839039810,
+    "required_silence_us": 3613320000,
+    "rtc_provenance": null,
+    "schema": 1,
+    "scope": "offline test candidate; not installed; no live grant or clock trust asserted",
+    "sha256": "9c414d63560d55add43630f2850daac20700e2f9e5be5803fac0e6c5e6b05e46",
+    "silence": {
+      "all_pi_transmitters_remain_silent": true,
+      "board_id": "00000000e0027211",
+      "boot_id": "c85ef9dd-94b0-4620-9693-2dbc36a38b08",
+      "operator_record": "User confirms only these tests use the Pi radio and it remains unused for preparation. Since initial stopped rehearsal, all subsequent captured service histories have no SetTx attempts; 33 received profiles all suppressed. No component peer started.",
+      "schema": 1,
+      "silent_since_monotonic_us": 8545529960
+    }
+  }
+}

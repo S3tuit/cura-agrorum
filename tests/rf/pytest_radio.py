@@ -1,10 +1,10 @@
 """Explicit laptop entry point; default pytest targets never select this file."""
 import shutil
-import time
 
 import pytest
 
 from control import Node, Remote, verify_uart_identity
+from evidence import admit_episode, episode_capture
 from inputs import digest, session_identity, start_session, source_manifest, write_json
 from spec import EPISODES
 from verify import verify_case
@@ -46,22 +46,18 @@ def test_rf_component(request, joint_run, episode_name, record_property):
     write_json(root / "episode.json", dict(case=episode_name, c6_max_packets=episode.c6_packets,
                pi_payload_lengths=episode.pi_lengths, charges=episode.charge, peer_lease_seconds=45))
     peer = None
-    try:
+    with episode_capture(run, episode_name, root, ctx["output"]) as cleanups:
         print(f"RF episode {episode_name}: {episode.charge}; operator owns admission/pacing.", flush=True)
-        if request.config.getoption("rf_ready_run") != run["run"]:
-            with open("/dev/tty", "r+") as terminal:
-                terminal.write(f"Reserve this episode in both records, then type READY {episode_name}: ")
-                terminal.flush()
-                if terminal.readline().strip() != f"READY {episode_name}":
-                    raise RuntimeError("operator not ready")
-        write_json(root / "operator-ready.json", dict(run=run["run"], case=episode_name,
-                   at_unix_ns=time.time_ns(), record_sha256=digest(ctx["output"] / "operator-airtime-record.txt")))
+        admit_episode(run["run"], episode_name, root,
+                      ctx["output"] / "operator-airtime-record.txt",
+                      request.config.getoption("rf_ready_run"))
         # All guards, identity/storage disclosure and source verification precede this fixture.
         verify_uart_identity(ctx["fixture"], root)
         dut = request.getfixturevalue("dut")
         node = Node(dut, ctx["fixture"], run["elf"], run["run"], episode_name, root)
         node.booted()
         peer = remote.peer(episode_name, root, run["source"])
+        cleanups.append(("component peer", peer.close))
         peer.arm()
         node.phase(0)
         if episode_name == "RF-010.wake":
@@ -71,11 +67,3 @@ def test_rf_component(request, joint_run, episode_name, record_property):
         run["results"].append(checked)
         record_property("rf_case", episode_name)
         record_property("rf_scope", "raw_component")
-    except BaseException as exc:
-        run["failures"].append(dict(case=episode_name, error=type(exc).__name__ + ": " + str(exc)))
-        write_json(root / "failure.json", run["failures"][-1])
-        raise
-    finally:
-        if peer:
-            peer.close()
-        write_json(ctx["output"] / "run.json", run)

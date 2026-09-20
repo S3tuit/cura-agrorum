@@ -82,6 +82,23 @@ boot/offline/missing-device/restart checks are distinct phases. Keep the C6
 from transmitting during this pre-radio qualification. Later runtime time,
 storage and full-system RF acceptance remain open until separately verified.
 
+RF functional tests, including RF-019/RF-020, use the explicitly identified
+10-second node build and agreed UART sleep-entry boundary. The bench/pilot
+validates900-second cadence; no prior long RF run is required.
+
+RF-020 verifies the production reading/ACK exchange, received sensor flags and
+established nominal ranges, exact decoded values in canonical SQLite records,
+delivery outcomes and the accelerated10-second next wake with previous metrics.
+A compact pre-run baseline of selected-node reading IDs/row hashes allows
+existing readings without replacing the database or airtime state. Reconcile
+unchanged prior rows and exactly two new instance-bound readings against the
+required final consistent SQLite capture.
+Independent same-acquisition sensor-to-packet conversion checks remain in the
+[sensor-carrier integration tests](../firmware/TESTING.md#node_sensors-automated-cases).
+Their passing evidence must apply to the selected sources/configuration and is
+a separate prerequisite. RF-020 does not require production acquisition
+instrumentation or claim to repeat that conversion check during its RF run.
+
 ### Suite layout
 
 Receiver host and Pi-local component suites use pytest, with Hypothesis for
@@ -446,14 +463,26 @@ physical power interruption remain with their owning components/fixtures.
 See the [worker evidence](tests/hardware/evidence/persistence_worker/README.md)
 for source identity, timing limits, costly-test results and failure lessons.
 
-The ordinary storage destructive fixture mounts only a dedicated 4 MiB tmpfs
-below the marked test root, retains its bounded artifacts and unmounts in
-teardown. It requires sudo authorization for `mount` and `umount`; an optional
-`CURA_RECEIVER_TEST_SUDO_PASSWORD` environment value is passed on stdin and
-never written to evidence. Permission tests use the unprivileged receiver
-account. The read-only fixture closes its SQLite handles before remounting,
-then verifies a real reopen after restoring write access. Normal transaction
-measurements and the benchmark use the deployed storage filesystem.
+The ordinary storage destructive fixture runs pytest under a root supervisor,
+which mounts only a dedicated 4 MiB tmpfs below the marked test root. A child
+selected by `--receiver-storage-user` (default `cura`; use `cura-receiver` for
+installed-UID qualification) runs every storage assertion with no supplementary
+groups or process capabilities and with privilege elevation disabled. The child
+can request only read-only/read-write remounts of that fixture; it never invokes
+sudo. The root supervisor bounds and reaps the child, retains assertion failures,
+UID/capability evidence and bounded database artifacts, then unmounts and records
+restoration. No service-account sudo authorization is needed or granted.
+
+Run only `test_target_bounded_full_recovery` and `test_target_access_recovery`
+under this supervisor. Other ordinary-storage tests run directly as the
+unprivileged account. Retain the existing hardware/destructive confirmation and
+marked-root options. The read-only case closes its SQLite handles before
+remounting, then verifies a real reopen after restoring write access. Permission
+denial changes only the child's own database. Normal transaction measurements
+and the benchmark use the deployed storage filesystem; tmpfs failure tests do
+not establish physical power-loss durability.
+Current service-UID target results and local snapshot/restoration checks are
+recorded in the [pilot runtime evidence](tests/evidence/2026-09-19-pilot-runtime/README.md#current-persistence-and-storage-qualification).
 
 ### Host tests
 
@@ -587,6 +616,15 @@ reference models and episode builders remain local.
 
 Short run summaries and the evidence worth keeping are in
 [`hardware/evidence/runtime_time/README.md`](tests/hardware/evidence/runtime_time/README.md).
+Current-source installed-UID time/offline/step verification and its bounded
+historical-evidence reuse are recorded in the
+[19 September pilot runtime qualification](tests/evidence/2026-09-19-pilot-runtime/README.md).
+For installed-profile nominal RTC-refresh and forward/backward-step qualification,
+pass `--receiver-time-user cura-receiver` to the root-supervised fixture. Its
+component child runs under that actual unprivileged account; the default remains
+`cura` for the historical bench setup. Root is rejected as the component identity.
+This option does not change the physical controller-fault fixture or constitute
+service-sandbox/RF acceptance.
 That overview includes the historical passes' limitations. Routine output goes
 in an ignored `runtime_time/raw/` directory or outside the repository. Keep
 manual/slow measurements, useful failure lessons and the evidence needed to
@@ -629,6 +667,7 @@ arithmetic failure for TIME diagnostics without duplicating the equations.
 - **Network-error arithmetic:** Verify checked conservative formation of absolute remaining correction, half root delay, root dispersion and sampling margin without cancellation from sign.
 - **Trust hysteresis:** Cover at/below 35 seconds, the open 35-to-40-second band, exactly 40 seconds and above 40 seconds from each current quality.
 - **Poll and observation deadlines:** Verify one-minute chrony, three-hour online, one-hour holdover and three-hour RTC-refresh caps shorten whenever the calculated UTC-error horizon expires first.
+- **Initial tracking progress:** Before the first poll, tracking is immediately due (deadline zero). With a clock advancing on every read, the real scheduler must dispatch the first poll, publish network trust from valid evidence, and schedule the subsequent poll in the future.
 - **Network observation bracket:** Parameterize generation equality, monotonic ordering, bracket width, tracking freshness and kernel metadata around `adjtimex()`; accept the expected no-`rtcsync` `TIME_ERROR`/`STA_UNSYNC` pair when chrony is otherwise valid.
 - **Quality ABA rejection:** Change time quality away and back during a sampled operation and prove the changed `clock_state_generation` invalidates the result despite equal final enum values.
 - **Direct RTC observation:** Verify whole-second midpoint, half-second representation term, converted half-bracket, fixed margin, durable verification uncertainty and pre-read RTC drift are combined exactly.
@@ -886,3 +925,5 @@ Verify directory01770 and daemon socket0660 with Chrony ownership and receiver
 group after each daemon restart. Missing Chrony must remain compatible with
 untrusted offline startup. PERM-001 in deploy/README.md defers a broader permissions
 review until after the pilot; these checks do not establish command-level isolation.
+
+The production RF service procedure in [tests/rf/README.md](../tests/rf/README.md#production-receiver-service-rf-020) permits deliberate offline zero-airtime test database preparation only after operator-attested all-transmitter silence for the complete conservatively converted rolling window. It uses production state encoding/validation, creates a separate new candidate and never changes production missing-history recovery or fabricates current clock/RTC trust. Shared preflight requires fresh network time and valid airtime prerequisites; only actual RF results establish ACK delivery.

@@ -13,6 +13,7 @@ from cura_receiver.producer_admission import ProducerAdmission
 from cura_receiver.communicator_state_owner import CommunicatorStateOwner
 from cura_receiver.generated.receiver_entities_generated import (
     TxAirtimeBucketV1 as Bucket,
+    AirtimeSnapshotV1,
     communicator_state_v1_parameters,
 )
 from cura_receiver.platform.linux_boot_identity import read_linux_boot_id
@@ -77,7 +78,7 @@ def component(root, *, trusted=True, seed_remaining_us=None):
             clock=clock,
             kernel=LinuxKernelClock(clock),
             queue=ProducerAdmission(worker.queue),
-            policy=TimePolicy(maximum_network_skew_ppb=10_000),
+            policy=TimePolicy(),
             startup_rtc_result=probe,
         )
         chrony = LinuxChronyControl(
@@ -101,7 +102,6 @@ def component(root, *, trusted=True, seed_remaining_us=None):
                 "platform": platform.platform(),
                 "uid": os.geteuid(),
                 "trusted_source_requested": trusted,
-                "fixture_maximum_network_skew_ppb": 10_000,
             },
         )
         assert (correlation is not None) == trusted, update
@@ -109,10 +109,10 @@ def component(root, *, trusted=True, seed_remaining_us=None):
         if seed_remaining_us is not None:
             now = clock.now_monotonic_us()
             utc = correlation.sample.utc_us + now - correlation.sample.monotonic_us
-            expiration = utc + seed_remaining_us + 3_720_000_000
+            snapshot_utc = utc - (60_000_000 - seed_remaining_us)
             initial = state(
-                airtime_snapshot_utc_us=utc,
-                buckets=(Bucket(1_000_000, expiration),) + (Bucket(0, 0),) * 63,
+                airtime_snapshot=AirtimeSnapshotV1(snapshot_utc, 0),
+                buckets=(Bucket(0),) * 61 + (Bucket(1_000_000),),
             )
             # A reviewed existing-history input, not an exemption from missing-state recovery.
             with sqlite3.connect(root / "worker.db") as database:
@@ -120,7 +120,7 @@ def component(root, *, trusted=True, seed_remaining_us=None):
                     "INSERT INTO communicator_state VALUES (?,?,?,?,?)",
                     communicator_state_v1_parameters(initial),
                 )
-            seeded = now, utc, expiration
+            seeded = now, utc, snapshot_utc
         state_load = worker.control.load_communicator_state(
             deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000
         )

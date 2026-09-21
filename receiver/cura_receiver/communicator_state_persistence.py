@@ -10,7 +10,7 @@ from .generated.receiver_entities_generated import (
     decode_communicator_state_v1,
     encode_communicator_state_v1,
 )
-from .generated.receiver_enums_generated import DiagnosticOperation as Operation
+from .generated.receiver_enums_generated import DiagnosticOperation as Operation, SystemTimeQuality
 from .persistence_control_values import (
     CommunicatorStateCondition as Condition,
     CommunicatorStateLoadResult as LoadResult,
@@ -26,14 +26,14 @@ from .sqlite_repository import (
 _I64_MIN = -(1 << 63)
 _I64_MAX = (1 << 63) - 1
 _U64_MAX = (1 << 64) - 1
-COMMUNICATOR_STATE_BUCKET_CAPACITY = 64
+COMMUNICATOR_STATE_BUCKET_CAPACITY = 62
+AIRTIME_TX_COMPLETION_US = 250_000
 AIRTIME_UTC_ERROR_CEILING_US = 40_000_000
 _POLICY_FIELDS = (
     "rolling_window_us",
     "tx_airtime_budget_us",
     "bucket_width_us",
     "bucket_charge_limit_us",
-    "bucket_expiration_guard_us",
 )
 
 
@@ -46,12 +46,12 @@ def _integer(value: int, low: int = 0, high: int = _U64_MAX) -> int:
 def _policy_shape(value) -> None:
     for name in _POLICY_FIELDS:
         _integer(getattr(value, name))
-    window, budget, width, limit, guard = (
+    window, budget, width, limit = (
         getattr(value, name) for name in _POLICY_FIELDS
     )
     if window == 0 or width == 0 or not 0 < limit <= budget:
         raise ValueError("invalid state policy durations or charge bounds")
-    span = _integer(window + guard)
+    span = _integer(window + AIRTIME_TX_COMPLETION_US)
     grid_count = span // width + bool(span % width) + 1
     synthetic_count = budget // limit + bool(budget % limit)
     if max(grid_count, synthetic_count) > COMMUNICATOR_STATE_BUCKET_CAPACITY:
@@ -69,14 +69,11 @@ class CommunicatorStatePolicy:
     tx_airtime_budget_us: int = 36_000_000
     bucket_width_us: int = 60_000_000
     bucket_charge_limit_us: int = 8_000_000
-    bucket_expiration_guard_us: int = 120_000_000
     receiver_utc_error_budget_us: int = 40_000_000
 
     def __post_init__(self) -> None:
         _policy_shape(self)
         _integer(self.receiver_utc_error_budget_us, 1, AIRTIME_UTC_ERROR_CEILING_US)
-        if self.bucket_expiration_guard_us < 2 * AIRTIME_UTC_ERROR_CEILING_US:
-            raise ValueError("airtime guard does not cover both UTC correlations")
 
 
 def validate_communicator_state(
@@ -93,7 +90,18 @@ def validate_communicator_state(
     """
     require_immutable_state(state)
     _integer(state.generation, 1, _I64_MAX)
-    _integer(state.airtime_snapshot_utc_us, _I64_MIN, _I64_MAX)
+    snapshot = state.airtime_snapshot
+    if snapshot is None:
+        if state.last_observed_system_time_quality is not SystemTimeQuality.UNTRUSTED:
+            raise ValueError("trusted snapshot quality requires UTC/error evidence")
+    else:
+        if state.last_observed_system_time_quality not in (
+            SystemTimeQuality.NETWORK_SYNCED, SystemTimeQuality.RTC_HOLDOVER
+        ):
+            raise ValueError("snapshot UTC requires trusted historical quality")
+        _integer(snapshot.utc_us, _I64_MIN, _I64_MAX)
+        _integer(snapshot.error_bound_us, 0,
+                 min(policy.receiver_utc_error_budget_us, AIRTIME_UTC_ERROR_CEILING_US) - 1)
     _policy_shape(state)
     provenance = state.rtc_provenance
     if provenance is not None:
@@ -114,38 +122,11 @@ def validate_communicator_state(
             policy.receiver_utc_error_budget_us - 1,
         )
         _integer(provenance.drift_bound_ppm, 1, 999_999)
-    previous = None
-    first = None
-    empty_seen = False
+    if len(state.buckets) != COMMUNICATOR_STATE_BUCKET_CAPACITY:
+        raise ValueError("ledger must contain exactly 62 chronological slots")
     total = 0
     for bucket in state.buckets:
-        charge = _integer(bucket.charged_airtime_us)
-        expiration = _integer(bucket.expires_at_utc_us, _I64_MIN, _I64_MAX)
-        if charge == 0:
-            if expiration != 0:
-                raise ValueError("empty bucket must be canonical zero")
-            empty_seen = True
-            continue
-        if empty_seen or charge > state.bucket_charge_limit_us:
-            raise ValueError("nonempty bucket follows empty or exceeds charge bound")
-        if expiration <= state.airtime_snapshot_utc_us:
-            raise ValueError("expired bucket is not a valid snapshot entry")
-        _integer(expiration - state.rolling_window_us, _I64_MIN, _I64_MAX)
-        _integer(
-            expiration - state.rolling_window_us - state.bucket_expiration_guard_us,
-            _I64_MIN,
-            _I64_MAX,
-        )
-        if previous is not None:
-            delta = _integer(expiration - previous, 1, _I64_MAX)
-            if delta % state.bucket_width_us:
-                raise ValueError("bucket expirations are not on one increasing grid")
-        if first is None:
-            first = expiration
-        span = _integer(expiration - first, 0, _I64_MAX)
-        if span // state.bucket_width_us >= COMMUNICATOR_STATE_BUCKET_CAPACITY:
-            raise ValueError("ledger grid span exceeds fixed capacity")
-        previous = expiration
+        charge = _integer(bucket.charged_airtime_us, 0, state.bucket_charge_limit_us)
         total = _integer(total + charge)
     if total > state.tx_airtime_budget_us:
         raise ValueError("ledger exceeds global airtime budget")

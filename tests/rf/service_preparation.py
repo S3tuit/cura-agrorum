@@ -47,7 +47,7 @@ def create_zero_airtime_database(destination, group_id, receipt, *, board_id, bo
     if not result.cleanup_complete:
         raise RuntimeError('database initialization cleanup incomplete; preserve candidate')
     policy = ApplicationSettings().airtime_policy
-    state = recovery_state(policy, utc_us=utc_us, quality=E.SystemTimeQuality.UNTRUSTED,
+    state = recovery_state(policy, snapshot=None, quality=E.SystemTimeQuality.UNTRUSTED,
                            rtc_health=E.RtcHealth.MISSING, synthetic=False)
     with sqlite3.connect(path) as db:
         db.execute('PRAGMA synchronous=FULL')

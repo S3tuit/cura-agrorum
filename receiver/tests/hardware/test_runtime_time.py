@@ -5,6 +5,7 @@ access on an unprovisioned bench; that does not prove receiver-user privileges.
 Destructive cases require the root-owned fixture in test_time_mutations.py.
 """
 
+from cura_receiver.generated.receiver_entities_generated import AirtimeSnapshotV1
 from dataclasses import asdict, replace
 from decimal import Decimal, ROUND_CEILING, ROUND_UP
 import ctypes
@@ -263,15 +264,7 @@ def test_offline_component_startup(tmp_path, proven):
         state = synthetic()
         state = replace(
             state,
-            airtime_snapshot_utc_us=utc,
-            buckets=tuple(
-                (
-                    replace(b, expires_at_utc_us=b.expires_at_utc_us + utc)
-                    if b.charged_airtime_us
-                    else b
-                )
-                for b in state.buckets
-            ),
+            airtime_snapshot=AirtimeSnapshotV1(utc, 1),
             rtc_provenance=(
                 RtcProvenanceV1(instance.receiver_instance_id, utc, utc, 3_000_000, 10)
                 if proven
@@ -292,7 +285,7 @@ def test_offline_component_startup(tmp_path, proven):
             clock=clock,
             kernel=LinuxKernelClock(clock),
             queue=ProducerAdmission(owner.queue),
-            policy=TimePolicy(maximum_network_skew_ppb=1000),
+            policy=TimePolicy(),
             startup_rtc_result=probe,
             state_owner=CommunicatorStateOwner(
                 control=owner.control, initial_state=loaded.state

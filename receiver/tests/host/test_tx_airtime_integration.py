@@ -86,7 +86,7 @@ def test_runtime_rtc_commit_preserves_airtime_owner_and_allowance(
         clock=clock,
         kernel=kernel,
         queue=ProducerAdmission(worker.queue),
-        policy=TimePolicy(maximum_network_skew_ppb=1000),
+        policy=TimePolicy(),
         startup_rtc_result=Ds3231ReadResult(DR.OK, 100, 100, 1_800_000_000),
         state_owner=policy.owner,
     )

@@ -91,7 +91,7 @@ ACTIONS = st.one_of(
     st.tuples(
         st.just("advance"),
         st.sampled_from(
-            [0, 1, 1_000_000, 59_777_999, 60_000_000, 61_000_000, 3_780_000_000]
+            [0, 1, 1_000_000, 59_777_999, 60_000_000, 60_222_000, 61_000_000, 3_780_000_000]
         ),
     ),
     st.tuples(
@@ -103,15 +103,10 @@ ACTIONS = st.one_of(
 
 
 def projection(value):
-    return (
-        value.generation,
-        value.airtime_snapshot_utc_us,
-        tuple(
-            (b.charged_airtime_us, b.expires_at_utc_us)
-            for b in value.buckets
-            if b.charged_airtime_us
-        ),
-    )
+    evidence = value.airtime_snapshot
+    return (value.generation, None if evidence is None else
+            (evidence.utc_us, evidence.error_bound_us),
+            tuple(b.charged_airtime_us for b in value.buckets))
 
 
 # Every generated policy decision and durable ledger is compared with a separate list/rational-time oracle.
@@ -155,22 +150,15 @@ def test_generated_airtime_sequences_against_independent_model(
 ):
     root = Path(tempfile.mkdtemp(prefix="ledger-sequence-", dir=tmp_path))
     database, config, boot = prepare_worker_files(root)
-    entries = tuple(
-        (charge, 3_600_000_000 + index * 60_000_000)
-        for index, charge in enumerate(charges)
-        if charge
-    )
-    initial = state(
-        buckets=tuple(Bucket(*pair) for pair in entries)
-        + (Bucket(0, 0),) * (64 - len(entries))
-    )
+    initial = state(buckets=(Bucket(0),) * (62 - len(charges)) +
+                    tuple(Bucket(c) for c in charges))
     with sqlite3.connect(database) as connection:
         connection.execute(
             "INSERT INTO communicator_state VALUES (?,?,?,?,?)",
             communicator_state_v1_parameters(initial),
         )
     clock = FakeOsClock(monotonic_us=100)
-    model = LedgerModel(entries)
+    model = LedgerModel(charges)
     enabled, bias = True, 0
     worker = policy = faults = None
     generation = 0
@@ -286,70 +274,66 @@ def test_generated_airtime_sequences_against_independent_model(
             worker.finish_test()
 
 
-# Opposite valid UTC offsets plus extreme monotonic rates cannot expire the guarded charge within a physical hour.
-@settings(max_examples=100, deadline=None, derandomize=True)
-@given(
-    old_error=st.integers(-39_999_999, 39_999_999),
-    new_error=st.integers(-39_999_999, 39_999_999),
-    elapsed=st.integers(0, 3_599_999_999),
-    rate=st.sampled_from([-3700, 0, 3700]),
-)
-def test_guarded_reconstruction_preserves_continuous_physical_window(
-    old_error, new_error, elapsed, rate
+# UTC errors cannot create excess elapsed credit; retain any possible use still in a physical hour.
+@settings(max_examples=150, deadline=None, derandomize=True)
+@given(old_error=st.integers(-39_999_999, 39_999_999),
+       new_error=st.integers(-39_999_999, 39_999_999),
+       elapsed=st.integers(0, 3_599_999_999),
+       distance=st.integers(0, 60),
+       rate=st.sampled_from([-3700, 0, 3700]))
+def test_snapshot_error_reconstruction_preserves_physical_window(
+    old_error, new_error, elapsed, distance, rate
 ):
-    # The old UTC bucket end corresponds to physical end zero plus its source error.
-    expiration = old_error + 3_600_000_000 + 120_000_000
-    observed_utc = elapsed + new_error
-    ledger = AirtimeLedger(
-        CommunicatorStatePolicy(),
-        (Bucket(67_866, expiration),) + (Bucket(0, 0),) * 63,
-        utc_us=observed_utc,
-        monotonic_us=0,
-    )
-    remaining_physical = 3_600_000_000 - elapsed
-    observed_mono = (remaining_physical * (1_000_000 + rate)) // 1_000_000
-    ledger.advance(observed_mono)
-    assert ledger.total_used == 67_866
+    credit = max(0, elapsed + new_error - old_error - abs(new_error) - abs(old_error))
+    assert credit <= elapsed
+    charges = [Bucket(0)] * 62
+    charges[61 - distance] = Bucket(67_866)
+    ledger = AirtimeLedger(CommunicatorStatePolicy(), tuple(charges),
+                          monotonic_us=0, elapsed_us=credit)
+    latest_physical_tx = min(elapsed, 60_250_000 - distance * 60_000_000)
+    physical_until_end = 3_600_000_000 + latest_physical_tx - elapsed
+    if physical_until_end > 0:
+        observed = ((physical_until_end - 1) * (1_000_000 + rate)) // 1_000_000
+        ledger.advance(observed)
+        assert ledger.total_used == 67_866
 
 
-# F-001: fresh bucket retention stays bounded by its own lifetime and safe at either monotonic rate extreme.
+# New-bucket retention is bounded independently of uptime, and covers the latest authorized TX.
 @settings(max_examples=100, deadline=None, derandomize=True)
-@given(
-    uptime=st.integers(0, 7 * 24 * 3_600_000_000),
-    error=st.integers(-39_999_999, 39_999_999),
-    remaining=st.integers(1, 60_000_000),
-    rate=st.sampled_from([-3700, 0, 3700]),
-)
-def test_new_bucket_physical_retention_independent_of_uptime(
-    uptime, error, remaining, rate
-):
-    ledger = AirtimeLedger(
-        CommunicatorStatePolicy(), (Bucket(0, 0),) * 64, utc_us=0, monotonic_us=100
-    )
+@given(uptime=st.integers(0, 7 * 24 * 3_600_000_000),
+       rate=st.sampled_from([-3700, 0, 3700]))
+def test_new_bucket_physical_retention_independent_of_uptime(uptime, rate):
     now = uptime + 100
-    utc = uptime + error
-    ledger.advance(now)
-    expiration = utc + remaining + 3_720_000_000
-    ledger.set_charge(expiration, 67_866, utc_us=utc, monotonic_us=now)
-    deadline = ledger.retention_deadline(expiration)
-    assert deadline <= now + 3_793_986_000
-    # Even a latest possible attempt at the bucket end remains charged for a full physical hour.
-    physical_wait = remaining + 3_600_000_000
-    observed_wait = (physical_wait * (1_000_000 + rate)) // 1_000_000
-    ledger.advance(now + observed_wait)
+    ledger = AirtimeLedger(CommunicatorStatePolicy(), (Bucket(0),) * 62,
+                          monotonic_us=now)
+    ledger.set_charge(ledger.current_start, 67_866)
+    deadline = ledger.retention_deadline(ledger.current_start)
+    assert deadline == now + 3_673_792_925
+    observed_hour = (3_600_000_000 * (1_000_000 + rate)) // 1_000_000
+    ledger.advance(ledger.grant_deadline + observed_hour)
     assert ledger.total_used == 67_866
     ledger.advance(deadline - 1)
     assert ledger.total_used == 67_866
     ledger.advance(deadline)
-    assert ledger.empty and ledger.total_used == 0
+    assert ledger.total_used == 0
 
 
-# The reviewed rejected 60-second shift is early; the chosen 120-second guard survives the same clock reversal.
-def test_recorded_clock_shift_counterexample_and_fixed_guard():
-    actual_tx = 13 * 3600 + 38
-    shifted_expiration = 14 * 3600 + 61
-    naive_expiration_actual = shifted_expiration - 39
-    assert naive_expiration_actual - actual_tx == 3584
-    guarded_expiration = 14 * 3600 + 120
-    guarded_expiration_actual = guarded_expiration - 39
-    assert guarded_expiration_actual - actual_tx == 3643
+# Near-end snapshots may extend restored lifetime, but cannot move the live deadline.
+def test_near_end_snapshot_and_repeated_unknown_time_restarts():
+    original = AirtimeLedger(CommunicatorStatePolicy(), (Bucket(0),) * 62,
+                            monotonic_us=0)
+    original.set_charge(0, 67_866)
+    deadline = original.retention_deadline(0)
+    for _ in range(4):
+        original.advance(60_221_999)
+        snapshot = original.snapshot_buckets()
+        assert original.retention_deadline(original.current_start) == deadline
+        restored = AirtimeLedger(CommunicatorStatePolicy(), snapshot, monotonic_us=0)
+        assert restored.total_used == 67_866
+        assert restored.retention_deadline(0) >= deadline - 60_221_999
+        original = restored
+        deadline = original.retention_deadline(0)
+    original.advance(deadline - 1)
+    assert original.total_used == 67_866
+    original.advance(deadline)
+    assert original.total_used == 0

@@ -22,7 +22,7 @@ from .generated.receiver_entities_generated import RtcProvenanceV1
 from .generated.receiver_enums_generated import RtcHealth, SystemTimeQuality
 from .time_policy import (
     ClockState,
-    NetworkEvidence,
+    NetworkEstimate,
     TimePolicy,
     network_tracking_decision,
 )
@@ -74,7 +74,7 @@ def rtc_read_uncertainty_us(start_us: int, finish_us: int, policy: TimePolicy) -
 def network_observation(
     before: ClockState,
     after: ClockState,
-    evidence: NetworkEvidence | None,
+    estimate: NetworkEstimate | None,
     *,
     operation_started_at_monotonic_us: int,
     operation_finished_at_monotonic_us: int,
@@ -95,7 +95,7 @@ def network_observation(
         )
         decision = network_tracking_decision(
             before,
-            evidence,
+            estimate,
             now_monotonic_us=operation_finished_at_monotonic_us,
             required_poll_deadline_us=required_poll_deadline_us,
             policy=policy,
@@ -108,19 +108,19 @@ def network_observation(
         if decision.error_bound_us >= policy.receiver_utc_error_budget_us:
             return None
         checked_monotonic_elapsed(
-            evidence.sample_finished_at_monotonic_us, operation_started_at_monotonic_us
+            estimate.sample_finished_at_monotonic_us, operation_started_at_monotonic_us
         )
         sample = TrustedTimeSample(
             midpoint,
             sampled_utc_us,
-            decision.error_bound_us,
+            estimate.error_at(midpoint, policy),
             SystemTimeQuality.NETWORK_SYNCED,
             before.generation,
         )
         schedule = observation_schedule(
             sample,
             policy,
-            tracking_started_at_monotonic_us=evidence.sample_started_at_monotonic_us,
+            tracking_started_at_monotonic_us=estimate.sample_started_at_monotonic_us,
         )
         if (
             schedule.trust_expires_at_monotonic_us is not None

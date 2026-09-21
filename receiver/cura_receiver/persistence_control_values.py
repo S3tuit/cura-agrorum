@@ -9,6 +9,7 @@ from .generated.receiver_entities_generated import (
     CommunicatorStateV1,
     RtcProvenanceV1,
     TxAirtimeBucketV1,
+    AirtimeSnapshotV1,
 )
 from .generated.receiver_enums_generated import DiagnosticOperation as Operation
 from .generated.receiver_enums_generated import RtcHealth, SystemTimeQuality
@@ -78,6 +79,7 @@ def require_immutable_state(state: CommunicatorStateV1) -> None:
             "rtc_provenance": type(None)
             if state.rtc_provenance is None
             else RtcProvenanceV1,
+            "airtime_snapshot": type(None) if state.airtime_snapshot is None else AirtimeSnapshotV1,
             "buckets": tuple,
         }.get(field.name, int)
         _enum(getattr(state, field.name), expected)
@@ -87,10 +89,12 @@ def require_immutable_state(state: CommunicatorStateV1) -> None:
                 getattr(state.rtc_provenance, field.name),
                 bytes if field.name == "verified_by_receiver_instance_id" else int,
             )
+    if state.airtime_snapshot is not None:
+        _enum(state.airtime_snapshot.utc_us, int)
+        _enum(state.airtime_snapshot.error_bound_us, int)
     for bucket in state.buckets:
         _enum(bucket, TxAirtimeBucketV1)
         _enum(bucket.charged_airtime_us, int)
-        _enum(bucket.expires_at_utc_us, int)
 
 
 def _evidence(result, *, failure: str, operation: Operation) -> None:

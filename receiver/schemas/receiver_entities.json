@@ -220,12 +220,13 @@
           "type": "u64"
         },
         {
-          "name": "bucket_expiration_guard_us",
-          "type": "u64"
-        },
-        {
-          "name": "airtime_snapshot_utc_us",
-          "type": "i64"
+          "name": "airtime_snapshot",
+          "type": "struct:AIRTIME_SNAPSHOT_V1",
+          "nullable": true,
+          "presence_bit": {
+            "mask": "validity_mask",
+            "bit": 1
+          }
         },
         {
           "name": "bucket_count",
@@ -247,7 +248,7 @@
         {
           "name": "buckets",
           "type": "array:TX_AIRTIME_BUCKET_V1",
-          "length": 64
+          "length": 62
         }
       ],
       "structs": [
@@ -289,10 +290,20 @@
             {
               "name": "charged_airtime_us",
               "type": "u64"
+            }
+          ]
+        },
+        {
+          "name": "AIRTIME_SNAPSHOT_V1",
+          "python_name": "AirtimeSnapshotV1",
+          "fields": [
+            {
+              "name": "utc_us",
+              "type": "i64"
             },
             {
-              "name": "expires_at_utc_us",
-              "type": "i64"
+              "name": "error_bound_us",
+              "type": "u64"
             }
           ]
         }

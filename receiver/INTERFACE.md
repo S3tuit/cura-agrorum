@@ -173,6 +173,10 @@ minimum_wait_monotonic_us(D) = ceil(D * (P + R) / P)
 maximum_lifetime_monotonic_us(D) = floor(D * (P - R) / P)
 ```
 
+The pilot continues to assume `R = 3700`. Qualification/enforcement of the
+complete rate envelope beyond Chrony's slew limit is [explicitly deferred](ARCHITECTURE.md#chrony-integration);
+the uncertainty-policy change does not establish that missing proof.
+
 `0 <= R < P`; multiplication and addition are checked before evaluation.
 `minimum_wait_monotonic_us()` is used when acting too early is unsafe,
 including rolling-airtime retention, incompatible-history aging and minimum retry
@@ -203,7 +207,6 @@ rolling_window_us = 3_600_000_000
 tx_airtime_budget_us = 36_000_000
 bucket_width_us = 60_000_000
 bucket_charge_limit_us = 8_000_000
-bucket_expiration_guard_us = 120_000_000
 ```
 
 `time_sampling_margin_us` is one fixed pilot constant shared by network-clock
@@ -684,6 +687,11 @@ exact unknown-commit reconciliation are separate actions. Ready radio work and
 stop intent are checked between actions. Retry windows include intervening
 scheduler time, and the existing per-call bounds remain unchanged.
 
+The scheduler treats an active RTC refresh as ready to continue at the existing
+RTC priority position. Only new RTC work uses a start/retry deadline; a fresh
+clock read must not act as a moving continuation deadline. Dispatch readiness
+does not waive source, generation, operation-deadline or cancellation checks.
+
 Once shutdown is requested, no further refresh action is submitted. An in-flight
 bounded primitive returns normally; the episode then reports runtime-only
 `SHUTDOWN_CANCELLED`, retaining actual results, counters and any observed failure
@@ -924,7 +932,7 @@ estimated_skew_ppb: u64
 The normalized fields are valid only when `status = OK`. `synchronized`
 requires chrony's tracking result to report a selected usable source and a
 normal synchronized leap state; the communicator additionally applies its
-configured total-error, skew and freshness bounds. This result is
+configured total-error, value and freshness bounds. This result is
 policy input, not by itself permission to label a clock observation
 `NETWORK_SYNCED`. A trusted observation must also pass the read-only
 `adjtimex()` sampling contract.
@@ -948,11 +956,27 @@ For a fresh `OK` response from a selected, synchronized, reliable source, the
 communicator computes:
 
 ```text
-network_error_bound_us =
+initial_network_error_us =
     abs(remaining_correction_us)
     + root_distance_us
     + time_sampling_margin_us
 ```
+
+The initial sum is calculated once per tracking result and conservatively
+anchored at `sample_started_at_monotonic_us`. At a use instant N:
+
+```text
+network_error_at_N_us = initial_network_error_us
+    + ceil((N - sample_started_at_monotonic_us) * R / (1_000_000 - R))
+```
+
+Use checked integer arithmetic and round upward. `R` is the shared elapsed
+rate bound, currently 3700 ppm under the deferred qualification above. Skew
+must still be a valid unsigned value, but has no independent admission
+ceiling. Threshold decisions use error at the decision instant. A kernel
+observation stores error advanced to its bracket midpoint; later correlation
+uses that stored bound and elapsed distance from that midpoint. Do not add the
+initial network sum twice or retain the old query origin after publication.
 
 `remaining_correction_us` is the current displacement between chrony's
 software NTP clock and Linux system UTC that still has to be removed by slew;
@@ -995,7 +1019,21 @@ loose for overwriting durable RTC provenance. An RTC refresh may start only
 from a fresh trusted observation whose complete network error is at or below
 `network_rtc_write_error_threshold_us` (five seconds initially). The stricter
 threshold is also rechecked, together with the captured generation, before
-provenance commit.
+provenance commit and after its completion. Before starting RTC device work,
+also project error and poll freshness to the end of the configured operation
+budgets: two read-recovery windows plus their final read attempts, one write
+command, and one commit plus possible reconciliation for each required state
+transition (invalidation when old provenance exists, and final verification).
+Convert their summed physical duration with `minimum_wait_monotonic_us` to
+cover the longest monotonic span. This projection must stay at or below five
+seconds and strictly before the supporting poll/trust deadline. With defaults
+it reserves 19 seconds without old provenance, 21 seconds with it, before the
+rate conversion. Scheduler interleaving or a late backend may take longer;
+this prediction never replaces actual-stage source/generation/expiry checks.
+Defer an operation that cannot fit instead of invalidating healthy provenance
+or writing the RTC first. A saved readback verification bound may exceed five
+seconds because it additionally includes measured read uncertainty and actual
+readback disagreement; it must remain strictly below forty seconds.
 
 `ChronyQueryStatus` has these runtime-only members:
 
@@ -1089,6 +1127,12 @@ is normal, not a radio deadline diagnostic. A terminal DIO1 edge at the
 inclusive host TX deadline is timely; a later edge is not. T0/T5 come only
 from kernel edge timestamps, never a userspace reconstruction. The caller's
 airtime-grant deadline also bounds SetTx submission.
+
+The [late SPI transmission limitation](ARCHITECTURE.md#deferred-limitation-late-spi-transmission)
+is explicitly deferred: deadline checks do not cancel delayed physical command
+execution, and retaining the original airtime charge does not extend its
+expiration to cover that delay. The current airtime refactoring proceeds with
+this limitation; no late-execution enforcement claim follows from these bounds.
 
 The first post-reset status is retained as `initial_reset_status`, separately
 from subsequent command status. A structurally valid `STDBY_RC` status may
@@ -2730,9 +2774,9 @@ The version and generation encoded inside the blob must equal the SQL columns.
 
 Generation defines the raw storage shape and the existing canonical V1
 entities, codecs and binders. Classification, semantic validation and recovery
-remain handwritten. The 64-slot pre-deployment V1 revision starts database
-schema epoch 11 and has a 1152-byte encoding. An older database requires the normal
-offline epoch transition, never an in-process migration.
+remain handwritten. This predeployment V1 revision has 62 charge-only slots and a 624-byte encoding.
+All producers and consumers use this layout; no old-layout compatibility or
+migration is supported.
 
 The communicator never mutates a loaded value. It creates a complete new
 snapshot, normally with `dataclasses.replace`, and advances generation exactly
@@ -2764,9 +2808,9 @@ rolling_window_us: u64
 tx_airtime_budget_us: u64
 bucket_width_us: u64
 bucket_charge_limit_us: u64
-bucket_expiration_guard_us: u64
 
 airtime_snapshot_utc_us: i64
+airtime_snapshot_error_bound_us: u64
 bucket_count: u16
 reserved_2: u16
 reserved_3: u64
@@ -2776,15 +2820,21 @@ The generated logical Python `CommunicatorStateV1` exposes
 `rtc_provenance: RtcProvenanceV1 | None`, not `validity_mask` or the
 representation-only version, length and count fields. `RtcProvenanceV1` groups
 the five non-reserved RTC-provenance values shown in the header.
-`CommunicatorStateV1.buckets` is a tuple of exactly 64
+`CommunicatorStateV1.airtime_snapshot` is an optional `AirtimeSnapshotV1`
+containing `utc_us` and `error_bound_us`.
+`CommunicatorStateV1.buckets` is a tuple of exactly 62
 `TxAirtimeBucketV1` values. Durable airtime allowance exists only as bucket
 charge; there is no second collection. The canonical-BLOB codec consumes and derives the version, encoded
 length, mask, fixed count and reserved zeros so the binary
 representation remains deterministic; the mask is not a separate relational
 column.
 
-Validity bit 0 selects the RTC-provenance block; bits 1 through 15 are reserved
-and zero. When provenance is absent, its identifier and timestamps are zero.
+Validity bit 0 selects the RTC-provenance block; bit 1 selects the airtime
+snapshot UTC/error pair. Bits 2 through 15 are reserved and zero. Absent snapshot
+UTC/error fields are both encoded as zero. A present pair requires snapshot
+quality `NETWORK_SYNCED` or `RTC_HOLDOVER` and error strictly below the active
+UTC budget and the 40-second encoding ceiling. An absent pair requires
+`UNTRUSTED` quality. Zero UTC is a valid present timestamp. When provenance is absent, its identifier and timestamps are zero.
 Its uncertainty and drift bound are also zero. `reserved_1` is always zero.
 When provenance is present, `rtc_verification_uncertainty_us` is the complete
 conservative error bound established by the verified write/read-back episode
@@ -2810,212 +2860,106 @@ receiver UTC budget. No load reconstructs that value from changed runtime
 defaults; the persisted uncertainty and drift bound govern the provenance for
 its complete lifetime.
 
-`rolling_window_us`, `bucket_width_us` and `bucket_expiration_guard_us` are
-physical policy durations. Their durable UTC calculations use the stored values
-directly. Runtime minimum no-TX waits use `minimum_wait_monotonic_us()`. An
-active bucket grant ends at its durable bucket boundary mapped into the current
-Linux boot and shortened with `maximum_lifetime_monotonic_us()`; it does not
-remain spendable merely because UTC later steps backward.
+#### Positional airtime snapshot and monotonic reconstruction
 
-Every valid V1 value has an authoritative bucket ledger.
-`airtime_snapshot_utc_us` is canonical UTC derived for the
-snapshot's monotonic construction time from the communicator's latest live
-trusted `ClockObservationV1` correlation under `NETWORK_SYNCED` or valid
-`RTC_HOLDOVER`. It is not a direct per-state `CLOCK_REALTIME` read. Every
-nonempty bucket expiration is later than that snapshot.
+Each of the 62 consecutive chronological slots contains one `u64`
+`charged_airtime_us`; zero slots are not packed away. The final slot is the
+interval containing the snapshot, even if empty. The header is 128 bytes and
+the complete length is `128 + 62 * 8 = 624` bytes. Each charge is at most
+`bucket_charge_limit_us`, their checked sum at most `tx_airtime_budget_us`.
+There is no bucket UTC expiration, countdown or second reservation list.
+The four stored airtime policy values must match the active policy exactly.
 
-The V1 blob contains exactly 64 bucket slots. Each slot is this 16-byte entry:
+The optional snapshot UTC is the actual snapshot instant, derived from a live
+trusted correlation; its error includes growth to that instant. It is not a
+claim about when the original newest bucket began. Time quality and RTC health
+remain observations, never restored as present-instance trust.
 
-```text
-charged_airtime_us: u64
-expires_at_utc_us: i64
-```
+Define physical durations `W = rolling_window_us`, `X = bucket_width_us`, and
+`T = 250_000` microseconds for the normal TX completion envelope. The deferred
+late-SPI limitation applies; T is not a hard cancellation bound on stalled I/O.
+Let `wait(D) = minimum_wait_monotonic_us(D)` and
+`life(D) = maximum_lifetime_monotonic_us(D)` at the supported elapsed-rate bound.
+The live grid spacing is `S = wait(X)`. A grant in an interval starting at M
+ends exclusively at `M + life(X)`; the next interval starts at `M + S`.
+At 3700 ppm these are 59.778 and 60.222 seconds after M. The intervening 444 ms
+is conservatively unavailable for new TX. A new bucket's retention deadline is
+`M + wait(W + X + T)`. Snapshot/copy/charge edits never restart a live deadline.
 
-Nonempty entries precede empty entries and are sorted by strictly increasing
-expiration. Charges with the same expiration are combined. The expiration is
-exactly the checked sum of the logical bucket end, `rolling_window_us` and
-`bucket_expiration_guard_us`. Consequently, the bucket end is recovered by
-checked subtraction. Nonempty bucket expirations belong to one grid: the
-difference between any two is a positive integer multiple of
-`bucket_width_us`. Every unused trailing slot is encoded
-canonically as `charged_airtime_us = 0` and `expires_at_utc_us = 0`; no nonempty
-entry may follow one. The runtime ring's monotonic origin, physical start index
-and cached `total_used` are not persisted.
-
-Each nonempty charge is positive and no greater than
-`bucket_charge_limit_us`. A loaded charge is never spendable by the loading
-process: it is a conservative baseline that may represent historical TX, an
-uncertain TX or unused write-ahead allowance from an earlier process. It stays
-in its original logical bucket until expiration.
-
-To obtain a grant, the communicator selects the grid bucket whose end is the
-first bucket boundary strictly later than the trusted snapshot. If a retained
-grid exists, empty elapsed intervals are skipped without relocating an older
-charge. If every prior entry expired or the valid ledger is empty, the
-communicator may start a new grid with a bucket end exactly one
-`bucket_width_us` after the snapshot. It computes with checked arithmetic:
+For a load at monotonic N, compute credited elapsed physical time E:
 
 ```text
-bucket_headroom = bucket_charge_limit_us - current_bucket_charge
-global_headroom = tx_airtime_budget_us - sum(all unexpired bucket charges)
-grant = min(bucket_headroom, global_headroom)
+if both snapshot and current UTC are trusted:
+    E = max(0, current_utc - snapshot_utc - snapshot_error - current_error)
+else:
+    E = 0
 ```
 
-The communicator submits a complete next-generation value that adds `grant` to
-the selected bucket. Only that durably acknowledged increment is spendable by
-the current process, and only until the mapped monotonic bucket deadline. Its
-runtime record contains the bucket expiration, loaded baseline, acknowledged
-increment, unspent increment, state generation and monotonic deadline; none of
-that process-local ownership metadata is serialized.
-
-At the bucket boundary, or earlier when a new grant is needed, settlement keeps
-the loaded baseline unchanged and replaces only the current process's
-provisional increment with airtime actually or possibly transmitted under that
-increment. Tentative consumption precedes the first TX-profile command, after
-the ACK buffer write. A definite failure before `SetTx` can take effect permits
-reclaiming the corresponding unused part only when no preceding TX-profile
-command has an uncertain effect. Profile uncertainty retains the complete
-charge even if `SetTx` was never attempted. The same atomic next-generation commit may
-precharge the next grid bucket. No later TX uses the next increment before that
-commit is acknowledged. An unknown commit outcome suppresses TX until an exact
-load reconciles the installed generation and bytes.
-
-On restart, a previous process's entire increment is just part of the loaded
-unspendable charge. The new process may top up the same bucket only when it is
-still the selected current grid bucket and both headrooms permit the addition;
-otherwise it adds a charge to the newly selected bucket. It never moves the old
-charge to the current bucket. The previous process's write-ahead increment is
-therefore attributed to the bucket that process selected and persisted, not to
-the new process merely because it loaded the file.
-
-Missing or structurally corrupt state does not wait for unknown history to age
-and does not start empty. Once trusted canonical UTC is available, the receiver
-constructs and durably installs a generation-one synthetic worst-case ledger
-before any TX. Let:
+UTC subtraction and all duration arithmetic are checked. Current error includes
+elapsed-clock growth to N. If correlation evidence is no longer valid, use zero
+credit; never block ordinary airtime recovery merely because UTC is unavailable.
+For a stored slot d intervals before the newest (`d = 61 - slot_index`):
 
 ```text
-q = tx_airtime_budget_us // bucket_charge_limit_us
-r = tx_airtime_budget_us % bucket_charge_limit_us
+remaining = W + X + T - d * X - E
+if remaining <= 0: remove its charge
+else: retention_deadline = N + wait(remaining)
 ```
 
-The chronological charges are one oldest remainder `r` when `r != 0`, followed
-by `q` full `bucket_charge_limit_us` charges. If `r == 0`, they are just `q`
-full charges. Their bucket ends are spaced by `bucket_width_us`; the newest end
-is one full bucket width after the recovery snapshot. Thus the pilot values
-`B = 36 s`, `Y = 8 s`, `X = 60 s` produce `[4, 8, 8, 8, 8]` seconds in the five
-most recent possible buckets. The complete budget is initially unavailable,
-then returns only as those conservative charges expire. The synthetic entry
-count and all time arithmetic must fit the V1 capacity and integer ranges.
+A minimum-wait grid interval lasts at least X physically. Each bucket's grant
+can authorize TX at most X after that interval's start; T covers normal
+completion. Assuming the snapshot was the newest start therefore overestimates
+its remaining lifetime, and explicit UTC error subtraction cannot credit time
+that has not demonstrably elapsed.
 
-The complete length is:
+Split E into `k, phase = divmod(E, X)`. Shift retained stored charges k positions
+older, filling new positions with zero. Reconstruct the current interval start
+as `N - wait(phase)`, which may be a negative process-local virtual origin near
+boot. Only actual future deadlines/clock readings use unsigned monotonic values.
+This phase prevents a top-up from obtaining a fresh whole-interval grant while
+keeping a shorter recovered retention deadline. Opening further intervals uses
+S; retain each reconstructed deadline exactly, including its credited phase.
+No predecessor-boot monotonic value is reused. Repeated snapshots/restarts may
+lose phase precision conservatively; they cannot erase a possible charge early.
 
-```text
-encoded_length = 128 + bucket_count * 16
-               = 1152
-```
+Required capacity is `ceil((W + X + T) / X) = 62` at pilot values. A slot 61
+intervals old may still retain the final 250 ms; slot 62 is fully expired.
+Clock margins apply to grid spacing and retention consistently, so 62 slots
+also cover their monotonic overlap. Policy validation checks this bound and
+that the synthetic worst-case ledger fits, with positive initial lifetimes.
+All ring indices and deadline sums are checked; long idle periods can bulk-clear
+expired history. Loading/snapshot/copy may scan 62 slots; ACK admission reads the
+cached total and current charge and ages only elapsed head entries.
 
-`bucket_count` is exactly 64 in this pre-deployment V1 revision. Changing it requires a new state encoding
-version once a deployed database must remain readable.
+To obtain a grant, precharge the lesser of bucket and global headroom in one
+complete next-generation commit. Only its acknowledged increment is spendable.
+Keep the baseline, increment, unspent amount, generation, process-local interval
+identity and original monotonic grant deadline in memory. At settlement keep
+the loaded baseline plus actual/possible use, optionally precharging the current
+interval in the same commit. Loaded charges are never spendable reservations.
+An opaque spend token accepts one certainty result; only definite non-start
+reclaims its charge. An absent result or uncertainty stays charged; a settled
+token cannot reopen an old grant. Late submission remains forbidden even when
+a caller holds a token. UTC changes do not revoke a valid monotonic grant.
 
-For every valid state:
+Missing/corrupt state requires an acknowledged generation-one synthetic ledger:
+`q, r = divmod(B, Y)`, with the newest positions containing an oldest remainder r
+when nonzero, followed by q full Y charges; all older positions are zero.
+For pilot values this is `[4, 8, 8, 8, 8]` seconds in the newest five slots.
+It is constructible with UNTRUSTED time and no snapshot UTC. Unsupported version
+or policy mismatch retains the existing full no-TX wait, followed by atomic
+archive-and-replace with a generation-one all-zero positional ledger.
 
-```text
-sum(bucket charges) <= tx_airtime_budget_us
-```
-
-Expired entries are absent, arithmetic is checked for overflow and all reserved
-bytes are zero. `total_used` is recomputed on load. The five stored
-airtime-policy parameters must exactly match active deployment policy; mismatch
-never silently reinterprets state. Policy validation also requires
-`0 < bucket_width_us`, `0 < bucket_charge_limit_us <= tx_airtime_budget_us`, and
-enough fixed slots both for the maximum unexpired grid span and for the
-synthetic worst-case ledger.
-
-The maximum represented grid span, including empty intervals between nonempty
-entries, is 64 slots: `(last_expiration - first_expiration) / bucket_width_us`
-is at most 63. The span and all recovered bucket ends use checked signed
-arithmetic. Synthetic recovery must be representable with every expiration
-strictly after its construction snapshot; a policy that cannot construct that
-ledger is invalid.
-
-#### Conservative UTC reconstruction
-
-The V1 airtime correlation ceiling is fixed at 40,000,000 microseconds. A
-deployment may tighten its receiver UTC budget but cannot raise this historical
-ceiling. A live sample's complete error, including monotonic growth to each use,
-must be strictly below both ceilings. The active expiration guard is at least
-80,000,000 microseconds; the pilot uses 120,000,000. It covers the combined
-recording and reconstruction UTC error without persisting per-snapshot errors.
-Changing the guard remains an airtime-policy mismatch, not reinterpretation.
-
-After restart or invalidation of a correlation, discard only entries whose
-guarded expiration is no later than the new trusted UTC. For each retained
-entry, map its remaining physical duration `expiration - trusted_utc` to a
-current-boot deadline using `minimum_wait_monotonic_us()`. Live aging thereafter
-uses those monotonic deadlines. It never reuses a preceding boot's monotonic
-values or moves an old charge into another grid bucket.
-
-Each live bucket owns that fixed retention deadline. When a new bucket is first
-charged, map its guarded expiration using the current paired trusted UTC and
-monotonic construction sample. Do not use an earlier bucket's or the ledger's
-original clock sample. Copying the ledger, updating an existing charge,
-settlement, and equal-offset trusted refreshes preserve its deadline; they do
-not shorten or restart retention. These deadlines are runtime metadata only
-and do not change the canonical V1 encoding. Complete-state preparation carries
-them with the exact pending candidate and preceding ledger across commit
-acknowledgement, failure and reconciliation.
-
-Under continuously fresh unchanged-offset time and the default policy, a new
-bucket has at most 3,780 seconds of remaining guarded lifetime. Its 3,700-ppm
-conversion adds at most 13,986,000 microseconds relative to nominal expiration,
-independently of process uptime. With one request per minute, one-second retries,
-healthy persistence and available headroom, conservative snapshot deferral must
-therefore clear within 14 seconds. This availability bound does not apply to
-trust/offset changes, failed or unresolved persistence, or exhausted budget.
-
-The spending deadline uses `maximum_lifetime_monotonic_us(bucket_end - utc)`
-at selection time, excluding the guard, and is fixed before the state commit.
-Acknowledgement cannot restart that lifetime. Both deadlines use checked
-arithmetic; spending additionally requires a still-live trusted sample.
-If monotonic retention outlasts an entry's nominal UTC expiration, complete
-snapshot construction defers until the entry can be safely removed: it does not
-serialize an expired entry or reclaim one before its live retention deadline.
-
-The grant boundary is exclusive: a spend at that deadline is suppressed.
-Tentative spending consumes the complete charge before the caller can issue
-the radio command. An opaque current-process spend token accepts exactly one
-certainty result; only definite non-start returns its charge. Confirmed start,
-uncertainty and an absent terminal result remain charged. A late definite
-non-start after settlement cannot reopen an already settled grant. Invalid or
-foreign tokens are caller invariant failures.
-The spend result includes the durable bucket expiration and original monotonic
-grant deadline. The radio caller must bound its SetTx submission by that
-deadline; holding a token does not extend permission to submit a later command.
-
-The component accepts existing `TrustedTimeSample` values, current time-policy
-generation and a caller validity deadline. The caller supplies no sample while
-time is untrusted or an observation/step boundary is pending. It invalidates
-the correlation before clock changes. Equal UTC-minus-monotonic offset refreshes
-may retain a live grant; a changed offset freezes it until a new acknowledged
-complete-state transition. Invalid time, arithmetic, or an unrepresentable ring
-suppresses TX. Capacity, trust, pending persistence and snapshot deferral are
-explicit policy outcomes, never fabricated radio results.
-
-`RuntimeTime.airtime_correlation()` supplies that live handoff or `None`; it is
-read-only and does not schedule a refresh. `TxAirtimePolicy.update_time()` takes
-the handoff and the current RTC health. `recover()` establishes durable history;
-`acquire_grant()` acquires or renews allowance; `try_spend()` tentatively charges
-one 67,866-microsecond pilot ACK; `report_tx()` accepts `NOT_STARTED`, `STARTED`
-or `UNCERTAIN`; `settle(precharge=...)` commits possible use, optionally with a
-new increment; `reconcile()` resolves the pending exact request. Radio execution
-and calls to these operations remain the communicator caller's responsibility.
-`snapshot()` is RuntimeTime's complete-state callback: it preserves every
-outstanding airtime precharge while updating RTC provenance. Acknowledgement
-or exact reconciliation of that prepared snapshot updates the shared state
-without assigning a new spendable increment. An unrecognized complete-state
-change freezes existing allowance. `total_used` is absent while history has not
-been reconstructed or an exact commit is unresolved; it is never an independent
-permission to transmit.
+`RuntimeTime.airtime_correlation()` supplies optional recovery/snapshot evidence.
+`update_time()` updates that evidence and RTC health without rebasing history.
+`recover()` establishes history; `acquire_grant()` obtains allowance;
+`try_spend()` charges the 67,866-us pilot ACK; `report_tx()` reports certainty;
+`settle(precharge=...)` records possible use; and `reconcile()` resolves exact
+unknown commits. `snapshot()` prepares RuntimeTime's complete-state update,
+preserving outstanding precharges and fixed deadlines through acknowledgement
+or reconciliation. No writes occur merely for countdown/valid-grant housekeeping.
+Unknown commits and unrecognized external state changes suppress allowance.
+The legacy optional UTC-expiration diagnostic is absent for monotonic grants.
 
 ### State-row conditions and loading
 
@@ -3088,17 +3032,16 @@ after an unknown commit observes that commit's terminal database state or
 reaches its own deadline.
 
 Every non-`NONE` condition produces conservative generation-zero runtime state
-and suppresses TX. `MISSING` and `CORRUPT` become usable only after trusted UTC
-is available and the exact synthetic worst-case generation-one ledger defined
-above is durably installed. A corrupt relation is preserved in the same atomic
+and suppresses TX. `MISSING` and `CORRUPT` become usable only after the exact synthetic
+worst-case generation-one ledger defined above is durably installed; trusted
+UTC is not required. A corrupt relation is preserved in the same atomic
 replacement transaction.
 
 `UNSUPPORTED_VERSION` and `POLICY_MISMATCH` are not decoded or reinterpreted as
 current-policy history. Starting only after the communicator has made the
 transmitter known unable, the current process suppresses TX continuously for
 `minimum_wait_monotonic_us(active rolling_window_us)`. A process restart loses
-that proof and restarts the complete wait. After it completes and trusted UTC
-is available, persistence atomically archives the exact rejected singleton and
+that proof and restarts the complete wait. After it completes, persistence atomically archives the exact rejected singleton and
 installs a valid current-policy generation-one empty ledger. Calling that
 recovery commit before the no-TX wait completes is a caller invariant failure;
 persistence cannot independently observe radio silence. Whole-database

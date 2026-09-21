@@ -188,7 +188,7 @@ RTC provenance  = UNTRUSTED
 ```
 
 It must not be interpreted as an empty airtime ledger or as proof that the RTC
-is correct. Once trusted UTC is available, missing or corrupt state is replaced
+is correct. Even without trusted UTC, missing or corrupt state is replaced
 by a generation-one ledger that conservatively places the complete active
 airtime budget in the most recent possible minute buckets. That synthetic
 ledger must commit before a bucket grant or TX is permitted. When the singleton
@@ -201,8 +201,7 @@ An unsupported-version or airtime-policy-mismatch row is not decoded or
 reinterpreted. Starting only after the transmitter is known unable to transmit,
 the current process suppresses every TX for the active policy's complete
 rolling window using the conservative minimum-wait monotonic conversion. A
-process restart restarts that wait. After the wait and once trusted UTC is
-available, persistence archives the exact rejected singleton and atomically
+process restart restarts that wait. After the wait, persistence archives the exact rejected singleton and atomically
 installs a generation-one state with an empty ledger under current policy.
 Whole-database corruption follows the separate database-corruption policy and
 is not eligible for this recovery.
@@ -216,10 +215,9 @@ failure is `CORRUPT` rather than `POLICY_MISMATCH`.
 
 For the 36-second budget and eight-second bucket limit, missing or corrupt state
 is synthesized as five chronological bucket charges of
-`[4, 8, 8, 8, 8]` seconds. The newest possible bucket end is placed one complete
-bucket width after the trusted recovery snapshot, conservatively covering an
-unknown preceding bucket phase; older synthetic ends are spaced one bucket
-width apart. The same checked construction generalizes to an oldest remainder
+`[4, 8, 8, 8, 8]` seconds. The newest possible interval starts at the monotonic recovery snapshot,
+conservatively covering the unknown preceding phase; older positions are one
+physical bucket width apart for reconstruction. No trusted UTC is required. The same checked construction generalizes to an oldest remainder
 of `budget mod bucket limit` followed by `floor(budget / bucket limit)` full
 buckets. This supplies automatic conservative recovery without pretending that
 a missing row means a new installation.
@@ -323,7 +321,12 @@ the configured three-hour RTC-refresh period, the communicator starts a refresh
 only when the fresh observation's complete network error is at or below the
 separate five-second RTC-write threshold. The periodic online clock-observation
 and RTC-refresh tasks share this scheduling episode when both are due. The
-refresh is ordered:
+refresh first projects that error to the end of its configured bounded I/O
+budgets (19 seconds without old provenance, 21 seconds with it, conservatively
+converted for the elapsed-clock rate). The projected source must still meet
+five seconds and the exclusive poll/trust deadline. Otherwise it defers before
+device work or provenance invalidation. Interleaving may take longer than the
+projection, so all actual-stage checks remain. The refresh is ordered:
 
 1. Capture `clock_state_generation` as the episode generation. Recover RTC
    communication using repeated single reads within the configured three-second
@@ -362,6 +365,13 @@ at most one bounded RTC adapter or persistence-control action; read retries and
 exact unknown-commit reconciliation are separate actions. Ready radio work and
 stop intent are checked between actions. Retry windows include intervening
 scheduler time, and the existing per-call bounds remain unchanged.
+
+At the RTC scheduling position, an active refresh episode is explicitly ready
+to continue. Start/retry deadlines apply only when there is no active episode;
+continuation readiness must not be represented by a newly sampled current-time
+deadline compared with an earlier scheduler timestamp. Existing higher-priority
+work remains ahead of RTC work. Each continuation rechecks its actual operation
+deadlines and source validity before issuing the next bounded action.
 
 Once shutdown is requested, no further refresh action is submitted. An in-flight
 bounded primitive returns normally; the episode then reports runtime-only
@@ -434,7 +444,8 @@ contains UTC only when quality is `RTC_HOLDOVER` or `NETWORK_SYNCED`.
 The period caps limit the distance to a persisted correlation for recovery and
 later analysis; they are not the proof that UTC is accurate. A
 `NETWORK_SYNCED` observation obtains its initial error from the complete chrony
-network-error calculation below. An `RTC_HOLDOVER` observation obtains it from
+network-error calculation below, advanced from query start to the kernel
+bracket midpoint. An `RTC_HOLDOVER` observation obtains it from
 the durable verification uncertainty, RTC drift accumulated before the read,
 and the direct read's bracket/whole-second uncertainty. After either
 observation, only the configured monotonic rate bound grows the error used to
@@ -636,10 +647,9 @@ The kernel-recorded DIO1 `RX_DONE` edge is therefore the only reception-time
 input carried by `MessageProfilingV1`. Occurrence quality and RTC health are
 not copied into each profile; they remain represented by the clock-observation
 timeline and periodic receiver health. The same model applies to diagnostics
-and receiver lifecycle events during analysis. Durable airtime state still contains UTC
-expirations because it must survive Linux reboot, but the communicator derives
-those values from its latest live trusted correlation rather than reading
-`CLOCK_REALTIME` for the state entity.
+and receiver lifecycle events during analysis. Durable airtime state contains positional charges and optional snapshot UTC
+with its error bound. The communicator derives that optional anchor from its
+live trusted correlation; it does not read `CLOCK_REALTIME` for the state entity.
 
 An explicit realtime step cannot jump a monotonic deadline or bucket. Bounded
 slew can change how quickly monotonic time advances relative to physical time,
@@ -775,11 +785,12 @@ disabled it normally slews every correction, so the communicator alone decides
 whether an explicit step is necessary. A fresh successful tracking result is
 usable for this decision only when chrony reports a selected, synchronized,
 reliable source and the response passes the interface freshness, value and
-configured skew bounds. The communicator computes the conservative total
-network error:
+unsigned-value bounds. Skew remains diagnostic information, with no separate
+admission ceiling. The communicator computes the initial network error once
+per tracking result, anchored conservatively at the query start:
 
 ```text
-network_error_bound_us =
+initial_network_error_us =
     abs(remaining_correction_us)
     + root_distance_us
     + time_sampling_margin_us
@@ -792,7 +803,15 @@ source's own uncertainty, conservatively formed from half the root delay plus
 root dispersion. The fixed one-second sampling margin covers bounded
 tracking-response age, subprocess latency and the observation bracket. A simple
 NTP offset omits source and local sampling uncertainty, so every tracking poll
-evaluates the complete expression again.
+evaluates the complete expression again. This is the entire initial bound,
+not an additional term. At a later use instant, add
+`ceil(elapsed_us * R / (1_000_000 - R))`, where elapsed starts at the tracking
+query start and `R = 3700` under the deferred qualification below. The kernel
+observation stores this advanced bound at its bracket midpoint; subsequent
+aging starts at that midpoint, without adding the initial sum again. Entry
+and step decisions use the advanced error at the actual decision instant.
+Source selection, synchronization, the one-second query-to-kernel freshness
+limit, kernel acceptance and generation checks remain mandatory.
 
 All arithmetic is checked and rounded conservatively. The pilot defaults use
 a 35-second network-trust threshold and a 40-second step threshold:
@@ -872,14 +891,25 @@ analysis-only discontinuity gap, and enters `NETWORK_SYNCED`. Failure or total
 deadline expiry retains `UNTRUSTED` and enters bounded backoff.
 
 The receiver uses 3,700 ppm as its conservative bound on the possible rate
-difference between `CLOCK_MONOTONIC` and physical elapsed time. This exceeds
-chrony's configured 3,500 ppm ceiling to cover integer rounding and residual
-frequency behavior. At the receiver bound, three physical hours can differ by
+difference between `CLOCK_MONOTONIC` and physical elapsed time. The allowance
+above chrony's configured 3,500 ppm phase-slew ceiling is intended to cover
+integer rounding and residual frequency behavior; its full qualification is
+deferred below. At the receiver bound, three physical hours can differ by
 at most 39.96 seconds in monotonic elapsed time; chrony's configured slew
 contribution is at most 37.8 seconds over the same interval. These are pilot
 defaults, not protocol constants. They may be changed after pilot evidence is
 reviewed, but the deployment configuration, receiver validation and duration
 conversion policy must be changed together.
+
+**Deferred qualification of the elapsed-clock bound (2026-09-20):**
+`maxslewrate 3500` bounds phase slewing, not every contribution to physical
+clock-rate error. The current deployment does not separately constrain or
+qualify the remaining frequency/oscillator allowance across all startup and
+offline conditions. The operator defers resolving that gap and authorizes the
+uncertainty refactoring to continue with 3,700 ppm as the pilot assumption.
+Existing maximum-slew measurements retain their original scope; this deferral
+is not broader hardware proof. Revisit before claiming a fully qualified total
+rate envelope for those conditions.
 
 This step state is not durable. After a receiver-process restart the
 communicator reconstructs policy from current chrony/kernel status, RTC
@@ -1349,157 +1379,83 @@ A later durable-ACK design would require persistence or journaling before ACK tr
 
 The communicator is the sole logical owner of receiver TX-airtime admission. Under the pilot protocol it enforces the configured charged-airtime limit over every continuous one-hour observation period, not over fixed clock hours. Every receiver transmission uses the protocol's modeled airtime plus its conservative charge.
 
-The live ledger aggregates known charged transmissions into fixed-duration time
-buckets. The initial bucket width is one minute. A fixed 64-slot ring retains
-the complete guarded rolling window and its boundary buckets; the exact
-canonical capacity and policy sizing rules belong to `INTERFACE.md`.
+#### Deferred limitation: late SPI transmission
 
-The ring contains:
+A scheduling or blocking-I/O stall after the last deadline check can let
+`SetTx` reach the radio late. The adapter reports an uncertain result and keeps
+the original bucket charge, but that charge can expire less than a full rolling
+window after the actual transmission. A host timeout does not prevent late
+physical execution. This is a hypothetical fault path, not an observed Pi/RF
+failure. The operator explicitly deferred its repair on 2026-09-20; it does not
+block the monotonic-airtime refactoring. Existing deadline checks, recovery and
+uncertain-TX charging remain in force; no new unresolved-reservation state or
+full-window recovery wait is introduced for this limitation. Revisit physical
+completion/quiet accounting before claiming rolling-window enforcement under
+arbitrarily delayed SPI execution.
 
-- the UTC grid identity of the oldest represented bucket;
-- the physical array index corresponding to that bucket;
-- charged airtime in integer microseconds for each bucket;
-- a fixed process-local monotonic retention deadline for each nonempty bucket; and
-- a cached `total_used` maintained from the buckets.
+The live ledger uses a monotonic grid, a 62-slot circular array and a cached
+charged total. Each persisted slot contains only `charged_airtime_us`. Slots
+are consecutive, oldest first; zeros remain present and slot 61 is the interval
+containing the snapshot. A snapshot stores optional trusted UTC and its error
+bound, together with the snapshot's time quality. It stores neither individual
+expiration timestamps nor per-bucket remaining durations.
 
-`total_used` is derived state: it is recomputed and validated when a ledger is loaded, then updated incrementally on insertion, expiration and definite reclamation. The communicator does not sum the complete ring on the receive-to-ACK path.
+UTC is optional recovery evidence. With no trusted historical/current pair,
+recovery credits zero elapsed time. With both, it credits only the nonnegative
+UTC difference after subtracting both error bounds. Recovery treats the
+snapshot instant as the start of its newest interval, losing at most one
+interval's phase conservatively. The exact reconstruction, capacity and clock
+rate conversions are defined in `INTERFACE.md`.
 
-A bucket is discarded only after its complete interval lies outside the
-physical rolling window. `minimum_wait_monotonic_us()` is the normative
-conservative conversion in `INTERFACE.md`:
-
-```text
-while now_monotonic >= oldest_bucket_retention_deadline:
-    total_used -= oldest_bucket_charge
-    clear oldest bucket
-    advance starting index
-    advance oldest bucket timestamp by one bucket width
-```
-
-An implementation may bulk-reset a fully expired ring after a long idle interval. It must bounds-check every computed logical and physical index and fail closed if the ring cannot represent the required interval.
-
-Each retention deadline is mapped from one paired trusted UTC and monotonic
-sample when the bucket is loaded or first charged. New buckets use a current
-sample, so their rate allowance covers their remaining guarded lifetime rather
-than elapsed process uptime. Copies, settlement, top-ups and equal-offset time
-refreshes preserve existing deadlines. Only the established restart or
-correlation-invalidation boundary reconstructs them. Deadline order need not
-be inferred from UTC grid order; aging must never remove a charge before its
-own deadline.
-
-The durable bucket expiration identifies the bucket across receiver instances;
-persisted monotonic timestamps are never reused. At grant time the communicator
-maps the selected bucket end to a shortened maximum-lifetime monotonic deadline
-and thereafter uses monotonic time for live spending and aging. A change that
-invalidates that correlation freezes the grant until trusted time is
-re-established. Restored buckets are reconstructed only from `NETWORK_SYNCED`
-UTC or valid `RTC_HOLDOVER`.
+Each charged live bucket has a fixed monotonic retention deadline assigned on
+reconstruction or opening. Aging removes a charge only at its own deadline.
+Copies, top-ups, settlement and snapshots preserve those deadlines. UTC trust,
+offset or generation changes do not reconstruct the live ledger or revoke an
+otherwise valid monotonic grant. A long idle interval can clear a fully expired
+ring in bounded work. Admission uses the cached total and direct bucket lookup;
+it does not scan all slots or write a countdown on every ACK.
 
 #### Durable airtime bucket grants
 
-Each persisted bucket charge is both historical accounting and the write-ahead
-ceiling for transmissions that may be lost between state commits. There is no
-separate durable reservation list. The pilot defaults are:
+Pilot policy remains a 3,600-second rolling window, 36-second total charged
+budget, 60-second bucket width and 8-second bucket charge limit. The old
+120-second UTC uncertainty guard is removed: recovery accounts for the two
+explicit UTC error bounds. Retention still includes a complete bucket's phase,
+clock-rate margins and the normal 250-ms TX completion envelope, subject to the
+explicitly deferred late-SPI limitation above.
 
-```text
-rolling window W       = 3,600 seconds
-bucket width X         = 60 seconds
-bucket charge limit Y  = 8 seconds
-total budget B         = 36 seconds
-UTC expiration guard G = 120 seconds
-```
+Grid intervals use the minimum-wait conversion of the bucket width; grant
+lifetimes use its maximum-lifetime conversion from the same interval start.
+The resulting short interval before the next bucket is not spendable. A grant
+cannot restart its lifetime when its commit is acknowledged or it is topped
+up. Every loaded charge, including a crashed process's unused reservation, is
+historical possible use and cannot be spent by the replacement process.
 
-Bucket spend intervals are consecutive and non-overlapping. A new process
-continues the latest unexpired durable bucket grid; after a fully expired or
-empty history it may begin a new grid. A grant ends at the selected bucket
-boundary, never one nominal minute after an arbitrary commit, so two grants
-cannot authorize more than `Y` in one logical bucket. The durable expiration is
-exactly the checked bucket end plus `W` and the configured UTC-expiration guard.
+For the current interval, new allowance is the lesser of its remaining
+8-second headroom and the remaining global budget. A complete next-generation
+snapshot precharges that increment before it becomes spendable. Tentative ACK
+consumption precedes the first TX-profile command; confirmed/uncertain or
+unreported transmission stays charged. Only definite non-start with no prior
+profile uncertainty returns allowance. Settlement preserves loaded charges and
+replaces the current process's provisional increment with its possible use;
+it can precharge the next current interval in the same commit.
 
-The fixed guard covers the sum of historical and current trusted UTC error,
-each strictly below the V1 40-second ceiling. It changes retention only, never
-the grant's spending interval. Restart reconstruction maps the remaining
-guarded UTC lifetime through the conservative minimum-wait conversion, then
-ages the ring monotonically. A new correlation with a different UTC offset
-freezes the grant; settlement and a new durable increment are required before
-spending under it. The complete numerical rules are in `INTERFACE.md`.
+Missing/corrupt history installs the synthetic worst-case charge pattern
+`[4, 8, 8, 8, 8]` seconds in the newest five positions (older positions zero),
+even without trusted time. An unsupported version or different policy still
+requires the established complete no-TX recovery wait before replacement by an
+empty ledger. No predecessor-layout migration is supported in this predeployment
+V1 revision. Unknown commits suppress TX until exact generation/blob
+reconciliation; an unrecognized state change cannot silently grant allowance.
 
-The airtime component owns only ledger, recovery and grant policy. It consumes
-trusted time and command-certainty facts and uses the shared complete-state
-owner for persistence. It issues no radio commands and schedules no communicator
-loop. Its admission result can suppress an ACK without changing the existing
-ProtocolIngress acceptance or PersistQueue reservation. Diagnostic emission
-remains with communicator orchestration.
-
-Every persisted charge loaded by another receiver instance is an unspendable
-baseline, regardless of whether it represents actual airtime or an unused
-precharge. To obtain allowance, the current process computes for the current
-logical bucket:
-
-```text
-bucket_headroom = Y - persisted_current_bucket_charge
-global_headroom = B - sum(all unexpired bucket charges)
-grant            = min(bucket_headroom, global_headroom)
-```
-
-All arithmetic is checked. The process submits a complete next-generation state
-that increases the current bucket by `grant`; only after durable acknowledgement
-is that increment spendable. If the latest persisted bucket is still the current
-time bucket, it is topped up in place. Otherwise its old charge remains where it
-was incurred and a new current bucket is precharged. A charge is never relocated
-merely because the receiver process restarted. In particular, the write-ahead
-increment belongs to the logical bucket selected by the instance that committed
-it; restart does not relabel that increment as charge in the new instance's
-current bucket.
-
-Runtime state retains the bucket expiration, unspendable baseline, acknowledged
-increment, remaining spendable increment, state generation and monotonic bucket
-deadline. Transmission follows this ordering:
-
-```text
-prune fully expired buckets
-  -> require acknowledged current-process allowance for the complete ACK charge
-  -> tentatively consume that allowance
-  -> install and confirm ACK_TX_PROFILE
-  -> issue SetTx
-  -> retain the charge if SetTx started or a TX-profile/SetTx effect is uncertain
-  -> reclaim only after a definite pre-SetTx failure with no profile uncertainty
-```
-
-At the bucket boundary the communicator freezes the grant and requests one
-atomic state transition:
-
-1. Retain the loaded baseline unchanged.
-2. Replace the current process's provisional increment with the exact charge
-   spent under it, reclaiming only definitely unused allowance.
-3. Retain every uncertain transmission as charged.
-4. Precharge the next bucket when the remaining rolling budget permits it.
-5. Durably commit and acknowledge the new state before the next increment is
-   used.
-
-No transmission may use a frozen grant while settlement is pending. If
-persistence reports a definite pre-installation failure, the preceding full
-bucket precharge remains authoritative and the process may resume only an
-allowance that is still within the original monotonic bucket deadline. If the
-outcome is unknown, TX is suppressed until the exact installed generation is
-reconciled. After the increment is exhausted or the bucket ends, TX remains
-suppressed until another durable bucket increment succeeds.
-
-After restart, no loaded bucket charge is spendable. A precharge committed by
-the preceding process remains fully charged until normal expiration, and the
-new process must durably add its own increment. Therefore repeated crashes
-accumulate conservative bucket charges rather than losing possible
-transmissions:
-
-```text
-crash before bucket-increment commit -> no TX was enabled under it
-crash after bucket-increment commit  -> its complete increment remains charged
-```
-
-When no bucket increment fits, an otherwise valid message is still
-authenticated, validated and accepted through a `PersistQueue` capacity
-reservation; its ACK is suppressed. Lack of receiver TX budget never reverses
-message acceptance.
+The airtime policy remains a component of the shared communicator state owner.
+RTC provenance commits carry a fresh complete airtime snapshot, preserving
+outstanding precharges and live deadlines. State commits occur at recovery,
+grant, settlement and shared-state transitions, not periodically to persist
+elapsed time. Valid receive/store operation is independent of ACK allowance and
+UTC trust; timestamp quality remains independently truthful. The old optional
+UTC bucket-expiration diagnostic is absent because this design has no such
+bucket identity.
 
 ### Invalid and rejected packets
 

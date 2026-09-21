@@ -25,11 +25,9 @@ from tests.support.coordination.threads import (
 )
 
 
-def populated(*pairs):
-    return state(
-        buckets=tuple(Bucket(*pair) for pair in pairs)
-        + (Bucket(0, 0),) * (64 - len(pairs))
-    )
+def populated(*charges):
+    return state(buckets=(Bucket(0),) * (62 - len(charges)) +
+                 tuple(Bucket(c) for c in charges))
 
 
 def acquire(policy, clock):
@@ -83,7 +81,7 @@ def test_grant_preparation_uses_one_clock_sample(airtime_component, monkeypatch)
     assert results[0].reason is R.ALLOWED
     spend = policy.try_spend()
     assert spend.grant_deadline_monotonic_us == 59_778_100
-    assert policy._ledger.retention_deadline(3_780_000_000) == 3_793_986_100
+    assert policy._ledger.retention_deadline(100) == 3_673_793_025
     clock.advance_elapsed_us(29_778_000)
     assert policy.try_spend().reason is R.GRANT_EXPIRED
 
@@ -91,7 +89,7 @@ def test_grant_preparation_uses_one_clock_sample(airtime_component, monkeypatch)
 # Reconstruction pairs the UTC sample with its captured monotonic value even if preparation is delayed.
 def test_reconstruction_uses_one_clock_sample(airtime_component, monkeypatch):
     policy, _, _, clock, _ = airtime_component(
-        initial_state=populated((1, 3_780_000_000))
+        initial_state=populated(1)
     )
     restore = policy._restore
 
@@ -101,7 +99,7 @@ def test_reconstruction_uses_one_clock_sample(airtime_component, monkeypatch):
 
     monkeypatch.setattr(policy, "_restore", delayed_restore)
     assert policy.recover(deadline_monotonic_us=40_000_100).reason is R.STATE_READY
-    assert policy._ledger.retention_deadline(3_780_000_000) == 3_793_986_100
+    assert policy._ledger.retention_deadline(100) == 3_673_793_025
 
 
 class ObserveCommit:
@@ -149,13 +147,13 @@ def test_durable_grant_before_allowance_and_exact_deadline(airtime_component):
 
 # A restart baseline retains its exact expiration and only an acknowledged top-up becomes spendable.
 def test_loaded_current_bucket_top_up(airtime_component):
-    original = populated((4_000_000, 3_780_000_000))
+    original = populated(4_000_000)
     policy, _, _, clock, _ = airtime_component(initial_state=original, utc=30_000_000)
     assert policy.available_charge_us == 0
     assert acquire(policy, clock).reason is R.ALLOWED
     assert policy.available_charge_us == 4_000_000 and policy.total_used == 8_000_000
-    assert policy.state.buckets[0] == Bucket(8_000_000, 3_780_000_000)
-    clock.advance_elapsed_us(29_889_000)
+    assert policy.state.buckets[-1] == Bucket(8_000_000)
+    clock.advance_elapsed_us(29_667_002)
     assert policy.available_charge_us == 0
 
 
@@ -166,14 +164,11 @@ def test_complete_ack_headroom_boundaries(airtime_component, delta, global_limit
     headroom = 67_866 + delta
     original = (
         populated(
-            (4_000_000 - headroom, 3_480_000_000),
-            (8_000_000, 3_540_000_000),
-            (8_000_000, 3_600_000_000),
-            (8_000_000, 3_660_000_000),
-            (8_000_000, 3_720_000_000),
+            4_000_000 - headroom, 8_000_000, 8_000_000,
+            8_000_000, 8_000_000, 0,
         )
         if global_limited
-        else populated((8_000_000 - headroom, 3_780_000_000))
+        else populated(8_000_000 - headroom)
     )
     policy, _, _, clock, _ = airtime_component(initial_state=original)
     initial = policy.state
@@ -189,17 +184,17 @@ def test_complete_ack_headroom_boundaries(airtime_component, delta, global_limit
 
 # A fresh current bucket never acquires an earlier process's old charge under a new expiration.
 def test_restart_continues_grid_without_relabeling(airtime_component):
-    original = populated((8_000_000, 3_720_000_000))
+    original = populated(8_000_000, 0)
     policy, _, _, clock, _ = airtime_component(initial_state=original, utc=20_000_000)
     assert acquire(policy, clock).reason is R.ALLOWED
-    assert policy.state.buckets[:2] == (
-        Bucket(8_000_000, 3_720_000_000),
-        Bucket(8_000_000, 3_780_000_000),
+    assert policy.state.buckets[-2:] == (
+        Bucket(8_000_000),
+        Bucket(8_000_000),
     )
     assert policy.total_used == 16_000_000 and policy.available_charge_us == 8_000_000
 
 
-# Crossing either the bucket or source-validity boundary during commit cannot enable an expired grant.
+# Crossing the bucket deadline suppresses TX, independently of source trust.
 @pytest.mark.parametrize("trust_expired", [False, True])
 def test_commit_completion_rechecks_time(airtime_component, trust_expired):
     policy, worker, _, clock, loaded = airtime_component(initial_state=state())
@@ -214,9 +209,7 @@ def test_commit_completion_rechecks_time(airtime_component, trust_expired):
         worker.control, after=lambda: clock.advance_elapsed_us(60_000_000)
     )
     policy.owner = CommunicatorStateOwner.from_load(control=channel, loaded=loaded)
-    assert acquire(policy, clock).reason is (
-        R.UNTRUSTED_TIME if trust_expired else R.GRANT_EXPIRED
-    )
+    assert acquire(policy, clock).reason is R.GRANT_EXPIRED
     assert policy.state.generation == 2 and policy.available_charge_us == 0
     assert policy.total_used == 8_000_000
 

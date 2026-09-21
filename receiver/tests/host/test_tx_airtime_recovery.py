@@ -10,6 +10,7 @@ from cura_receiver.airtime_ledger import AirtimeCorrelation
 from cura_receiver.communicator_state_owner import CommunicatorStateOwner
 from cura_receiver.generated.receiver_entities_generated import (
     communicator_state_v1_parameters,
+    AirtimeSnapshotV1,
 )
 from cura_receiver.generated.receiver_enums_generated import (
     RtcHealth as RH,
@@ -41,12 +42,12 @@ def test_synthetic_recovery_exact_durable_history(airtime_component, condition):
     assert policy.recover(deadline_monotonic_us=0).reason is R.PERSISTENCE_FAILED
     assert policy.state is None
     assert recover(policy, clock).reason is R.STATE_READY
-    assert policy.state == synthetic()
+    assert policy.state == replace(synthetic(), airtime_snapshot=AirtimeSnapshotV1(0, 1))
     assert policy.total_used == 36_000_000
     with sqlite3.connect(database) as connection:
         assert connection.execute(
             "SELECT * FROM communicator_state"
-        ).fetchone() == communicator_state_v1_parameters(synthetic())
+        ).fetchone() == communicator_state_v1_parameters(replace(synthetic(), airtime_snapshot=AirtimeSnapshotV1(0, 1)))
         archived = connection.execute(
             "SELECT observed_singleton_id, observed_state_format_version, observed_generation, observed_state_blob, observed_state_sha256 FROM quarantined_communicator_states ORDER BY quarantined_state_id"
         ).fetchall()
@@ -112,27 +113,19 @@ def test_process_restart_restarts_entire_incompatible_wait(airtime_component):
     assert recover(replacement, clock).reason is R.STATE_READY
 
 
-# Neither a completed wait nor a recoverable state condition substitutes for a trusted snapshot.
+# Missing/corrupt and waited incompatible state can recover without UTC.
 @pytest.mark.parametrize("condition", [C.MISSING, C.CORRUPT, C.UNSUPPORTED_VERSION])
-def test_recovery_requires_live_trust(airtime_component, condition):
+def test_recovery_without_live_trust(airtime_component, condition):
     policy, _, _, clock, _ = airtime_component(condition)
     policy.confirm_transmitter_disabled()
     clock.advance_elapsed_us(3_613_320_000)
     policy.update_time(None, rtc_health=RH.MISSING)
-    assert recover(policy, clock).reason is R.UNTRUSTED_TIME and policy.state is None
-    policy.update_time(
-        AirtimeCorrelation(
-            TrustedTimeSample(
-                clock.now_monotonic_us(), 3_613_320_000, 1, Q.NETWORK_SYNCED, 2
-            ),
-            2,
-            clock.now_monotonic_us() + 1_000_000,
-        ),
-        rtc_health=RH.MISSING,
-    )
     assert recover(policy, clock).reason is R.STATE_READY
+    assert policy.state.airtime_snapshot is None
+    assert policy.state.last_observed_system_time_quality is Q.UNTRUSTED
     assert policy.state.rtc_provenance is None
     assert policy.state.last_observed_rtc_health is RH.MISSING
+    assert policy.total_used == (0 if condition is C.UNSUPPORTED_VERSION else 36_000_000)
 
 
 # Lost recovery replies retain exact requested bytes, including while snapshot time advances before retry.
@@ -160,10 +153,9 @@ def test_unknown_recovery_reconciles_exact_request(airtime_component, installed)
         ).fetchone() == communicator_state_v1_parameters(requested)
 
 
-# Checked UTC arithmetic fails closed before any generation-one request reaches persistence.
-def test_recovery_utc_overflow_does_not_install_state(airtime_component):
-    policy, _, database, clock, _ = airtime_component(utc=(1 << 63) - 1)
-    assert recover(policy, clock).reason is R.INVALID_STATE
-    assert policy.owner.pending is None
-    with sqlite3.connect(database) as connection:
-        assert connection.execute("SELECT * FROM communicator_state").fetchall() == []
+# Airtime no longer adds retention durations to UTC, even at the signed UTC limit.
+def test_recovery_at_utc_limit(airtime_component):
+    policy, _, _, clock, _ = airtime_component(utc=(1 << 63) - 1)
+    assert recover(policy, clock).reason is R.STATE_READY
+    assert policy.total_used == 36_000_000
+    assert policy.state.airtime_snapshot.utc_us == (1 << 63) - 1

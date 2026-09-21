@@ -31,9 +31,11 @@ explicit pilot runtime profile using existing validated component settings:
   15-second supervisor stop timeout. Restart delay 5 seconds, at most five
   starts in 60 seconds.
 - Documented time/airtime defaults, including 3500-ppm Chrony slew,
-  3700-ppm elapsed bound and 10-ppm RTC drift assumption. The separately
-  approved network-skew admission ceiling is 10,000 ppb. It is a policy bound,
-  not a measured promise that Chrony will always qualify.
+  3700-ppm elapsed bound and 10-ppm RTC drift assumption. Network admission
+  uses complete error plus observation age, with no separate skew cutoff;
+  RTC writes require the five-second source bound through their projected
+  operation and actual-stage checks. Full qualification of the elapsed-rate
+  envelope beyond the slew cap is [deferred](../ARCHITECTURE.md#chrony-integration).
 - RTC bootstrap makes at most three reads within five seconds, supervised by
   a six-second timeout, once per Linux boot before Chrony. Its failure permits
   untrusted offline startup; it never reads receiver secrets or SQLite.

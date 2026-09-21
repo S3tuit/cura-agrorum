@@ -23,7 +23,7 @@ def acquired(airtime_component, baseline=0):
     original = (
         state()
         if not baseline
-        else state(buckets=(Bucket(baseline, 3_780_000_000),) + (Bucket(0, 0),) * 63)
+        else state(buckets=(Bucket(0),) * 61 + (Bucket(baseline),))
     )
     policy, worker, path, clock, _ = airtime_component(initial_state=original)
     assert policy.acquire_grant(deadline_monotonic_us=5_000_100).reason is R.ALLOWED
@@ -57,8 +57,8 @@ def test_certainty_and_exact_settlement(airtime_component, certainty, baseline):
     assert policy.total_used == expected and policy.available_charge_us == 0
     assert policy.state.generation == 3
     assert sum(b.charged_airtime_us for b in policy.state.buckets) == expected
-    assert policy.state.buckets[0] == (
-        Bucket(expected, 3_780_000_000) if expected else Bucket(0, 0)
+    assert policy.state.buckets[-1] == (
+        Bucket(expected) if expected else Bucket(0)
     )
 
 
@@ -68,12 +68,12 @@ def test_atomic_settlement_and_next_bucket_grant(airtime_component):
     policy.report_tx(policy.try_spend().token, C.STARTED)
     policy.report_tx(policy.try_spend().token, C.UNCERTAIN)
     policy.try_spend()  # No terminal outcome is also a possible transmission.
-    clock.advance_elapsed_us(60_000_000)
+    clock.advance_elapsed_us(60_222_000)
     assert policy.try_spend().reason is R.GRANT_EXPIRED
     assert settle(policy, clock, precharge=True).reason is R.ALLOWED
-    assert policy.state.buckets[:2] == (
-        Bucket(3_203_598, 3_780_000_000),
-        Bucket(8_000_000, 3_840_000_000),
+    assert policy.state.buckets[-2:] == (
+        Bucket(3_203_598),
+        Bucket(8_000_000),
     )
     assert policy.total_used == 11_203_598 and policy.available_charge_us == 8_000_000
     assert policy.state.generation == 3
@@ -104,7 +104,7 @@ def test_definite_settlement_failure_resumption(airtime_component, expired):
     policy.report_tx(policy.try_spend().token, C.STARTED)
     original = policy.state
     if expired:
-        clock.advance_elapsed_us(60_000_000)
+        clock.advance_elapsed_us(60_222_000)
     assert (
         settle(policy, clock, precharge=True, deadline=0).reason is R.PERSISTENCE_FAILED
     )
@@ -147,7 +147,7 @@ def test_unknown_settlement_exact_resolution(airtime_component, installed, prech
 def test_unknown_next_bucket_preserves_prepared_deadlines(airtime_component, installed):
     policy, worker, _, clock = acquired(airtime_component)
     policy.report_tx(policy.try_spend().token, C.STARTED)
-    clock.advance_elapsed_us(60_000_000)
+    clock.advance_elapsed_us(60_222_000)
     policy.owner = CommunicatorStateOwner(
         control=LostStateReply(worker.control, installed=installed),
         initial_state=policy.state,
@@ -155,72 +155,40 @@ def test_unknown_next_bucket_preserves_prepared_deadlines(airtime_component, ins
     assert settle(policy, clock, precharge=True).reason is R.PERSISTENCE_PENDING
     clock.advance_elapsed_us(10_000_000)
     policy.reconcile(deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000)
-    assert policy._ledger.retention_deadline(3_780_000_000) == 3_793_986_100
+    assert policy._ledger.retention_deadline(100) == 3_673_793_025
     if installed:
-        assert policy._ledger.retention_deadline(3_840_000_000) == 3_853_986_100
-        assert policy.try_spend().grant_deadline_monotonic_us == 119_778_100
+        assert policy._ledger.retention_deadline(60_222_100) == 3_734_015_025
+        assert policy.try_spend().grant_deadline_monotonic_us == 120_000_100
     else:
-        assert policy._ledger.charge_at(3_840_000_000) == 0
+        assert policy._ledger.current_start == 100
+        assert policy._ledger.snapshot_buckets()[-1] == Bucket(8_000_000)
         assert policy.try_spend().reason is R.GRANT_EXPIRED
 
 
-# A lost-trust episode freezes even an unchanged UTC offset until a new durable state transition.
-def test_trust_loss_cannot_reopen_grant_via_recovery(airtime_component):
+# UTC loss and offset changes cannot revoke or extend a valid monotonic grant.
+@pytest.mark.parametrize("offset_change", [None, -30_000_000, 30_000_000])
+def test_time_changes_preserve_grant_and_retention(airtime_component, offset_change):
     policy, _, _, clock = acquired(airtime_component)
     policy.try_spend()
-    policy.update_time(None, rtc_health=RH.MISSING)
-    assert policy.try_spend().reason is R.UNTRUSTED_TIME
+    original = policy.state
+    retention = policy._ledger.retention_deadline(100)
     clock.advance_elapsed_us(10_000_000)
-    policy.update_time(
-        AirtimeCorrelation(
-            TrustedTimeSample(
-                clock.now_monotonic_us(), 10_000_000, 1, Q.NETWORK_SYNCED, 2
-            ),
-            2,
-            20_000_100,
-        ),
-        rtc_health=RH.MISSING,
-    )
-    assert policy.available_charge_us == 0
-    assert policy.recover(deadline_monotonic_us=20_000_100).reason is R.GRANT_REQUIRED
-    assert policy.reconcile(deadline_monotonic_us=20_000_100).reason is R.GRANT_REQUIRED
-    assert policy.available_charge_us == 0
+    correlation = None if offset_change is None else AirtimeCorrelation(
+        TrustedTimeSample(clock.now_monotonic_us(), 10_000_000 + offset_change,
+                          31_000_000, Q.RTC_HOLDOVER, 2), 2, 20_000_100)
+    policy.update_time(correlation, rtc_health=RH.MISSING)
+    assert policy.available_charge_us == 7_932_134
+    assert policy.recover(deadline_monotonic_us=20_000_100).reason is R.STATE_READY
+    assert policy.acquire_grant(deadline_monotonic_us=20_000_100).reason is R.ALLOWED
+    assert policy.state is original
+    assert policy._ledger.retention_deadline(100) == retention
     assert settle(policy, clock, precharge=True).reason is R.ALLOWED
-    assert policy.available_charge_us == 7_932_134 and policy.state.generation == 3
-
-
-# Forward/backward trusted-offset changes freeze the old grant and preserve its original charge identity.
-@pytest.mark.parametrize("offset_change", [-30_000_000, 30_000_000])
-def test_new_offset_requires_durable_transition(airtime_component, offset_change):
-    policy, _, _, clock = acquired(airtime_component)
-    policy.try_spend()
-    clock.advance_elapsed_us(10_000_000)
-    policy.update_time(
-        AirtimeCorrelation(
-            TrustedTimeSample(
-                clock.now_monotonic_us(),
-                10_000_000 + offset_change,
-                31_000_000,
-                Q.RTC_HOLDOVER,
-                2,
-            ),
-            2,
-            20_000_100,
-        ),
-        rtc_health=RH.PRESENT,
-    )
-    assert policy.available_charge_us == 0
-    assert settle(policy, clock, precharge=True).reason is R.ALLOWED
-    charges = {
-        b.expires_at_utc_us: b.charged_airtime_us
-        for b in policy.state.buckets
-        if b.charged_airtime_us
-    }
-    assert 3_780_000_000 in charges
-    if offset_change < 0:
-        assert charges == {3_720_000_000: 8_000_000, 3_780_000_000: 67_866}
-    else:
-        assert charges == {3_780_000_000: 8_000_000}
+    assert policy.state.buckets[-1] == Bucket(8_000_000)
+    assert policy.available_charge_us == 7_932_134
+    assert policy._ledger.retention_deadline(100) == retention
+    if offset_change is None:
+        assert policy.state.airtime_snapshot is None
+        assert policy.state.last_observed_system_time_quality is Q.UNTRUSTED
 
 
 # Exhaustion never creates another spend; an exact same-bucket settlement cannot reopen already used airtime.
@@ -231,7 +199,7 @@ def test_exhausted_allowance_stays_exhausted(airtime_component):
     assert policy.try_spend().reason is R.BUDGET_EXHAUSTED
     assert settle(policy, clock, precharge=True).reason is R.BUDGET_EXHAUSTED
     assert policy.total_used == 7_940_322 and policy.available_charge_us == 0
-    assert policy.state.buckets[0] == Bucket(7_940_322, 3_780_000_000)
+    assert policy.state.buckets[-1] == Bucket(7_940_322)
     assert (
         policy.acquire_grant(deadline_monotonic_us=5_000_100).reason
         is R.BUDGET_EXHAUSTED

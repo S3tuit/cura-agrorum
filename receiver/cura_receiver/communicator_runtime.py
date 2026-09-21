@@ -127,7 +127,6 @@ class CommunicatorRuntime:
                 state = c.airtime.owner.state
                 phase, stage, operation = (error.location if isinstance(error, CommunicatorFailure)
                     and error.location is not None else self.scheduler.failure_location)
-                bucket = c.airtime.outstanding_bucket_expiration_utc_us
                 episode = exception_episode(original, phase=phase, stage=stage, operation=operation,
                     started=observed, finished=c.clock.now_monotonic_us(),
                     safe_radio=radio_result is not None and radio_result.safe_shutdown is True,
@@ -136,8 +135,7 @@ class CommunicatorRuntime:
                     ack_selected=profile is not None and profile.ack_selected is not E.AckSelection.NONE,
                     tx_may_have_started=tx is not None and tx.t4_set_tx_attempted_monotonic_us is not None
                         and tx.facts.set_tx_outcome is not Outcome.DEFINITELY_NOT_APPLIED,
-                    airtime_grant_outstanding=bucket is not None,
-                    airtime_bucket_expiration_utc_us=bucket,
+                    airtime_grant_outstanding=c.airtime.grant_outstanding,
                     communicator_state_generation=None if state is None else state.generation,
                     profile_published=exchange is not None and exchange.finalization is not None
                         and exchange.finalization.published_entity is not None)

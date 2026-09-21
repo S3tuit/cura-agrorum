@@ -1,3 +1,4 @@
+from cura_receiver.generated.receiver_entities_generated import AirtimeSnapshotV1
 from dataclasses import replace
 
 import pytest
@@ -30,7 +31,7 @@ def runtime(*, capacity=100, health=R.OK):
         clock=clock,
         kernel=kernel,
         queue=ProducerAdmission(queue),
-        policy=TimePolicy(maximum_network_skew_ppb=1000),
+        policy=TimePolicy(),
         startup_rtc_result=rtc,
     )
     return value, clock, kernel, queue
@@ -435,15 +436,7 @@ def prepared_rtc_runtime(tmp_path):
     initial = synthetic()
     initial = replace(
         initial,
-        airtime_snapshot_utc_us=UTC,
-        buckets=tuple(
-            (
-                replace(b, expires_at_utc_us=b.expires_at_utc_us + UTC)
-                if b.charged_airtime_us
-                else b
-            )
-            for b in initial.buckets
-        ),
+        airtime_snapshot=AirtimeSnapshotV1(UTC, 1),
         rtc_provenance=RtcProvenanceV1(rt.instance, UTC, UTC, 3_000_000, 10),
     )
     assert (
@@ -470,7 +463,7 @@ def prepared_rtc_runtime(tmp_path):
             values["previous_state"],
             generation=values["previous_state"].generation + 1,
             rtc_provenance=values["provenance"],
-            airtime_snapshot_utc_us=values["snapshot_utc_us"],
+            airtime_snapshot=AirtimeSnapshotV1(values["snapshot_utc_us"], 1),
         )
 
     return rt, clock, kernel, rtc, worker, snapshot, database
@@ -580,11 +573,12 @@ def test_rtc_generation_invalidated_during_write(rtc_runtime):
 
 # Offline startup uses fresh direct RTC evidence and old durable proof, independent of plausible Linux UTC.
 @pytest.mark.parametrize("proven", [False, True])
-def test_offline_direct_holdover_and_unproven_startup(rtc_runtime, proven):
+@pytest.mark.parametrize("saved_error", [3_000_000, 6_900_000])
+def test_offline_direct_holdover_and_unproven_startup(rtc_runtime, proven, saved_error):
     rt, clock, _, _, worker, _, _ = rtc_runtime
     provenance = (
         RtcProvenanceV1(
-            rt.instance, UTC - 3_600_000_000, UTC - 3_600_000_000, 3_000_000, 10
+            rt.instance, UTC - 3_600_000_000, UTC - 3_600_000_000, saved_error, 10
         )
         if proven
         else None
@@ -593,6 +587,9 @@ def test_offline_direct_holdover_and_unproven_startup(rtc_runtime, proven):
     assert rt.state_owner.commit(
         baseline, deadline_monotonic_us=5_001_000
     ).disposition is CD.COMMITTED
+    # Reload through durable control, as a replacement process must do.
+    loaded = worker.control.load_communicator_state(deadline_monotonic_us=5_001_000)
+    rt.state_owner = CommunicatorStateOwner(control=worker.control, initial_state=loaded.state)
     rt.state = advance_clock_state(
         rt.state, quality=E.SystemTimeQuality.UNTRUSTED, rtc_health=rt.state.rtc_health
     )
@@ -833,12 +830,12 @@ def test_rtc_process_crash_restart(tmp_path, milestone, generation, proven):
 def test_source_expires_after_invalidation(rtc_runtime):
     rt, clock, kernel, rtc, worker, snapshot, _ = rtc_runtime
     sample(rt, kernel)
-    rt.sample_network(tracking(rt, correction=4_000_000))
+    rt.sample_network(tracking(rt, correction=3_900_000))
 
     class DelayedAcknowledgement:
         def commit_communicator_state(self, *args, **kwargs):
             result = worker.control.commit_communicator_state(*args, **kwargs)
-            clock.advance_elapsed_us(1)
+            clock.advance_elapsed_us(30_000_000)
             return result
 
     rt.state_owner = CommunicatorStateOwner(
@@ -1140,6 +1137,10 @@ def test_prewrite_recovery_rechecks_authority(rtc_runtime, change):
 
     rtc.read_results.append(read)
     result = rt.refresh_rtc(rtc, snapshot)
+    if change == 'source':
+        assert result.status is RS.DEFERRED
+        assert rtc.calls == [] and rt.rtc_provenance is not None
+        return
     assert result.status is RS.TRUST_INVALIDATED
     assert rt.durable_state.generation == 1 and rt.rtc_provenance is not None
     assert [call[0] for call in rtc.calls] == ['read']
@@ -1336,7 +1337,7 @@ def test_step_publication_process_crash_restart(tmp_path, milestone, committed):
             kernel = FakeKernelClock()
             rt = RuntimeTime(
                 receiver_instance_id=new_id, clock=clock, kernel=kernel, queue=ProducerAdmission(worker.queue),
-                policy=TimePolicy(maximum_network_skew_ppb=1000),
+                policy=TimePolicy(),
                 startup_rtc_result=Ds3231ReadResult(R.OK, 2000, 2000, UTC // 1_000_000),
             )
             assert rt.step_state is SS.IDLE and rt.operation_generation == 0
@@ -1524,11 +1525,11 @@ def test_state_owner_rejects_conflicting_loaded_contents(rtc_runtime, newer):
     pending = rt.state_owner.pending
     requested = pending.requested
     different_bucket = replace(
-        requested.buckets[0], charged_airtime_us=requested.buckets[0].charged_airtime_us - 1
+        requested.buckets[-1], charged_airtime_us=requested.buckets[-1].charged_airtime_us - 1
     )
     conflict = replace(
         requested, generation=requested.generation + int(newer),
-        buckets=(different_bucket,) + requested.buckets[1:],
+        buckets=requested.buckets[:-1] + (different_bucket,),
     )
     assert worker.control.commit_communicator_state(
         conflict, deadline_monotonic_us=5_001_000
@@ -1576,7 +1577,7 @@ def test_state_owner_tracks_complete_state_and_definite_failure(rtc_runtime):
     rt, clock, _, _, worker, _, _ = rtc_runtime
     owner = rt.state_owner
     initial = owner.state
-    requested = replace(initial, generation=2, airtime_snapshot_utc_us=UTC + 1)
+    requested = replace(initial, generation=2, airtime_snapshot=AirtimeSnapshotV1(UTC + 1, 1))
     rejected = owner.commit(requested, deadline_monotonic_us=0)
     assert rejected.disposition is CD.NOT_INSTALLED
     assert owner.state == initial and owner.pending is None
@@ -1611,3 +1612,21 @@ def test_pending_state_suppresses_rtc_holdover(rtc_runtime):
     update = rt.observe_rtc(rtc)
     assert rt.rtc_provenance is None
     assert update.observation.system_time_quality is E.SystemTimeQuality.UNTRUSTED
+
+
+# The production poll shares one initial sum across policy and kernel observation.
+def test_poll_computes_initial_network_bound_once(monkeypatch):
+    from cura_receiver import time_policy
+    rt, _, kernel, _ = runtime()
+    sample(rt, kernel)
+    chrony = FakeChronyControl()
+    chrony.tracking_results.append(replace(tracking(rt), estimated_skew_ppb=250_000))
+    original = time_policy.network_error_bound_us
+    calls = []
+    def counted(*args):
+        calls.append(args)
+        return original(*args)
+    monkeypatch.setattr(time_policy, "network_error_bound_us", counted)
+    result = rt.poll_chrony(chrony)
+    assert len(calls) == 1
+    assert result.observation.system_time_quality is E.SystemTimeQuality.NETWORK_SYNCED

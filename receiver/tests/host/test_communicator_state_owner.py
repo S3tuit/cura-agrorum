@@ -1,5 +1,6 @@
 """Complete-state authority through an actual worker and file-backed SQLite."""
 
+from cura_receiver.generated.receiver_entities_generated import AirtimeSnapshotV1
 from dataclasses import replace
 import sqlite3
 
@@ -60,7 +61,7 @@ def test_recovery_then_ordinary_generation_authority(running):
     )
     initial = owner.state
     assert owner.condition is C.NONE and initial == synthetic()
-    candidate = replace(initial, generation=2, airtime_snapshot_utc_us=1)
+    candidate = replace(initial, generation=2, airtime_snapshot=AirtimeSnapshotV1(1, 1))
     assert (
         owner.commit(candidate, deadline_monotonic_us=0).disposition is CD.NOT_INSTALLED
     )
@@ -90,7 +91,7 @@ def test_unknown_recovery_exact_reconciliation_and_retry(running, installed):
     assert owner.state is None
     with pytest.raises(RuntimeError):
         owner.commit(
-            replace(requested, airtime_snapshot_utc_us=1),
+            replace(requested, airtime_snapshot=AirtimeSnapshotV1(1, 1)),
             deadline_monotonic_us=5_000_100,
         )
     with pytest.raises(RuntimeError):
@@ -131,15 +132,7 @@ def test_recovery_reconciliation_conflict_keeps_original_evidence(running):
         requested,
         last_observed_rtc_health=state().last_observed_rtc_health,
         rtc_provenance=None,
-        airtime_snapshot_utc_us=10,
-        buckets=tuple(
-            (
-                replace(b, expires_at_utc_us=b.expires_at_utc_us + 10)
-                if b.charged_airtime_us
-                else b
-            )
-            for b in requested.buckets
-        ),
+        airtime_snapshot=AirtimeSnapshotV1(10, 1),
     )
     assert (
         worker.control.commit_communicator_state(

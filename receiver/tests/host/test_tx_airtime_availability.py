@@ -72,14 +72,14 @@ def test_eight_hour_airtime_availability(airtime_component, tmp_path):
                 pending_since = None
                 sent += 1
             else:
-                assert result.reason is R.SNAPSHOT_DEFERRED
+                assert result.reason is R.GRANT_EXPIRED
                 assert policy.available_charge_us == 0
                 denied += 1
         assert pending_since is None
         assert sent == 480
-        assert denied > 0  # Preserve conservative deferral at the safety boundary.
-        assert max_deferral <= 14
-        assert max_gap <= 74
+        assert denied <= 8  # Only the short rate-margin gap can delay a request.
+        assert max_deferral <= 1
+        assert max_gap <= 61
     except BaseException:
         evidence = tmp_path / "availability-failure"
         evidence.mkdir()

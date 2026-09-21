@@ -13,13 +13,14 @@ from cura_receiver.time_policy import (
     advance_clock_state,
     expire_clock_trust,
     network_error_bound_us,
+    network_estimate,
     network_root_distance_us,
     network_tracking_decision,
     startup_clock_state,
     usable_network_error_us,
 )
 
-POLICY = TimePolicy(maximum_network_skew_ppb=1000)
+POLICY = TimePolicy()
 EVIDENCE = NetworkEvidence(100, 200, True, True, 0, 0, 1000)
 
 
@@ -45,12 +46,13 @@ def test_startup_ignores_last_observed_snapshots(old_quality, old_health, probed
         startup_clock_state(persisted_snapshot)
 
 
-# Missing configuration defaults are explicit and the pilot sampling margin is fixed.
-def test_explicit_skew_and_fixed_margin():
+# The skew ceiling is removed and the pilot sampling margin remains fixed.
+def test_error_policy_and_fixed_margin():
+    assert TimePolicy() == POLICY
     with pytest.raises(TypeError):
-        TimePolicy()
+        TimePolicy(maximum_network_skew_ppb=1000)
     with pytest.raises(TypeError):
-        TimePolicy(maximum_network_skew_ppb=1000, time_sampling_margin_us=2)
+        TimePolicy(time_sampling_margin_us=2)
     assert POLICY.time_sampling_margin_us == 1_000_000
 
 
@@ -58,8 +60,8 @@ def test_explicit_skew_and_fixed_margin():
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"maximum_network_skew_ppb": -1},
-        {"maximum_network_skew_ppb": True},
+        {"monotonic_elapsed_rate_bound_ppm": -1},
+        {"monotonic_elapsed_rate_bound_ppm": True},
         {"chrony_max_slew_rate_ppm": 3701},
         {"monotonic_elapsed_rate_bound_ppm": 1_000_000},
         {"rtc_drift_bound_ppm": 0},
@@ -108,10 +110,10 @@ def test_network_arithmetic_rejections(function, args):
     "error", [34_999_999, 35_000_000, 35_000_001, 39_999_999, 40_000_000, 40_000_001]
 )
 def test_network_hysteresis(quality, error):
-    evidence = replace(EVIDENCE, remaining_correction_us=error - 1_000_000)
+    evidence = replace(EVIDENCE, remaining_correction_us=error - 1_000_001)
     decision = network_tracking_decision(
         ClockState(quality, Health.PRESENT, 5),
-        evidence,
+        network_estimate(evidence),
         now_monotonic_us=200,
         required_poll_deadline_us=60_000_100,
         policy=POLICY,
@@ -135,8 +137,9 @@ def test_network_hysteresis(quality, error):
         replace(EVIDENCE, source_selected=False),
         replace(EVIDENCE, synchronized=False),
         replace(EVIDENCE, synchronized=1),
-        replace(EVIDENCE, estimated_skew_ppb=1001),
+        replace(EVIDENCE, estimated_skew_ppb=True),
         replace(EVIDENCE, estimated_skew_ppb=-1),
+        replace(EVIDENCE, estimated_skew_ppb=1 << 64),
         replace(EVIDENCE, root_distance_us=-1),
         replace(EVIDENCE, root_distance_us=1 << 64),
         replace(EVIDENCE, remaining_correction_us=-(1 << 63)),
@@ -147,7 +150,7 @@ def test_network_hysteresis(quality, error):
 def test_unusable_network_evidence(evidence):
     decision = network_tracking_decision(
         ClockState(Quality.NETWORK_SYNCED, Health.MISSING, 5),
-        evidence,
+        network_estimate(evidence),
         now_monotonic_us=300,
         required_poll_deadline_us=60_000_100,
         policy=POLICY,
@@ -161,16 +164,16 @@ def test_unusable_network_evidence(evidence):
 @pytest.mark.parametrize(
     "now,deadline,expected",
     [
-        (1_000_100, 2_000_000, 1_000_000),
+        (1_000_100, 2_000_000, 1_003_714),
         (1_000_101, 2_000_000, None),
         (300, 300, None),
-        (300, 301, 1_000_000),
+        (300, 301, 1_000_001),
     ],
 )
 def test_network_freshness_boundaries(now, deadline, expected):
     assert (
         usable_network_error_us(
-            EVIDENCE,
+            network_estimate(EVIDENCE),
             now_monotonic_us=now,
             required_poll_deadline_us=deadline,
             policy=POLICY,
@@ -227,3 +230,29 @@ def test_generation_failures():
             rtc_health=state.rtc_health,
             step_boundary=True,
         )
+
+
+# Skew above the former 10 ppm ceiling no longer delays an otherwise bounded source.
+@pytest.mark.parametrize("skew", [10_001, 250_000, 3_500_000])
+def test_skew_is_diagnostic_while_total_error_controls_admission(skew):
+    estimate = network_estimate(replace(EVIDENCE, estimated_skew_ppb=skew))
+    decision = network_tracking_decision(
+        ClockState(Quality.UNTRUSTED, Health.PRESENT, 0), estimate,
+        now_monotonic_us=300, required_poll_deadline_us=60_000_100, policy=POLICY,
+    )
+    assert decision.candidate_quality is Quality.NETWORK_SYNCED
+    assert decision.error_bound_us == 1_000_001
+
+
+# Query duration consumes the same error budget as delay after the query completes.
+def test_query_age_crosses_entry_threshold_without_a_new_initial_sum():
+    estimate = network_estimate(replace(EVIDENCE, remaining_correction_us=33_999_000))
+    state = ClockState(Quality.UNTRUSTED, Health.PRESENT, 0)
+    first = network_tracking_decision(state, estimate, now_monotonic_us=200,
+        required_poll_deadline_us=60_000_100, policy=POLICY)
+    aged = network_tracking_decision(state, estimate, now_monotonic_us=1_000_100,
+        required_poll_deadline_us=60_000_100, policy=POLICY)
+    assert first.error_bound_us == 34_999_001
+    assert first.candidate_quality is Quality.NETWORK_SYNCED
+    assert aged.error_bound_us == 35_002_714
+    assert aged.candidate_quality is Quality.UNTRUSTED

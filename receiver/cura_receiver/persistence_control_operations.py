@@ -234,30 +234,13 @@ class PersistenceControlOperations:
     def _validate_recovery(self, state, condition):
         if state.generation != 1:
             return False
-        used = tuple(
-            (bucket.charged_airtime_us, bucket.expires_at_utc_us)
-            for bucket in state.buckets
-            if bucket.charged_airtime_us
-        )
+        charges = tuple(bucket.charged_airtime_us for bucket in state.buckets)
         if condition in (Condition.UNSUPPORTED_VERSION, Condition.POLICY_MISMATCH):
-            # Continuous no-TX wait and trusted-snapshot provenance are caller invariants.
-            return not used
+            # The continuous no-TX wait is a caller invariant, independent of UTC.
+            return not any(charges)
         q, r = divmod(state.tx_airtime_budget_us, state.bucket_charge_limit_us)
-        charges = ((r,) if r else ()) + (state.bucket_charge_limit_us,) * q
-        newest = state.airtime_snapshot_utc_us + state.bucket_width_us
-        if not -(1 << 63) <= newest < (1 << 63):
-            return False
-        expected = tuple(
-            (
-                charge,
-                newest
-                - (len(charges) - 1 - index) * state.bucket_width_us
-                + state.rolling_window_us
-                + state.bucket_expiration_guard_us,
-            )
-            for index, charge in enumerate(charges)
-        )
-        return used == expected
+        newest = ((r,) if r else ()) + (state.bucket_charge_limit_us,) * q
+        return charges == (0,) * (len(charges) - len(newest)) + newest
 
     def _archive(self, raw, command):
         observed_at = self.clock.now_monotonic_us()

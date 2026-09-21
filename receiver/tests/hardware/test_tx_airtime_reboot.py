@@ -19,7 +19,7 @@ from tests.hardware.conftest import _validated_destructive_test_root
 pytestmark = [pytest.mark.hardware, pytest.mark.destructive]
 
 
-# A real reboot preserves the UTC ledger; only fresh trusted evidence can reconstruct and admit a new grant.
+# A real reboot preserves charged history with or without fresh trusted UTC.
 def test_target_reboot_reconstruction(request):
     config = request.config
     root = _validated_destructive_test_root(config.getoption("receiver_test_root"))
@@ -64,31 +64,26 @@ def test_target_reboot_reconstruction(request):
                 == before["state_sha256"]
             )
             assert instance.receiver_instance_id.hex() != before["instance"]
-            assert airtime.try_spend().reason is (
-                R.GRANT_REQUIRED if trusted else R.UNTRUSTED_TIME
-            )
+            assert airtime.try_spend().reason is R.GRANT_REQUIRED
             result = airtime.recover(
                 deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000
             )
-            assert result.reason is (R.STATE_READY if trusted else R.UNTRUSTED_TIME)
-            assert airtime.total_used == (8_000_000 if trusted else None)
+            assert result.reason is R.STATE_READY
+            assert airtime.total_used == 8_000_000
             if trusted:
                 correlation = runtime.airtime_correlation()
                 assert (
                     correlation.sample.monotonic_us >= instance.started_at_monotonic_us
                 )
                 assert correlation.sample.utc_us > before["sample"]["utc_us"]
-                assert (
-                    correlation.sample.utc_us
-                    < before["buckets"][0]["expires_at_utc_us"]
-                )
+                assert correlation.sample.utc_us - before["sample"]["utc_us"] < 3_600_000_000
             else:
                 assert runtime.airtime_correlation() is None
                 assert (
                     airtime.acquire_grant(
                         deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000
                     ).reason
-                    is R.UNTRUSTED_TIME
+                    is R.BUDGET_EXHAUSTED
                 )
                 assert airtime.state.generation == before["generation"]
         correlation = runtime.airtime_correlation()
@@ -107,7 +102,7 @@ def test_target_reboot_reconstruction(request):
                     encode_communicator_state_v1(airtime.state)
                 ).hexdigest(),
                 "buckets": [
-                    asdict(b) for b in airtime.state.buckets if b.charged_airtime_us
+                    asdict(b) for b in airtime.state.buckets
                 ],
                 "mode": mode,
             },

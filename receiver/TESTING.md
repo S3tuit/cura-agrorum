@@ -569,6 +569,22 @@ and upper due-time bounds. These values do not acknowledge publication or
 durable RTC provenance. Callers still own generation rechecks at actual I/O
 boundaries, scheduling lead time and side-effect ordering.
 
+The 2026-09-20 refactoring removes the independent network-skew cutoff and
+calculates one initial network error per result, then grows it from query start
+to each use. Runtime tests check one calculation across poll/step/kernel paths
+and acceptance above the former 10-ppm ceiling. RTC admission now projects the
+bounded operation before device work; actual-stage checks remain. The measured
+RTC bracket, whole-second term, saved readback bound, drift and holdover aging
+already existed and are reused, with their boundary tests retained.
+
+Local qualification on the revised source: `make test-receiver-host` passed
+3,457 tests; the RF-tooling host suite passed 349 tests; generated-code checks
+passed. Hardware cases were only imported/collected (59), with no device
+execution. These results do not establish Pi RTC progress, offline service
+acceptance, physical power-loss behavior or a successful bench. The elapsed
+rate's [broader qualification remains explicitly deferred](ARCHITECTURE.md#chrony-integration),
+as does the separate [late-SPI retention limitation](ARCHITECTURE.md#deferred-limitation-late-spi-transmission).
+
 Current host coverage is mapped as follows. The required families below remain
 the full pilot obligations; partial coverage here does not remove their later
 integration requirements.
@@ -577,8 +593,8 @@ integration requirements.
 |---|---|---|
 | Independent quality axes | `test_time_policy.py`: meaningful combinations, present-RTC holdover requirement, startup probe and rejection of persisted snapshots as current authority | Startup orchestration with loaded state and fresh probes |
 | Conservative duration conversions | `test_elapsed_duration.py`: normative values, unit boundaries, checked scalar/intermediate overflow and generated integer inequalities | Use by later radio/time-service callers |
-| Chrony result validation | `test_time_policy.py`: normalized fields, unavailable input, source/skew, freshness and arithmetic rejection | Local socket/version contract, parser and fractional-unit normalization |
-| Network-error arithmetic | `test_time_policy.py`: integral root-delay/dispersion inputs and sign-independent complete error | Conservative conversion of real chrony output |
+| Chrony result validation | `test_time_policy.py`: normalized fields, unavailable input, selected/synchronized source, unsigned diagnostic skew, freshness and arithmetic rejection | Local socket/version contract, parser and fractional-unit normalization |
+| Network-error arithmetic | `test_time_policy.py`: integral root-delay/dispersion inputs, sign-independent complete error, upward age growth and entry crossing without a new initial sum | Conservative conversion of real chrony output |
 | Trust hysteresis | `test_time_policy.py`: every current quality at all 35/40-second boundaries; observation tests enforce the separate strict UTC budget | Live boundary publication |
 | Poll and observation deadlines | `test_time_observations.py`: caps, zero rate, shortened strict horizon and refresh due times | Earlier scheduling with bounded operation lead time and missed-deadline transitions |
 | Network observation bracket | `test_time_observations.py`: generation, complete ordering/span, freshness and normalized kernel verdict | `adjtimex()` and raw metadata classification, including expected `TIME_ERROR`/`STA_UNSYNC` |
@@ -586,7 +602,7 @@ integration requirements.
 | Direct RTC observation | `test_time_observations.py`: exact midpoint, half-bracket, fixed margin, durable uncertainty and stored pre-read drift | DS3231 read adapter and live state/publication |
 | Holdover age limits | `test_time_observations.py`: exact abstract age limits, adjacent representable whole-second ages, nonzero brackets and no age reset on reread | Offline deployment behavior |
 | RTC refresh ordering | `test_time_observations.py`: ordered supplied timestamps and provenance proposal arithmetic only | Derive/write/read-back/commit execution, failures/crashes and acknowledgement ordering |
-| RTC source threshold | `test_time_observations.py`: inclusive five-second start/commit predicates, growth, poll expiry and generation invalidation | Actual refresh episode rechecks |
+| RTC source threshold | `test_time_observations.py`: inclusive five-second start/commit predicates, growth, poll expiry and generation invalidation | `test_rtc_refresh_episode.py`: full-operation preflight before I/O, inclusive projected error, exclusive poll horizon, absent-provenance budget and saved uncertainty above five seconds |
 | Clock-step state machine | Pure tracking decision distinguishes required step from ordinary trust expiry; recorded-history model tests permanent gaps for every command outcome | Boundary admission, command execution, stable polling, deadline and retry state machine |
 | Step-boundary FIFO | Correlation tests consume recorded non-bypassable boundaries; existing persistence tests remain authoritative for storage handling | Communicator boundary-publication ordering against real queue admission and commands |
 | UTC correlation segments | `test_clock_correlation.py`: preceding/later selection, zero UTC, ties, step gaps, immutable inputs, scalar limits and instance/boot fences | Loading analysis inputs from an application-owned database snapshot |
@@ -604,7 +620,7 @@ reference models and episode builders remain local.
 |---|---|
 | Bounded normalized Linux inputs | `host/test_linux_kernel_clock.py`, `test_linux_chrony.py`, `test_linux_ds3231.py`: native ABI, fixed arguments, conservative parser conversion, OS failures, deadlines, uncertain completion, actual bounded children, native helper and deployment checks |
 | Live time ownership and step state | `host/test_runtime_time.py`: quality/health axes, exact expiry, generation ABA, observation admission, retained boundaries, fresh-authorized steps, bounded stable polling and retries |
-| RTC refresh and persistence | Same suite: five-second rechecks, mandatory read-back, prior-proof invalidation, exact commit/load reconciliation using real SQLite, six SIGKILL/restart milestones; no airtime policy is synthesized |
+| RTC refresh and persistence | Same suite and `host/test_rtc_refresh_episode.py`: preflight and actual-time five-second rechecks, mandatory read-back, prior-proof invalidation, exact commit/load reconciliation using real SQLite, saved uncertainty above five seconds reused offline, six SIGKILL/restart milestones; no airtime policy is synthesized |
 | Complete-state coordinator | Same suite: unknown invalidation/verification commits retained across failed reloads; exact preceding/requested reconciliation, conflicting airtime bytes/generations, blocked new commits and RTC writes, and renewed invalidation before retry using real worker/SQLite state |
 | Chrony deployment procedure | `host/test_chrony_deployment.py`: pre-start policy/exit status, real host config expansion when available, and actual audit entrypoint rejecting mismatched configuration paths, process arguments and unenforced checks |
 | Step publication and process loss | Same suite: four SIGKILL cases before/after boundary and following-profile persistence; preserved database/WAL/SHM, real replacement-worker startup and stored-history correlation fences |
@@ -674,6 +690,7 @@ arithmetic failure for TIME diagnostics without duplicating the equations.
 - **Holdover age limits:** Reproduce the documented approximately 24.46-day cadence and 39.93-day absolute examples, then check equality, next-unit and nonzero-read-bracket boundaries.
 - **Pilot RTC read recovery:** Exercise transport failures followed by success, INVALID without retry, expiry before entry, the exact three-second boundary and a last in-flight read returning late. Keep successful UTC brackets separate from total recovery duration and preserve the first diagnostic trigger. Prove that failed pre-write recovery preserves prior durable provenance and issues no write, while a successful preflight rechecks source/generation and derives fresh UTC before exactly one write. Unknown writes still require read-back and never trigger a blind write retry. Explicit operator recovery owns invalid-RTC initialization.
 - **RTC refresh ordering:** Exercise derive, write, read-back, generation recheck and durable provenance commit, with failures/crashes after every step and no usable provenance before acknowledged commit.
+- **RTC scheduler continuation:** `test_communicator.py::test_scheduler_rtc_refresh_reaches_durable_verification` drives the production scheduler/runtime through write/readback and acknowledged provenance in real SQLite. A frozen-clock control and clocks advancing by 1 or 100 microseconds on every read must all complete within a bounded number of turns. Before the continuation-readiness repair, both advancing cases stopped after the pre-write read while the control passed; the same cases now all pass. Companion tests preserve radio/stop interleaving, source/generation rejection before writing and future start/retry deadlines. This host evidence does not establish physical RTC writes or installed-service offline holdover on the Pi.
 - **Unresolved complete-state commits:** Lose an invalidation or verification reply after real persistence, fail repeated serialized loads, and prove no new state mutation or RTC write occurs. Resolve exact requested and preceding states separately; reject different canonical contents even at the requested generation. Inspect actual durable absent provenance before a resumed write and recheck source validity after reconciliation.
 - **RTC source threshold:** Require the stricter five-second source-error bound both at refresh start and before commit, independently of the broader network-trust threshold.
 - **Clock-step state machine:** Cover boundary publication failure, command rejection, confirmed submission, unknown command outcome, stable-time polling, deadline and bounded retry without blind resubmission after an unknown result.
@@ -714,28 +731,35 @@ arithmetic failure for TIME diagnostics without duplicating the equations.
 ### Host tests
 
 - **Bucket boundary aging:** Exercise exact start/end, partially overlapping oldest bucket, complete expiration and long-idle bulk reset while retaining a bucket until its full interval is conservatively outside the rolling window.
-- **Per-bucket retention:** Give each newly charged bucket a deadline from its current paired time sample; preserve it through copies, top-ups, settlement and pending-state reconciliation. Cover sparse/wrapped slots, checked insertion failure, and deadline order differing from UTC order without premature removal or admission scans.
-- **Sustained airtime availability:** Reproduce review F-001 through the production policy, shared owner and real SQLite for at least eight virtual hours, with one ACK request per minute, one-second retries and continuously fresh unchanged-offset time. Under the default policy and healthy persistence, bound each deferral to 14 seconds and every successful-ACK gap to 74 seconds while independently checking the continuous-window charge limit. Include a reviewed late-created-bucket example and preservation across failed/unknown commits; model agreement alone is insufficient.
+- **Per-bucket retention:** Give each newly charged bucket a fixed deadline from its monotonic interval start; preserve it through copies, snapshots, top-ups, settlement and pending-state reconciliation. Cover positional zero slots, an empty current slot, 62-slot wrap/capacity and the final 250-ms oldest-slot overlap, without early removal or admission scans.
+- **Sustained airtime availability:** Reproduce review F-001 through the production policy, shared owner and real SQLite for at least eight virtual hours, with one ACK request per minute, one-second retries and continuously fresh unchanged-offset time. Under the default policy and healthy persistence, bound each deferral to one second and every successful-ACK gap to 61 seconds while independently checking the continuous-window charge limit. Include a reviewed late-created-bucket example and preservation across failed/unknown commits; model agreement alone is insufficient.
 - **Cached-total reconstruction:** Load valid and inconsistent ledgers, recompute `total_used`, reject checked overflow or mismatch and prove ACK admission updates totals without scanning the full ring.
-- **Grid continuation:** Continue the latest unexpired durable logical bucket across process restart, top up only that bucket when eligible and never relabel an earlier process's charge.
+- **Grid continuation:** Reconstruct chronological positions using zero elapsed credit without trusted time, or a conservative UTC difference after both errors. Preserve a partial recovered phase so top-ups cannot obtain a fresh whole-interval grant against a shorter fixed retention. Loaded charge remains unspendable.
 - **Grant headroom:** Check bucket and global headroom equality/one-unit boundaries and require a durable current-process increment before any allowance becomes spendable. A named scheduling barrier between time sampling and grant preparation must not pair old UTC with a later monotonic origin or extend the original deadline.
 - **Spend and settlement:** Tentatively spend an ACK charge, settle exact used airtime, reclaim only definitely unused allowance and atomically precharge a later bucket when budget permits.
 - **SetTx certainty charging:** Parameterize definite pre-SetTx failure, confirmed start, uncertain command and missing terminal outcome; reclaim only the first and retain every possible transmission.
 - **Crash before and after grant commit:** Prove a pre-commit crash enables no TX and a post-commit crash leaves the complete increment charged and unspendable to the replacement process.
 - **Repeated crashes:** Generate consecutive process failures and show conservative precharges accumulate without exceeding bucket/global budget or reopening spent allowance.
 - **Settlement failures:** Cover definite commit failure and unknown outcome, retaining the preceding authoritative generation and suppressing TX until exact reconciliation.
-- **Time-trust loss:** Invalidate the grant's UTC/monotonic correlation and require frozen allowance until a new trusted correlation and state transition establish safe expiration.
-- **Bounded UTC reconstruction:** Cover opposite recording/restart errors approaching 40 seconds, the rejected 60-second shift counterexample, and the 120-second guard. Generate bounded error and monotonic-rate extremes and prove no charge expires before its physical rolling-window obligation. A tighter runtime budget never changes the fixed historical ceiling. Check trusted-sample growth, exact trust/deadline boundaries, changed offsets, and snapshot deferral when conservative monotonic retention outlasts nominal UTC expiration.
-- **Missing/corrupt history:** Start from generation zero, synthesize `[4, 8, 8, 8, 8]` seconds for pilot defaults and forbid TX until the checked generation-one state commits.
-- **Unsupported/policy mismatch wait:** Start the complete conservative rolling-window wait only after TX is known disabled, restart the wait on process restart and permit empty-ledger replacement only after trusted UTC and the full wait.
+- **Time-trust loss:** Remove UTC trust or change offset/generation while a monotonic grant is valid; keep allowance, original grant deadline and retention unchanged, with no extra state write. Snapshot quality remains truthful.
+- **Bounded UTC reconstruction:** Cover opposite recording/restart errors approaching 40 seconds and subtract both explicit bounds from elapsed credit. Generate physical-clock extremes and independently check full-window retention under the supported normal TX envelope. Cover near-end snapshots and repeated unknown-time restarts without extending live deadlines; no fixed UTC guard or UTC-expiration snapshot deferral remains. Arbitrarily delayed physical SPI execution is the explicitly deferred limitation, not a proved test outcome.
+- **Missing/corrupt history:** Start from generation zero, with and without trusted UTC, synthesize `[4, 8, 8, 8, 8]` seconds in the newest five slots for pilot defaults and forbid TX until the checked generation-one state commits.
+- **Unsupported/policy mismatch wait:** Start the complete conservative rolling-window wait only after TX is known disabled, restart the wait on process restart and permit empty-ledger replacement only after the full wait; UTC is optional.
 - **Budget exhaustion semantics:** Accept and publish an otherwise valid reading when no ACK allowance exists, record airtime suppression and never change acceptance to retry-later.
 - **Reference-model properties:** Generate bucket charges, grants, spends, time advances, trust changes, settlements and crashes and compare every decision with an independent continuous-window model.
+
+Current-layout host qualification (2026-09-20): 3443 receiver host tests and
+349 RF-tooling host tests pass. This includes real SQLite, controlled child
+SIGKILL and virtual-time model/availability coverage. Hardware fixtures were
+updated and collected only; target/reboot/RF and bench qualification remain
+NOT RUN for this changed source and encoding. Historical evidence retains its
+original source/layout scope.
 
 ### Hardware tests
 
 - **Target monotonic grant lifetime:** Commit a test grant on the Pi, measure its shortened monotonic lifetime and prove it freezes at the logical bucket boundary rather than one arbitrary minute after commit.
 - **Process-restart baseline:** Restart the isolated receiver process within one Linux boot and verify loaded charge is unspendable, a new increment is durably required and no persisted monotonic timestamp is reused.
-- **Pi-reboot reconstruction:** Reboot with trusted RTC or network time and reconstruct unexpired charges from UTC; repeat without trusted time and require TX suppression.
+- **Pi-reboot reconstruction:** Reboot with trusted RTC/network time and credit only bounded elapsed UTC; repeat without trusted time and reconstruct with zero credit. Both retain loaded charges without spending them. A full loaded current bucket suppresses TX until a later interval/headroom allows a new durable increment; lack of UTC alone is not a TX gate.
 - **Real-radio charge result:** With the component RF fixture, exercise one definite pre-SetTx failure and one confirmed/uncertain attempted transmission and verify durable settlement follows command certainty, not whether the peer observed the packet.
 - **Continuous-window observation:** Run a slow, legally bounded sequence spanning bucket edges and confirm no set of attempted ACK transmissions exceeds the configured 36 seconds in any continuous 3,600-second observation period.
 
@@ -751,11 +775,11 @@ expiration, at most 500 ms late detection and a final allowed sample within
 50 ms of the deadline; raw samples are retained. Both use the actual Linux
 clocks, time adapters, state owner and SQLite worker. A reviewed existing-history
 row establishes the fixture; missing-state recovery remains conservative.
-The airtime fixture declares `maximum_network_skew_ppb = 10_000` (10 ppm),
-approved for this bench. This is an explicit test input, not a receiver default.
-The same production time policy still decides trust, including total UTC error
-and source freshness. Chrony's `Normal` leap state alone does not establish that
-the component has trusted time. Raw evidence includes the fixture ceiling.
+The current airtime fixture uses the production total-error-and-age policy,
+without a separate skew ceiling. Source selection, synchronization and freshness
+still apply; Chrony's `Normal` leap state alone does not establish trusted time.
+Historical evidence records its former 10,000-ppb fixture ceiling and retains
+that scope; it is not qualification of the revised source-admission policy.
 
 For reboot coverage, stage the current sources with `source-manifest.json`
 containing the SHA-256 of every staged source file, then run the bounded external

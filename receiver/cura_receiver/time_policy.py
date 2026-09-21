@@ -9,6 +9,7 @@ from .elapsed_duration import (
     checked_duration_us,
     checked_monotonic_deadline,
     checked_monotonic_elapsed,
+    rate_growth_us,
 )
 from .generated.receiver_enums_generated import RtcHealth, SystemTimeQuality
 
@@ -17,9 +18,8 @@ TIME_SAMPLING_MARGIN_US = 1_000_000
 
 @dataclass(frozen=True, slots=True)
 class TimePolicy:
-    """Deployment inputs; the contract supplies no default skew ceiling."""
+    """Deployment error budgets and shared elapsed-clock assumptions."""
 
-    maximum_network_skew_ppb: int
     chrony_max_slew_rate_ppm: int = 3500
     monotonic_elapsed_rate_bound_ppm: int = 3700
     rtc_drift_bound_ppm: int = 10
@@ -145,21 +145,36 @@ def network_error_bound_us(remaining_correction_us: int, root_distance_us: int) 
     )
 
 
-def usable_network_error_us(
-    evidence: NetworkEvidence | None,
-    *,
-    now_monotonic_us: int,
-    required_poll_deadline_us: int,
-    policy: TimePolicy,
-) -> int | None:
-    """Return a fresh bounded error, never trust unavailable or malformed evidence."""
+@dataclass(frozen=True, slots=True)
+class NetworkEstimate:
+    """Validated source facts with one initial bound anchored at query start."""
+
+    sample_started_at_monotonic_us: int
+    sample_finished_at_monotonic_us: int
+    initial_error_bound_us: int
+
+    def __post_init__(self) -> None:
+        checked_monotonic_elapsed(
+            self.sample_started_at_monotonic_us, self.sample_finished_at_monotonic_us
+        )
+        checked_duration_us(self.initial_error_bound_us)
+
+    def error_at(self, now_monotonic_us: int, policy: TimePolicy) -> int:
+        age = checked_monotonic_elapsed(
+            self.sample_started_at_monotonic_us, now_monotonic_us
+        )
+        return checked_monotonic_deadline(
+            self.initial_error_bound_us,
+            rate_growth_us(policy.monotonic_elapsed_rate_bound_ppm, age),
+        )
+
+
+def network_estimate(
+    evidence: NetworkEvidence | None, *, report_calculation_failure: bool = False
+) -> NetworkEstimate | None:
+    """Validate and calculate once; a valid skew is diagnostic, not a cutoff."""
     try:
-        checked_duration_us(now_monotonic_us)
-        checked_duration_us(required_poll_deadline_us)
-        if (
-            type(evidence) is not NetworkEvidence
-            or now_monotonic_us >= required_poll_deadline_us
-        ):
+        if type(evidence) is not NetworkEvidence:
             return None
         if evidence.source_selected is not True or evidence.synchronized is not True:
             return None
@@ -167,24 +182,47 @@ def usable_network_error_us(
             evidence.sample_started_at_monotonic_us,
             evidence.sample_finished_at_monotonic_us,
         )
-        checked_monotonic_elapsed(
-            evidence.sample_finished_at_monotonic_us, now_monotonic_us
-        )
-        if (
-            checked_monotonic_elapsed(
-                evidence.sample_started_at_monotonic_us, now_monotonic_us
-            )
-            > TIME_SAMPLING_MARGIN_US
-        ):
-            return None
-        if (
-            checked_duration_us(evidence.estimated_skew_ppb)
-            > policy.maximum_network_skew_ppb
-        ):
-            return None
-        return network_error_bound_us(
+        checked_duration_us(evidence.estimated_skew_ppb)
+        error = network_error_bound_us(
             evidence.remaining_correction_us, evidence.root_distance_us
         )
+        return NetworkEstimate(
+            evidence.sample_started_at_monotonic_us,
+            evidence.sample_finished_at_monotonic_us,
+            error,
+        )
+    except OverflowError:
+        if report_calculation_failure:
+            raise
+        return None
+    except (TypeError, ValueError):
+        return None
+
+
+def usable_network_error_us(
+    estimate: NetworkEstimate | None,
+    *,
+    now_monotonic_us: int,
+    required_poll_deadline_us: int,
+    policy: TimePolicy,
+) -> int | None:
+    """Advance qualified evidence to use time, retaining both freshness limits."""
+    try:
+        checked_duration_us(now_monotonic_us)
+        checked_duration_us(required_poll_deadline_us)
+        if (
+            type(estimate) is not NetworkEstimate
+            or now_monotonic_us >= required_poll_deadline_us
+        ):
+            return None
+        checked_monotonic_elapsed(
+            estimate.sample_finished_at_monotonic_us, now_monotonic_us
+        )
+        if checked_monotonic_elapsed(
+            estimate.sample_started_at_monotonic_us, now_monotonic_us
+        ) > TIME_SAMPLING_MARGIN_US:
+            return None
+        return estimate.error_at(now_monotonic_us, policy)
     except (TypeError, ValueError, OverflowError):
         return None
 
@@ -200,14 +238,14 @@ class NetworkDecision:
 
 def network_tracking_decision(
     current: ClockState,
-    evidence: NetworkEvidence | None,
+    estimate: NetworkEstimate | None,
     *,
     now_monotonic_us: int,
     required_poll_deadline_us: int,
     policy: TimePolicy,
 ) -> NetworkDecision:
     error = usable_network_error_us(
-        evidence,
+        estimate,
         now_monotonic_us=now_monotonic_us,
         required_poll_deadline_us=required_poll_deadline_us,
         policy=policy,

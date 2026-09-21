@@ -56,9 +56,8 @@ class CommunicatorScheduler:
         return checked_monotonic_deadline(self.clock.now_monotonic_us(),
             minimum_wait_monotonic_us(duration, rate_bound_ppm=self.time.policy.monotonic_elapsed_rate_bound_ppm))
 
-    def _rtc_due(self):
-        if self.time.rtc_refresh_episode is not None:
-            return self.clock.now_monotonic_us()
+    def _rtc_start_due(self):
+        """Deadline for new RTC work; active episodes are ready continuations."""
         if self.time.state.quality is not E.SystemTimeQuality.NETWORK_SYNCED:
             return self.time.next_rtc_read_start()
         if self.time.sample is None:
@@ -124,8 +123,9 @@ class CommunicatorScheduler:
             update = c.airtime.acquire_grant(deadline_monotonic_us=t.deadline(t.settings.control_budget_us))
             self.next_airtime = self._later(t.settings.retry_initial_us)
             return ScheduledTurn(Work.AIRTIME, exchange, update)
-        rtc_due = self._rtc_due()
-        if rtc_due is not None and now >= rtc_due:
+        rtc_active = t.rtc_refresh_episode is not None
+        rtc_due = None if rtc_active else self._rtc_start_due()
+        if rtc_active or (rtc_due is not None and now >= rtc_due):
             self.failure_location = (E.CorePhase.PERIODIC_TIME, E.CoreFailureStage.INVOKE_ADAPTER,
                 E.DiagnosticOperation.SYNC if t.state.quality is E.SystemTimeQuality.NETWORK_SYNCED else E.DiagnosticOperation.READ)
             if t.rtc_refresh_episode is not None:

@@ -114,7 +114,6 @@ def communicator_state(
 ) -> generated_entities.CommunicatorStateV1:
     empty_bucket = generated_entities.TxAirtimeBucketV1(
         charged_airtime_us=0,
-        expires_at_utc_us=0,
     )
     return generated_entities.CommunicatorStateV1(
         generation=1,
@@ -125,9 +124,8 @@ def communicator_state(
         tx_airtime_budget_us=36_000_000,
         bucket_width_us=60_000_000,
         bucket_charge_limit_us=8_000_000,
-        bucket_expiration_guard_us=120_000_000,
-        airtime_snapshot_utc_us=0,
-        buckets=(empty_bucket,) * 64,
+        airtime_snapshot=None,
+        buckets=(empty_bucket,) * 62,
     )
 
 
@@ -1085,7 +1083,7 @@ def test_communicator_state_canonical_blob_round_trip_and_binding() -> None:
     )
     state = communicator_state(rtc_provenance=provenance)
     blob = generated_entities.encode_communicator_state_v1(state)
-    assert len(blob) == 1152
+    assert len(blob) == 624
     assert generated_entities.decode_communicator_state_v1(blob) == state
 
     parameters = generated_entities.communicator_state_v1_parameters(state)
@@ -1110,7 +1108,7 @@ def test_communicator_state_codec_enforces_only_canonical_structure() -> None:
     state = communicator_state()
     blob = generated_entities.encode_communicator_state_v1(state)
 
-    with pytest.raises(ValueError, match="buckets.*length 64"):
+    with pytest.raises(ValueError, match="buckets.*length 62"):
         generated_entities.encode_communicator_state_v1(
             replace(state, buckets=state.buckets[:-1])
         )
@@ -1126,7 +1124,7 @@ def test_communicator_state_codec_enforces_only_canonical_structure() -> None:
         generated_entities.decode_communicator_state_v1(bytes(noncanonical_absence))
 
     reserved_presence_bit = bytearray(blob)
-    struct.pack_into("<H", reserved_presence_bit, 14, 2)
+    struct.pack_into("<H", reserved_presence_bit, 14, 4)
     with pytest.raises(ValueError, match="reserved bits set"):
         generated_entities.decode_communicator_state_v1(bytes(reserved_presence_bit))
 

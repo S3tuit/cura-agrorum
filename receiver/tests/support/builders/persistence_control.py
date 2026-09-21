@@ -3,6 +3,7 @@
 from dataclasses import replace
 from cura_receiver.generated.receiver_entities_generated import (
     CommunicatorStateV1,
+    AirtimeSnapshotV1,
     TxAirtimeBucketV1,
 )
 from cura_receiver.generated.receiver_enums_generated import (
@@ -22,25 +23,14 @@ def state(**changes):
             tx_airtime_budget_us=36_000_000,
             bucket_width_us=60_000_000,
             bucket_charge_limit_us=8_000_000,
-            bucket_expiration_guard_us=120_000_000,
-            airtime_snapshot_utc_us=0,
-            buckets=(TxAirtimeBucketV1(0, 0),) * 64,
+            airtime_snapshot=AirtimeSnapshotV1(0, 0),
+            buckets=(TxAirtimeBucketV1(0),) * 62,
         ),
         **changes,
     )
 
 
 def synthetic():
-    return state(
-        buckets=tuple(
-            TxAirtimeBucketV1(charge, expiration)
-            for charge, expiration in (
-                (4_000_000, 3_540_000_000),
-                (8_000_000, 3_600_000_000),
-                (8_000_000, 3_660_000_000),
-                (8_000_000, 3_720_000_000),
-                (8_000_000, 3_780_000_000),
-            )
-        )
-        + (TxAirtimeBucketV1(0, 0),) * 59
-    )
+    return state(buckets=(TxAirtimeBucketV1(0),) * 57 + tuple(
+        TxAirtimeBucketV1(charge) for charge in (4_000_000,) + (8_000_000,) * 4
+    ))

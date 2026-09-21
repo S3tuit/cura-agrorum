@@ -23,7 +23,7 @@ from .receiver_enums_generated import (
     SystemTimeQuality,
 )
 
-RECEIVER_ENTITY_MANIFEST_SHA256 = '45ea2e3c76049429a1c3c89c8ba824332dbe8bfa5e87208eb43fca7bd2233155'
+RECEIVER_ENTITY_MANIFEST_SHA256 = 'b8b4f02d0bf2cd4314f451ed2faab7da87b36035532115755361cda60f6a3e2b'
 
 __all__ = [
     "RECEIVER_ENTITY_MANIFEST_SHA256",
@@ -50,6 +50,7 @@ __all__ = [
     "ReadingMessageRowV1",
     "RtcProvenanceV1",
     "TxAirtimeBucketV1",
+    "AirtimeSnapshotV1",
     "CommunicatorStateV1",
     "encode_communicator_state_v1",
     "decode_communicator_state_v1",
@@ -653,7 +654,11 @@ class RtcProvenanceV1:
 @dataclass(frozen=True, slots=True)
 class TxAirtimeBucketV1:
     charged_airtime_us: int
-    expires_at_utc_us: int
+
+@dataclass(frozen=True, slots=True)
+class AirtimeSnapshotV1:
+    utc_us: int
+    error_bound_us: int
 
 @dataclass(frozen=True, slots=True)
 class CommunicatorStateV1:
@@ -665,8 +670,7 @@ class CommunicatorStateV1:
     tx_airtime_budget_us: int
     bucket_width_us: int
     bucket_charge_limit_us: int
-    bucket_expiration_guard_us: int
-    airtime_snapshot_utc_us: int
+    airtime_snapshot: AirtimeSnapshotV1 | None
     buckets: tuple[TxAirtimeBucketV1, ...]
 
 def _encode_rtc_provenance_v1(value: RtcProvenanceV1) -> bytes:
@@ -718,9 +722,8 @@ def _decode_rtc_provenance_v1(
 def _encode_tx_airtime_bucket_v1(value: TxAirtimeBucketV1) -> bytes:
     chunks: list[bytes] = []
     chunks.append(_pack('<Q', value.charged_airtime_us, 'TxAirtimeBucketV1.charged_airtime_us'))
-    chunks.append(_pack('<q', value.expires_at_utc_us, 'TxAirtimeBucketV1.expires_at_utc_us'))
     encoded = b''.join(chunks)
-    if len(encoded) != 16:
+    if len(encoded) != 8:
         raise RuntimeError('TX_AIRTIME_BUCKET_V1 generated an invalid size')
     return encoded
 
@@ -730,21 +733,40 @@ def _decode_tx_airtime_bucket_v1(
     charged_airtime_us, offset = _unpack(
         blob, offset, '<Q', 'TxAirtimeBucketV1.charged_airtime_us'
     )
-    expires_at_utc_us, offset = _unpack(
-        blob, offset, '<q', 'TxAirtimeBucketV1.expires_at_utc_us'
-    )
     return TxAirtimeBucketV1(
         charged_airtime_us=charged_airtime_us,
-        expires_at_utc_us=expires_at_utc_us,
+    ), offset
+
+def _encode_airtime_snapshot_v1(value: AirtimeSnapshotV1) -> bytes:
+    chunks: list[bytes] = []
+    chunks.append(_pack('<q', value.utc_us, 'AirtimeSnapshotV1.utc_us'))
+    chunks.append(_pack('<Q', value.error_bound_us, 'AirtimeSnapshotV1.error_bound_us'))
+    encoded = b''.join(chunks)
+    if len(encoded) != 16:
+        raise RuntimeError('AIRTIME_SNAPSHOT_V1 generated an invalid size')
+    return encoded
+
+def _decode_airtime_snapshot_v1(
+    blob: memoryview, offset: int
+) -> tuple[AirtimeSnapshotV1, int]:
+    utc_us, offset = _unpack(
+        blob, offset, '<q', 'AirtimeSnapshotV1.utc_us'
+    )
+    error_bound_us, offset = _unpack(
+        blob, offset, '<Q', 'AirtimeSnapshotV1.error_bound_us'
+    )
+    return AirtimeSnapshotV1(
+        utc_us=utc_us,
+        error_bound_us=error_bound_us,
     ), offset
 
 def encode_communicator_state_v1(entity: CommunicatorStateV1) -> bytes:
-    if len(entity.buckets) != 64:
+    if len(entity.buckets) != 62:
         raise ValueError(
-            'buckets' + ' must have length 64'
+            'buckets' + ' must have length 62'
         )
-    encoded_length = 1152
-    validity_mask = ((1 << 0) if entity.rtc_provenance is not None else 0)
+    encoded_length = 624
+    validity_mask = ((1 << 0) if entity.rtc_provenance is not None else 0) | ((1 << 1) if entity.airtime_snapshot is not None else 0)
     bucket_count = len(entity.buckets)
     chunks: list[bytes] = []
     chunks.append(_pack('<H', 1, 'CommunicatorStateV1.state_format_version'))
@@ -762,8 +784,10 @@ def encode_communicator_state_v1(entity: CommunicatorStateV1) -> bytes:
     chunks.append(_pack('<Q', entity.tx_airtime_budget_us, 'CommunicatorStateV1.tx_airtime_budget_us'))
     chunks.append(_pack('<Q', entity.bucket_width_us, 'CommunicatorStateV1.bucket_width_us'))
     chunks.append(_pack('<Q', entity.bucket_charge_limit_us, 'CommunicatorStateV1.bucket_charge_limit_us'))
-    chunks.append(_pack('<Q', entity.bucket_expiration_guard_us, 'CommunicatorStateV1.bucket_expiration_guard_us'))
-    chunks.append(_pack('<q', entity.airtime_snapshot_utc_us, 'CommunicatorStateV1.airtime_snapshot_utc_us'))
+    if entity.airtime_snapshot is None:
+        chunks.append(bytes(16))
+    else:
+        chunks.append(_encode_airtime_snapshot_v1(entity.airtime_snapshot))
     chunks.append(_pack('<H', bucket_count, 'CommunicatorStateV1.bucket_count'))
     chunks.append(_pack('<H', 0, 'CommunicatorStateV1.reserved_2'))
     chunks.append(_pack('<Q', 0, 'CommunicatorStateV1.reserved_3'))
@@ -797,7 +821,7 @@ def decode_communicator_state_v1(blob: bytes) -> CommunicatorStateV1:
     validity_mask, offset = _unpack(
         blob, offset, '<H', 'CommunicatorStateV1.validity_mask'
     )
-    if validity_mask & ~1:
+    if validity_mask & ~3:
         raise ValueError('CommunicatorStateV1.validity_mask' + ' has reserved bits set')
     last_observed_system_time_quality_value, offset = _unpack(
         blob, offset, '<B', 'CommunicatorStateV1.last_observed_system_time_quality'
@@ -839,12 +863,15 @@ def decode_communicator_state_v1(blob: bytes) -> CommunicatorStateV1:
     bucket_charge_limit_us, offset = _unpack(
         blob, offset, '<Q', 'CommunicatorStateV1.bucket_charge_limit_us'
     )
-    bucket_expiration_guard_us, offset = _unpack(
-        blob, offset, '<Q', 'CommunicatorStateV1.bucket_expiration_guard_us'
-    )
-    airtime_snapshot_utc_us, offset = _unpack(
-        blob, offset, '<q', 'CommunicatorStateV1.airtime_snapshot_utc_us'
-    )
+    if validity_mask & (1 << 1):
+        airtime_snapshot, offset = _decode_airtime_snapshot_v1(view, offset)
+    else:
+        airtime_snapshot_absent, offset = _read_exact(
+            view, offset, 16, 'CommunicatorStateV1.airtime_snapshot'
+        )
+        if any(airtime_snapshot_absent):
+            raise ValueError('CommunicatorStateV1.airtime_snapshot' + ' absent representation is not zero')
+        airtime_snapshot = None
     bucket_count, offset = _unpack(
         blob, offset, '<H', 'CommunicatorStateV1.bucket_count'
     )
@@ -858,10 +885,10 @@ def decode_communicator_state_v1(blob: bytes) -> CommunicatorStateV1:
     )
     if reserved_3 != 0:
         raise ValueError('CommunicatorStateV1.reserved_3' + ' has an invalid constant value')
-    if bucket_count != 64:
+    if bucket_count != 62:
         raise ValueError('CommunicatorStateV1.buckets' + ' has an invalid fixed length')
     buckets_items: list[TxAirtimeBucketV1] = []
-    for _ in range(64):
+    for _ in range(62):
         item, offset = _decode_tx_airtime_bucket_v1(view, offset)
         buckets_items.append(item)
     buckets = tuple(buckets_items)
@@ -876,8 +903,7 @@ def decode_communicator_state_v1(blob: bytes) -> CommunicatorStateV1:
         tx_airtime_budget_us=tx_airtime_budget_us,
         bucket_width_us=bucket_width_us,
         bucket_charge_limit_us=bucket_charge_limit_us,
-        bucket_expiration_guard_us=bucket_expiration_guard_us,
-        airtime_snapshot_utc_us=airtime_snapshot_utc_us,
+        airtime_snapshot=airtime_snapshot,
         buckets=buckets,
     )
 

@@ -1,8 +1,10 @@
-"""Bounded in-memory bucket accounting; no persistence, radio or clock I/O."""
+"""Positional monotonic airtime history; no persistence, radio or clock I/O."""
 
+from collections import deque
 from dataclasses import dataclass
 
 from .communicator_state_persistence import (
+    AIRTIME_TX_COMPLETION_US,
     AIRTIME_UTC_ERROR_CEILING_US,
     COMMUNICATOR_STATE_BUCKET_CAPACITY as CAPACITY,
     CommunicatorStatePolicy,
@@ -13,23 +15,17 @@ from .elapsed_duration import (
     checked_duration_us,
     checked_monotonic_deadline,
     checked_monotonic_elapsed,
-    checked_utc_difference,
-    checked_utc_offset,
-    checked_utc_us,
     minimum_wait_monotonic_us,
+    maximum_lifetime_monotonic_us,
     rate_growth_us,
 )
-from .generated.receiver_entities_generated import TxAirtimeBucketV1
+from .generated.receiver_entities_generated import AirtimeSnapshotV1, TxAirtimeBucketV1
 from .time_observations import TrustedTimeSample
-
-
-class SnapshotDeferred(ValueError):
-    """Monotonic retention has not yet caught up with the snapshot's UTC."""
 
 
 @dataclass(frozen=True, slots=True)
 class AirtimeCorrelation:
-    """A caller's live time handoff; the validity deadline includes source freshness."""
+    """Optional trusted UTC evidence, never an authorization to spend airtime."""
 
     sample: TrustedTimeSample
     clock_state_generation: int
@@ -41,28 +37,24 @@ class AirtimeCorrelation:
         checked_duration_us(self.clock_state_generation)
         checked_duration_us(self.valid_until_monotonic_us)
 
-    @property
-    def offset_us(self):
-        # Python's exact difference is a comparison key, not an encoded duration.
-        return self.sample.utc_us - self.sample.monotonic_us
-
-    def utc_at(self, now_monotonic_us, *, policy, rate_bound_ppm):
+    def evidence_at(self, now_monotonic_us, *, policy, rate_bound_ppm):
         elapsed = checked_monotonic_elapsed(self.sample.monotonic_us, now_monotonic_us)
-        if (
-            self.sample.generation != self.clock_state_generation
-            or now_monotonic_us >= self.valid_until_monotonic_us
-        ):
+        if (self.sample.generation != self.clock_state_generation
+                or now_monotonic_us >= self.valid_until_monotonic_us):
             raise ValueError("airtime correlation is no longer current")
         error = checked_monotonic_deadline(
             self.sample.error_bound_us, rate_growth_us(rate_bound_ppm, elapsed)
         )
-        if error >= min(
-            AIRTIME_UTC_ERROR_CEILING_US, policy.receiver_utc_error_budget_us
-        ):
+        if error >= min(AIRTIME_UTC_ERROR_CEILING_US, policy.receiver_utc_error_budget_us):
             raise ValueError("airtime UTC error bound is exhausted")
-        return checked_correlated_utc(
-            self.sample.utc_us, self.sample.monotonic_us, now_monotonic_us
+        return AirtimeSnapshotV1(
+            checked_correlated_utc(self.sample.utc_us, self.sample.monotonic_us,
+                                   now_monotonic_us), error
         )
+
+    def utc_at(self, now_monotonic_us, *, policy, rate_bound_ppm):
+        return self.evidence_at(now_monotonic_us, policy=policy,
+                                rate_bound_ppm=rate_bound_ppm).utc_us
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,253 +64,150 @@ class _LiveBucket:
 
 
 class AirtimeLedger:
-    """One fixed grid with cached charge, reconstructed in the current clock domain.
+    """Fixed circular history with immutable deadlines and cached charge.
 
-    Iteration is confined to construction, snapshot preparation and copying.
-    Admission reads total_used/charge_at and ages only elapsed head intervals.
+    A bucket identity is its current-process virtual interval start, possibly
+    negative for reconstructed history near boot. It is never serialized.
+    Admission does not iterate the ring; advance only retires elapsed heads.
     """
 
-    def __init__(
-        self,
-        policy: CommunicatorStatePolicy,
-        buckets,
-        *,
-        utc_us,
-        monotonic_us,
-        rate_bound_ppm=MONOTONIC_ELAPSED_RATE_BOUND_PPM
-    ):
+    def __init__(self, policy, buckets, *, monotonic_us, elapsed_us=0,
+                 rate_bound_ppm=MONOTONIC_ELAPSED_RATE_BOUND_PPM):
         if type(policy) is not CommunicatorStatePolicy:
             raise TypeError("a validated airtime policy is required")
         if type(buckets) is not tuple or len(buckets) != CAPACITY:
-            raise ValueError("ledger requires exactly 64 immutable buckets")
+            raise ValueError("ledger requires exactly 62 immutable positional buckets")
         self.policy = policy
-        checked_utc_us(utc_us)
         self._now = checked_duration_us(monotonic_us)
+        checked_duration_us(elapsed_us)
         self._rate = rate_bound_ppm
-        minimum_wait_monotonic_us(0, rate_bound_ppm=rate_bound_ppm)
-        self._buckets = [None] * CAPACITY
-        self._retention_ceiling = 0
-        self._first = self._last = None
+        self.spacing = self._wait(policy.bucket_width_us)
+        self._lifetime = maximum_lifetime_monotonic_us(
+            policy.bucket_width_us, rate_bound_ppm=rate_bound_ppm)
+        self._horizon = checked_monotonic_deadline(
+            checked_monotonic_deadline(policy.rolling_window_us, policy.bucket_width_us),
+            AIRTIME_TX_COMPLETION_US)
+        whole, phase = divmod(elapsed_us, policy.bucket_width_us)
+        self.current_start = monotonic_us - self._wait(phase)
+        self._ring = [None] * CAPACITY
         self._head = 0
+        self._active = deque()
         self._total = 0
-        previous = first = None
-        empty_seen = False
+        # Validate the entire snapshot before pruning can hide bad historical charges.
         total = 0
-        retained = []
         for bucket in buckets:
             if type(bucket) is not TxAirtimeBucketV1:
                 raise TypeError("ledger entry has a foreign type")
             charge = checked_duration_us(bucket.charged_airtime_us)
-            expiration = checked_utc_us(bucket.expires_at_utc_us)
-            if charge == 0:
-                if expiration != 0:
-                    raise ValueError("empty bucket is not canonical")
-                empty_seen = True
-                continue
-            if empty_seen or charge > policy.bucket_charge_limit_us:
-                raise ValueError("invalid bucket order or charge")
-            self.bucket_end(expiration)
-            if previous is not None:
-                delta = checked_utc_difference(expiration, previous)
-                if delta <= 0 or delta % self.width:
-                    raise ValueError(
-                        "bucket expirations do not form one increasing grid"
-                    )
-            if first is None:
-                first = expiration
-            if checked_utc_difference(expiration, first) // self.width >= CAPACITY:
-                raise ValueError("ledger grid span exceeds capacity")
+            if charge > policy.bucket_charge_limit_us:
+                raise ValueError("loaded charge exceeds bucket limit")
             total = checked_monotonic_deadline(total, charge)
-            previous = expiration
-            if expiration > utc_us:
-                retained.append(bucket)
         if total > policy.tx_airtime_budget_us:
-            raise ValueError("loaded charge exceeds the global budget")
-        for bucket in retained:
-            self.set_charge(
-                bucket.expires_at_utc_us,
-                bucket.charged_airtime_us,
-                utc_us=utc_us,
-                monotonic_us=monotonic_us,
-            )
+            raise ValueError("loaded charge exceeds global budget")
+        for position, bucket in enumerate(buckets):
+            distance = CAPACITY - 1 - position
+            remaining = self._horizon - distance * policy.bucket_width_us - elapsed_us
+            if not bucket.charged_airtime_us or remaining <= 0:
+                continue
+            age = distance + whole
+            if age >= CAPACITY:
+                raise ValueError("retained history exceeds positional capacity")
+            start = self.current_start - age * self.spacing
+            deadline = checked_monotonic_deadline(monotonic_us, self._wait(remaining))
+            self._ring[self._index(start)] = _LiveBucket(bucket.charged_airtime_us, deadline)
+            self._active.append(start)
+            self._total += bucket.charged_airtime_us
 
-    @property
-    def width(self):
-        return self.policy.bucket_width_us
+    def _wait(self, duration):
+        return minimum_wait_monotonic_us(duration, rate_bound_ppm=self._rate)
 
     @property
     def total_used(self):
         return self._total
 
     @property
-    def empty(self):
-        return self._first is None
+    def grant_deadline(self):
+        # A reconstructed, already closed interval can have a negative deadline.
+        return max(0, self.current_start + self._lifetime)
 
-    def bucket_end(self, expiration):
-        return checked_utc_offset(
-            checked_utc_offset(expiration, -self.policy.rolling_window_us),
-            -self.policy.bucket_expiration_guard_us,
-        )
+    def _index(self, start):
+        if type(start) is not int:
+            raise TypeError("bucket identity must be an integer")
+        distance, remainder = divmod(self.current_start - start, self.spacing)
+        if remainder or not 0 <= distance < CAPACITY:
+            raise ValueError("bucket is outside the represented monotonic grid")
+        return (self._head + CAPACITY - 1 - distance) % CAPACITY
 
-    def expiration(self, end):
-        return checked_utc_offset(
-            checked_utc_offset(end, self.policy.rolling_window_us),
-            self.policy.bucket_expiration_guard_us,
-        )
-
-    def retention_deadline(self, expiration):
-        bucket = self._bucket_at(expiration)
-        if bucket is None:
-            raise ValueError("empty bucket has no retention deadline")
-        return bucket.retention_deadline
-
-    def current_bucket_end(self, utc_us):
-        checked_utc_us(utc_us)
-        if self.empty:
-            return checked_utc_offset(utc_us, self.width)
-        anchor = self.bucket_end(self._first)
-        distance = checked_utc_difference(utc_us, anchor)
-        # The remainder avoids an overflowing multiplication for distant grid indices.
-        return checked_utc_offset(utc_us, self.width - distance % self.width)
-
-    def _index(self, expiration):
-        distance = checked_utc_difference(expiration, self._first)
-        if distance % self.width:
-            raise ValueError("expiration is off the retained grid")
-        slot = distance // self.width
-        if not 0 <= slot < CAPACITY:
-            raise ValueError("logical ring index is outside capacity")
-        return (self._head + slot) % CAPACITY
-
-    def _bucket_at(self, expiration):
-        checked_utc_us(expiration)
-        if self.empty:
-            return None
-        distance = checked_utc_difference(expiration, self._first)
-        if distance % self.width:
-            raise ValueError("expiration is off the retained grid")
-        if expiration < self._first or expiration > self._last:
-            return None
-        return self._buckets[self._index(expiration)]
-
-    def charge_at(self, expiration):
-        bucket = self._bucket_at(expiration)
+    def charge_at(self, start):
+        # A previously held grant can have aged completely out of the ring.
+        if start < self.current_start - (CAPACITY - 1) * self.spacing:
+            return 0
+        bucket = self._ring[self._index(start)]
         return 0 if bucket is None else bucket.charge
 
-    def fits(self, expiration):
-        checked_utc_us(expiration)
-        if self.empty:
-            return True
-        if checked_utc_difference(expiration, self._first) % self.width:
-            return False
-        span = checked_utc_difference(
-            max(expiration, self._last), min(expiration, self._first)
-        )
-        return span // self.width < CAPACITY
+    def retention_deadline(self, start):
+        bucket = self._ring[self._index(start)]
+        if bucket is None:
+            raise ValueError("unopened bucket has no retention deadline")
+        return bucket.retention_deadline
 
-    def set_charge(self, expiration, charge, *, utc_us, monotonic_us):
-        """Preserve existing deadlines; map a new bucket from this paired sample."""
-        checked_utc_us(expiration)
-        self.bucket_end(expiration)
+    def set_charge(self, start, charge):
         checked_duration_us(charge)
-        checked_utc_us(utc_us)
-        checked_duration_us(monotonic_us)
-        if monotonic_us != self._now:
-            raise ValueError("charge update must use the ledger's current sample")
         if charge > self.policy.bucket_charge_limit_us:
-            raise ValueError("charge exceeds the bucket limit")
-        previous_bucket = self._bucket_at(expiration)
-        previous = 0 if previous_bucket is None else previous_bucket.charge
-        total = checked_monotonic_deadline(self._total - previous, charge)
+            raise ValueError("charge exceeds bucket limit")
+        index = self._index(start)
+        old = self._ring[index]
+        total = checked_monotonic_deadline(self._total - (old.charge if old else 0), charge)
         if total > self.policy.tx_airtime_budget_us:
-            raise ValueError("charge exceeds the global budget")
-        if not self.fits(expiration):
-            raise ValueError("new bucket does not fit the ring")
-        replacement = None
-        if charge:
-            if previous_bucket is None:
-                remaining = checked_utc_difference(expiration, utc_us)
-                if remaining <= 0:
-                    raise ValueError("cannot insert an expired bucket")
-                deadline = checked_monotonic_deadline(
-                    monotonic_us,
-                    minimum_wait_monotonic_us(remaining, rate_bound_ppm=self._rate),
-                )
-            else:
-                deadline = previous_bucket.retention_deadline
-            if deadline <= self._now:
-                raise ValueError("cannot update an expired bucket")
-            replacement = _LiveBucket(charge, deadline)
-        if self.empty:
+            raise ValueError("charge exceeds global budget")
+        if old is None:
             if not charge:
                 return
-            self._first = self._last = expiration
-        elif expiration < self._first and charge:
-            steps = checked_utc_difference(self._first, expiration) // self.width
-            self._head = (self._head - steps) % CAPACITY
-            self._first = expiration
-        elif expiration > self._last and charge:
-            self._last = expiration
-        if self._first <= expiration <= self._last:
-            self._buckets[self._index(expiration)] = replacement
-        if replacement is not None:
-            self._retention_ceiling = max(self._retention_ceiling, deadline)
+            if start != self.current_start:
+                raise ValueError("only the current interval can acquire new charge")
+            deadline = start + self._wait(self._horizon)
+            checked_duration_us(deadline)
+            if deadline <= self._now:
+                raise ValueError("cannot reopen an expired interval")
+            self._active.append(start)
+        else:
+            deadline = old.retention_deadline
+        self._ring[index] = _LiveBucket(charge, deadline)
         self._total = total
-        self._trim_empty_edges()
-
-    def _trim_empty_edges(self):
-        if self._total == 0:
-            self._first = self._last = None
-            self._head = self._retention_ceiling = 0
-            return
-        while self._buckets[self._head] is None:
-            self._first = checked_utc_offset(self._first, self.width)
-            self._head = (self._head + 1) % CAPACITY
-        while self._buckets[self._index(self._last)] is None:
-            self._last = checked_utc_offset(self._last, -self.width)
 
     def advance(self, now_monotonic_us):
         checked_monotonic_elapsed(self._now, now_monotonic_us)
         self._now = now_monotonic_us
-        if self.empty:
-            return
-        # This upper bound remains safe even when deadlines are not in UTC order.
-        if now_monotonic_us >= self._retention_ceiling:
-            self._buckets = [None] * CAPACITY
-            self._first = self._last = None
-            self._head = self._total = self._retention_ceiling = 0
-            return
-        while not self.empty:
-            bucket = self._buckets[self._head]
+        while self._active:
+            start = self._active[0]
+            index = self._index(start)
+            bucket = self._ring[index]
             if now_monotonic_us < bucket.retention_deadline:
                 break
             self._total -= bucket.charge
-            self._buckets[self._head] = None
-            self._trim_empty_edges()
+            self._ring[index] = None
+            self._active.popleft()
+        steps = (now_monotonic_us - self.current_start) // self.spacing
+        if steps >= CAPACITY:
+            if self._active:
+                raise ValueError("unexpired history would be overwritten")
+            self._ring = [None] * CAPACITY
+            self._head = 0
+        elif steps:
+            for offset in range(steps):
+                if self._ring[(self._head + offset) % CAPACITY] is not None:
+                    raise ValueError("unexpired history would be overwritten")
+            self._head = (self._head + steps) % CAPACITY
+        self.current_start += steps * self.spacing
 
-    def entries(self):
-        if self.empty:
-            return ()
-        count = checked_utc_difference(self._last, self._first) // self.width + 1
-        result = []
-        expiration = self._first
-        for index in range(count):
-            bucket = self._buckets[(self._head + index) % CAPACITY]
-            if bucket is not None:
-                result.append(TxAirtimeBucketV1(bucket.charge, expiration))
-            if index + 1 < count:
-                expiration = checked_utc_offset(expiration, self.width)
-        return tuple(result)
-
-    def snapshot_buckets(self, utc_us):
-        checked_utc_us(utc_us)
-        entries = self.entries()
-        if any(b.expires_at_utc_us <= utc_us for b in entries):
-            raise SnapshotDeferred("snapshot UTC passed a monotonically retained entry")
-        return entries + (TxAirtimeBucketV1(0, 0),) * (CAPACITY - len(entries))
+    def snapshot_buckets(self):
+        return tuple(TxAirtimeBucketV1(0 if bucket is None else bucket.charge)
+                     for index in range(CAPACITY)
+                     for bucket in (self._ring[(self._head + index) % CAPACITY],))
 
     def copy(self):
         clone = object.__new__(type(self))
         clone.__dict__.update(self.__dict__)
-        clone._buckets = self._buckets.copy()
+        clone._ring = self._ring.copy()
+        clone._active = self._active.copy()
         return clone

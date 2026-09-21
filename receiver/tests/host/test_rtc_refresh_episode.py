@@ -1,8 +1,11 @@
 """Incremental refresh cancellation uses real state control and SQLite."""
 
+from dataclasses import replace
+
 import pytest
 
 from cura_receiver.runtime_time import RtcRefreshStatus as RS
+from cura_receiver.generated.receiver_enums_generated import PersistenceControlPurpose
 from cura_receiver.ports.ds3231 import Ds3231ReadResult, Ds3231ReadStatus as R
 from cura_receiver.ports.ds3231 import Ds3231WriteResult, Ds3231WriteDisposition as W, Ds3231Failure as F
 from cura_receiver.persistence_control_values import CommunicatorStateCommitDisposition as CD
@@ -140,3 +143,51 @@ def test_source_expiry_between_invalidation_and_write_prevents_write(rtc_runtime
     result = rt.advance_rtc_refresh(rtc, snapshot)
     assert result.status is RS.TRUST_INVALIDATED
     assert len(rtc.calls) == 1 and rt.rtc_provenance is None
+
+
+# A full operation must fit the inclusive source bound before any device/state mutation.
+@pytest.mark.parametrize("extra_error,admitted", [(0, True), (1, False)])
+def test_preflight_projects_full_operation_error(rtc_runtime, extra_error, admitted):
+    rt, clock, _, rtc, worker, snapshot, _ = rtc_runtime
+    initial = rt.durable_state
+    # 21 physical seconds => 21,077,700 monotonic us; upward growth is 78,278 us.
+    rt.sample = replace(rt.sample, error_bound_us=5_000_000 - 78_278 + extra_error)
+    queue_success(rtc, clock)
+    result = rt.refresh_rtc(rtc, snapshot)
+    if admitted:
+        assert result.status is RS.VERIFIED
+        assert [call[0] for call in rtc.calls] == ["read", "write", "read"]
+        assert 5_000_000 < rt.rtc_provenance.verification_uncertainty_us < 40_000_000
+        loaded = worker.control.load_communicator_state(
+            deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000)
+        assert loaded.state.rtc_provenance == rt.rtc_provenance
+    else:
+        assert result.status is RS.DEFERRED
+        assert rtc.calls == [] and rt.durable_state == initial
+
+
+# Poll expiry is exclusive even if the projected error remains small.
+@pytest.mark.parametrize("spare_us,admitted", [(0, False), (1, True)])
+def test_preflight_requires_room_before_poll_deadline(rtc_runtime, spare_us, admitted):
+    rt, clock, _, rtc, _, snapshot, _ = rtc_runtime
+    initial = rt.durable_state
+    rt.tracking_poll_deadline = clock.now_monotonic_us() + 21_077_700 + spare_us
+    queue_success(rtc, clock)
+    result = rt.refresh_rtc(rtc, snapshot)
+    assert result.status is (RS.VERIFIED if admitted else RS.DEFERRED)
+    if not admitted:
+        assert rtc.calls == [] and rt.durable_state == initial
+
+
+# Removing the invalidation transition removes its two bounded control calls as well.
+def test_preflight_without_old_provenance_uses_shorter_operation(rtc_runtime):
+    rt, clock, _, rtc, worker, snapshot, _ = rtc_runtime
+    state = replace(rt.durable_state, generation=rt.durable_state.generation + 1,
+        rtc_provenance=None)
+    rt.state_owner.commit(state,
+        purpose=PersistenceControlPurpose.RTC_PROVENANCE,
+        deadline_monotonic_us=clock.now_monotonic_us() + 1_000_000)
+    assert rt.rtc_provenance is None
+    rt.tracking_poll_deadline = clock.now_monotonic_us() + 19_070_301
+    queue_success(rtc, clock)
+    assert rt.refresh_rtc(rtc, snapshot).status is RS.VERIFIED

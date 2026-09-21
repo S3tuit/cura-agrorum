@@ -42,7 +42,7 @@ def composition(airtime_component):
         kernel = FakeKernelClock()
         runtime = RuntimeTime(
             receiver_instance_id=INSTANCE, clock=clock, kernel=kernel, queue=producer,
-            policy=TimePolicy(maximum_network_skew_ppb=10_000),
+            policy=TimePolicy(),
             startup_rtc_result=Ds3231ReadResult(DR.OK, now, now, UTC // 1_000_000),
             state_owner=airtime.owner,
         )
@@ -604,6 +604,117 @@ def test_incremental_rtc_yields_to_packet_before_next_action(composition):
     assert turn.work is Work.TERMINAL
     assert turn.update.status.name == 'SHUTDOWN_CANCELLED'
     assert len(rtc.calls) == 1 and c.time.rtc_refresh_episode is None
+
+
+@pytest.mark.parametrize('tick_us', [0, 1, 100])
+def test_scheduler_rtc_refresh_reaches_durable_verification(composition, monkeypatch, tick_us):
+    from cura_receiver.communicator_scheduler import CommunicatorScheduler, Work
+    from cura_receiver.generated.receiver_entities_generated import decode_communicator_state_v1
+    from cura_receiver.ports.ds3231 import Ds3231WriteResult, Ds3231WriteDisposition, Ds3231Failure
+    from cura_receiver.runtime_time import RtcRefreshStatus
+    from tests.support.fakes.ds3231 import FakeDs3231Control
+
+    c = composition()
+    read_clock = c.clock.now_monotonic_us
+
+    def advancing_read():
+        c.clock.advance_elapsed_us(tick_us)
+        return read_clock()
+
+    monkeypatch.setattr(c.clock, 'now_monotonic_us', advancing_read)
+    rtc = FakeDs3231Control()
+
+    def read_rtc():
+        started = c.clock.now_monotonic_us()
+        return Ds3231ReadResult(DR.OK, started, c.clock.now_monotonic_us(),
+                               (UTC + started - 100) // 1_000_000)
+
+    def write_rtc():
+        return Ds3231WriteResult(Ds3231WriteDisposition.COMPLETED, Ds3231Failure.NONE,
+                                c.clock.now_monotonic_us(), c.clock.now_monotonic_us())
+
+    rtc.read_results.extend([read_rtc, read_rtc])
+    rtc.write_results.append(write_rtc)
+    scheduler = CommunicatorScheduler(c.communicator, chrony=None, rtc=rtc,
+                                      health_interval_us=60_000_000)
+    scheduler.next_airtime = c.clock.now_monotonic_us() + 10_000_000
+    initial_generation = c.airtime.owner.state.generation
+    assert c.time.state.quality is E.SystemTimeQuality.NETWORK_SYNCED
+    assert c.time.sample.error_bound_us == 1_000_000
+    assert c.airtime.owner.state.rtc_provenance is None
+
+    turns = []
+    for _ in range(12):
+        previous_calls = len(rtc.calls)
+        turn = scheduler.run_once()
+        turns.append(turn)
+        assert len(rtc.calls) - previous_calls <= 1
+        if turn.work is Work.RTC and turn.update is not None:
+            break
+
+    # A frozen clock is the control: both advancing cases must complete too.
+    assert [call[0] for call in rtc.calls] == ['read', 'write', 'read'], turns
+    assert turns[-1].update.status is RtcRefreshStatus.VERIFIED
+    assert c.time.rtc_refresh_episode is None
+    assert c.time.last_refresh_monotonic_us is not None
+    assert c.airtime.owner.state.generation == initial_generation + 1
+    with sqlite3.connect(c.database) as db:
+        blob = db.execute('SELECT state_blob FROM communicator_state').fetchone()[0]
+    persisted = decode_communicator_state_v1(blob)
+    assert persisted == c.airtime.owner.state
+    assert persisted.rtc_provenance.verified_by_receiver_instance_id == INSTANCE
+    assert persisted.rtc_provenance.drift_bound_ppm == 10
+
+
+@pytest.mark.parametrize('invalidation', ['generation', 'source_error'])
+def test_scheduler_rtc_continuation_rechecks_source_before_write(composition, invalidation):
+    from dataclasses import replace
+    from cura_receiver.communicator_scheduler import CommunicatorScheduler, Work
+    from cura_receiver.runtime_time import RtcRefreshStatus
+    from tests.support.fakes.ds3231 import FakeDs3231Control
+
+    c = composition()
+    rtc = FakeDs3231Control()
+    now = c.clock.now_monotonic_us()
+    rtc.read_results.append(Ds3231ReadResult(DR.OK, now, now, UTC // 1_000_000))
+    scheduler = CommunicatorScheduler(c.communicator, chrony=None, rtc=rtc,
+                                      health_interval_us=60_000_000)
+    scheduler.next_airtime = now + 10_000_000
+    assert scheduler.run_once().work is Work.RTC
+    assert c.time.rtc_refresh_episode is not None
+    generation = c.airtime.owner.state.generation
+    if invalidation == 'generation':
+        c.time.state = replace(c.time.state, generation=c.time.state.generation + 1)
+    else:
+        c.time.sample = replace(c.time.sample, error_bound_us=5_000_001)
+
+    turn = scheduler.run_once()
+    assert turn.work is Work.RTC
+    assert turn.update.status is RtcRefreshStatus.TRUST_INVALIDATED
+    assert [call[0] for call in rtc.calls] == ['read']
+    assert c.time.rtc_refresh_episode is None
+    assert c.airtime.owner.state.generation == generation
+    assert c.airtime.owner.state.rtc_provenance is None
+
+
+@pytest.mark.parametrize('future', ['refresh', 'retry'])
+def test_scheduler_new_rtc_work_respects_future_deadline(composition, future):
+    from cura_receiver.communicator_scheduler import CommunicatorScheduler, Work
+    from tests.support.fakes.ds3231 import FakeDs3231Control
+
+    c = composition()
+    rtc = FakeDs3231Control()
+    now = c.clock.now_monotonic_us()
+    if future == 'refresh':
+        c.time.last_refresh_monotonic_us = now
+    else:
+        c.time.next_rtc_attempt_monotonic_us = now + 10_000_000
+    scheduler = CommunicatorScheduler(c.communicator, chrony=None, rtc=rtc,
+                                      health_interval_us=60_000_000)
+    scheduler.next_airtime = scheduler.next_health = now + 10_000_000
+    assert scheduler.run_once().work is not Work.RTC
+    assert rtc.calls == []
+    assert c.time.rtc_refresh_episode is None
 
 
 def test_duplicate_after_lost_ack_and_backlog_keep_all_occurrences(composition):

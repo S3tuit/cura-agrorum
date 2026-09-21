@@ -4,20 +4,17 @@ from dataclasses import dataclass, replace
 from enum import Enum, auto
 
 from .generated import receiver_enums_generated as E
-from .airtime_ledger import AirtimeCorrelation, AirtimeLedger, SnapshotDeferred
+from .airtime_ledger import AirtimeCorrelation, AirtimeLedger
 from .communicator_state_persistence import (
     COMMUNICATOR_STATE_BUCKET_CAPACITY as CAPACITY,
     CommunicatorStatePolicy,
 )
 from .elapsed_duration import (
     MONOTONIC_ELAPSED_RATE_BOUND_PPM,
-    checked_duration_product,
     checked_monotonic_deadline,
     checked_monotonic_elapsed,
     checked_utc_difference,
-    checked_utc_offset,
     minimum_wait_monotonic_us,
-    maximum_lifetime_monotonic_us,
 )
 
 from .generated.receiver_entities_generated import (
@@ -39,14 +36,12 @@ ACK_CHARGED_AIRTIME_US = 67_866
 
 class AirtimeReason(Enum):
     STATE_READY = auto()
-    UNTRUSTED_TIME = auto()
     STATE_UNAVAILABLE = auto()
     RECOVERY_WAIT = auto()
     PERSISTENCE_PENDING = auto()
     PERSISTENCE_FAILED = auto()
     RECONCILIATION_CONFLICT = auto()
     INVALID_STATE = auto()
-    SNAPSHOT_DEFERRED = auto()
     GRANT_REQUIRED = auto()
     GRANT_EXPIRED = auto()
     BUDGET_EXHAUSTED = auto()
@@ -77,13 +72,12 @@ class AirtimeSpend:
 
 @dataclass(slots=True)
 class _BucketGrant:
-    expiration: int
+    bucket_start: int
     baseline_us: int
     increment_us: int
     unspent_us: int
     generation: int
     deadline_monotonic_us: int
-    offset_us: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,33 +87,17 @@ class _GrantTransition:
     grant: _BucketGrant | None
     preceding_ledger: AirtimeLedger
     preceding_grant: _BucketGrant | None
-    time_epoch: int
     next_reason: AirtimeReason
 
 
-def recovery_state(policy, *, utc_us, quality, rtc_health, synthetic):
-    """Construct the specified recovery value; persistence independently validates it."""
-    entries = []
+def recovery_state(policy, *, snapshot, quality, rtc_health, synthetic):
+    """Construct the specified positional recovery value, including without UTC."""
+    charges = ()
     if synthetic:
         q, r = divmod(policy.tx_airtime_budget_us, policy.bucket_charge_limit_us)
         charges = ((r,) if r else ()) + (policy.bucket_charge_limit_us,) * q
         if len(charges) > CAPACITY:
             raise ValueError("synthetic ledger exceeds capacity")
-        newest = checked_utc_offset(utc_us, policy.bucket_width_us)
-        for index, charge in enumerate(charges):
-            end = checked_utc_offset(
-                newest,
-                -checked_duration_product(
-                    len(charges) - index - 1, policy.bucket_width_us
-                ),
-            )
-            expiration = checked_utc_offset(
-                checked_utc_offset(end, policy.rolling_window_us),
-                policy.bucket_expiration_guard_us,
-            )
-            if expiration <= utc_us:
-                raise ValueError("synthetic entry already expired")
-            entries.append(TxAirtimeBucketV1(charge, expiration))
     return CommunicatorStateV1(
         generation=1,
         last_observed_system_time_quality=quality,
@@ -129,9 +107,9 @@ def recovery_state(policy, *, utc_us, quality, rtc_health, synthetic):
         tx_airtime_budget_us=policy.tx_airtime_budget_us,
         bucket_width_us=policy.bucket_width_us,
         bucket_charge_limit_us=policy.bucket_charge_limit_us,
-        bucket_expiration_guard_us=policy.bucket_expiration_guard_us,
-        airtime_snapshot_utc_us=utc_us,
-        buckets=tuple(entries) + (TxAirtimeBucketV1(0, 0),) * (CAPACITY - len(entries)),
+        airtime_snapshot=snapshot,
+        buckets=(TxAirtimeBucketV1(0),) * (CAPACITY - len(charges)) +
+                tuple(TxAirtimeBucketV1(charge) for charge in charges),
     )
 
 
@@ -158,15 +136,12 @@ class TxAirtimePolicy:
         self._known_state = None
         self._pending_requested = None
         self._disabled_since = None
-        self._needs_rebase = False
         self._grant = None
         self._transition = None
-        self._time_epoch = 0
         self._settlement_frozen = False
         self._spends = {}
         self._external_snapshot = None
         self._external_ledger = None
-        self._external_epoch = None
 
     @property
     def total_used(self):
@@ -181,9 +156,9 @@ class TxAirtimePolicy:
         return self.owner.state
 
     @property
-    def outstanding_bucket_expiration_utc_us(self):
-        """Diagnostic correlation only; this does not authorize spending."""
-        return None if self._grant is None else self._grant.expiration
+    def grant_outstanding(self):
+        """Diagnostic ownership fact; an outstanding grant may be expired/frozen."""
+        return self._grant is not None
 
     @property
     def available_charge_us(self):
@@ -201,19 +176,14 @@ class TxAirtimePolicy:
                 else AirtimeReason.PERSISTENCE_PENDING
             )
         self._sync_external_snapshot()
-        if self._utc() is None:
-            return AirtimeReason.UNTRUSTED_TIME
         if self.owner.state is None:
             return AirtimeReason.STATE_UNAVAILABLE
         if (
-            self._needs_rebase
-            or self._settlement_frozen
+            self._settlement_frozen
             or self.owner.state is not self._known_state
         ):
             return AirtimeReason.GRANT_REQUIRED
         if self._grant is None:
-            return AirtimeReason.GRANT_REQUIRED
-        if self._grant.offset_us != self._correlation.offset_us:
             return AirtimeReason.GRANT_REQUIRED
         if self.clock.now_monotonic_us() >= self._grant.deadline_monotonic_us:
             return AirtimeReason.GRANT_EXPIRED
@@ -228,50 +198,37 @@ class TxAirtimePolicy:
         ):
             self._known_state = self.owner.state
             self._ledger = self._external_ledger
-            self._needs_rebase |= self._time_epoch != self._external_epoch
-            self._external_snapshot = self._external_ledger = self._external_epoch = (
+            self._external_snapshot = self._external_ledger = (
                 None
             )
 
-    def snapshot(
-        self, *, provenance, snapshot_monotonic_us, snapshot_utc_us, previous_state
-    ):
-        """RuntimeTime's complete-state callback preserves the outstanding precharge."""
+    def snapshot(self, *, provenance, snapshot_monotonic_us, snapshot_utc_us,
+                 previous_state):
+        """RTC's complete-state callback preserves precharges and live deadlines."""
         self._sync_external_snapshot()
-        if (
-            self.owner.pending is not None
-            or self._transition is not None
-            or previous_state is not self.owner.state
-            or previous_state is None
-            or self._correlation is None
-            or (self._needs_rebase and self._grant is not None)
-        ):
+        if (self.owner.pending is not None or self._transition is not None
+                or previous_state is not self.owner.state or previous_state is None):
             return None
         try:
-            utc = self._correlation.utc_at(
-                snapshot_monotonic_us, policy=self.policy, rate_bound_ppm=self.rate
-            )
-            if utc != snapshot_utc_us or previous_state.generation >= (1 << 63) - 1:
+            evidence = self._snapshot_time(snapshot_monotonic_us)
+            if (evidence is None or evidence.utc_us != snapshot_utc_us
+                    or previous_state.generation >= (1 << 63) - 1):
                 return None
             if self._ledger is None:
-                self._restore(previous_state, utc, snapshot_monotonic_us)
+                self._restore(previous_state, evidence, snapshot_monotonic_us)
             if previous_state is not self._known_state:
                 return None
             ledger = self._ledger.copy()
             ledger.advance(snapshot_monotonic_us)
             requested = replace(
-                previous_state,
-                generation=previous_state.generation + 1,
-                rtc_provenance=provenance,
-                airtime_snapshot_utc_us=utc,
-                last_observed_system_time_quality=self._correlation.sample.quality,
+                previous_state, generation=previous_state.generation + 1,
+                rtc_provenance=provenance, airtime_snapshot=evidence,
+                last_observed_system_time_quality=self._quality(evidence),
                 last_observed_rtc_health=self._rtc_health,
-                buckets=ledger.snapshot_buckets(utc),
-            )
+                buckets=ledger.snapshot_buckets())
         except (ValueError, OverflowError):
             return None
         self._external_snapshot, self._external_ledger = requested, ledger
-        self._external_epoch = self._time_epoch
         return requested
 
     def update_time(self, correlation, *, rtc_health):
@@ -279,67 +236,52 @@ class TxAirtimePolicy:
             raise TypeError("time handoff must be an AirtimeCorrelation or None")
         if type(rtc_health) is not RtcHealth:
             raise TypeError("current RTC health must be supplied explicitly")
-        old = self._correlation
-        if correlation is None or (
-            old is not None and old.offset_us != correlation.offset_us
-        ):
-            self._needs_rebase = True
-            self._time_epoch += 1
         self._correlation, self._rtc_health = correlation, rtc_health
 
-    def _utc(self, now_monotonic_us=None):
+    def _snapshot_time(self, now_monotonic_us):
         if self._correlation is None:
             return None
         try:
-            return self._correlation.utc_at(
-                (
-                    self.clock.now_monotonic_us()
-                    if now_monotonic_us is None
-                    else now_monotonic_us
-                ),
-                policy=self.policy,
-                rate_bound_ppm=self.rate,
-            )
+            return self._correlation.evidence_at(
+                now_monotonic_us, policy=self.policy, rate_bound_ppm=self.rate)
         except (TypeError, ValueError, OverflowError):
-            self._correlation = None
-            self._needs_rebase = True
-            self._time_epoch += 1
             return None
+
+    def _quality(self, snapshot):
+        return (E.SystemTimeQuality.UNTRUSTED if snapshot is None
+                else self._correlation.sample.quality)
 
     def confirm_transmitter_disabled(self):
         """Caller assertion of physical inability; software policy cannot establish it."""
         if self._disabled_since is None:
             self._disabled_since = self.clock.now_monotonic_us()
 
-    def _restore(self, state, utc, monotonic_us):
-        for name in (
-            "rolling_window_us",
-            "tx_airtime_budget_us",
-            "bucket_width_us",
-            "bucket_charge_limit_us",
-            "bucket_expiration_guard_us",
-        ):
+    def _restore(self, state, snapshot, monotonic_us):
+        for name in ("rolling_window_us", "tx_airtime_budget_us",
+                     "bucket_width_us", "bucket_charge_limit_us"):
             if getattr(state, name) != getattr(self.policy, name):
                 raise ValueError("loaded state does not match the active policy")
+        elapsed = 0
+        if state.airtime_snapshot is not None and snapshot is not None:
+            try:
+                elapsed = max(0, checked_utc_difference(
+                    snapshot.utc_us, state.airtime_snapshot.utc_us)
+                    - snapshot.error_bound_us - state.airtime_snapshot.error_bound_us)
+            except OverflowError:
+                # No representable correlation is unknown elapsed time, not empty history.
+                elapsed = 0
         self._ledger = AirtimeLedger(
-            self.policy,
-            state.buckets,
-            utc_us=utc,
-            monotonic_us=monotonic_us,
-            rate_bound_ppm=self.rate,
-        )
+            self.policy, state.buckets, monotonic_us=monotonic_us,
+            elapsed_us=elapsed, rate_bound_ppm=self.rate)
         self._known_state = state
-        self._needs_rebase = False
 
     def _adopt_recovery_result(self, result, requested, *, loaded=None):
         if result.disposition in (CD.COMMITTED, CD.ALREADY_COMMITTED):
             self._pending_requested = None
             now = self.clock.now_monotonic_us()
-            utc = self._utc(now)
-            if utc is None:
-                return AirtimeUpdate(AirtimeReason.UNTRUSTED_TIME, result, loaded)
+            snapshot = self._snapshot_time(now)
             try:
-                self._restore(requested, utc, now)
+                self._restore(requested, snapshot, now)
             except (ValueError, OverflowError):
                 return AirtimeUpdate(AirtimeReason.INVALID_STATE, result, loaded)
             return AirtimeUpdate(AirtimeReason.STATE_READY, result, loaded)
@@ -373,14 +315,17 @@ class TxAirtimePolicy:
         if self._grant is not None:
             return AirtimeUpdate(self._grant_reason(), load_result=loaded)
         self._pending_requested = None
+        self._sync_external_snapshot()
         now = self.clock.now_monotonic_us()
-        utc = self._utc(now)
-        if utc is None:
-            return AirtimeUpdate(AirtimeReason.UNTRUSTED_TIME, load_result=loaded)
         if self.owner.state is None:
             return AirtimeUpdate(AirtimeReason.STATE_UNAVAILABLE, load_result=loaded)
         try:
-            self._restore(self.owner.state, utc, now)
+            if self._ledger is None:
+                self._restore(self.owner.state, self._snapshot_time(now), now)
+            elif self.owner.state is self._known_state:
+                self._ledger.advance(now)
+            else:
+                return AirtimeUpdate(AirtimeReason.INVALID_STATE, load_result=loaded)
         except (ValueError, OverflowError):
             return AirtimeUpdate(AirtimeReason.INVALID_STATE, load_result=loaded)
         return AirtimeUpdate(AirtimeReason.STATE_READY, load_result=loaded)
@@ -398,13 +343,11 @@ class TxAirtimePolicy:
                 AirtimeReason.STATE_READY if reason is AirtimeReason.ALLOWED else reason
             )
         now = self.clock.now_monotonic_us()
-        utc = self._utc(now)
-        if utc is None:
-            return AirtimeUpdate(AirtimeReason.UNTRUSTED_TIME)
+        snapshot = self._snapshot_time(now)
         if self.owner.state is not None:
             try:
-                if self._ledger is None or self._needs_rebase:
-                    self._restore(self.owner.state, utc, now)
+                if self._ledger is None:
+                    self._restore(self.owner.state, snapshot, now)
                 else:
                     self._ledger.advance(now)
             except (ValueError, OverflowError):
@@ -431,8 +374,8 @@ class TxAirtimePolicy:
                     return AirtimeUpdate(AirtimeReason.RECOVERY_WAIT)
             requested = recovery_state(
                 self.policy,
-                utc_us=utc,
-                quality=self._correlation.sample.quality,
+                snapshot=snapshot,
+                quality=self._quality(snapshot),
                 rtc_health=self._rtc_health,
                 synthetic=not incompatible,
             )
@@ -453,23 +396,16 @@ class TxAirtimePolicy:
         if installed:
             self._ledger = transition.ledger
             self._grant = transition.grant
-            self._needs_rebase = self._time_epoch != transition.time_epoch
         else:
             self._ledger = transition.preceding_ledger
             self._grant = transition.preceding_grant
         self._known_state = self.owner.state
         self._transition = None
         self._pending_requested = None
-        self._external_snapshot = self._external_ledger = self._external_epoch = None
+        self._external_snapshot = self._external_ledger = None
         self._settlement_frozen = False
-        utc = self._utc()
-        if utc is not None and self._grant is not None:
-            self._needs_rebase = (
-                self._needs_rebase
-                or self._grant.offset_us != self._correlation.offset_us
-            )
         reason = self._grant_reason()
-        if installed and transition.grant is None and utc is not None:
+        if installed and transition.grant is None:
             reason = transition.next_reason
         if committed is not None and committed.disposition is CD.NOT_INSTALLED:
             reason = AirtimeReason.PERSISTENCE_FAILED
@@ -511,7 +447,7 @@ class TxAirtimePolicy:
         return AirtimeSpend(
             AirtimeReason.ALLOWED,
             token,
-            self._grant.expiration,
+            None,
             self._grant.deadline_monotonic_us,
         )
 
@@ -548,117 +484,54 @@ class TxAirtimePolicy:
 
     def _prepare_transition(self, *, deadline_monotonic_us, precharge):
         self._sync_external_snapshot()
-        # UTC and its monotonic origin must be the same sample even if descheduled.
         now = self.clock.now_monotonic_us()
-        utc = self._utc(now)
-        if utc is None:
-            return AirtimeUpdate(AirtimeReason.UNTRUSTED_TIME)
+        evidence = self._snapshot_time(now)
         if self.owner.state is not self._known_state:
             return AirtimeUpdate(AirtimeReason.INVALID_STATE)
         try:
             if self.owner.state.generation >= (1 << 63) - 1:
                 raise OverflowError("state generation exhausted")
-            if self._needs_rebase:
-                ledger = AirtimeLedger(
-                    self.policy,
-                    self.owner.state.buckets,
-                    utc_us=utc,
-                    monotonic_us=now,
-                    rate_bound_ppm=self.rate,
-                )
-            else:
-                ledger = self._ledger.copy()
-                ledger.advance(now)
+            ledger = self._ledger.copy()
+            ledger.advance(now)
             if self._grant is not None:
                 old = self._grant
-                baseline = ledger.charge_at(old.expiration)
+                baseline = ledger.charge_at(old.bucket_start)
                 if baseline:
                     if baseline != old.baseline_us + old.increment_us:
-                        raise ValueError(
-                            "durable grant baseline changed outside airtime policy"
-                        )
-                    ledger.set_charge(
-                        old.expiration,
-                        old.baseline_us + old.increment_us - old.unspent_us,
-                        utc_us=utc,
-                        monotonic_us=now,
-                    )
-            if ledger.empty:
-                ledger = AirtimeLedger(
-                    self.policy,
-                    (TxAirtimeBucketV1(0, 0),) * CAPACITY,
-                    utc_us=utc,
-                    monotonic_us=now,
-                    rate_bound_ppm=self.rate,
-                )
+                        raise ValueError("durable grant baseline changed outside airtime policy")
+                    ledger.set_charge(old.bucket_start,
+                        old.baseline_us + old.increment_us - old.unspent_us)
             grant = None
             next_reason = AirtimeReason.STATE_READY
             if precharge:
-                end = ledger.current_bucket_end(utc)
-                expiration = ledger.expiration(end)
-                if not ledger.fits(expiration):
-                    next_reason = AirtimeReason.CAPACITY_EXCEEDED
+                if now >= ledger.grant_deadline:
+                    next_reason = AirtimeReason.GRANT_EXPIRED
                 else:
-                    baseline = ledger.charge_at(expiration)
-                    increment = min(
-                        self.policy.bucket_charge_limit_us - baseline,
-                        self.policy.tx_airtime_budget_us - ledger.total_used,
-                    )
+                    baseline = ledger.charge_at(ledger.current_start)
+                    increment = min(self.policy.bucket_charge_limit_us - baseline,
+                                    self.policy.tx_airtime_budget_us - ledger.total_used)
                     if increment < ACK_CHARGED_AIRTIME_US:
                         next_reason = AirtimeReason.BUDGET_EXHAUSTED
                     else:
-                        grant_deadline = checked_monotonic_deadline(
-                            now,
-                            maximum_lifetime_monotonic_us(
-                                checked_utc_difference(end, utc),
-                                rate_bound_ppm=self.rate,
-                            ),
-                        )
-                        ledger.set_charge(
-                            expiration,
-                            baseline + increment,
-                            utc_us=utc,
-                            monotonic_us=now,
-                        )
-                        grant = _BucketGrant(
-                            expiration,
-                            baseline,
-                            increment,
-                            increment,
-                            self.owner.state.generation + 1,
-                            grant_deadline,
-                            self._correlation.offset_us,
-                        )
+                        ledger.set_charge(ledger.current_start, baseline + increment)
+                        grant = _BucketGrant(ledger.current_start, baseline, increment,
+                                             increment, self.owner.state.generation + 1,
+                                             ledger.grant_deadline)
                         next_reason = AirtimeReason.ALLOWED
                 if grant is None and self._grant is None:
                     return AirtimeUpdate(next_reason)
-            requested = replace(
-                self.owner.state,
+            requested = replace(self.owner.state,
                 generation=self.owner.state.generation + 1,
-                airtime_snapshot_utc_us=utc,
-                last_observed_system_time_quality=self._correlation.sample.quality,
+                airtime_snapshot=evidence,
+                last_observed_system_time_quality=self._quality(evidence),
                 last_observed_rtc_health=self._rtc_health,
-                buckets=ledger.snapshot_buckets(utc),
-            )
-        except SnapshotDeferred:
-            return AirtimeUpdate(AirtimeReason.SNAPSHOT_DEFERRED)
+                buckets=ledger.snapshot_buckets())
         except (ValueError, OverflowError):
             return AirtimeUpdate(AirtimeReason.INVALID_STATE)
-        self._transition = _GrantTransition(
-            requested,
-            ledger,
-            grant,
-            self._ledger,
-            self._grant,
-            self._time_epoch,
-            next_reason,
-        )
+        self._transition = _GrantTransition(requested, ledger, grant, self._ledger,
+                                             self._grant, next_reason)
         self._pending_requested = requested
-        result = self.owner.commit(
-            requested, deadline_monotonic_us=deadline_monotonic_us,
+        result = self.owner.commit(requested, deadline_monotonic_us=deadline_monotonic_us,
             purpose=(E.PersistenceControlPurpose.AIRTIME_BUCKET_GRANT if grant is not None
-                     else E.PersistenceControlPurpose.AIRTIME_BUCKET_SETTLEMENT),
-            bucket_expiration_utc_us=(grant.expiration if grant is not None
-                else self._grant.expiration if self._grant is not None else None),
-        )
+                     else E.PersistenceControlPurpose.AIRTIME_BUCKET_SETTLEMENT))
         return self._finish_transition(committed=result)

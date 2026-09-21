@@ -101,7 +101,7 @@ def airtime_component(tmp_path):
                 connection.execute(
                     "INSERT INTO communicator_state VALUES (?,?,?,?,?)",
                     communicator_state_v1_parameters(
-                        state(bucket_expiration_guard_us=100_000_000)
+                        state(tx_airtime_budget_us=35_000_000)
                     ),
                 )
         clock = FakeOsClock(monotonic_us=100)

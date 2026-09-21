@@ -27,13 +27,14 @@ from cura_receiver.time_observations import (
 from cura_receiver.time_policy import (
     ClockState,
     NetworkEvidence,
+    network_estimate,
     TimePolicy,
     advance_clock_state,
     expire_clock_trust,
 )
 from tests.support.fakes.os_clock import FakeOsClock
 
-POLICY = TimePolicy(maximum_network_skew_ppb=1000)
+POLICY = TimePolicy()
 STATE = ClockState(Quality.NETWORK_SYNCED, Health.PRESENT, 7)
 EVIDENCE = NetworkEvidence(0, 100, True, True, 0, 0, 1000)
 PROVENANCE = RtcProvenanceV1(b"v" * 16, 500_000, 500_000, 4_000_000, 10)
@@ -52,6 +53,7 @@ def network(**overrides):
         policy=POLICY,
     )
     args.update(overrides)
+    args["estimate"] = network_estimate(args.pop("evidence"))
     return network_observation(**args)
 
 
@@ -90,7 +92,7 @@ def verification(**overrides):
 # A bounded network bracket produces its midpoint and preserves a valid UTC zero.
 def test_network_midpoint_and_zero_utc():
     sample = network()
-    assert sample == TrustedTimeSample(150, 0, 1_000_000, Quality.NETWORK_SYNCED, 7)
+    assert sample == TrustedTimeSample(150, 0, 1_000_001, Quality.NETWORK_SYNCED, 7)
     assert network(operation_finished_at_monotonic_us=201).monotonic_us == 150
 
 
@@ -132,7 +134,7 @@ def test_network_axes_and_hysteresis():
     untrusted = replace(STATE, quality=Quality.UNTRUSTED)
     evidence = replace(EVIDENCE, remaining_correction_us=34_000_001)
     assert network(before=untrusted, after=untrusted, evidence=evidence) is None
-    assert network(evidence=evidence).error_bound_us == 35_000_001
+    assert network(evidence=evidence).error_bound_us == 35_000_002
     assert network(operation_finished_at_monotonic_us=1_000_000) is not None
 
 
@@ -407,7 +409,7 @@ def test_poll_cap_uses_tracking_query_start():
 
 # An otherwise bounded candidate is unusable when its interval expires before sampling finishes.
 def test_sampling_must_finish_before_trust_expiry():
-    evidence = replace(EVIDENCE, remaining_correction_us=38_999_999)
+    evidence = replace(EVIDENCE, remaining_correction_us=38_999_998)
     assert (
         network(evidence=evidence, operation_finished_at_monotonic_us=100) is not None
     )
@@ -435,3 +437,15 @@ def test_refresh_rejects_exhausted_budget():
         )
         is None
     )
+
+
+# Query age is paid at the kernel midpoint; subsequent age starts at that midpoint.
+def test_network_age_survives_midpoint_publication():
+    sample = network(
+        evidence=replace(EVIDENCE, sample_finished_at_monotonic_us=250_000),
+        operation_started_at_monotonic_us=250_000,
+        operation_finished_at_monotonic_us=750_000,
+    )
+    assert sample.monotonic_us == 500_000
+    assert sample.error_bound_us == 1_001_857
+    assert advanced_error_us(sample, 1_000_000, POLICY) == 1_003_714

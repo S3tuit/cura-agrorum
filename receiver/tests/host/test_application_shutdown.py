@@ -29,7 +29,8 @@ def test_clean_stop_drains_marks_and_is_idempotent(tmp_path):
         result = app.shutdown(clean_requested=True, wait=wait_for_worker(app))
         assert result.radio_safe and result.queue_drained and result.worker_stopped
         assert result.clean_stop_confirmed and result.failure is None
-        assert result.authoritative_generation == 0
+        # Offline startup now durably installs synthetic airtime history.
+        assert result.authoritative_generation == 1
         assert app.stop_deadline == deadline
         assert app.shutdown(clean_requested=True) is result
         with sqlite3.connect(database) as db:

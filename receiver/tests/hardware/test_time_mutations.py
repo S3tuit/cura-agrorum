@@ -6,6 +6,7 @@ helper as sole RTC writer. Physical controller fixtures retain their cura scope.
 """
 
 from contextlib import ExitStack, contextmanager
+from cura_receiver.generated.receiver_entities_generated import AirtimeSnapshotV1
 from dataclasses import asdict, replace
 from decimal import Decimal, ROUND_CEILING
 import hashlib
@@ -910,7 +911,7 @@ def execute_component(case, value):
             clock=clock,
             kernel=LinuxKernelClock(clock),
             queue=ProducerAdmission(owner.queue),
-            policy=TimePolicy(maximum_network_skew_ppb=1_000_000),
+            policy=TimePolicy(),
             startup_rtc_result=probe,
             settings=RuntimeTimeSettings(
                 rtc_read_budget_us=5_000_000,
@@ -925,15 +926,7 @@ def execute_component(case, value):
             state = synthetic()
             state = replace(
                 state,
-                airtime_snapshot_utc_us=utc,
-                buckets=tuple(
-                    (
-                        replace(b, expires_at_utc_us=b.expires_at_utc_us + utc)
-                        if b.charged_airtime_us
-                        else b
-                    )
-                    for b in state.buckets
-                ),
+                airtime_snapshot=AirtimeSnapshotV1(utc, 1),
             )
             assert (
                 owner.control.commit_communicator_state(
@@ -950,7 +943,7 @@ def execute_component(case, value):
                     kw["previous_state"],
                     generation=kw["previous_state"].generation + 1,
                     rtc_provenance=kw["provenance"],
-                    airtime_snapshot_utc_us=kw["snapshot_utc_us"],
+                    airtime_snapshot=AirtimeSnapshotV1(kw["snapshot_utc_us"], 1),
                 )
 
             first = rt.refresh_rtc(rtc, snapshot)

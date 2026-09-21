@@ -71,8 +71,10 @@ precede generated comparisons of grants, full-budget bursts, settlements, UTC
 offset changes, trust loss, failed/unknown commits and repeated process loss.
 Production codecs decode observed results only; they never supply model inputs
 or expectations. The existing model import guard covers this module.
-Each model entry retains its own rational-duration deadline. A separate
-eight-hour real-SQLite test asserts the approved 14-second deferral and 74-second
+The model uses complete positional charges plus optional UTC/error evidence,
+with no production imports. Each live entry retains its own rational-duration
+deadline; UTC loss does not revoke an existing grant. A separate
+eight-hour real-SQLite test asserts the one-second deferral and 61-second
 ACK-gap bounds without calling that model, so shared availability mistakes do
 not pass merely through differential agreement (review F-001).
 The Pi lifetime/restart and two-phase reboot families share

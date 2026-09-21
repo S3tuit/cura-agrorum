@@ -61,7 +61,7 @@ from .receiver_startup import ReceiverInstanceStart
 from .time_policy import (
     startup_clock_state,
     advance_clock_state,
-    network_error_bound_us,
+    network_estimate,
     network_tracking_decision,
 )
 
@@ -527,8 +527,34 @@ class RuntimeTime:
             self.tracking_poll_deadline = schedule.tracking_poll_due_at_monotonic_us
         return TimeUpdate(admission_result=reservation.status, observation=observation)
 
+    def _tracking_estimate(self, tracking):
+        """One source bound shared by step, kernel and RTC admission."""
+        try:
+            estimate = network_estimate(
+                tracking.evidence(), report_calculation_failure=True
+            )
+            return estimate, None
+        except OverflowError:
+            before = self.state
+            finish = self.clock.now_monotonic_us()
+            update = self._untrusted(finish, tracking_processed=True)
+            failure = self._failure(
+                E.TimeDiagnosticErrorCode.CALCULATION_RANGE,
+                E.TimeComponent.TIME_POLICY,
+                E.TimeFailureStage.CALCULATE_ERROR_BOUND,
+                tracking.sample_started_at_monotonic_us,
+                finish,
+                before=before,
+                operation=E.DiagnosticOperation.VALIDATE,
+            )
+            return None, replace(update, failure=self._network_latch.failed(failure))
+
     def sample_network(self, tracking):
-        """Process one completed tracking result and its actual read-only kernel bracket."""
+        """Process one completed result and its actual read-only kernel bracket."""
+        estimate, failure = self._tracking_estimate(tracking)
+        return failure if failure is not None else self._sample_network(tracking, estimate)
+
+    def _sample_network(self, tracking, estimate):
         before = self.state
         if self.pending_observation is not None:
             self.state = advance_clock_state(
@@ -538,37 +564,19 @@ class RuntimeTime:
                 tracking_processed=True,
             )
             return self.publish_pending()
-        evidence = tracking.evidence()
         start = tracking.sample_started_at_monotonic_us
         finish = self.clock.now_monotonic_us()
         poll_deadline = checked_monotonic_deadline(
             start, self.policy.chrony_tracking_poll_period_cap_us
         )
         self.tracking_poll_deadline = poll_deadline
-        try:
-            if evidence is not None:
-                network_error_bound_us(
-                    evidence.remaining_correction_us, evidence.root_distance_us
-                )
-            decision = network_tracking_decision(
-                before,
-                evidence,
-                now_monotonic_us=finish,
-                required_poll_deadline_us=poll_deadline,
-                policy=self.policy,
-            )
-        except OverflowError:
-            update = self._untrusted(finish, tracking_processed=True)
-            failure = self._failure(
-                E.TimeDiagnosticErrorCode.CALCULATION_RANGE,
-                E.TimeComponent.TIME_POLICY,
-                E.TimeFailureStage.CALCULATE_ERROR_BOUND,
-                start,
-                finish,
-                before=before,
-                operation=E.DiagnosticOperation.VALIDATE,
-            )
-            return replace(update, failure=self._network_latch.failed(failure))
+        decision = network_tracking_decision(
+            before,
+            estimate,
+            now_monotonic_us=finish,
+            required_poll_deadline_us=poll_deadline,
+            policy=self.policy,
+        )
         if decision.candidate_quality is not E.SystemTimeQuality.NETWORK_SYNCED:
             if tracking.status is Q.OK:
                 self._network_latch.succeeded()
@@ -604,7 +612,7 @@ class RuntimeTime:
         sample = network_observation(
             before,
             self.state,
-            evidence,
+            estimate,
             operation_started_at_monotonic_us=kernel.operation_started_at_monotonic_us,
             operation_finished_at_monotonic_us=kernel.operation_finished_at_monotonic_us,
             sampled_utc_us=(
@@ -772,7 +780,8 @@ class RuntimeTime:
             if requested is None:
                 return None, None
             require_immutable_state(requested)
-            if requested.rtc_provenance != provenance or requested.airtime_snapshot_utc_us != utc:
+            if (requested.rtc_provenance != provenance or requested.airtime_snapshot is None
+                    or requested.airtime_snapshot.utc_us != utc):
                 raise ValueError("complete state callback violated the time handoff")
             if not self._rtc_source_valid(generation, allow_health_pending=True):
                 return None, None
@@ -844,7 +853,9 @@ class RuntimeTime:
         self.rtc_refresh_episode = None
         return result
 
-    def _rtc_source_valid(self, generation, *, allow_health_pending=False):
+    def _rtc_source_valid(
+        self, generation, *, allow_health_pending=False, projected_duration_us=0
+    ):
         if (
             self.sample is None
             or generation != self.state.generation
@@ -857,7 +868,13 @@ class RuntimeTime:
             rtc_refresh_source_error_us(
                 self.sample,
                 self.state,
-                now_monotonic_us=self.clock.now_monotonic_us(),
+                now_monotonic_us=checked_monotonic_deadline(
+                    self.clock.now_monotonic_us(),
+                    minimum_wait_monotonic_us(
+                        projected_duration_us,
+                        rate_bound_ppm=self.policy.monotonic_elapsed_rate_bound_ppm,
+                    ),
+                ),
                 required_poll_deadline_us=self.tracking_poll_deadline,
                 policy=self.policy,
                 report_calculation_failure=True,
@@ -969,6 +986,20 @@ class RuntimeTime:
             )
             if due is None or start < due or start < self.next_rtc_attempt_monotonic_us:
                 return RtcRefreshResult(RtcRefreshStatus.DEFERRED)
+            # Include the final read attempt even when it starts near a retry
+            # window's end, and one reconciliation per possible state commit.
+            transitions = 1 + int(self.durable_state.rtc_provenance is not None)
+            projected_duration = (
+                2 * (
+                    self.settings.rtc_recovery_window_us + self.settings.rtc_read_budget_us
+                )
+                + self.settings.command_budget_us
+                + 2 * transitions * self.settings.control_budget_us
+            )
+            if not self._rtc_source_valid(
+                generation, projected_duration_us=projected_duration
+            ):
+                return finish(RtcRefreshStatus.DEFERRED)
             def prewrite_result(recovery):
                 nonlocal prewrite
                 prewrite = recovery.result
@@ -1327,9 +1358,12 @@ class RuntimeTime:
             return self._untrusted(finish, tracking_processed=True)
         if waiting and finish >= self.step_deadline_monotonic_us:
             return self._step_timeout(tracking_processed=True)
+        estimate, failure = self._tracking_estimate(query)
+        if failure is not None:
+            return failure
         decision = network_tracking_decision(
             before,
-            query.evidence(),
+            estimate,
             now_monotonic_us=finish,
             required_poll_deadline_us=checked_monotonic_deadline(
                 query.sample_started_at_monotonic_us,
@@ -1356,7 +1390,7 @@ class RuntimeTime:
             update = self._untrusted(finish, tracking_processed=True, step=True)
             self._step_clock_generation = self.state.generation
             return update
-        update = self.sample_network(query)
+        update = self._sample_network(query, estimate)
         if waiting and self.step_state is ChronyStepState.RETRY_BACKOFF:
             return update  # Kernel completion already ended this expired episode.
         if query.status in (Q.DEADLINE_EXCEEDED, Q.INVALID_RESPONSE):

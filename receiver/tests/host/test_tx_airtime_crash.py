@@ -225,11 +225,11 @@ def test_repeated_airtime_process_crashes_accumulate_conservatively(worker_files
         kill_at(
             root,
             "grant_after_commit",
-            elapsed=episode * 60_000_000,
+            elapsed=episode * 61_000_000,
             episode=str(episode),
         )
-    kill_at(root, "grant_denied", elapsed=5 * 60_000_000, episode="denied")
-    replacement, worker, clock = component(root, 5 * 60_000_000 + 1)
+    kill_at(root, "grant_denied", elapsed=5 * 61_000_000, episode="denied")
+    replacement, worker, clock = component(root, 5 * 61_000_000 + 1)
     try:
         assert (
             replacement.recover(
@@ -241,17 +241,8 @@ def test_repeated_airtime_process_crashes_accumulate_conservatively(worker_files
             replacement.total_used == 36_000_000
             and replacement.available_charge_us == 0
         )
-        assert [
-            (b.charged_airtime_us, b.expires_at_utc_us)
-            for b in replacement.state.buckets
-            if b.charged_airtime_us
-        ] == [
-            (8_000_000, 3_780_000_000),
-            (8_000_000, 3_840_000_000),
-            (8_000_000, 3_900_000_000),
-            (8_000_000, 3_960_000_000),
-            (4_000_000, 4_020_000_000),
-        ]
+        assert [b.charged_airtime_us for b in replacement.state.buckets
+                if b.charged_airtime_us] == [8_000_000] * 4 + [4_000_000]
         assert replacement.state.generation == 6
     finally:
         worker.finish_test()

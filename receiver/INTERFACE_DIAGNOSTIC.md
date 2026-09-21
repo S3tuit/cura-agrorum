@@ -410,8 +410,9 @@ Validity bits are:
 
 When bit 0 is clear, the complete second detail and its error code are zero.
 When bit 1 is clear, its sequence is zero. When bit 2 is clear, the bucket
-expiration is zero. A present bucket expiration identifies the durable logical
-bucket whose current-process grant covered the radio episode.
+expiration is zero. The monotonic airtime policy leaves this legacy optional
+UTC-expiration field absent: positional buckets have no durable UTC identity.
+The existing diagnostic encoding remains unchanged.
 `episode_duration_us` is checked subtraction from the trigger time
 to finalization time and is zero only when both monotonic reads were equal.
 
@@ -1088,8 +1089,8 @@ Flag bits are:
 
 `MUTATING` is set exactly for commit commands. `COMMIT_MAY_HAVE_RUN` requires a
 present `OUTCOME_UNKNOWN` disposition. The occurrence sequence is scoped by the
-base diagnostic's `receiver_instance_id`. The bucket expiration is present only
-when the failed state command granted or settled that durable logical bucket.
+base diagnostic's `receiver_instance_id`. The optional bucket expiration remains absent for the monotonic airtime policy;
+state generation and command purpose still identify grant/settlement transitions.
 
 `failure_kind` is nonzero and exactly matches the normalized failed source
 result for every persistence-control diagnostic. `state_condition` is present
@@ -1382,6 +1383,10 @@ When `ENTITY_KIND_VALID` is clear, `related_entity_kind` is zero; when set, it
 must be a defined `PersistQueueEntityKind`. When validity bit 0 is clear,
 `detail_kind` and `detail_code` are zero. When set, both are nonzero and the
 code belongs to the selected detail kind. All other absent fields are zero.
+For monotonic airtime grants, `airtime_bucket_expiration_utc_us` is absent.
+`AIRTIME_GRANT_OUTSTANDING` independently records process-local ownership,
+including an expired or frozen grant awaiting settlement.
+
 `operation_duration_us` is mandatory checked elapsed time from the first
 observed failure to finalization and may be zero for adjacent monotonic reads.
 

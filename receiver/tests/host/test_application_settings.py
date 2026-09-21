@@ -17,13 +17,13 @@ def test_isolated_paths_and_time_policy_do_not_change_pilot_settings(tmp_path):
         configuration_path=tmp_path / "test-group.json",
         database_path=tmp_path / "test.sqlite3",
         sqlite_temporary_directory=tmp_path / "sqlite-tmp",
-        time_policy=TimePolicy(maximum_network_skew_ppb=1000),
+        time_policy=TimePolicy(network_trust_error_threshold_us=30_000_000),
     )
     assert isolated.configuration_path.parent == tmp_path
     assert isolated.database_path.parent == tmp_path
     assert isolated.sqlite_temporary_directory.parent == tmp_path
-    assert pilot.time_policy.maximum_network_skew_ppb == 10_000
-    assert isolated.time_policy.maximum_network_skew_ppb == 1000
+    assert pilot.time_policy.network_trust_error_threshold_us == 35_000_000
+    assert isolated.time_policy.network_trust_error_threshold_us == 30_000_000
     assert pilot.database_path != isolated.database_path
 
 

@@ -34,7 +34,7 @@ def test_target_shortened_grant_lifetime(tmp_path):
         seeded,
     ):
         correlation = runtime.airtime_correlation()
-        seeded_mono, seeded_utc, expiration = seeded
+        seeded_mono, seeded_utc, snapshot_utc = seeded
         before = clock.now_monotonic_us()
         assert (
             airtime.acquire_grant(deadline_monotonic_us=before + 5_000_000).reason
@@ -46,15 +46,20 @@ def test_target_shortened_grant_lifetime(tmp_path):
         airtime.report_tx(spend.token, TxCertainty.NOT_STARTED)
         deadline = spend.grant_deadline_monotonic_us
         try:
-            assert spend.bucket_expiration_utc_us == expiration
-            # Independent arithmetic brackets the internal call's acquisition timestamp.
-            end = expiration - 3_720_000_000
-            offset = correlation.sample.utc_us - correlation.sample.monotonic_us
-            lower = before + ((end - offset - before) * 9963) // 10000
-            upper = acknowledged + ((end - offset - acknowledged) * 9963) // 10000
-            assert lower <= deadline <= upper
-            assert acknowledged < deadline < seeded_mono + 2_000_000
-            assert deadline - acknowledged < 2_000_000
+            assert spend.bucket_expiration_utc_us is None
+            # Independently account for both snapshot approximation and aged source error.
+            sample = correlation.sample
+            def expected(captured):
+                age = captured - sample.monotonic_us
+                growth = (age * 3700 + 996299) // 996300
+                utc = sample.utc_us + age
+                elapsed = max(0, utc - snapshot_utc - sample.error_bound_us - growth)
+                phase = elapsed % 60_000_000
+                phase_wait = (phase * 10037 + 9999) // 10000
+                return captured - phase_wait + 59_778_000
+            bounds = (expected(before), expected(acknowledged))
+            assert min(bounds) - 1 <= deadline <= max(bounds) + 1
+            assert acknowledged < deadline < seeded_mono + 60_000_000
             while clock.now_monotonic_us() <= deadline + 500_000:
                 start = clock.now_monotonic_us()
                 result = airtime.try_spend()
@@ -77,7 +82,7 @@ def test_target_shortened_grant_lifetime(tmp_path):
                 {
                     "seeded_monotonic_us": seeded_mono,
                     "seeded_utc_us": seeded_utc,
-                    "expiration_utc_us": expiration,
+                    "snapshot_utc_us": snapshot_utc,
                     "before_commit_us": before,
                     "acknowledged_us": acknowledged,
                     "grant_deadline_us": deadline,
@@ -132,7 +137,7 @@ def restart_phase(root, phase):
             correlation=asdict(runtime.airtime_correlation()),
             loaded_baseline_us=baseline,
             generation=airtime.state.generation,
-            buckets=[asdict(b) for b in airtime.state.buckets if b.charged_airtime_us],
+            buckets=[asdict(b) for b in airtime.state.buckets],
         )
         record(root, phase, result)
         return result
@@ -165,10 +170,9 @@ def test_target_process_restart_airtime_baseline(tmp_path):
     assert first["instance"] != second["instance"]
     assert first["generation"] == 3 and second["generation"] == 4
     assert second["loaded_baseline_us"] == 1_067_866
-    assert (
-        first["buckets"][0]["expires_at_utc_us"]
-        == second["buckets"][0]["expires_at_utc_us"]
-    )
+    assert first["buckets"][-1]["charged_airtime_us"] == 1_067_866
+    assert second["buckets"][-1]["charged_airtime_us"] == 8_000_000
+    assert all(b["charged_airtime_us"] == 0 for b in second["buckets"][:-1])
     assert (
         second["correlation"]["sample"]["monotonic_us"]
         >= second["started_at_monotonic_us"]

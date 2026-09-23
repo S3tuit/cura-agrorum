@@ -1,0 +1,10 @@
+Running as unit: cura-pilot-time-check-vuh7p781.service
+Traceback (most recent call last):
+  File "/opt/cura-pilot-vuh7p781/check-time-user.py", line 14, in <module>
+    assert t.status.name=='OK',t
+           ^^^^^^^^^^^^^^^^^^^
+AssertionError: ChronyTrackingResult(status=<ChronyQueryStatus.UNAVAILABLE: 2>, sample_started_at_monotonic_us=37092690148, sample_finished_at_monotonic_us=37092695599, source_selected=False, synchronized=False, remaining_correction_us=0, root_distance_us=0, estimated_skew_ppb=0)
+Finished with result: exit-code
+Main processes terminated with: code=exited, status=1/FAILURE
+Service runtime: 927ms
+CPU time consumed: 914ms

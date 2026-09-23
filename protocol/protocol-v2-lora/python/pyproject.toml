@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cura-protocol-v2-lora"
+version = "0.1.0"
+requires-python = ">=3.10"
+description = "Cura Agrorum protocol v2 LoRa receiver-group runtime loader"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cura_protocol_v2_lora*"]

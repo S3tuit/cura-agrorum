@@ -14,11 +14,12 @@
         "control": 32,
         "domain": 1,
         "node_id_hex": "0102030405060708",
-        "sample_id": 287454020,
+        "message_id": 287454020,
         "encoded_hex": "2001010203040506070844332211"
       },
       "nonce_hex": "01020304050607084433221101",
       "reading": {
+        "sample_id": 1432778632,
         "run_ms": 4660,
         "soil_0_mv": 1000,
         "soil_1_mv": 2000,
@@ -34,12 +35,12 @@
         "previous_cycle_tx_attempts": 7,
         "previous_cycle_accepted_readings": 2,
         "flags": 1023,
-        "encoded_hex": "3412e803d00785ffc801ebfca0860100381508033075c4090702ff03"
+        "encoded_hex": "887766553412e803d00785ffc801ebfca0860100381508033075c4090702ff03"
       },
       "encrypted": {
-        "ciphertext_hex": "11cbf9e44b432316798079478674cdcdfbee1411a4ebd465d414b3c8",
-        "tag_hex": "70d7309b544ca76d",
-        "frame_hex": "200101020304050607084433221111cbf9e44b432316798079478674cdcdfbee1411a4ebd465d414b3c870d7309b544ca76d"
+        "ciphertext_hex": "adae77b2af564eea61861744eef32731637d1d12ac8b186fe36388c2eded90d5",
+        "tag_hex": "41bb930f548308b9",
+        "frame_hex": "2001010203040506070844332211adae77b2af564eea61861744eef32731637d1d12ac8b186fe36388c2eded90d541bb930f548308b9"
       }
     }
   ],
@@ -50,7 +51,7 @@
         "control": 32,
         "domain": 3,
         "node_id_hex": "0102030405060708",
-        "sample_id": 287454020,
+        "message_id": 287454020,
         "encoded_hex": "2003010203040506070844332211"
       },
       "nonce_hex": "01020304050607084433221103",
@@ -70,7 +71,7 @@
         "control": 32,
         "domain": 4,
         "node_id_hex": "0102030405060708",
-        "sample_id": 287454020,
+        "message_id": 287454020,
         "encoded_hex": "2004010203040506070844332211"
       },
       "nonce_hex": "01020304050607084433221104",
@@ -90,7 +91,7 @@
         "control": 32,
         "domain": 5,
         "node_id_hex": "0102030405060708",
-        "sample_id": 287454020,
+        "message_id": 287454020,
         "encoded_hex": "2005010203040506070844332211"
       },
       "nonce_hex": "01020304050607084433221105",
@@ -110,7 +111,7 @@
         "control": 32,
         "domain": 6,
         "node_id_hex": "0102030405060708",
-        "sample_id": 287454020,
+        "message_id": 287454020,
         "encoded_hex": "2006010203040506070844332211"
       },
       "nonce_hex": "01020304050607084433221106",

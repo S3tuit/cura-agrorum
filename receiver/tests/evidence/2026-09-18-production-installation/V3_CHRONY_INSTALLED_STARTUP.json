@@ -1,0 +1,18 @@
+{
+  "systemd": {
+    "MainPID": "6254",
+    "ExecStartPre": "{ path=/usr/bin/python3 ; argv[]=/usr/bin/python3 /usr/libexec/cura-agrorum/check-chrony.py /etc/chrony/chrony.conf ; ignore_errors=no ; start_time=[Fri 2026-09-18 23:05:09 CEST] ; stop_time=[Fri 2026-09-18 23:05:09 CEST] ; pid=6242 ; code=exited ; status=0 }",
+    "ExecStartEx": "{ path=/usr/sbin/chronyd ; argv[]=/usr/sbin/chronyd -F 1 -f /etc/chrony/chrony.conf ; flags=no-setuid ; start_time=[Fri 2026-09-18 23:05:09 CEST] ; stop_time=[Fri 2026-09-18 23:05:10 CEST] ; pid=6249 ; code=exited ; status=0 }",
+    "User": "_chrony",
+    "ActiveState": "active"
+  },
+  "actual_arguments": [
+    "/usr/sbin/chronyd",
+    "-F",
+    "1",
+    "-f",
+    "/etc/chrony/chrony.conf"
+  ],
+  "policy": "pool 2.debian.pool.ntp.org iburst\ndriftfile /var/lib/chrony/chrony.drift\nleapsecmode slew\nmaxslewrate 3500\ncmdport 0\nbindcmdaddress /run/chrony/chronyd.sock\n",
+  "bootstrap_journal": "Starting cura-pilot-rtc-vuh7p781.service - Cura boot-scoped provisional RTC bootstrap...\nCOPIED\nFinished cura-pilot-rtc-vuh7p781.service - Cura boot-scoped provisional RTC bootstrap.\n"
+}

@@ -14,6 +14,7 @@
 
 #define HWTEST_NVS_NAMESPACE "cura_lora_v2"
 #define HWTEST_NVS_SAMPLE_ID_KEY "next_sample_id"
+#define HWTEST_NVS_MESSAGE_ID_KEY "next_message_id"
 
 static void close_component(void) {
   node_persistence_test_reset();
@@ -52,6 +53,7 @@ void hwtest_mount_inspector(void) {
 
 cura_lora_v2_reading_t hwtest_make_reading(uint16_t marker) {
   const cura_lora_v2_reading_t reading = {
+      .sample_id = marker,
       .run_ms = (uint16_t)(100U + marker),
       .soil_0_mv = (uint16_t)(1000U + marker),
       .soil_1_mv = (uint16_t)(1100U + marker),
@@ -111,6 +113,29 @@ uint32_t hwtest_read_next_sample_id(void) {
   TEST_ESP_OK(nvs_open_from_partition(
       HWTEST_NVS_PARTITION, HWTEST_NVS_NAMESPACE, NVS_READONLY, &handle));
   TEST_ESP_OK(nvs_get_u32(handle, HWTEST_NVS_SAMPLE_ID_KEY, &value));
+  nvs_close(handle);
+  TEST_ESP_OK(nvs_flash_deinit_partition(HWTEST_NVS_PARTITION));
+  return value;
+}
+
+void hwtest_seed_next_message_id(uint32_t value) {
+  TEST_ESP_OK(nvs_flash_init_partition(HWTEST_NVS_PARTITION));
+  nvs_handle_t handle = 0;
+  TEST_ESP_OK(nvs_open_from_partition(
+      HWTEST_NVS_PARTITION, HWTEST_NVS_NAMESPACE, NVS_READWRITE, &handle));
+  TEST_ESP_OK(nvs_set_u32(handle, HWTEST_NVS_MESSAGE_ID_KEY, value));
+  TEST_ESP_OK(nvs_commit(handle));
+  nvs_close(handle);
+  TEST_ESP_OK(nvs_flash_deinit_partition(HWTEST_NVS_PARTITION));
+}
+
+uint32_t hwtest_read_next_message_id(void) {
+  TEST_ESP_OK(nvs_flash_init_partition(HWTEST_NVS_PARTITION));
+  nvs_handle_t handle = 0;
+  uint32_t value = 0U;
+  TEST_ESP_OK(nvs_open_from_partition(
+      HWTEST_NVS_PARTITION, HWTEST_NVS_NAMESPACE, NVS_READONLY, &handle));
+  TEST_ESP_OK(nvs_get_u32(handle, HWTEST_NVS_MESSAGE_ID_KEY, &value));
   nvs_close(handle);
   TEST_ESP_OK(nvs_flash_deinit_partition(HWTEST_NVS_PARTITION));
   return value;
@@ -184,11 +209,11 @@ hwtest_encode_reading_record(uint8_t record_type, uint32_t sample_id,
                              const cura_lora_v2_reading_t *reading,
                              uint8_t output[NODE_PERSISTENCE_RECORD_MAX_SIZE]) {
   uint8_t payload[NODE_PERSISTENCE_READING_PAYLOAD_SIZE];
-  node_persistence_store_le32(payload, sample_id);
-  TEST_ASSERT_EQUAL(CURA_LORA_V2_CODEC_OK,
-                    cura_lora_v2_encode_reading(payload + sizeof(uint32_t),
-                                                CURA_LORA_V2_READING_BODY_SIZE,
-                                                reading));
+  cura_lora_v2_reading_t stored_reading = *reading;
+  stored_reading.sample_id = sample_id;
+  TEST_ASSERT_EQUAL(
+      CURA_LORA_V2_CODEC_OK,
+      cura_lora_v2_encode_reading(payload, sizeof(payload), &stored_reading));
   size_t length = 0U;
   TEST_ASSERT_TRUE(node_persistence_record_encode(
       node_persistence_backend(), record_type, payload, sizeof(payload), output,
@@ -208,10 +233,11 @@ size_t hwtest_encode_diagnostic_record(
   node_persistence_store_le16(payload + 4U, event->flags);
   node_persistence_store_le32(payload + 6U, event->application_offset_ms);
   node_persistence_store_le32(payload + 10U, event->cycle_sample_id);
+  node_persistence_store_le32(payload + 14U, event->message_id);
   node_persistence_store_le16(
-      payload + 14U, context == NULL ? CURAG_OP_NONE : context->operation);
-  payload[16U] = context_length;
-  payload[17U] =
+      payload + 18U, context == NULL ? CURAG_OP_NONE : context->operation);
+  payload[20U] = context_length;
+  payload[21U] =
       context == NULL ? CURAG_CONTEXT_SCHEMA_NONE : context->context_schema;
   if (context_length != 0U) {
     memcpy(payload + NODE_PERSISTENCE_DIAGNOSTIC_PREFIX_SIZE, context->context,
@@ -233,18 +259,19 @@ size_t hwtest_encode_delivery_record(
   uint8_t payload[NODE_PERSISTENCE_DELIVERY_STARTED_PAYLOAD_SIZE];
   node_persistence_store_le32(payload, event->cycle_sample_id);
   node_persistence_store_le32(payload + 4U, event->sample_id);
-  payload[8U] = event->domain;
+  node_persistence_store_le32(payload + 8U, event->message_id);
+  payload[12U] = event->domain;
   uint8_t record_type = 0U;
   size_t payload_length = 0U;
   if (event->type == NODE_DELIVERY_EVENT_STARTED) {
-    node_persistence_store_le32(payload + 9U,
+    node_persistence_store_le32(payload + 13U,
                                 event->detail.started.start_offset_ms);
     record_type = NODE_PERSISTENCE_RECORD_TYPE_DELIVERY_STARTED;
     payload_length = NODE_PERSISTENCE_DELIVERY_STARTED_PAYLOAD_SIZE;
   } else {
     TEST_ASSERT_EQUAL(NODE_DELIVERY_EVENT_FINISHED, event->type);
-    payload[9U] = event->detail.finished.attempt_count;
-    payload[10U] = event->detail.finished.final_result;
+    payload[13U] = event->detail.finished.attempt_count;
+    payload[14U] = event->detail.finished.final_result;
     record_type = NODE_PERSISTENCE_RECORD_TYPE_DELIVERY_FINISHED;
     payload_length = NODE_PERSISTENCE_DELIVERY_FINISHED_PAYLOAD_SIZE;
   }
@@ -263,6 +290,40 @@ void hwtest_recalculate_record_crc(uint8_t *record, size_t record_length) {
   node_persistence_store_le32(record + record_length - sizeof(uint32_t), crc);
 }
 
+bool hwtest_pending_tail_matches_binding(
+    uint32_t expected_message_id,
+    const cura_lora_v2_authenticated_reading_frame_t *expected_frame) {
+  if (expected_frame == NULL) {
+    return false;
+  }
+  static hwtest_snapshot_t snapshot;
+  hwtest_snapshot(HWTEST_PENDING_PATH, &snapshot);
+  if (snapshot.length < NODE_PERSISTENCE_RECORD_FOOTER_SIZE) {
+    return false;
+  }
+  const size_t footer = snapshot.length - NODE_PERSISTENCE_RECORD_FOOTER_SIZE;
+  const size_t record_length =
+      node_persistence_load_le16(snapshot.bytes + footer);
+  if (record_length > snapshot.length ||
+      record_length > NODE_PERSISTENCE_RECORD_MAX_SIZE) {
+    return false;
+  }
+  const uint8_t *const record =
+      snapshot.bytes + snapshot.length - record_length;
+  if (node_persistence_record_validate(
+          node_persistence_backend(), NODE_PERSISTENCE_LOG_PENDING, record,
+          record_length) != NODE_PERSISTENCE_RECORD_VALID) {
+    return false;
+  }
+  uint32_t sample_id = 0U;
+  uint32_t message_id = 0U;
+  cura_lora_v2_authenticated_reading_frame_t frame;
+  return node_persistence_record_decode_backlog_binding(
+             record, record_length, &sample_id, &message_id, &frame) &&
+         message_id == expected_message_id &&
+         memcmp(frame.bytes, expected_frame->bytes, sizeof(frame.bytes)) == 0;
+}
+
 node_diagnostic_event_t hwtest_make_diagnostic(diagn_context_t *context,
                                                uint8_t marker) {
   memset(context, 0, sizeof(*context));
@@ -275,9 +336,11 @@ node_diagnostic_event_t hwtest_make_diagnostic(diagn_context_t *context,
   const node_diagnostic_event_t event = {
       .error = CURAG_EIO,
       .flags = NODE_DIAGNOSTIC_APPLICATION_OFFSET_VALID |
-               NODE_DIAGNOSTIC_CYCLE_SAMPLE_ID_VALID,
+               NODE_DIAGNOSTIC_CYCLE_SAMPLE_ID_VALID |
+               NODE_DIAGNOSTIC_MESSAGE_ID_VALID,
       .application_offset_ms = UINT32_C(1000) + marker,
       .cycle_sample_id = UINT32_C(2000) + marker,
+      .message_id = UINT32_C(3000) + marker,
       .context = context,
   };
   return event;
@@ -289,6 +352,7 @@ node_delivery_event_t hwtest_make_delivery_started(uint32_t cycle_sample_id,
       .type = NODE_DELIVERY_EVENT_STARTED,
       .cycle_sample_id = cycle_sample_id,
       .sample_id = sample_id,
+      .message_id = sample_id + UINT32_C(100),
       .domain = CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK,
       .detail.started = {.start_offset_ms = 1234U},
   };
@@ -301,6 +365,7 @@ node_delivery_event_t hwtest_make_delivery_finished(uint32_t cycle_sample_id,
       .type = NODE_DELIVERY_EVENT_FINISHED,
       .cycle_sample_id = cycle_sample_id,
       .sample_id = sample_id,
+      .message_id = sample_id + UINT32_C(100),
       .domain = CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK,
       .detail.finished = {.attempt_count = 2U,
                           .final_result = NODE_DELIVERY_RESULT_ACCEPTED},

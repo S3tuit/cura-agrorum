@@ -1,0 +1,246 @@
+{
+  "verified_source_files": 286,
+  "stage": "/tmp/cura-runtime-time-Dh9YDWaI",
+  "commands": [
+    {
+      "argv": [
+        "hostname",
+        "-I"
+      ],
+      "exit": 0,
+      "stdout": "192.168.1.239 2001:b07:647c:5e7c:ba27:ebff:fe57:2744 \n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "date",
+        "-u",
+        "+%Y-%m-%dT%H:%M:%S.%N%z"
+      ],
+      "exit": 0,
+      "stdout": "2026-09-14T11:41:52.240033094+0000\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "cat",
+        "/proc/sys/kernel/random/boot_id"
+      ],
+      "exit": 0,
+      "stdout": "577740db-60ed-46f8-ab94-042b46381c7f\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "chronyc",
+        "-n",
+        "-c",
+        "-h",
+        "/run/chrony/chronyd.sock",
+        "tracking"
+      ],
+      "exit": 0,
+      "stdout": "E1FE1EBE,2606:4700:f1::123,4,1789386096.114350409,-0.000164718,0.000287566,0.000287566,5.636,43.639,1.180,0.037380911,0.001444372,2.7,Normal\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "chronyc",
+        "-n",
+        "-c",
+        "-h",
+        "/run/chrony/chronyd.sock",
+        "sources"
+      ],
+      "exit": 0,
+      "stdout": "^,-,2603:c027:2:c801:1979::1,2,6,17,18,-0.001612828,-4.360763073,0.040565055\n^,*,2606:4700:f1::123,3,6,33,15,-0.001602302,-0.001314736,0.019127864\n^,+,2600:3c0b::f03c:94ff:fe16:7f5a,2,6,17,18,0.002736986,0.003024552,0.033456605\n^,-,2600:3c0b::f03c:94ff:fee2:cbb9,2,6,17,18,0.004705263,0.004992829,0.035752490\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "systemctl",
+        "is-active",
+        "chrony.service"
+      ],
+      "exit": 0,
+      "stdout": "active\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "systemctl",
+        "is-active",
+        "systemd-timesyncd.service"
+      ],
+      "exit": 3,
+      "stdout": "inactive\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "systemctl",
+        "is-enabled",
+        "systemd-timesyncd.service"
+      ],
+      "exit": 1,
+      "stdout": "masked\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "stat",
+        "-c",
+        "%u %g %a %t:%T",
+        "/dev/rtc0"
+      ],
+      "exit": 0,
+      "stdout": "0 0 600 fb:0\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "readlink",
+        "/dev/rtc-ds3231"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "/usr/sbin/chronyd",
+        "-p",
+        "-f",
+        "/etc/chrony/chrony.conf"
+      ],
+      "exit": 0,
+      "stdout": "pool 2.debian.pool.ntp.org iburst\ndriftfile /var/lib/chrony/chrony.drift\nleapsecmode slew\nmaxslewrate 3500\ncmdport 0\nbindcmdaddress /run/chrony/chronyd.sock\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "env",
+        "TZ=UTC",
+        "/usr/sbin/hwclock",
+        "--show",
+        "--verbose",
+        "--utc",
+        "--noadjfile",
+        "--rtc=/dev/rtc0"
+      ],
+      "exit": 0,
+      "stdout": "hwclock from util-linux 2.41.5\nSystem Time: 1789386112.380716\nUsing the rtc interface to the clock.\nAssuming hardware clock is kept in UTC time.\nWaiting for clock tick...\nioctl(4, RTC_UIE_ON, 0): Invalid argument\nWaiting in loop for time from /dev/rtc0 to change\n...got clock tick\nTime read from Hardware Clock: 2026/09/14 11:41:52\nHw clock time : 2026/09/14 11:41:52 = 1789386112 seconds since 1969\nTime since last adjustment is 1789386112 seconds\nCalculated Hardware Clock drift is 0.000000 seconds\n2026-09-14 11:41:51.318706+00:00\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "id",
+        "cura"
+      ],
+      "exit": 0,
+      "stdout": "uid=1000(cura) gid=1000(cura) groups=1000(cura),4(adm),20(dialout),24(cdrom),27(sudo),29(audio),44(video),46(plugdev),60(games),100(users),996(input),992(render),102(netdev),989(spi),988(i2c),986(gpio)\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "pgrep",
+        "-a",
+        "chronyd"
+      ],
+      "exit": 0,
+      "stdout": "4374 /usr/sbin/chronyd -F 1\n4375 /usr/sbin/chronyd -F 1\n",
+      "stderr": ""
+    }
+  ],
+  "chrony_config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7",
+  "temporary_helper_paths": [],
+  "temporary_socket_paths": [],
+  "restorations": {
+    "time-bteiwo2e/restoration.json": {
+      "baseline_tracking": [
+        "520B9991",
+        "2a00:6d41:200:2::11",
+        "3",
+        "1789384851.636730697",
+        "0.000000014",
+        "4.390791893",
+        "4.390791893",
+        "5.636",
+        "686.269",
+        "1.180",
+        "0.051285423",
+        "0.052099850",
+        "0.0",
+        "Normal"
+      ],
+      "saved_rtc": {
+        "status": "Ds3231ReadStatus.OK",
+        "operation_started_at_monotonic_us": 5569284566,
+        "operation_finished_at_monotonic_us": 5569287812,
+        "rtc_utc_s": 1789384851,
+        "os_errno": null
+      },
+      "offset": -120,
+      "restored": true,
+      "restored_tracking": [
+        "5D635BFC",
+        "2603:c027:2:c801:1979::1",
+        "3",
+        "1789386093.787802060",
+        "-0.000000012",
+        "-4.359437943",
+        "4.359437943",
+        "5.636",
+        "1991.890",
+        "1.180",
+        "0.032313742",
+        "0.027872970",
+        "0.0",
+        "Normal"
+      ]
+    },
+    "time-g2mlrne9/restoration.json": {
+      "baseline_tracking": [
+        "437BF176",
+        "2603:c020:8017:3e00::123:123",
+        "3",
+        "1789383527.859737596",
+        "-0.000049179",
+        "-0.000047635",
+        "0.016298030",
+        "5.636",
+        "0.004",
+        "1.180",
+        "0.032920606",
+        "0.001058482",
+        "128.1",
+        "Normal"
+      ],
+      "saved_rtc": {
+        "status": "Ds3231ReadStatus.OK",
+        "operation_started_at_monotonic_us": 4293287677,
+        "operation_finished_at_monotonic_us": 4293291254,
+        "rtc_utc_s": 1789383579,
+        "os_errno": null
+      },
+      "offset": 120,
+      "restored": true,
+      "restored_tracking": [
+        "520B9991",
+        "2a00:6d41:200:2::11",
+        "3",
+        "1789384851.636730697",
+        "0.000000015",
+        "4.390791893",
+        "4.390791893",
+        "5.636",
+        "686.269",
+        "1.180",
+        "0.051285423",
+        "0.052055176",
+        "0.0",
+        "Normal"
+      ]
+    }
+  }
+}

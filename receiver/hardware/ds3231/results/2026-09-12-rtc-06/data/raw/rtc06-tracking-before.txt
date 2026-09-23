@@ -1,0 +1,15 @@
+Reference ID    : 55C7D663 (ntp2.leontp.com)
+Stratum         : 2
+Ref time (UTC)  : Mon Sep 14 09:50:12 2026
+System time     : 0.000004366 seconds slow of NTP time
+Last offset     : +0.004811198 seconds
+RMS offset      : 0.004811198 seconds
+Frequency       : 6.020 ppm fast
+Residual freq   : +26.798 ppm
+Skew            : 0.164 ppm
+Root delay      : 0.045411907 seconds
+Root dispersion : 0.001188977 seconds
+Update interval : 64.3 seconds
+Leap status     : Normal
+
+command_exit=0

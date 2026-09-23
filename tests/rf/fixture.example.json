@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "c6_fixture": "nominal",
+  "c6_dut": "cc8da2fc0224",
+  "c6_uart": "/dev/ttyUSB0",
+  "pi_user": "cura",
+  "pi_board_id": "00000000e0027211",
+  "pi_fixture": "radio_nominal",
+  "rtc_shunts_open": false,
+  "receiver_service_stopped": false,
+  "exclusive_radios": false,
+  "wiring_checked": false,
+  "power_checked": false,
+  "antennas_checked": false,
+  "operator": "",
+  "c6_transmitter": "",
+  "pi_transmitter": "",
+  "operating_envelope_reference": "",
+  "manual_fault_confirmed": false
+}

@@ -26,23 +26,28 @@ claiming an ID are allowed; reuse is not.
    guarantees power-off on both success and failure.
 2. Failure of one sensor sets its value to zero and clears only its validity
    bit. Other sensors continue.
-3. The controller combines the sensor snapshot, reset reason and incoming RTC
-   metrics into the 28-byte reading body.
+3. The controller combines `sample_id`, the sensor snapshot, reset reason and
+   incoming RTC metrics into the 32-byte reading body.
 4. `run_ms` is captured when the body is finalized, immediately before
    persistence and frame construction.
 5. The exact body is appended to pending-reading storage. If this fails, a
    best-effort diagnostic is written and delivery continues from the RAM copy.
    Backlog storage is not accessed again during that wake because append
    durability may be uncertain.
-6. The first radio operation lazily initializes the SX1262, so it is not
-   initialized before a reading exists.
+6. Claim and commit a new transport `message_id` for the current logical
+   uplink. If that fails, leave any pending reading intact, log best-effort and
+   perform no radio work. A successful claim may skip but is never reused.
+7. Seal one 54-byte current-domain frame. The first radio operation then lazily
+   initializes the SX1262, so it is not initialized before a complete logical
+   message exists.
 
 ### Delivery operation
 
 One delivery operation owns the retry loop for either a current or backlog
 reading. It:
 
-- constructs one authenticated frame and reuses its exact 50 bytes;
+- receives one already constructed authenticated frame and reuses its exact 54
+  bytes;
 - appends one durable `DELIVERY_STARTED` event before its first call to
   `transmit_uplink`;
 - records the time immediately before the first `SetTx`;
@@ -64,12 +69,13 @@ written by `node_core`, not by the radio component. `DELIVERY_STARTED` means
 that the controller entered delivery, not that the SX1262 certainly executed
 `SetTx`.
 
-Each pair is identified by the wake's current `cycle_sample_id`, the delivered
-packet's `sample_id` and its domain. This distinguishes separate wakes that
-retry the same backlog packet without adding another persistent counter. An
-unmatched start means only that no durable finish was recorded: reset may have
-occurred before TX, during TX or RX, during retry waiting, or while persisting
-the finish. Failure to append either event never blocks radio work.
+Each pair records the wake's current `cycle_sample_id`, the reading's
+`sample_id`, the logical transport `message_id` and its domain. Transport
+identity is `(node_id, message_id)`; reading identity remains
+`(node_id, sample_id)`. An unmatched start means only that no durable finish
+was recorded: reset may have occurred before TX, during TX or RX, during retry
+waiting, or while persisting the finish. Failure to append either event never
+blocks radio work.
 
 When a started or uncertain transmission does not produce `TX_DONE`, its
 estimated airtime remains charged and the delivery ends as a local radio error.
@@ -79,7 +85,7 @@ or charged.
 The two limits intentionally use different radio timing values. The charged-TX
 limit counts only modeled RF airtime plus 10%; watchdog, command and setup time
 are not RF airtime. Wall-clock admission uses
-`sx1262_radio_min_tx_window_us(50)`, which includes modeled airtime, TX ramp,
+`sx1262_radio_min_tx_window_us(54)`, which includes modeled airtime, TX ramp,
 watchdog margin and quantization, and a conservative pre-`SetTx` setup
 allowance. The radio checks the remaining watchdog-capable window again after
 setup and immediately before `SetTx`, so an unexpectedly slow preparation can
@@ -105,8 +111,23 @@ that sleep. The current pilot therefore depends on uninterrupted normal cadence
 for its intended hourly margin and does not independently enforce the 1% limit
 across resets.
 
-Before production compliance is claimed, add a durable per-band rolling ledger
-with these fail-conservative properties:
+Pilot decision (2026-09-18, DEC-002): the operator accepts the existing
+per-wake budget and normal sleep cadence as a sufficient heuristic for this
+limited field pilot, citing 30 days of prior testing. This is operator-reported
+experience; no source/configuration-bound report or reset history was supplied
+with the decision. It does not establish reset-safe rolling-hour enforcement.
+The firmware behavior remains unchanged. A more elaborate reset-spanning
+mechanism and its verification are deferred under DEP-007 and the firmware
+ledger portion of RF-029; they are not prerequisites for this pilot.
+
+Revisit this deferral on repeated/unexpected resets, changed wake cadence or
+retry budgets, a requirement for independent reset-safe enforcement, or resumed
+ledger work. Test airtime is separately managed by the operator; test pacing
+does not add reset-spanning enforcement to deployed firmware. The receiver's
+existing durable airtime policy is unchanged.
+
+The retained future mechanism, required before claiming reset-safe production
+compliance, must provide these fail-conservative properties:
 
 - retain charged transmissions until they age out of the continuous one-hour
   window rather than resetting at a clock-hour boundary;
@@ -143,6 +164,11 @@ synchronization, RTC commit and the sleep call occur afterward.
 The current reading is always delivered first with
 `CURRENT_READING_UPLINK`.
 
+Its committed `message_id` and exact frame live in RAM for the wake. Every RF
+retry in that delivery episode reuses the same ID, domain and frame bytes. A
+reset abandons that current logical message; the persisted application reading
+later receives a new ID and backlog domain when it is converted to backlog.
+
 - `ACCEPTED`: mark the outgoing current as accepted, store its delivery time
   and increment the distinct accepted-reading count. If the reading was
   persisted, remove its pending copy; a removal failure is logged and stops
@@ -160,8 +186,12 @@ The current reading is always delivered first with
 
 ### Backlog drainage
 
-Backlog drainage selects the most recent pending reading and transmits its
-unchanged body with `BACKLOG_READING_UPLINK`.
+Backlog drainage selects the most recent pending reading. If it is unbound, the
+controller commits a new `message_id`, seals one backlog-domain frame and
+durably appends a binding containing the ID and exact frame before the first
+TX. Failure before the binding becomes durable transmits nothing and leaves the
+reading unbound; the claimed ID may be skipped. Once bound, all retries in the
+same or later wakes load and transmit the persisted frame bytes verbatim.
 
 - `ACCEPTED`: increment the distinct accepted-reading count, remove the entry
   and continue with the next most recent entry.
@@ -218,6 +248,8 @@ a deterministic safe transition and a best-effort diagnostic:
 | Failure | Action |
 |---|---|
 | NVS initialization or `sample_id` claim | Log, skip sampling and radio, sleep |
+| `message_id` claim/commit failure or exhaustion | Log, construct no message, retain any reading, skip radio, sleep; loss or exhaustion requires a new identity/key |
+| Durable backlog-frame binding failure | Log, transmit no backlog frame, retain the unbound reading and stop drainage |
 | Invalid incoming RTC state | Ignore it and continue with previous metrics invalid |
 | Individual sensor failure | Zero that field, clear its validity bit and continue |
 | LittleFS initialization or write | Continue current delivery from RAM without unavailable persistence features |
@@ -228,9 +260,9 @@ a deterministic safe transition and a best-effort diagnostic:
 | Lost quarantine copy after successful pending removal | Log and continue; do not obstruct backlog progress |
 
 The diagnostic sink is append-only and best-effort. Records identify the
-operation, error code, application-time offset and `sample_id` when available,
-but never contain node or group keys. A logging failure is discarded and is
-never recursively logged.
+operation, error code, application-time offset, wake `sample_id` and active
+transport `message_id` when available, but never contain node or group keys. A
+logging failure is discarded and is never recursively logged.
 
 ### Stable diagnostic model
 
@@ -336,11 +368,19 @@ but never prevents the ESP32 from entering deep sleep.
 
 - No reading is transmitted before its `sample_id` increment is committed.
 - A `sample_id` may be skipped but never reused during one identity lifetime.
-- All attempts for one `(node_id, sample_id, domain)` use identical frame
-  bytes.
+- No logical uplink frame is constructed before its `message_id` successor is
+  committed. A message ID may skip but never wrap or be reused while the same
+  identity/key is active; counter loss or exhaustion requires a new identity
+  and key.
+- All attempts for one `(node_id, message_id)` reuse the same domain and exact
+  authenticated frame bytes.
+- Converting a current reading into backlog allocates a new `message_id` and
+  durably binds its exact backlog frame before TX; later-wake retries reuse that
+  binding.
 - An invalid ACK never changes delivery or persistence state.
-- A pending reading is removed only after authenticated `ACCEPTED` or after a
-  permanent rejection has triggered a quarantine attempt.
+- A pending reading is removed after authenticated `ACCEPTED`, after a
+  permanent rejection has triggered a quarantine attempt, or when bounded
+  pending-log pressure compaction evicts it under the retention policy below.
 - `RETRY_LATER` stops all transmissions for the wake.
 - Current delivery always precedes backlog drainage.
 - The charged-TX budget and radio-cycle deadline are independent limits.
@@ -360,13 +400,13 @@ rewrite. The agreed host-test catalogue and build strategy are in
 ## Persistence boundaries
 
 - The generated node-identity header contains `node_id` and `node_key`.
-- NVS contains the next monotonic `sample_id`.
+- NVS contains independent next monotonic `sample_id` and `message_id` values.
 - RTC memory carries metrics from one completed wake to the immediately
   following deep-sleep wake.
-- LittleFS contains pending readings, quarantined readings and append-only
-  diagnostic logs.
+- LittleFS contains pending readings, optional exact backlog-frame bindings,
+  quarantined readings and append-only diagnostic logs.
 - RAM contains the active delivery state and exact encrypted frame used by all
-  attempts for one `(node_id, sample_id, domain)`.
+  attempts for one `(node_id, message_id)`.
 
 The current reading is persisted before its first transmission. If the node
 resets afterward, the reading remains available as backlog. A LittleFS failure
@@ -375,6 +415,31 @@ transmitted, but it may be lost after sleep if it is not accepted.
 
 No storage is automatically erased or reformatted after a failure during the
 pilot.
+
+Known pilot limitation: absence of an NVS counter key is interpreted as fresh
+provisioning, so firmware cannot distinguish first use from counter erasure or
+rollback. Erasing or restoring NVS while retaining the same identity and key is
+therefore prohibited; recovery requires rotating both. The repository
+maintenance application formats only LittleFS and deliberately preserves NVS.
+An automatic counter-recovery handshake is deferred to a coordinated protocol,
+node and receiver revision; the protocol document defines the required safety
+properties of that future work.
+
+Every operator-initiated identity rotation is a destructive boundary for
+node-local state. Before production firmware using the new identity may
+transmit, the operator erases NVS, all LittleFS logs and retained RTC state.
+Pending readings and exact backlog-frame bindings from the retired identity are
+discarded rather than migrated; receiver-side historical records remain. This
+full-device rotation procedure is distinct from the ordinary LittleFS-only
+maintenance application.
+
+After a full-device erase, initialize an empty LittleFS filesystem by running
+that nontransmitting maintenance application and verifying its successful
+format/mount result. Then flash the new production application while preserving
+the initialized storage partition. Both builds must use the same actual storage
+layout and compatible filesystem settings. This explicit provisioning step does
+not authorize automatic formatting during production operation; see the
+[maintenance procedure](maintenance/erase_storage/README.md).
 
 ## RTC-state lifecycle
 
@@ -445,7 +510,9 @@ quarantined readings and diagnostic logs. It exposes semantic operations:
 
 ```text
 claim_sample_id
+claim_message_id
 append_pending_reading
+bind_newest_backlog_frame
 peek_most_recent_pending
 remove_newest_reading
 quarantine_reading
@@ -481,10 +548,12 @@ reinitialized at the next boot, so initialization is attempted again then.
 Failure results distinguish initialization from the requested operation.
 
 Operations affecting delivery correctness are durable when they return:
-claiming an ID includes the NVS commit, appends and newest-pending removals
-commit their LittleFS state, and quarantine appends are durable independently
-from pending removal. Delivery events are also durable on successful return
-because an unmatched start must survive a reset.
+claiming either ID includes the corresponding NVS commit, appends and
+newest-pending removals commit their LittleFS state, and quarantine appends are
+durable independently from pending removal. Backlog binding commits the
+`message_id` and exact authenticated frame before first transmission. Delivery
+events are also durable on successful return because an unmatched start must
+survive a reset.
 `sync_all` performs the one final synchronization for remaining buffered state,
 including ordinary diagnostics. It skips backends that were never initialized
 and does not initialize them merely to finalize a wake. It synchronizes and
@@ -493,8 +562,8 @@ LittleFS; deep sleep resets the in-memory mount state.
 
 #### LittleFS record framing
 
-`append_pending_reading`, `quarantine_reading`, `append_diagnostic_event` and
-`append_delivery_event` use one private record codec and the same single-file
+`append_pending_reading`, `bind_newest_backlog_frame`, `quarantine_reading`,
+`append_diagnostic_event` and `append_delivery_event` use one private record codec and the same single-file
 append/truncate machinery. This sharing is internal to `node_persistence`; the
 controller continues to see only semantic operations. It does not make the
 operations share durability policy: pending, quarantine and delivery records
@@ -530,12 +599,13 @@ The storage framing constants are:
 | Constant | Value |
 |---|---:|
 | `magic` | `0x756fec23` (`23 ec 6f 75` on disk) |
-| `format_version` | `0x01` |
+| `format_version` | `0x02` |
 | `PENDING_READING` | `0x01` |
 | `QUARANTINED_READING` | `0x02` |
 | `DIAGNOSTIC_EVENT` | `0x03` |
 | `DELIVERY_STARTED` | `0x04` |
 | `DELIVERY_FINISHED` | `0x05` |
+| `PENDING_BACKLOG_BINDING` | `0x06` |
 
 Pending and quarantined readings may share a payload schema while retaining
 different semantic record types. Unassigned record-type values are reserved.
@@ -549,28 +619,41 @@ are little-endian; no payload is a native C structure dump.
 
 | Field | Encoding |
 |---|---:|
-| `sample_id` | `u32` |
-| `reading_body` | canonical 28-byte LoRa v2 reading plaintext |
+| `reading_body` | canonical 32-byte LoRa v2 reading plaintext, beginning with `sample_id` |
 
-The reading body is the output of the generated protocol codec. Keeping the
-associated ID outside it permits construction of either the current- or
-backlog-domain authenticated frame later.
+The reading body is the output of the generated protocol codec. An unbound
+pending reading ends with this record. A bound pending item immediately follows
+it with `PENDING_BACKLOG_BINDING`, whose 62-byte payload is:
 
-`DELIVERY_STARTED` has a 13-byte payload:
+| Offset | Field | Encoding |
+|---:|---|---:|
+| 0 | `sample_id` | `u32` |
+| 4 | `message_id` | `u32` |
+| 8 | `backlog_frame` | exact 54-byte authenticated frame |
+
+The binding's sample ID must match the decoded preceding reading. Its frame
+must have the backlog domain and the same message ID in clear-header bytes
+10-13. Pending recovery, newest-first selection, removal and compaction treat
+the reading plus optional binding as one item and never retain a binding
+without its reading.
+
+`DELIVERY_STARTED` has a 17-byte payload:
 
 | Field | Encoding |
 |---|---:|
 | `cycle_sample_id` | `u32` |
 | `sample_id` | `u32` |
+| `message_id` | `u32` |
 | `domain` | `u8`, exact LoRa v2 domain byte |
 | `start_offset_ms` | `u32`, relative to application start |
 
-`DELIVERY_FINISHED` has an 11-byte payload:
+`DELIVERY_FINISHED` has a 15-byte payload:
 
 | Field | Encoding |
 |---|---:|
 | `cycle_sample_id` | `u32` |
 | `sample_id` | `u32` |
+| `message_id` | `u32` |
 | `domain` | `u8`, exact LoRa v2 domain byte |
 | `attempt_count` | `u8`, attempts in this wake |
 | `final_result` | `u8` |
@@ -587,24 +670,26 @@ For the pilot, `DIAGNOSTIC_EVENT` has this variable-size payload:
 | `flags` | `u16` |
 | `application_offset_ms` | `u32` |
 | `cycle_sample_id` | `u32` |
+| `message_id` | `u32`, zero unless its validity flag is set |
 | `operation` | `u16` |
 | `context_length` | `u8` |
 | `context_schema` | `u8`, scoped by `error_domain` |
 | `context` | `context_length` bytes |
 
-The fixed diagnostic prefix is 18 bytes and context is limited to 252 bytes,
-so a diagnostic payload is at most 270 bytes and its complete storage record is
-at most 284 bytes.
+The fixed diagnostic prefix is 22 bytes and context is limited to 252 bytes,
+so a diagnostic payload is at most 274 bytes and its complete storage record is
+at most 288 bytes.
 The initial flags are:
 
 | Bit | Flag |
 |---:|---|
 | `0` | `APPLICATION_OFFSET_VALID` |
 | `1` | `CYCLE_SAMPLE_ID_VALID` |
-| `2`–`15` | Reserved; must be zero |
+| `2` | `MESSAGE_ID_VALID` |
+| `3`–`15` | Reserved; must be zero |
 
-When either validity flag is clear, its corresponding numeric field must be
-zero. When set, every representable value is permitted, including zero.
+When any validity flag is clear, its corresponding numeric field must be zero.
+When set, every representable value is permitted, including zero.
 `context_schema = 0` if and only if `context_length = 0`; a nonzero known
 schema requires its exact defined length. Context is bounded and canonically
 encoded, never truncated dynamically and never copied from arbitrary memory.
@@ -620,7 +705,7 @@ retention and failure policies:
 
 | File | Permitted record types |
 |---|---|
-| `pending.log` | `PENDING_READING` |
+| `pending.log` | `PENDING_READING`, `PENDING_BACKLOG_BINDING` |
 | `quarantine.log` | `QUARANTINED_READING` |
 | `diagnostic.log` | `DIAGNOSTIC_EVENT` |
 | `delivery.log` | `DELIVERY_STARTED`, `DELIVERY_FINISHED` |
@@ -669,10 +754,11 @@ append then constructs the complete canonical record, appends all bytes and
 applies the semantic operation's synchronization policy. A successful durable
 append therefore includes both the footer and CRC.
 
-`remove_newest_reading` first validates that the complete newest
-`PENDING_READING` has the caller's expected `sample_id`, then truncates exactly
-that record and synchronizes before returning success. It never removes an
-unidentified or different supported reading.
+`remove_newest_reading` first reconstructs the newest complete pending item,
+validates that its decoded reading has the caller's expected `sample_id`, then
+truncates the reading plus its optional immediately following binding in one
+operation and synchronizes before returning success. It never removes an
+orphan binding, an unidentified item or a different supported reading.
 
 An operation that needs a log tail applies this policy:
 
@@ -724,7 +810,7 @@ never formats LittleFS automatically.
 Quarantining a pending reading is not atomic across its two files. The
 controller uses two independent persistence calls in loss-averse order:
 
-1. Call `quarantine_reading(sample_id, reading)` to append and synchronize the
+1. Call `quarantine_reading(reading)` to append and synchronize the
    `QUARANTINED_READING` record in `quarantine.log`.
 2. Call `remove_newest_reading(sample_id)` even if the quarantine append
    failed. It validates and durably truncates the matching tail from
@@ -762,10 +848,12 @@ that LittleFS is physically full; the unallocated capacity is intentional
 workspace for copy-on-write, garbage collection and compaction.
 
 When the next pending append would exceed 512 KiB, compact `pending.log` by
-retaining the newest complete records whose combined size is at most 50% of
-the limit. Write them in their original order to `pending.compact`, synchronize
-the complete temporary file, and atomically rename it over `pending.log` in the
-same directory. Until that rename commits, `pending.log` remains authoritative;
+retaining the newest complete pending items whose combined record size is at
+most 50% of the limit. A bound item is retained or discarded only as its
+reading-plus-binding pair. Write retained records in their original order to
+`pending.compact`, synchronize the complete temporary file, and atomically
+rename it over `pending.log` in the same directory. Until that rename commits,
+`pending.log` remains authoritative;
 on initialization, an extra `pending.compact` beside it is an interrupted
 pre-rename copy and may be removed after validating the authoritative file.
 The largest compacted copy is therefore 256 KiB. Even with all logical files
@@ -858,13 +946,29 @@ remains on the always-powered rail and is intended to use its low-power
 operating mode. The board must default the switched sensor rail to off whenever
 the MCU does not actively enable it.
 
-Hardening of the current generated Espressif BME280 dependency is deferred.
-The eventual implementation must either pin a corrected fork while submitting
-the fixes upstream, or replace the dependency after evaluating another driver,
-starting with Bosch's official SensorAPI. Required fixes include bounded
-initialization and forced measurement, allocation failure handling, polling
-error propagation and reliable low-power transitions. Generated
-`managed_components` are never patched directly.
+The BME280 backend uses a commit-pinned fork of Bosch SensorAPI and a private
+ESP-IDF synchronous I2C adapter. Driver corrections live in the fork; the
+adapter and driver regression tests live in Cura Agrorum. The driver operates
+in forced mode with x1 oversampling on all channels and the filter disabled.
+Initialization configures sleep without starting normal-mode measurements.
+The adapter verifies actual channel settings after configuration, before each
+trigger and when accepting completed conversion; all three must remain at x1.
+Raw numeric codes alone do not establish that a channel was skipped.
+Each acquisition triggers one conversion, waits the datasheet maximum time,
+verifies completion and sleep, and reads the complete enclosure data together.
+Temperature and pressure compensation retain representable outliers; humidity
+retains the datasheet compensation saturation. Exact timing, conversion and
+status rules are in INTERFACE.md, under "BME280 backend contract".
+
+The adapter owns its bus/device exclusively for the wake and has finite
+initialization, polling and recovery admission budgets. It attempts sleep once
+after failure of an identified device, preserves the first acquisition error,
+and latches failure for the rest of the wake. A failed recovery cannot establish
+sleep or turn the acquisition into success. No new public cleanup operation or
+diagnostic slot is introduced. Host deadlines and watchdog reset are not
+successful target recovery. These BME bounds do not establish a universal
+whole-sample deadline for changing 1-Wire inventories or stalled SDK resources.
+Generated managed_components are never patched directly.
 
 The pilot gate is a high-side P-MOSFET: source at 3.3 V, drain at the switched
 sensor rail and gate pulled to its source by 47 kOhm. A non-strapping ESP32-C6
@@ -876,6 +980,15 @@ then returns the GPIO to a floating input. It does not use GPIO hold. Because
 off changes the direction, every later power-on configures open-drain output
 again. Reset, deep sleep or an unconfigured MCU therefore leaves the rail off
 without relying on firmware execution.
+
+The pilot board includes a permanent passive discharge resistor from the
+switched rail to ground. It drains retained charge when Q1 is off without
+depending on sensor loading or firmware execution; it does not replace gate
+release or prevent a separate signal from feeding power into the rail. The
+approved carrier wiring is in
+[`test_apps/on_device/SENSOR_CARRIER.md`](test_apps/on_device/SENSOR_CARRIER.md);
+the electrical acceptance procedure is in
+[`TESTING.md`](TESTING.md#node_sensors-manual-electrical-cases).
 
 The backend waits 200 ms after enabling the rail. The two DS18B20 probes are
 externally powered and use one bus-wide 12-bit conversion. Their 1-Wire pull-up
@@ -915,8 +1028,9 @@ a conservative controller-admission TX window. Time-on-air is calculated with
 quarter-symbol arithmetic from SF, bandwidth, coding rate, low-data-rate
 optimization, preamble length, header mode, payload length and CRC. Carrier
 frequency remains a profile setting but does not change symbol duration. For
-the 50-byte pilot frame the model returns 97,536 us; `node_core` independently
-charges 107,290 us after its 10% allowance.
+the 54-byte reading frame the model returns 102,656 us; `node_core`
+independently charges 112,922 us after its 10% allowance. The conservative
+minimum TX window for that frame is 112,704 us.
 
 Within an active wake the radio uses `STDBY_RC` as the intermediate state for
 configuration and transitions between TX and RX. It is not put to sleep while
@@ -943,8 +1057,14 @@ DIO1 rising-edge ISR. `esp_timer_get_time()` is used both by ordinary deadline
 checks and by the ISR, while a static binary semaphore wakes the waiting task.
 The selected Waveshare Pico-LoRa-SX1262-868M uses its onboard DIO2 RF switch,
 DIO3 1.7 V TCXO and the SX1262 DC-DC regulator. SPI runs at 8 MHz; the seven
-ESP32-C6 pins are provisional component Kconfig values until the board is
-assembled.
+ESP32-C6 pins are selected through component Kconfig. The DevKitM-1 fixture's
+required exposed-pin allocation is in
+[`INTERFACE.md`](INTERFACE.md#selected-radio-fixture-pins), with physical wiring
+and manual fixture connections in
+[`SENSOR_CARRIER.md`](test_apps/on_device/SENSOR_CARRIER.md#sx1262-radio-fixture).
+The later component test image must select that allocation and verify it
+against the assembled fixture. Every reset or cold-start initialization applies
+Semtech's SX1262 TX-clamp workaround before configuring the pilot profile.
 
 BUSY waits are bounded to 10 ms, reset startup to 20 ms and the radio TX
 watchdog to five milliseconds before the caller deadline when representable.
@@ -963,7 +1083,7 @@ layer. The former standalone `soil_sensor` component has been folded into
 `node_sensors`; its public `soil_sensor.h` compatibility API remains available
 to calibration and maintenance applications and assumes the caller already
 powered the probe. The production backend uses pinned Espressif `ds18b20`,
-`onewire_bus` and `bme280` components. These hardware adapters do not own wake
+`onewire_bus` and the pinned Bosch BME280 driver. These hardware adapters do not own wake
 policy.
 
 ### Platform services
@@ -992,10 +1112,23 @@ cryptographic guarantees; it is never used for identity or key material.
 `get_reset_reason` exposes the `u8` numeric value of `esp_reset_reason_t`; sleep
 wakeup causes are not collected. The system implementation performs the final
 board-safe transition and enters timer deep sleep for a relative duration.
+`CONFIG_NODE_DEEP_SLEEP_SECONDS` selects the relative sleep duration, default900
+seconds. Accelerated RF test builds select10 seconds without changing ACK, retry,
+sensor or persistence policy. `CONFIG_NODE_RF_SLEEP_OBSERVATION` is off in
+production; when enabled it emits `RF_NODE_SLEEP duration_us=<duration>` after
+controller finalization and successful timer configuration, immediately before
+the terminal sleep call. Tests treat this marker as sleep entry by operator
+agreement; it is not an electrical sleep/current measurement.
 From the controller's perspective `enter_deep_sleep_for` is terminal and cannot
 fail. Production configures timer wakeup and enters deep sleep; if wakeup
 configuration fails, the system adapter reports to the development console,
 waits 60 seconds without a tight busy-spin and restarts instead of returning.
+Intentional restart uses `node_platform_esp_restart`, which attempts the public
+sensor force-off operation before calling ESP-IDF restart. Force-off always
+attempts gate release, even before sampling in this wake; it initializes no
+sensor bus. A failed off attempt is reported to the development console and
+restart still proceeds. This does not add radio/persistence cleanup or guarantee
+default-off for arbitrary reset causes; those responsibilities remain distinct.
 A host fake may return only to terminate the test invocation, after which
 `node_core` performs no more operations. The complete callable contracts are in
 [`INTERFACE.md`](INTERFACE.md#platform-ports).

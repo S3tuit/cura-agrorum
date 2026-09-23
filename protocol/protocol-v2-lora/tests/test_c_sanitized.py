@@ -42,7 +42,7 @@ static const cura_lora_v2_clear_header_t TEST_GOLDEN_HEADER = {{
   .control = {_u(header["control"], 8)},
   .domain = {_u(header["domain"], 8)},
   .node_id = {{{_u8_array(header["node_id_hex"])}}},
-  .sample_id = {_u(header["sample_id"], 32)},
+  .message_id = {_u(header["message_id"], 32)},
 }};
 
 static const uint8_t
@@ -55,6 +55,7 @@ static const uint8_t TEST_GOLDEN_NONCE[CURA_LORA_V2_NONCE_SIZE] = {{
 }};
 
 static const cura_lora_v2_reading_t TEST_GOLDEN_READING = {{
+  .sample_id = {_u(reading["sample_id"], 32)},
   .run_ms = {_u(reading["run_ms"], 16)},
   .soil_0_mv = {_u(reading["soil_0_mv"], 16)},
   .soil_1_mv = {_u(reading["soil_1_mv"], 16)},

@@ -18,8 +18,6 @@ typedef struct {
   curag_operation_t primary_operation;
 } sensor_diagnostic_state_t;
 
-static bool s_power_gate_touched;
-
 static node_sensors_backend_result_t result_blocked(void) {
   return (node_sensors_backend_result_t){
       .kind = NODE_SENSOR_BACKEND_STATUS_INTERNAL,
@@ -144,7 +142,6 @@ err_curag_t node_sensors_sample_all(node_sensor_sample_t *out_sample,
   bool power_off_failed = false;
   bool cleanup_failed = false;
 
-  s_power_gate_touched = true;
   const node_sensors_backend_result_t power_on =
       node_sensors_backend_power_on();
   if (!result_is_success(power_on)) {
@@ -246,10 +243,6 @@ err_curag_t node_sensors_sample_all(node_sensor_sample_t *out_sample,
 
 err_curag_t node_sensors_force_power_off(diagn_context_t *out_diag) {
   curag_diagnostic_context_clear(out_diag);
-  if (!s_power_gate_touched) {
-    return CURAG_OK;
-  }
-
   const node_sensors_backend_result_t result = node_sensors_backend_power_off();
   if (result_is_success(result)) {
     return CURAG_OK;
@@ -260,7 +253,3 @@ err_curag_t node_sensors_force_power_off(diagn_context_t *out_diag) {
   populate_diagnostic(out_diag, diagnostic.primary_operation, &diagnostic);
   return sensor_error(CURAG_ESENSORS_EPOWER_CONTROL);
 }
-
-#ifdef NODE_SENSORS_TESTING
-void node_sensors_test_reset_state(void) { s_power_gate_touched = false; }
-#endif

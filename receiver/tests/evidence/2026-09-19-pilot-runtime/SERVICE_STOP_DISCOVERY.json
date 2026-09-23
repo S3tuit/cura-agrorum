@@ -1,0 +1,61 @@
+{
+  "c6": {
+    "cold_power_cycle_operator_confirmed": true,
+    "current_state": "ROM loader",
+    "formatter_flashed": true,
+    "formatter_started": false,
+    "full_erase": true,
+    "mac": "cc8da2fc0224",
+    "new_node_id": "fb25c40751b35256",
+    "production_image_flashed": false
+  },
+  "database": {
+    "clean_stop": 8460073175,
+    "health": {
+      "communicator_sampled_at_monotonic_us": 8452155862,
+      "radio_state_id": 2
+    },
+    "instance": "cbeb2d1a9f6e4775acc7846a4cbf88d5",
+    "latest_packet_us": null,
+    "linux_boot_id": "c85ef9dd94b0462096932dbc36a38b08",
+    "observed_monotonic_us": 8545529960,
+    "ordinal": 1,
+    "profiles": 0,
+    "samples": 0,
+    "total_readings": 0
+  },
+  "finding": "Main PID is systemd-inhibit; expected SIGTERM terminates wrapper with ExecMainCode=2/ExecMainStatus=15, while receiver records a clean stop. Exact-zero status assertion rejects this.",
+  "inhibitors": "WHO            UID USER PID COMM           WHAT  WHY                                       MODE\nNetworkManager 0   root 644 NetworkManager sleep NetworkManager needs to turn off networks delay\n\n1 inhibitors listed.\n",
+  "journal": "[ 8447.383957] cura-receiver systemd[1]: Starting cura-pilot-vuh7p781.service - Cura Agrorum receiver...\n[ 8448.677116] cura-receiver systemd[1]: Started cura-pilot-vuh7p781.service - Cura Agrorum receiver.\n[ 8460.003481] cura-receiver systemd[1]: Stopping cura-pilot-vuh7p781.service - Cura Agrorum receiver...\n[ 8460.308274] cura-receiver systemd[1]: cura-pilot-vuh7p781.service: Deactivated successfully.\n[ 8460.309084] cura-receiver systemd[1]: Stopped cura-pilot-vuh7p781.service - Cura Agrorum receiver.\n[ 8460.310437] cura-receiver systemd[1]: cura-pilot-vuh7p781.service: Consumed 11.826s CPU time.\n",
+  "prior_pi_state_archive": "/var/lib/cura-pilot-vuh7p781/handover-4f15917778f941e59c4733a8e3cf0ee2",
+  "scope": "T-008 stopped on service-stop tooling contract; no RF test started",
+  "service": {
+    "ActiveState": "inactive",
+    "DropInPaths": "",
+    "ExecMainStatus": "15",
+    "FragmentPath": "/etc/systemd/system/cura-pilot-vuh7p781.service",
+    "Group": "cura-receiver",
+    "InvocationID": "6c564a0f508b4827ba9485f7230d6455",
+    "MainPID": "0",
+    "NRestarts": "0",
+    "NeedDaemonReload": "no",
+    "Result": "success",
+    "SubState": "dead",
+    "User": "cura-receiver",
+    "board_id": "00000000e0027211",
+    "boot_id": "c85ef9dd-94b0-4620-9693-2dbc36a38b08",
+    "configuration_sha256": "172ee26c48824f6d12798fe16312806225dea65c9a2954a3a766cacb7a08d4c4",
+    "dependencies": {
+      "cryptography": "49.0.0",
+      "gpiod": "2.5.0",
+      "spidev": "3.8"
+    },
+    "environment_sha256": "a0b54877c7cb51c76725b7b79943ec2de1a4993eb64c6663c8cb11c3f43c9d05",
+    "unit_sha256": "f2a71da2684e42b47aab455006b2d2b14d65e70c573286cae2a088fa76279811"
+  },
+  "source": {
+    "receiver/deploy/systemd/cura-receiver.service": "6bc9084e95ac450a09b157a8af5726fbad20cee265d42bb44385de4d31b7c57b",
+    "tests/rf/run_service.py": "927c6ba02c08ed6dfb56744ce22f40f1c0ea0a8a5f80284daaca8c7e832f0fb2"
+  },
+  "unit": "Result=success\nExecMainCode=2\nExecMainStatus=15\nExecStart={ path=/usr/bin/systemd-inhibit ; argv[]=/usr/bin/systemd-inhibit --what=sleep --mode=block --who=cura-receiver --why=Receiver-clock-and-radio-deadlines /opt/cura-pilot-vuh7p781/venv/bin/python -m cura_receiver --rtc-helper-sha256 ${RTC_HELPER_SHA256} --rtc-kernel-bound-us ${RTC_KERNEL_BOUND_US} ; ignore_errors=no ; start_time=[Sat 2026-09-19 16:27:42 CEST] ; stop_time=[Sat 2026-09-19 16:27:53 CEST] ; pid=5337 ; code=killed ; status=15/TERM }\nControlGroup=\n"
+}

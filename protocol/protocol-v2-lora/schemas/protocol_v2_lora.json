@@ -31,7 +31,7 @@
         "control",
         "domain",
         "node_id",
-        "sample_id"
+        "message_id"
       ]
     },
     "nonce": {
@@ -44,7 +44,7 @@
           "offset": 0
         },
         {
-          "name": "sample_id",
+          "name": "message_id",
           "source": "clear_header",
           "type": "u32",
           "offset": 8
@@ -80,10 +80,10 @@
         "description": "Opaque provisioned node identifier."
       },
       {
-        "name": "sample_id",
+        "name": "message_id",
         "type": "u32",
         "offset": 10,
-        "description": "Persistent monotonic sample identifier scoped to the node key."
+        "description": "Persistent monotonic transport-message identifier scoped to the node identity and key."
       }
     ]
   },
@@ -129,67 +129,73 @@
     ]
   },
   "reading_body": {
-    "wire_size_bytes": 28,
+    "wire_size_bytes": 32,
     "fields": [
+      {
+        "name": "sample_id",
+        "type": "u32",
+        "offset": 0,
+        "description": "Persistent monotonic application-reading identifier used for wake continuity and timestamp reconstruction."
+      },
       {
         "name": "run_ms",
         "type": "u16",
-        "offset": 0,
-        "description": "Milliseconds from application start until immediately before the first SX1262 SetTx."
+        "offset": 4,
+        "description": "Milliseconds from application start until the current reading body is finalized, immediately before persistence and frame construction."
       },
       {
         "name": "soil_0_mv",
         "type": "u16",
-        "offset": 2,
+        "offset": 6,
         "description": "Soil-sensor channel 0 output in millivolts.",
         "valid_flag": "SOIL_0_VALID"
       },
       {
         "name": "soil_1_mv",
         "type": "u16",
-        "offset": 4,
+        "offset": 8,
         "description": "Soil-sensor channel 1 output in millivolts.",
         "valid_flag": "SOIL_1_VALID"
       },
       {
         "name": "soil_temp_0_centi_c",
         "type": "i16",
-        "offset": 6,
+        "offset": 10,
         "description": "Soil-temperature channel 0 in 0.01 degrees Celsius.",
         "valid_flag": "SOIL_TEMP_0_VALID"
       },
       {
         "name": "soil_temp_1_centi_c",
         "type": "i16",
-        "offset": 8,
+        "offset": 12,
         "description": "Soil-temperature channel 1 in 0.01 degrees Celsius.",
         "valid_flag": "SOIL_TEMP_1_VALID"
       },
       {
         "name": "enclosure_centi_c",
         "type": "i16",
-        "offset": 10,
+        "offset": 14,
         "description": "Enclosure temperature in 0.01 degrees Celsius.",
         "valid_flag": "ENCLOSURE_TEMP_VALID"
       },
       {
         "name": "enclosure_pressure_pa",
         "type": "u32",
-        "offset": 12,
+        "offset": 16,
         "description": "Enclosure pressure in pascals.",
         "valid_flag": "ENCLOSURE_PRESSURE_VALID"
       },
       {
         "name": "enclosure_humidity_centi_pct",
         "type": "u16",
-        "offset": 16,
+        "offset": 20,
         "description": "Enclosure relative humidity in 0.01 percent.",
         "valid_flag": "ENCLOSURE_HUMIDITY_VALID"
       },
       {
         "name": "reset_reason",
         "type": "u8",
-        "offset": 18,
+        "offset": 22,
         "named_values": "reset_reasons",
         "allow_unassigned_values": true,
         "description": "ESP-IDF reset reason frozen into the protocol as a u8."
@@ -197,37 +203,37 @@
       {
         "name": "previous_current_tx_attempts",
         "type": "u8",
-        "offset": 19,
+        "offset": 23,
         "description": "All transmission attempts for the previous cycle's current reading."
       },
       {
         "name": "previous_awake_ms",
         "type": "u16",
-        "offset": 20,
+        "offset": 24,
         "description": "Previous cycle's total awake time, including final persistent-state and log flushing."
       },
       {
         "name": "previous_current_delivery_ms",
         "type": "u16",
-        "offset": 22,
+        "offset": 26,
         "description": "Previous current reading's first SetTx through receipt of authenticated ACCEPTED."
       },
       {
         "name": "previous_cycle_tx_attempts",
         "type": "u8",
-        "offset": 24,
+        "offset": 28,
         "description": "All current and backlog transmission attempts in the previous wake."
       },
       {
         "name": "previous_cycle_accepted_readings",
         "type": "u8",
-        "offset": 25,
+        "offset": 29,
         "description": "Distinct readings that received authenticated ACCEPTED in the previous wake."
       },
       {
         "name": "flags",
         "type": "u16",
-        "offset": 26,
+        "offset": 30,
         "description": "Validity and diagnostic bitmap."
       }
     ],
@@ -498,10 +504,10 @@
         "BACKLOG_READING_UPLINK"
       ],
       "clear_header_size_bytes": 14,
-      "plaintext_body_size_bytes": 28,
-      "ciphertext_body_size_bytes": 28,
+      "plaintext_body_size_bytes": 32,
+      "ciphertext_body_size_bytes": 32,
       "ccm_tag_size_bytes": 8,
-      "sx1262_payload_size_bytes": 50
+      "sx1262_payload_size_bytes": 54
     },
     "ack": {
       "domains": [

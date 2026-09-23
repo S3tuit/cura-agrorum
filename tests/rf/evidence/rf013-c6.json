@@ -1,0 +1,83 @@
+[
+  {
+    "boot": 1976234393,
+    "continuation": 0,
+    "dut": "cc8da2fc0224",
+    "elf": "6e8acd2deb2a2eefc53ddc7aa2d08a05cd44b478d3037df33f1873567c61cd3a",
+    "kind": "boot",
+    "previous_boot": 0,
+    "previous_case": "",
+    "previous_run": "",
+    "reset": 1
+  },
+  {
+    "boot": 1976234393,
+    "case": "RF-013.absent",
+    "kind": "begin",
+    "phase": 0,
+    "run": "0673c31eb0a948259e1c96533aff2dfa"
+  },
+  {
+    "boot": 1976234393,
+    "bytes": 63,
+    "elapsed_us": 10383,
+    "kind": "command"
+  },
+  {
+    "after": 2835507,
+    "before": 2813876,
+    "deadline": 4813876,
+    "diagnostic": "0000070800000000000000000000",
+    "done": false,
+    "error": 131076,
+    "kind": "result",
+    "operation": 1,
+    "payload": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435",
+    "rssi": 0,
+    "rx_done": 0,
+    "rx_outcome": 0,
+    "set_tx": 0,
+    "snr": 0,
+    "started": false,
+    "tx": true,
+    "tx_done": 0
+  },
+  {
+    "after": 2835460,
+    "argument": 868100000,
+    "before": 2813918,
+    "kind": "trace",
+    "operation": "initialize",
+    "result": 0
+  },
+  {
+    "after": 2854743,
+    "argument": 0,
+    "before": 2844702,
+    "kind": "trace",
+    "operation": "set_standby",
+    "result": 0
+  },
+  {
+    "boot": 1976234393,
+    "case": "RF-013.absent",
+    "cleanup_diagnostic": "0280070800000000000000000000",
+    "cleanup_error": 131076,
+    "cleanup_operation": 18,
+    "failed": 0,
+    "kind": "end",
+    "phase": 0,
+    "run": "0673c31eb0a948259e1c96533aff2dfa"
+  },
+  {
+    "boot": 4223383739,
+    "continuation": 0,
+    "dut": "cc8da2fc0224",
+    "elf": "6e8acd2deb2a2eefc53ddc7aa2d08a05cd44b478d3037df33f1873567c61cd3a",
+    "kind": "boot",
+    "previous_boot": 1976234393,
+    "previous_case": "RF-013.absent",
+    "previous_run": "0673c31eb0a948259e1c96533aff2dfa",
+    "reset": 8
+  }
+]

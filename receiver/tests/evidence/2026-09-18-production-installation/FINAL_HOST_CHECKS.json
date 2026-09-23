@@ -1,0 +1,11 @@
+{
+  "full": {
+    "passed": 3443,
+    "log_sha256": "f9e4df582aa3ee0f49b1b249e869c875696fd043583304d7d34bac355eb8b121"
+  },
+  "final_affected": {
+    "passed": 40,
+    "log_sha256": "3fce656ba18535d458364f568b1b8e4f454be1808e295ba2b1b0a680ce601f9b"
+  },
+  "changed_test_sha256": "91c8a949f95ed99b58a27cf611a5e69fe984e596fa1ca6b5ab52bc595c742a96"
+}

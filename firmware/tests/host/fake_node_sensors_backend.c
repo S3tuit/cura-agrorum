@@ -49,7 +49,6 @@ void fake_node_sensors_reset(void) {
               .humidity_centi_pct = 5432U,
           },
   };
-  node_sensors_test_reset_state();
 }
 
 void fake_node_sensors_set_power_on(node_sensors_backend_result_t result) {

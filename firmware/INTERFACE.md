@@ -32,6 +32,7 @@ Zero means success. The persistence domain is
 | `8` | `CURAG_ECORRUPT_RECORD` | Record framing or CRC could not be recovered safely |
 | `9` | `CURAG_EUNSUPPORTED_RECORD` | A structurally valid record has an unsupported version or type |
 | `10` | `CURAG_ERECORD_MISMATCH` | The newest pending record is not the expected semantic record |
+| `11` | `CURAG_EMESSAGE_ID_EXHAUSTED` | No further `u32` transport-message ID can be committed without reuse |
 
 Every ordinary persistence method returns only `err_curag_t` and accepts an
 optional caller-owned `diagn_context_t *out_diag`. The public method clears a
@@ -93,6 +94,7 @@ Assigned resource values are:
 | `5` | `QUARANTINE_LOG` |
 | `6` | `DIAGNOSTIC_LOG` |
 | `7` | `DELIVERY_LOG` |
+| `8` | `NVS_MESSAGE_COUNTER` |
 
 Assigned stage values are:
 
@@ -153,10 +155,15 @@ returning and never retains pointers. Outputs are valid only on success or the
 explicitly documented empty result. Calls are single-threaded during one wake;
 thread safety is not required.
 
-Interfaces pass `sample_id` and `cura_lora_v2_reading_t` separately rather than
-introducing a persistence-specific aggregate type. Persistence serializes the
-reading through the generated protocol codec and never dumps its native
-structure.
+The canonical `cura_lora_v2_reading_t` contains `sample_id` as its first wire
+field. Persistence serializes readings through the generated protocol codec
+and never dumps their native structure. `node_pending_reading_t` is the
+persistence-specific result used to return a reading plus its optional durable
+backlog-frame binding. The protocol-owned
+`cura_lora_v2_authenticated_reading_frame_t` contains exactly one
+`CURA_LORA_V2_READING_FRAME_SIZE` byte array and has a generated compile-time
+size assertion; APIs use a pointer to that type whenever a complete
+authenticated reading frame is required.
 
 There is no public initialization method. NVS and LittleFS initialize
 independently on first use and cache initialization failure for the remainder
@@ -219,13 +226,49 @@ Persist one best-effort diagnostic with no valid cycle sample ID, skip sensor
 and radio activation, run normal cleanup and final synchronization, leave the
 outgoing RTC record invalid, and enter deep sleep.
 
+### `claim_message_id`
+
+Implemented shape:
+
+```text
+err_curag_t node_persistence_claim_message_id(
+    u32 *out_message_id,
+    diagn_context_t *out_diag)
+```
+
+Atomically claims the next transport-message ID and commits its successor to
+the independent `next_message_id` NVS key before returning success. Fresh
+storage claims `0`. IDs may skip after reset or ambiguous commit failure, but
+must never wrap or be reused while the same node identity/key is active. A
+missing counter is valid only for a newly provisioned identity; operational
+loss or exhaustion requires replacing both identity and key.
+
+The pilot cannot distinguish a genuinely new NVS namespace from erased or
+rolled-back counter state. Operators must not erase or restore NVS while
+retaining the provisioned identity and key. The repository maintenance
+application preserves NVS; if counter state is lost or rolled back, rotate both
+the identity and key before any further transmission. Automatic recovery is
+deferred to a future protocol and receiver handshake.
+
+Identity rotation is an operator-controlled destructive transition. Before the
+new identity transmits, erase all node-local persistence, including NVS,
+LittleFS logs and retained RTC state. Do not migrate pending readings or bound
+backlog frames across the identity-lifetime boundary. Receiver-side historical
+records are outside this node-local erase. The ordinary `erase_storage`
+maintenance application is not this transition because it deliberately
+preserves NVS.
+
+Its argument, lazy-NVS, read, set and commit behavior mirrors
+`claim_sample_id`, but diagnostics identify `NVS_MESSAGE_COUNTER` and exhaustion
+returns `CURAG_EMESSAGE_ID_EXHAUSTED`. On failure `node_core` constructs no
+logical uplink, performs no TX and retains any already persisted reading.
+
 ### `append_pending_reading`
 
 Implemented shape:
 
 ```text
 err_curag_t node_persistence_append_pending_reading(
-    u32 sample_id,
     const cura_lora_v2_reading_t *reading,
     diagn_context_t *out_diag)
 ```
@@ -236,8 +279,8 @@ Durably append the input reading.
 
 **Inputs and ownership**
 
-`sample_id` is the ID claimed for the current wake. `reading` is non-null,
-caller-owned and borrowed only for the call. `out_diag` is optional.
+`reading` is non-null, caller-owned and borrowed only for the call. Its first
+wire field is the current wake's committed `sample_id`. `out_diag` is optional.
 
 **Outputs**
 
@@ -284,14 +327,32 @@ current reading. For the pilot, do not access backlog storage again in that
 wake: failed append durability may be uncertain, and a peek could immediately
 select the same current reading. Final `sync_all` is still called.
 
+### `bind_newest_backlog_frame`
+
+Implemented shape:
+
+```text
+err_curag_t node_persistence_bind_newest_backlog_frame(
+    u32 expected_sample_id,
+    u32 message_id,
+    const cura_lora_v2_authenticated_reading_frame_t *frame,
+    diagn_context_t *out_diag)
+```
+
+Durably appends a 62-byte binding payload after the newest unbound pending
+reading. It verifies the expected sample ID, backlog domain, clear-header
+message ID and requires the generated fixed-size authenticated-reading-frame
+type before the append. Success makes the frame authoritative for all backlog
+retries, including later wakes. Failure does not authorize TX; recovery
+determines whether an ambiguously synchronized binding became durable.
+
 ### `peek_most_recent_pending`
 
 Implemented shape:
 
 ```text
 err_curag_t node_persistence_peek_most_recent_pending(
-    u32 *out_sample_id,
-    cura_lora_v2_reading_t *out_reading,
+    node_pending_reading_t *out_pending,
     bool *out_found,
     diagn_context_t *out_diag)
 ```
@@ -303,15 +364,15 @@ removing it.
 
 **Inputs and ownership**
 
-`out_sample_id`, `out_reading` and `out_found` are non-null writable caller
+`out_pending` and `out_found` are non-null writable caller
 memory. `out_diag` is optional. No pointer is retained.
 
 **Outputs**
 
-On success, `out_found = true`, `out_sample_id` contains the stored ID and
-`out_reading` contains the decoded newest reading, or `out_found = false` when
-the log is empty. Empty backlog is normal, not an error. The other outputs have
-no meaning when empty or on failure.
+On success, `out_found = true` and `out_pending.reading` contains the decoded
+newest reading. `out_pending.backlog_bound` says whether a following binding
+was present; when true, `message_id` and all 54 `frame` bytes are returned and
+must be reused verbatim. `out_found = false` means the log is empty.
 
 **Side effects**
 
@@ -360,13 +421,14 @@ after a permanent rejection has triggered a quarantine attempt.
 
 **Outputs**
 
-Success means the newest supported `PENDING_READING` had the expected ID and
-was removed with its truncation synchronized.
+Success means the newest pending item had the expected reading-body sample ID
+and was removed with its truncation synchronized. A bound item removes both its
+binding and immediately preceding reading record in one truncation.
 
 **Side effects**
 
-Lazily initializes LittleFS, establishes a trustworthy tail, validates its
-record type and decoded sample ID, truncates exactly that record and
+Lazily initializes LittleFS, establishes a trustworthy tail, validates the
+item grammar and decoded sample ID, truncates exactly that item and
 synchronizes the truncation. Private recovery may instead remove one unusable
 tail and return an error without removing the caller's expected reading.
 
@@ -399,7 +461,6 @@ Implemented shape:
 
 ```text
 err_curag_t node_persistence_quarantine_reading(
-    u32 sample_id,
     const cura_lora_v2_reading_t *reading,
     diagn_context_t *out_diag)
 ```
@@ -411,9 +472,9 @@ reads or modifies `pending.log`.
 
 **Inputs and ownership**
 
-`sample_id` and `reading` identify the rejected reading already held in RAM.
-`reading` is non-null, caller-owned and borrowed only for the call. `out_diag`
-is optional. No pointer is retained.
+`reading` identifies the rejected reading already held in RAM and carries its
+application `sample_id`. It is non-null, caller-owned and borrowed only for the
+call. `out_diag` is optional. No pointer is retained.
 
 **Outputs**
 
@@ -461,10 +522,10 @@ err_curag_t node_persistence_append_diagnostic_event(
     diagn_context_t *out_diag)
 ```
 
-`node_diagnostic_event` contains the originating `err_curag_t`, the two
-validity flags, application offset, cycle ID, and a borrowed pointer to the
-originating `diagn_context_t`. A null originating context encodes operation
-`NONE`, context schema `NONE` and zero context length.
+`node_diagnostic_event` contains the originating `err_curag_t`, three validity
+flags, application offset, cycle ID, optional active message ID, and a borrowed
+pointer to the originating `diagn_context_t`. A null originating context
+encodes operation `NONE`, context schema `NONE` and zero context length.
 
 **Purpose**
 
@@ -590,10 +651,10 @@ required synchronization and all persistence-owned handles were closed.
 
 Synchronizes only backends initialized during the wake. It does not initialize
 merely to finalize and does not retry an initialization failure cached earlier.
-Sample-ID commits, pending transitions and delivery events are already durable
-before this call. It closes persistence-owned LittleFS file handles and the NVS
-handle, but does not unregister or unmount LittleFS; deep sleep discards the
-remaining in-memory mount state.
+Sample- and message-ID commits, pending transitions and delivery events are
+already durable before this call. It closes persistence-owned LittleFS file
+handles and the shared NVS namespace handle, but does not unregister or unmount
+LittleFS; deep sleep discards the remaining in-memory mount state.
 
 **Failure results and diagnostic context**
 
@@ -680,7 +741,7 @@ The controller's stable error domain is `CURAG_EDOM_CORE = 4`:
 | `7` | `CURAG_ECORE_EACK_AUTHENTICATION` | ACK authentication failed |
 | `8` | `CURAG_ECORE_EACK_CONTROL` | Authenticated ACK control is unsupported |
 | `9` | `CURAG_ECORE_EACK_NODE_ID` | Authenticated ACK is for another node |
-| `10` | `CURAG_ECORE_EACK_SAMPLE_ID` | Authenticated ACK is for another sample |
+| `10` | `CURAG_ECORE_EACK_MESSAGE_ID` | Authenticated ACK is for another logical uplink message |
 | `11` | `CURAG_ECORE_EACK_DOMAIN` | Authenticated packet is not in an ACK domain |
 | `12` | `CURAG_ECORE_EACK_BODY` | Authenticated ACK body is malformed |
 | `13` | `CURAG_ECORE_EACK_STATUS` | ACK status is unknown or mismatched with its domain |
@@ -772,9 +833,9 @@ The operation lazily initializes the required private buses, enables the shared
 soil/DS18B20 rail, waits for its configured stabilization time, samples both
 soil channels and both configured DS18B20 identities, and disables the shared
 rail through one cleanup path before sampling the independent BME280. The
-BME280 remains on its always-powered rail. Bounded operation and low-power
-recovery of the current BME280 driver are known deferred work rather than a
-guarantee of this pilot interface.
+BME280 remains on its always-powered rail and follows the bounded private
+backend contract below. Failed BME initialization/acquisition is latched until
+the next MCU reset/deep-sleep wake; other sensor groups remain independent.
 
 One sensor-group failure does not suppress attempts for independent groups.
 The shared rail is disabled before return on every path after it may have been
@@ -825,9 +886,9 @@ Best-effort enforcement of the shared soil/DS18B20 rail's off state.
 **Outputs and side effects**
 
 The operation is idempotent, never enables the rail and does not initialize
-ADC, I2C, 1-Wire or any sensor driver. If the component never touched the gate
-this wake, the board's hardware-default-off design makes this a successful
-no-op. Otherwise it releases the open-drain gate control and returns the GPIO
+ADC, I2C, 1-Wire or any sensor driver. Every call attempts to release the gate,
+including before any sampling in this wake and when its state was retained
+across a software restart. It releases the open-drain gate control and returns the GPIO
 to floating input mode with both internal pulls disabled. It does not use GPIO
 hold, power-cycle or initialize the always-powered BME280.
 
@@ -927,6 +988,9 @@ the rail off it writes level 1, which means high impedance in open-drain mode,
 then selects floating input mode. Every power-on reconfigures the output after
 that transition; no cached output-mode assumption is permitted.
 
+A permanent 100 kOhm resistor connects the switched sensor rail (`+3V3_SW`)
+to ground, in parallel with its loads and bypass capacitance.
+
 The two DS18B20 ROM strings default to all zeroes, which deliberately makes
 those groups invalid until identities are provisioned. Enumeration order never
 assigns logical channels. Equal nonzero configured identities are rejected as a
@@ -934,10 +998,96 @@ provisioning error before bus access and invalidate both temperature groups. An
 external 1-Wire pull-up must be connected to the switched sensor rail; the
 backend does not enable the ESP32 internal pull-up.
 
-The current Espressif BME280 driver remains a deferred risk. The eventual
-choice is a corrected and immutable pinned fork with upstream contributions or
-replacement after evaluating another driver, initially Bosch's official
-SensorAPI. Generated `managed_components` are not edited in place.
+The BME280 dependency is the corrected Bosch SensorAPI fork pinned by full
+commit SHA. It is built identically for the production adapter and host driver
+tests. Generated managed_components are not edited in place.
+
+### BME280 backend contract
+
+The private adapter has exclusive synchronous ownership of I2C0 for the wake,
+uses address 0x76 at 100 kHz, x1 temperature/pressure/humidity oversampling,
+filter off and standby encoding 0. It never enables normal mode. Bus/device
+allocation errors retain the exact ESP-IDF status; Bosch context and transfer
+buffers have fixed storage. Successfully created resources are retained for the
+wake, including after a latched failure; a device-creation failure releases the
+otherwise unused bus. No retry loop or replacement resource allocation occurs.
+
+| Limit | Exact value and meaning |
+|---|---|
+| I2C transfer timeout argument | 20 ms to each synchronous ESP-IDF call; not a total-call wall-time ceiling |
+| Initialization admission budget | 500000 us, measured monotonically from initialization entry |
+| NVM copy polling | At most six status reads, each after at least 2000 us |
+| Forced conversion | Exactly one trigger per acquisition; no data acceptance before 9300 us after its successful write |
+| Measurement admission budget | 50000 us, restarted at the successful forced-trigger return |
+| Completion observations | At most six reads of adjacent ctrl_hum/status/ctrl_meas (0xF2..0xF4), separated by at least 2000 us |
+| Failure recovery | One sleep write and at most six status/mode observations, under a separate 50000 us admission budget |
+
+A transfer is admitted only with at least its 20000 us timeout argument remaining.
+A requested delay must fit the remaining budget; its implementation verifies
+minimum elapsed time despite FreeRTOS tick quantization. Success at or after a
+phase deadline is rejected. A synchronous SDK call already in progress cannot
+be preempted by this check; its bounded wait overrun is documented in TESTING.md.
+Callbacks preserve the first exact transport/admission failure even if a later
+Bosch operation or recovery attempt produces another error. Recovery gets its
+own budget and cannot erase the original failure. The initial pre-trigger mode
+check and trigger use a 50000 us admission budget; the measurement budget starts
+afresh only after the single successful trigger.
+
+The 9300 us guard is independently derived from Bosch datasheet section 9.1:
+1250 + 2300 + (2300 + 575) + (2300 + 575) us. Completion requires
+status.measuring=0, status.im_update=0 and ctrl_meas.mode=0. Read actual registers;
+an initially clear measuring bit or a cached requested mode alone is insufficient.
+When accepting sleep after configuration, before each trigger and at conversion
+completion, also require actual ctrl_hum.osrs_h=001, ctrl_meas.osrs_t=001 and
+ctrl_meas.osrs_p=001 (x1 on all channels). Read 0xF2..0xF4 together in the
+existing observation transaction. Disabled (000) or other non-x1 channel
+settings fail with ESP_ERR_INVALID_RESPONSE: INITIALIZE after configuration,
+READ before triggering or at completion. Preserve transport/admission error
+precedence; a non-sleep observation retains the existing sleep failure or
+bounded polling behavior before configuration is checked. Preconfiguration
+and failure-recovery observations require only sleep, without validating x1.
+An observed non-sleep state before a trigger fails without calling Bosch's
+mode setter, which could reset the device. Failure recovery writes the known
+x1 ctrl_meas sleep value once, then observes status/mode without another write.
+The adapter verifies sleep before acquiring/publishing enclosure data. A failed
+observation therefore leaves that group invalid. All three fields remain zero
+on any acquisition failure; no recovery error changes already returned fields.
+
+Compensation uses Bosch's double path, with temperature and pressure clipping
+removed. Undefined/nonfinite compensation is invalid, not a fabricated minimum
+pressure. Humidity retains the datasheet's 0..100 percent compensation saturation.
+The documented skipped outputs (temperature/pressure 0x80000, humidity 0x8000)
+are not independently invalid numeric codes. Accept them when the channel
+configuration and completed-conversion checks pass and compensation is
+structurally representable; detect skipped channels from their actual settings.
+Convert temperature to signed centi-C, pressure to unsigned Pa and humidity to
+unsigned centi-percent, rounding to nearest integer (ties away from zero).
+Both the scaled and rounded results must fit their destination types before
+casting. Do not add physical-plausibility ranges to validity; zero remains a
+valid value when acquired successfully.
+
+All direct BME failures use only the enclosure pair at offset 40. Initialization
+(including bus/device creation, reset, calibration and configuration) uses
+INITIALIZE; trigger/completion/data/conversion failures use READ. Null private
+output uses VALIDATE. Exact status kinds are:
+
+| Failure | Kind / status |
+|---|---|
+| ESP-IDF allocation or transport failure | ESP_ERR / exact esp_err_t, without narrowing to int8_t |
+| Adapter admission/measurement timeout | ESP_ERR / ESP_ERR_TIMEOUT (263) |
+| Non-x1 channel settings or invalid structural conversion | ESP_ERR / ESP_ERR_INVALID_RESPONSE (264) |
+| Bosch error without an underlying adapter error | DRIVER_STATUS / exact signed Bosch return |
+| Responding chip has wrong ID | DRIVER_STATUS / BME280_E_DEV_NOT_FOUND (-4) |
+| Exhausted NVM copy polling | DRIVER_STATUS / BME280_E_NVM_COPY_FAILED (-6) |
+| Observed sleep-state failure | DRIVER_STATUS / BME280_E_SLEEP_MODE_FAIL (-5) |
+
+The first acquisition failure wins over any secondary recovery failure; the
+latch prevents further BME operations that wake. An absent or unreachable device
+has no software guarantee of physical sleep. Force-power-off still touches
+only the switched soil/DS rail. A clean missing-BME NACK on the installed IDF
+register-read path returns ESP_ERR_INVALID_RESPONSE, giving (1,264) in the
+enclosure pair; preflight separately requires the probe API's absence result
+ESP_ERR_NOT_FOUND (261), rejecting timeout and responding mismatched devices.
 
 The public compatibility function
 `soil_sensor_read_mv(int gpio_num, uint16_t *out_mv)` remains in the
@@ -1019,17 +1169,17 @@ airtime = ceil(packet_symbols * symbol_time)
 explicit/implicit header mode, payload length and payload CRC. Frequency does
 not enter the calculation because it does not affect symbol duration. The
 current SF7, BW125, CR4/5, preamble-8, explicit-header, CRC-enabled profile
-returns 25,856 us for 1 byte, 97,536 us for 50 bytes and 399,616 us for 255
-bytes.
+returns 25,856 us for 1 byte, 97,536 us for 50 bytes, 102,656 us for the
+54-byte reading frame and 399,616 us for 255 bytes.
 
 `sx1262_radio_min_tx_window_us` returns a conservative wall-clock admission
 estimate for the controller. It adds TX ramp, the five-millisecond watchdog
 margin, 64 kHz watchdog quantization and a five-millisecond routine packet-setup
 allowance. Lazy initialization and unusually long BUSY waits are not predicted;
 the mandatory post-setup radio check remains the correctness boundary. The
-corresponding 1-, 50- and 255-byte windows are 35,907 us, 107,579 us and 409,657
-us. Both functions return `UINT64_MAX` for a zero or oversized payload, causing
-budget callers to fail closed.
+corresponding 1-, 50-, 54- and 255-byte windows are 35,907 us, 107,579 us,
+112,704 us and 409,657 us. Both functions return `UINT64_MAX` for a zero or
+oversized payload, causing budget callers to fail closed.
 
 These queries report radio mechanism. `node_core` owns policy: it adds a
 separate 10% allowance to modeled airtime for the eight-second charged-TX
@@ -1337,9 +1487,11 @@ operations is part of the public interface.
 - The pilot module is the Waveshare Pico-LoRa-SX1262-868M. Semtech's
   Clear-BSD `sx126x_driver` v2.5.0 is vendored at a pinned upstream commit and
   used unchanged below the Cura backend adapter.
-- The ESP32-C6 uses SPI2 at 8 MHz. Provisional SCLK, MOSI, MISO, CS, RESET,
-  BUSY and DIO1 pins are component Kconfig values and must be revised against
-  the assembled board. DIO1 uses a rising-edge GPIO interrupt.
+- The ESP32-C6 uses SPI2 at 8 MHz, mode 0. SCLK, MOSI, MISO, CS, RESET, BUSY and DIO1
+  pins are component Kconfig values. The DevKitM-1 component-test fixture uses
+  the [exposed-pin allocation below](#selected-radio-fixture-pins), which must
+  be checked against the assembled wiring and resolved build configuration.
+  DIO1 uses a rising-edge GPIO interrupt.
 - The module's onboard DIO2-controlled RF switch is enabled. Its DIO3-powered
   TCXO is configured for 1.7 V and a 5 ms startup. The regulator uses DC-DC
   mode.
@@ -1347,6 +1499,8 @@ operations is part of the public interface.
   ISR timestamp. A component-owned static binary semaphore wakes the blocking
   caller; the component does not consume a task-notification slot.
 - BUSY waits are bounded to 10 ms, with 20 ms allowed after hardware reset.
+  After reset and confirmed `STDBY_RC`, cold initialization applies the
+  vendored `sx126x_cfg_tx_clamp` workaround before the remaining pilot profile.
   The SX1262 TX watchdog is programmed to expire 5 ms before the caller's
   absolute deadline when enough time remains. The software deadline remains
   authoritative. A second post-setup check rejects the operation before
@@ -1366,6 +1520,39 @@ operations is part of the public interface.
   return `CURAG_ERADIO_ECOMMAND_STATUS` and preserve the reconstructed raw
   chip-status byte in diagnostic context. `SetSleep` is excluded because the
   sleeping device cannot be queried afterward.
+
+#### Selected radio fixture pins
+
+For the ESP32-C6-DEVKITM-1 sensor/radio carrier, the required selected values
+are:
+
+```text
+CONFIG_CURA_SX1262_SCLK_GPIO=6
+CONFIG_CURA_SX1262_MOSI_GPIO=7
+CONFIG_CURA_SX1262_MISO_GPIO=14
+CONFIG_CURA_SX1262_CS_GPIO=23
+CONFIG_CURA_SX1262_RESET_GPIO=18
+CONFIG_CURA_SX1262_BUSY_GPIO=19
+CONFIG_CURA_SX1262_DIO1_GPIO=20
+```
+
+These allocate the seven exposed pins reserved by the approved sensor carrier.
+GPIO0/1/2/3/21/22 remain sensor-owned, GPIO16/17 remain UART-owned, GPIO12/13
+remain available for native USB, and the carrier's strapping-pin exclusions
+remain unchanged. The repository's provisional component defaults still use
+GPIO10/GPIO11 for MISO/CS; they are inaccessible on this DevKitM-1 and are not
+valid values for this fixture. The later radio test application must explicitly
+select the values above and inspect generated `sdkconfig`/`sdkconfig.h` and
+production ESP-backend linkage before flashing. This fixture-design stage
+does not change Kconfig defaults or add an executable test application.
+
+Physical C6 header positions, Waveshare Pico-footprint contacts, node supply,
+the permanent DIO1 pull-down and absence-only BUSY/MISO jumpers are specified in
+[SENSOR_CARRIER.md](test_apps/on_device/SENSOR_CARRIER.md#radio-connectors-and-pin-allocation).
+Receiver wiring is owned separately from the node fixture.
+The [radio preflight](TESTING.md#sx1262_radio-static-preflight) owns its DC checks;
+no fixture selection changes the production oscillator, BUSY, watchdog or
+caller-deadline values above.
 
 ## Platform ports
 
@@ -1499,7 +1686,7 @@ returns. The production implementation:
 1. configures timer wakeup with `esp_sleep_enable_timer_wakeup(duration_us)`;
 2. on success, calls the non-returning `esp_deep_sleep_start()`; and
 3. on configuration failure, emits a development-console error, waits 60
-   seconds without a tight busy-spin, and calls `esp_restart()`.
+   seconds without a tight busy-spin, and calls `node_platform_esp_restart()`.
 
 The failure path is deliberately contained here. It does not reopen
 persistence or attempt a late persistent diagnostic after `sync_all`. Both the
@@ -1512,3 +1699,22 @@ function-pointer type is not. A host fake records the requested duration and
 may return. `node_core` treats the invocation as terminal in either case: if a
 test fake or broken adapter returns, it immediately returns to its caller and
 must invoke no clock, randomness, component or system operation afterward.
+
+### `node_platform_esp_restart`
+
+```text
+void node_platform_esp_restart(void) /* does not return */
+```
+
+This concrete ESP-IDF operation prepares the switched sensor rail for an
+intentional restart. It calls `node_sensors_force_power_off` exactly once, then
+calls `esp_restart`. A failed off attempt is reported to the development console;
+restart still proceeds. It neither initializes sensor buses nor enables the
+rail, adds no delay, and performs no persistence or radio operation. Callers
+remain responsible for any earlier radio/persistence cleanup. If `esp_restart`
+unexpectedly returns, the operation aborts rather than returning to its caller.
+
+This is best-effort cleanup before intentional restart, not a guarantee of
+electrical off after a GPIO failure or protection against other reset causes.
+The sleep-configuration failure path retains its existing 60-second delay before
+calling this operation. The generic `node_platform_ports_t` interface is unchanged.

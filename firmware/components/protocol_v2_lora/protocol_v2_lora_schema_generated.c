@@ -1,5 +1,5 @@
 /* Generated from protocol/protocol-v2-lora/schemas/protocol_v2_lora.json by protocol/protocol-v2-lora/tools/generate.py.
- * Schema SHA-256: 12f34aea53874681f3ac8db6978f6e202301f57c92682b3080a5e082d51bf333. Do not edit by hand. */
+ * Schema SHA-256: ece4ec58bad29ddad03be41ccb257ffef960fa11a2df1d9f8650f4eb499de009. Do not edit by hand. */
 #include "protocol_v2_lora_schema_generated.h"
 
 #include <limits.h>
@@ -166,7 +166,7 @@ cura_lora_v2_codec_result_t cura_lora_v2_encode_clear_header(
   output[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET] = value->control;
   output[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET] = value->domain;
   memcpy(&output[CURA_LORA_V2_CLEAR_HEADER_NODE_ID_OFFSET], value->node_id, sizeof(value->node_id));
-  write_u32_le(&output[CURA_LORA_V2_CLEAR_HEADER_SAMPLE_ID_OFFSET], value->sample_id);
+  write_u32_le(&output[CURA_LORA_V2_CLEAR_HEADER_MESSAGE_ID_OFFSET], value->message_id);
   return CURA_LORA_V2_CODEC_OK;
 }
 
@@ -182,7 +182,7 @@ cura_lora_v2_codec_result_t cura_lora_v2_decode_clear_header(
   value->control = input[CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET];
   value->domain = input[CURA_LORA_V2_CLEAR_HEADER_DOMAIN_OFFSET];
   memcpy(value->node_id, &input[CURA_LORA_V2_CLEAR_HEADER_NODE_ID_OFFSET], sizeof(value->node_id));
-  value->sample_id = read_u32_le(&input[CURA_LORA_V2_CLEAR_HEADER_SAMPLE_ID_OFFSET]);
+  value->message_id = read_u32_le(&input[CURA_LORA_V2_CLEAR_HEADER_MESSAGE_ID_OFFSET]);
   return CURA_LORA_V2_CODEC_OK;
 }
 
@@ -196,7 +196,7 @@ cura_lora_v2_codec_result_t cura_lora_v2_build_nonce(
     return CURA_LORA_V2_CODEC_BUFFER_TOO_SMALL;
   }
   memcpy(&output[CURA_LORA_V2_NONCE_NODE_ID_OFFSET], header->node_id, sizeof(header->node_id));
-  write_u32_le(&output[CURA_LORA_V2_NONCE_SAMPLE_ID_OFFSET], header->sample_id);
+  write_u32_le(&output[CURA_LORA_V2_NONCE_MESSAGE_ID_OFFSET], header->message_id);
   output[CURA_LORA_V2_NONCE_DOMAIN_OFFSET] = header->domain;
   return CURA_LORA_V2_CODEC_OK;
 }
@@ -214,6 +214,7 @@ cura_lora_v2_codec_result_t cura_lora_v2_encode_reading(
   if (validation != CURA_LORA_V2_CODEC_OK) {
     return validation;
   }
+  write_u32_le(&output[CURA_LORA_V2_READING_SAMPLE_ID_OFFSET], value->sample_id);
   write_u16_le(&output[CURA_LORA_V2_READING_RUN_MS_OFFSET], value->run_ms);
   write_u16_le(&output[CURA_LORA_V2_READING_SOIL_0_MV_OFFSET], value->soil_0_mv);
   write_u16_le(&output[CURA_LORA_V2_READING_SOIL_1_MV_OFFSET], value->soil_1_mv);
@@ -241,6 +242,7 @@ cura_lora_v2_codec_result_t cura_lora_v2_decode_reading(
   if (input_size != CURA_LORA_V2_READING_BODY_SIZE) {
     return CURA_LORA_V2_CODEC_INVALID_LENGTH;
   }
+  value->sample_id = read_u32_le(&input[CURA_LORA_V2_READING_SAMPLE_ID_OFFSET]);
   value->run_ms = read_u16_le(&input[CURA_LORA_V2_READING_RUN_MS_OFFSET]);
   value->soil_0_mv = read_u16_le(&input[CURA_LORA_V2_READING_SOIL_0_MV_OFFSET]);
   value->soil_1_mv = read_u16_le(&input[CURA_LORA_V2_READING_SOIL_1_MV_OFFSET]);

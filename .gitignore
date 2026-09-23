@@ -78,6 +78,10 @@ __pycache__/
 .env
 .venv
 
+# Temporary hardware captures; curate useful results, then delete raw runs.
+/receiver/tests/hardware/evidence/**/20??-??-??/
+/receiver/tests/hardware/evidence/**/raw/
+
 # Fuzzing
 protocol/protocol-v2-lora/.fuzz-corpus/
 
@@ -94,7 +98,11 @@ firmware/main/build*/
 
 # personal notes
 *.notes
+*.notes.*
 analysis_*/
 WORKPLAN*.md
 REVIEW*.md
 .workplans-archive/
+
+# Disposable joint RF captures and session state
+/tests/rf/raw/

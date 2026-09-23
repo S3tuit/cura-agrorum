@@ -1,0 +1,3 @@
+# Production Linux radio adapters; install only on radio-capable Linux hosts.
+gpiod>=2.2,<3
+spidev>=3.8,<4

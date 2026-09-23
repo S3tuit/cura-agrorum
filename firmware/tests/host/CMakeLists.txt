@@ -36,7 +36,9 @@ target_include_directories(
     ${FIRMWARE_ROOT}/components/sx1262_radio/private_include
 )
 target_compile_features(test_node_core PRIVATE c_std_11)
-target_compile_definitions(test_node_core PRIVATE CURA_LORA_V2_CRYPTO_USE_OPENSSL)
+target_compile_definitions(
+  test_node_core PRIVATE CURA_LORA_V2_CRYPTO_USE_OPENSSL NODE_CORE_TESTING=1
+)
 target_compile_options(
   test_node_core
   PRIVATE
@@ -71,6 +73,7 @@ set(
   sensor_validity_maps_independently
   run_time_and_sampling_deadline_boundaries
   pending_failure_allows_ram_only_delivery
+  message_claim_failure_retains_reading_without_construction
   invalid_composition_returns_without_side_effects
   retries_reuse_identical_frame
   invalid_acks_share_one_receive_interval
@@ -88,13 +91,17 @@ set(
   backlog_quarantine_removal_combinations
   accepted_backlog_removal_failure_stops
   airtime_budget_is_shared_across_backlog
+  wall_clock_deadline_is_shared_across_backlog
   backlog_silence_retries_the_same_frame
+  bound_backlog_reuses_persisted_frame_without_new_id
+  backlog_binding_failure_prevents_first_transmission
   delivery_events_bracket_retries_and_failures_are_best_effort
   diagnostic_failure_is_not_logged_recursively
   current_and_backlog_metrics_accumulate_in_correct_domains
   unaccepted_current_has_zero_delivery_metric
   awake_time_includes_cleanup_and_sync_and_sleep_is_terminal
   rtc_metric_boundaries_and_semantics_are_enforced
+  rtc_commit_stores_payload_before_marker
   sync_induced_metric_overflow_has_no_late_diagnostic
   component_diagnostics_are_copied_opaquely
   cleanup_failures_do_not_prevent_sync_or_sleep
@@ -185,6 +192,7 @@ add_executable(
   ${FIRMWARE_ROOT}/components/node_common/node_common.c
   ${FIRMWARE_ROOT}/components/node_sensors/node_sensors.c
   ${FIRMWARE_ROOT}/components/node_sensors/node_sensors_power_gate_esp.c
+  ${FIRMWARE_ROOT}/components/node_sensors/node_sensors_ds18b20_gpio_esp.c
 )
 
 target_include_directories(
@@ -202,6 +210,7 @@ target_compile_definitions(
   PRIVATE
     NODE_SENSORS_TESTING=1
     CONFIG_CURA_SENSOR_POWER_STABILIZATION_MS=200
+    CONFIG_CURA_DS18B20_GPIO=3
 )
 target_compile_options(
   test_node_sensors
@@ -291,6 +300,9 @@ target_include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/fakes
     ${FIRMWARE_ROOT}/components/node_core/include
     ${FIRMWARE_ROOT}/components/node_platform_esp/include
+    ${FIRMWARE_ROOT}/components/node_sensors/include
+    ${FIRMWARE_ROOT}/components/node_common/include
+    ${FIRMWARE_ROOT}/components/protocol_v2_lora/include
 )
 target_compile_features(test_node_platform_esp PRIVATE c_std_11)
 target_compile_options(
@@ -384,6 +396,7 @@ set(
   unexpected_irq_reports_device_error
   receive_exact_packet_and_iq_transition
   receive_pending_irq_at_deadline_wins
+  receive_setup_crossing_deadline_does_not_arm
   receive_snapshots_before_clear_and_rearms
   receive_deadline_keeps_rx_armed
   receive_discards_phy_errors
@@ -393,7 +406,8 @@ set(
   receive_local_error_is_distinct
   unexpected_receive_irq_fails
   sleep_lifecycle
-  sleep_failure_retries_and_preserves_first_error
+  sleep_standby_failure_blocks_sleep_and_retries
+  sleep_command_failure_retries
 )
 
 foreach(SCENARIO IN LISTS SX1262_RADIO_TEST_SCENARIOS)
@@ -404,4 +418,64 @@ foreach(SCENARIO IN LISTS SX1262_RADIO_TEST_SCENARIOS)
     PROPERTIES ENVIRONMENT
                "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:halt_on_error=1:fast_unwind_on_malloc=0"
   )
+endforeach()
+
+# Test the same immutable Bosch driver used by every ESP-IDF application.
+include("${FIRMWARE_ROOT}/components/bosch_bme280/resolve_source.cmake")
+cura_bme280_resolve(BME280_SOURCE)
+add_executable(test_bme280_driver test_bme280_driver.c "${BME280_SOURCE}/bme280.c")
+add_executable(test_node_sensors_bme280 test_node_sensors_bme280.c
+    "${FIRMWARE_ROOT}/components/node_sensors/node_sensors_bme280_esp.c"
+    "${BME280_SOURCE}/bme280.c")
+foreach(target test_bme280_driver test_node_sensors_bme280)
+    target_include_directories(${target} PRIVATE "${BME280_SOURCE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/bme280_fakes" "${CMAKE_CURRENT_SOURCE_DIR}/fakes"
+        "${FIRMWARE_ROOT}/components/node_sensors/private_include"
+        "${FIRMWARE_ROOT}/components/node_sensors/include"
+        "${FIRMWARE_ROOT}/components/node_common/include")
+    target_compile_definitions(${target} PRIVATE BME280_DOUBLE_ENABLE
+        CONFIG_CURA_I2C_SDA_GPIO=21 CONFIG_CURA_I2C_SCL_GPIO=22)
+    target_compile_features(${target} PRIVATE c_std_11)
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Werror -Wformat=2 -Wshadow
+        -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_link_options(${target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_link_libraries(${target} PRIVATE m)
+endforeach()
+# Keep Cura's strict conversion checks on the adapter and regressions. Bosch's
+# register-mask macros use intentional uint8 narrowing; do not rewrite vendor
+# code merely to satisfy those additional project-source warning flags.
+set_source_files_properties(test_bme280_driver.c test_node_sensors_bme280.c
+    "${FIRMWARE_ROOT}/components/node_sensors/node_sensors_bme280_esp.c"
+    PROPERTIES COMPILE_OPTIONS "-Wpedantic;-Wconversion;-Wsign-conversion")
+set(BME_DRIVER_CASES nvm_first_error nvm_later_error nvm_bound wrong_id
+    signed_calibration combined_data temperature_outlier pressure_outlier
+    invalid_pressure humidity_saturation)
+set(BME_ADAPTER_CASES null bus_allocation device_allocation allocation_cleanup_error
+    missing transport_status wrong_id nvm_first_error nvm_later_error nvm_bound
+    initialization_late delay_short poll_first_error poll_later_error measurement_bound
+    recovery_failure data_error first_error_preserved data_late skipped_temperature
+    skipped_pressure skipped_humidity invalid_compensation pressure_unrepresentable
+    temperature_unrepresentable nominal initially_idle tick_edge outliers
+    round_positive round_negative valid_zero bus_late init_mode_error
+    configuration_mode_error init_not_sleeping trigger_error pretrigger_not_sleeping deadline_equal publication_late
+    temperature_max temperature_min temperature_above_scaled_max temperature_below_scaled_min
+    pressure_near_max pressure_above_max enabled_midpoint_temperature
+    enabled_midpoint_pressure enabled_midpoint_humidity enabled_midpoints
+    enabled_midpoint_bench_temperature)
+# Existing skipped_<channel> cases now fault actual completed-conversion
+# settings. Cover initialization and pre-trigger checks as distinct phases.
+foreach(channel temperature pressure humidity)
+    list(APPEND BME_ADAPTER_CASES skipped_${channel}_initialize
+        skipped_${channel}_pretrigger misconfigured_${channel}
+        misconfigured_${channel}_initialize misconfigured_${channel}_pretrigger)
+endforeach()
+foreach(test IN LISTS BME_DRIVER_CASES)
+    add_test(NAME "bme280_driver.${test}" COMMAND test_bme280_driver "${test}")
+    set_tests_properties("bme280_driver.${test}" PROPERTIES ENVIRONMENT
+        "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:halt_on_error=1:fast_unwind_on_malloc=0")
+endforeach()
+foreach(test IN LISTS BME_ADAPTER_CASES)
+    add_test(NAME "node_sensors_bme280.${test}" COMMAND test_node_sensors_bme280 "${test}")
+    set_tests_properties("node_sensors_bme280.${test}" PROPERTIES ENVIRONMENT
+        "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:halt_on_error=1:fast_unwind_on_malloc=0")
 endforeach()

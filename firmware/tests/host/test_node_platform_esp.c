@@ -9,6 +9,9 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "node_platform_esp.h"
+#include "node_sensors.h"
+#include <string.h>
+#include "protocol_v2_lora_schema_generated.h"
 
 #define TEST_ASSERT(expression)                                                \
   do {                                                                         \
@@ -40,6 +43,9 @@ static TickType_t g_delay_ticks;
 static size_t g_delay_calls;
 static size_t g_restart_calls;
 static size_t g_error_log_calls;
+static size_t g_force_off_calls;
+static err_curag_t g_force_off_result;
+static bool g_restart_after_force_off;
 static terminal_operation_t g_terminal_operation;
 static jmp_buf g_terminal_jump;
 
@@ -56,6 +62,9 @@ static void fake_reset(void) {
   g_delay_calls = 0U;
   g_restart_calls = 0U;
   g_error_log_calls = 0U;
+  g_force_off_calls = 0U;
+  g_force_off_result = CURAG_OK;
+  g_restart_after_force_off = false;
   g_terminal_operation = TERMINAL_NONE;
 }
 
@@ -99,9 +108,16 @@ void vTaskDelay(TickType_t ticks_to_delay) {
 }
 
 _Noreturn void esp_restart(void) {
+  g_restart_after_force_off = g_force_off_calls == 1U;
   ++g_restart_calls;
   g_terminal_operation = TERMINAL_RESTART;
   longjmp(g_terminal_jump, 1);
+}
+
+err_curag_t node_sensors_force_power_off(diagn_context_t *diagnostic) {
+  ++g_force_off_calls;
+  memset(diagnostic, 0, sizeof(*diagnostic));
+  return g_force_off_result;
 }
 
 const char *esp_err_to_name(esp_err_t code) {
@@ -144,11 +160,42 @@ static bool test_clock_normalizes_negative_values(void) {
   return true;
 }
 
-static bool test_reset_reason_normalization(void) {
+static bool test_reset_reason_translation_and_normalization(void) {
   fake_reset();
   const node_platform_ports_t *const ports = node_platform_esp_ports();
-  g_reset_reason = ESP_RST_DEEPSLEEP;
-  TEST_ASSERT(ports->system.get_reset_reason(ports->system.context) == 8U);
+
+  static const struct {
+    int platform_reason;
+    uint8_t protocol_reason;
+  } mappings[] = {
+      {ESP_RST_UNKNOWN, CURA_LORA_V2_RESET_REASON_ESP_RST_UNKNOWN},
+      {ESP_RST_POWERON, CURA_LORA_V2_RESET_REASON_ESP_RST_POWERON},
+      {ESP_RST_EXT, CURA_LORA_V2_RESET_REASON_ESP_RST_EXT},
+      {ESP_RST_SW, CURA_LORA_V2_RESET_REASON_ESP_RST_SW},
+      {ESP_RST_PANIC, CURA_LORA_V2_RESET_REASON_ESP_RST_PANIC},
+      {ESP_RST_INT_WDT, CURA_LORA_V2_RESET_REASON_ESP_RST_INT_WDT},
+      {ESP_RST_TASK_WDT, CURA_LORA_V2_RESET_REASON_ESP_RST_TASK_WDT},
+      {ESP_RST_WDT, CURA_LORA_V2_RESET_REASON_ESP_RST_WDT},
+      {ESP_RST_DEEPSLEEP, CURA_LORA_V2_RESET_REASON_ESP_RST_DEEPSLEEP},
+      {ESP_RST_BROWNOUT, CURA_LORA_V2_RESET_REASON_ESP_RST_BROWNOUT},
+      {ESP_RST_SDIO, CURA_LORA_V2_RESET_REASON_ESP_RST_SDIO},
+      {ESP_RST_USB, CURA_LORA_V2_RESET_REASON_ESP_RST_USB},
+      {ESP_RST_JTAG, CURA_LORA_V2_RESET_REASON_ESP_RST_JTAG},
+      {ESP_RST_EFUSE, CURA_LORA_V2_RESET_REASON_ESP_RST_EFUSE},
+      {ESP_RST_PWR_GLITCH, CURA_LORA_V2_RESET_REASON_ESP_RST_PWR_GLITCH},
+      {ESP_RST_CPU_LOCKUP, CURA_LORA_V2_RESET_REASON_ESP_RST_CPU_LOCKUP},
+  };
+  for (size_t index = 0U; index < sizeof(mappings) / sizeof(mappings[0]);
+       ++index) {
+    g_reset_reason = mappings[index].platform_reason;
+    TEST_ASSERT(ports->system.get_reset_reason(ports->system.context) ==
+                mappings[index].protocol_reason);
+  }
+
+  g_reset_reason = 15;
+  TEST_ASSERT(ports->system.get_reset_reason(ports->system.context) == 0U);
+  g_reset_reason = 16;
+  TEST_ASSERT(ports->system.get_reset_reason(ports->system.context) == 16U);
   g_reset_reason = 255;
   TEST_ASSERT(ports->system.get_reset_reason(ports->system.context) == 255U);
   g_reset_reason = -1;
@@ -201,6 +248,7 @@ static bool test_successful_deep_sleep_is_terminal(void) {
   TEST_ASSERT(g_error_log_calls == 0U);
   TEST_ASSERT(g_delay_calls == 0U);
   TEST_ASSERT(g_restart_calls == 0U);
+  TEST_ASSERT(g_force_off_calls == 0U);
   return true;
 }
 
@@ -220,16 +268,36 @@ static bool test_failed_wakeup_configuration_delays_and_restarts(void) {
   TEST_ASSERT(g_delay_calls == 1U);
   TEST_ASSERT(g_delay_ticks == pdMS_TO_TICKS(UINT32_C(60000)));
   TEST_ASSERT(g_restart_calls == 1U);
+  TEST_ASSERT(g_force_off_calls == 1U);
+  TEST_ASSERT(g_restart_after_force_off);
+  return true;
+}
+
+static bool test_restart_attempts_off_and_remains_terminal_on_failure(void) {
+  for (unsigned failure = 0; failure < 2U; ++failure) {
+    fake_reset();
+    g_force_off_result = failure ? (err_curag_t)1 : CURAG_OK;
+    if (setjmp(g_terminal_jump) == 0) {
+      node_platform_esp_restart();
+      TEST_ASSERT(false);
+    }
+    TEST_ASSERT(g_terminal_operation == TERMINAL_RESTART);
+    TEST_ASSERT(g_restart_calls == 1U && g_force_off_calls == 1U);
+    TEST_ASSERT(g_restart_after_force_off);
+    TEST_ASSERT(g_error_log_calls == failure);
+    TEST_ASSERT(g_delay_calls == 0U && g_timer_wakeup_calls == 0U && g_deep_sleep_calls == 0U);
+  }
   return true;
 }
 
 int main(void) {
   if (!test_port_table_is_immutable_and_complete() ||
       !test_clock_normalizes_negative_values() ||
-      !test_reset_reason_normalization() ||
+      !test_reset_reason_translation_and_normalization() ||
       !test_randomness_boundaries_and_rejection() ||
       !test_successful_deep_sleep_is_terminal() ||
-      !test_failed_wakeup_configuration_delays_and_restarts()) {
+      !test_failed_wakeup_configuration_delays_and_restarts() ||
+      !test_restart_attempts_off_and_remains_terminal_on_failure()) {
     return 1;
   }
   puts("PASS node_platform_esp");

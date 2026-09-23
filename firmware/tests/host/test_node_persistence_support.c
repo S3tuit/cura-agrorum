@@ -15,6 +15,7 @@ void node_persistence_test_restart(void) {
 
 cura_lora_v2_reading_t node_persistence_test_make_reading(uint16_t marker) {
   cura_lora_v2_reading_t reading = {0};
+  reading.sample_id = marker;
   reading.run_ms = marker;
   reading.soil_0_mv = (uint16_t)(1000U + marker);
   reading.soil_temp_0_centi_c = (int16_t)(2000 + (int32_t)marker);
@@ -25,6 +26,7 @@ cura_lora_v2_reading_t node_persistence_test_make_reading(uint16_t marker) {
 
 cura_lora_v2_reading_t node_persistence_test_make_boundary_reading(void) {
   cura_lora_v2_reading_t reading = {
+      .sample_id = UINT32_MAX,
       .run_ms = UINT16_MAX,
       .soil_0_mv = UINT16_MAX,
       .soil_1_mv = 0U,
@@ -107,11 +109,16 @@ bool node_persistence_test_encode_reading_record(
     const cura_lora_v2_reading_t *reading,
     uint8_t output[NODE_PERSISTENCE_RECORD_MAX_SIZE], size_t *out_length) {
   uint8_t payload[NODE_PERSISTENCE_READING_PAYLOAD_SIZE];
-  node_persistence_store_le32(payload, sample_id);
+  cura_lora_v2_reading_t stored_reading;
+  if (reading == NULL) {
+    return false;
+  }
+  stored_reading = *reading;
+  stored_reading.sample_id = sample_id;
   return reading != NULL && output != NULL && out_length != NULL &&
-         cura_lora_v2_encode_reading(payload + sizeof(uint32_t),
-                                     CURA_LORA_V2_READING_BODY_SIZE,
-                                     reading) == CURA_LORA_V2_CODEC_OK &&
+         cura_lora_v2_encode_reading(payload, sizeof(payload),
+                                     &stored_reading) ==
+             CURA_LORA_V2_CODEC_OK &&
          node_persistence_record_encode(node_persistence_backend(), record_type,
                                         payload, sizeof(payload), output,
                                         out_length);
@@ -155,12 +162,18 @@ bool node_persistence_test_pending_ids(uint32_t *output, size_t capacity,
             record_length) != NODE_PERSISTENCE_RECORD_VALID) {
       return false;
     }
-    uint8_t body[CURA_LORA_V2_READING_BODY_SIZE];
-    if (!node_persistence_record_decode_reading(
-            snapshot.bytes + offset, record_length, output + count, body)) {
-      return false;
+    if (snapshot.bytes[offset + 5U] ==
+        NODE_PERSISTENCE_RECORD_TYPE_PENDING_READING) {
+      uint8_t body[CURA_LORA_V2_READING_BODY_SIZE];
+      cura_lora_v2_reading_t reading;
+      if (!node_persistence_record_decode_reading(snapshot.bytes + offset,
+                                                  record_length, body) ||
+          cura_lora_v2_decode_reading(&reading, body, sizeof(body)) !=
+              CURA_LORA_V2_CODEC_OK) {
+        return false;
+      }
+      output[count++] = reading.sample_id;
     }
-    ++count;
     offset += record_length;
   }
   *out_count = count;

@@ -1,0 +1,953 @@
+# Receiver testing
+
+Status: this document defines the pilot receiver test suite. Generated
+contracts, initialization, clocks, queue, ingress, configuration/boot identity,
+database opening, lifecycle start and SQLite row primitives have host coverage.
+Caller-driven ordinary transactions, immutable enrichment, reading classification,
+exact replay, poison isolation, recovery deadlines, explicit checkpoints,
+process-kill boundaries and model-based sequences also have host coverage.
+The sole persistence worker, synchronous controls, state validation/recovery,
+shared storage recovery, concurrency boundaries and component shutdown also
+have host coverage, including worker SIGKILL and generated schedule tests.
+Pure time arithmetic, normalized trust decisions, candidate observations/RTC
+provenance, clock correlation and logical timestamp analysis also have host
+coverage, including independent generated history and anchor-selection models.
+Pi component coverage includes queue/ingress, startup, ordinary transactions,
+worker control/checkpoint scheduling, a seeded CPU/storage-load soak,
+process-kill recovery and isolated capacity/access/corruption recovery.
+Runtime time/Chrony/DS3231, durable airtime and the production radio stack are
+implemented with host and source-bound Pi component evidence; retained target
+results do not qualify every later source/configuration change. Communicator
+orchestration, observability and the service lifecycle are implemented with
+host coverage. Source-bound [installed pre-radio qualification](tests/evidence/2026-09-18-production-installation/README.md#final-qualification)
+covers the isolated Pi deployment; full-service RF and later runtime time/storage
+acceptance remain separate.
+
+## Purpose and authority
+
+The receiver test suite verifies the behavior defined by
+[`ARCHITECTURE.md`](ARCHITECTURE.md), the exact shared values and persistence
+contracts in [`INTERFACE.md`](INTERFACE.md), the closed diagnostic catalogues in
+[`INTERFACE_DIAGNOSTIC.md`](INTERFACE_DIAGNOSTIC.md), and the governing LoRa
+protocol under [`../protocol/protocol-v2-lora/`](../protocol/protocol-v2-lora/).
+Tests must exercise those contracts rather than infer a second behavior from
+the current implementation.
+
+Every test obligation below belongs to one of two suites:
+
+- **Host tests** run on a developer laptop and in an ordinary Linux container.
+  They contain the exhaustive policy, state-machine, fault-injection and SQLite
+  matrices. They must not require Raspberry Pi devices, systemd, chronyd,
+  privileged clock control or real elapsed-time sleeps.
+- **Hardware tests** verify facts that host fakes cannot establish: the
+  deployed Python/SQLite/kernel stack, SPI/GPIO, DS3231, chronyd, systemd,
+  storage and physical timing. They complement the exhaustive host matrices.
+  Ordinary receiver hardware tests run locally on the target Pi. Joint C6/Pi
+  scenarios are coordinated by laptop pytest in tests/rf/: pytest-embedded
+  controls the C6 over its actual UART connector, and SSH controls a separate Pi
+  process. Receiver production code and hardware operations execute on Pi.
+
+Field-pilot-v2 deployment and full-system acceptance use the explicitly
+reviewed pilot-readiness gate, with selected requirement and test IDs,
+dependencies and required source-bound evidence recorded in the deployment
+record. Every production behavior needed by that pilot and every selected gate
+obligation must be implemented and verified. Other required coverage remains
+identified as deferred, with its reason, consequence and revisit condition;
+deferred is neither passed nor deleted. Component RF tests may run when their
+own prerequisites pass, before complete receiver service readiness.
+Full-system RF tests require the real production service and the relevant
+integration/lifecycle prerequisites, not automatic completion of all unrelated
+deferred physical tests. Any change to behavior, protocol, identity/counters,
+timing or evidence standards still requires an explicit decision.
+
+## Framework and organization
+
+### Pilot production fixture and installed qualification
+
+The approved 2026-09-18 production qualification batch uses the
+[receiver carrier](hardware/TEST_CARRIER.md) in `radio_nominal`, without
+JP_RTC_SCL_FAULT and JP_RTC_SDA_FAULT. Both fault paths are disconnected;
+the nominal I2C pull-ups, radio connections and other schematic requirements
+remain. This assembly supplies no stuck-bus physical-fault evidence. Requiring
+a removed fault connection means reporting the physical action to the operator
+before execution, not silently emulating its electrical assertion.
+
+Reviewed package, time, storage and disposable group inputs precede isolated
+installation. Stage the current local source tree in a fresh Pi directory and
+verify its manifest before running target tests; use the installed package and
+actual service UID for installed-service assertions. Preserve the original
+configuration and restoration controls before changing services or privileges.
+Installed package/database checks, installed time/privilege checks and pre-radio
+boot/offline/missing-device/restart checks are distinct phases. Keep the C6
+from transmitting during this pre-radio qualification. Later runtime time,
+storage and full-system RF acceptance remain open until separately verified.
+
+RF functional tests, including RF-019/RF-020, use the explicitly identified
+10-second node build and agreed UART sleep-entry boundary. The bench/pilot
+validates900-second cadence; no prior long RF run is required.
+
+RF-020 verifies the production reading/ACK exchange, received sensor flags and
+established nominal ranges, exact decoded values in canonical SQLite records,
+delivery outcomes and the accelerated10-second next wake with previous metrics.
+A compact pre-run baseline of selected-node reading IDs/row hashes allows
+existing readings without replacing the database or airtime state. Reconcile
+unchanged prior rows and exactly two new instance-bound readings against the
+required final consistent SQLite capture.
+Independent same-acquisition sensor-to-packet conversion checks remain in the
+[sensor-carrier integration tests](../firmware/TESTING.md#node_sensors-automated-cases).
+Their passing evidence must apply to the selected sources/configuration and is
+a separate prerequisite. RF-020 does not require production acquisition
+instrumentation or claim to repeat that conversion check during its RF run.
+
+### Suite layout
+
+Receiver host and Pi-local component suites use pytest, with Hypothesis for
+suitable independent policy/model exploration. Joint RF scenarios use laptop
+pytest and pytest-embedded for the C6; Pi-local pytest/component or service
+processes still execute on Pi. The C6 Unity app/configuration lives in
+firmware/test_apps/radio/, the separate Pi component peer in
+receiver/test_apps/radio_peer/, and joint scenarios/local orchestration in
+tests/rf/. Protocol verification remains in protocol/protocol-v2-lora/tests/.
+
+Physical DS3231 bring-up also has a separate
+[operator acceptance procedure](hardware/ds3231/OPERATOR_TESTS.md), covering
+power removal, battery retention, oscillator-stop rejection and recovery.
+It records human actions and raw device evidence across Pi power cycles and
+is not collected by pytest or any Make target. This manual hardware evidence
+complements the production-adapter tests below; it does not satisfy their
+runtime policy, privilege, timeout or durable-provenance obligations. Dated
+bench results and raw captures are Git-tracked alongside the procedure under
+[`hardware/ds3231/results/`](hardware/ds3231/results/README.md).
+
+The implemented layout is:
+
+```text
+receiver/tests/
+  host/       exhaustive deterministic and fault-injection tests
+  hardware/   target-Pi adapters, devices, deployment and timing tests
+  support/    reviewed builders, reference models, fakes and subprocess helpers
+```
+
+The generation and schema tests are part of the host suite. Test
+support may import production public interfaces, but production code must not
+import test support. Shared golden inputs must be reviewed constants or the
+checked-in protocol vectors; expected values must not be calculated by the
+same implementation being tested.
+
+The repository entry points are:
+
+```text
+make test-receiver-host
+make test-receiver-hardware
+make test-receiver-hardware-slow
+make test-receiver-hardware-all
+make test-receiver-hardware-destructive
+```
+
+`make test-receiver` remains an alias for the complete host suite. The ordinary
+hardware target selects non-destructive fast cases. The slow target selects
+long-running but non-destructive cases. The all target combines both safe
+sets. Destructive cases require their own target, an explicit confirmation
+option, dedicated test paths and any additional fixture-specific interlock.
+
+From the repository root, install the receiver test dependencies and run the
+ordinary validation loop with:
+
+```sh
+.venv/bin/python -m pip install \
+  -r receiver/requirements-test.txt \
+  -r protocol/protocol-v2-lora/requirements-test.txt \
+  ./protocol/protocol-v2-lora/python
+make test-receiver
+```
+
+Receiver Make targets disable third-party pytest plugin autoload and explicitly
+load Hypothesis. `pytest-embedded` is not loaded by ordinary receiver tests. The
+receiver-local `pytest.ini` also makes direct discovery from `receiver/`
+host-only and enforces strict configuration, markers and expected-failure
+behavior:
+
+```sh
+. .venv/bin/activate
+cd receiver
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest
+```
+
+From the repository root, use the Make targets or pass an explicit receiver test
+path; `-c receiver/pytest.ini` alone does not constrain pytest's initial search
+root.
+
+Register and enforce these pytest markers strictly:
+
+- `hardware`: requires the target Raspberry Pi or its deployed Linux stack;
+- `slow`: deliberately unsuitable for the ordinary validation loop;
+- `destructive`: may change system time, write the RTC, reboot the Pi, disturb
+  a service or exercise a bounded failure filesystem;
+- `rf_peer`: requires the separately controlled radio peer and RF fixture;
+- `radio`: requires the fitted, operator-confirmed SX1262 carrier;
+- `radio_fault`: requires its isolated BUSY fault gate (currently deferred); and
+- `radio_busy_held`: requires the isolated manual BUSY-high selector and a run
+  containing only that startup-failure case.
+
+Hardware tests run serially. They must fail clearly when an explicitly selected
+fixture is missing rather than silently turn a requested hardware run into a
+host-only success. They use a dedicated receiver-group configuration, service
+name, database and storage root and must never modify pilot data. A hardware
+fixture that changes device or host state must restore it in teardown; an
+uncertain restoration is a test failure and stops dependent tests.
+
+The hardware entry points pass the required explicit hardware option and verify
+that pytest is running on a Raspberry Pi. The hardware package initially
+contains only these safety and collection rules; component tests arrive with
+their production adapters.
+
+Destructive tests additionally require a dedicated absolute directory containing
+`.cura-receiver-test-root` with the exact line
+`CURA AGRORUM RECEIVER TEST ROOT`, followed by this explicit invocation:
+
+```sh
+receiver_test_root=/absolute/path/to/dedicated/receiver-test-root
+mkdir -p "$receiver_test_root"
+printf '%s\n' 'CURA AGRORUM RECEIVER TEST ROOT' \
+  > "$receiver_test_root/.cura-receiver-test-root"
+make test-receiver-hardware-destructive \
+  CONFIRM_RECEIVER_DESTRUCTIVE=YES \
+  RECEIVER_TEST_ROOT="$receiver_test_root"
+```
+
+Individual destructive fixtures add their own configuration, service, device
+and restoration interlocks when they are implemented. Full receiver end-to-end
+RF execution remains deferred. The Radio component may have an explicitly
+selected RF-peer fixture entry point when its production backend and tests
+arrive; it exercises that component without the complete receiver service.
+Ordinary hardware targets continue to exclude `rf_peer`.
+
+## Test implementation rules
+
+- Each bullet in this document is a required test or a cohesive parameterized
+  test family. During implementation, split a bullet when separate failures
+  need clearer identities, but do not hide unrelated behavior in one large
+  orchestration test.
+- New tests may be added whenever implementation, review or a discovered bug
+  exposes an uncovered contract or regression. Record the reason close to the
+  new test or in this document.
+- Deleting a listed or implemented test, permanently skipping it, weakening its
+  assertions or replacing it with materially narrower coverage must be
+  carefully evaluated and explicitly agreed with the user first. Passing code
+  is not by itself a reason to remove a test.
+- Each test must have a concise description in the form of a comment right
+  above its implementing code.
+- Host tests use injected monotonic clocks, explicit events, barriers and
+  bounded subprocesses instead of real sleeps. Thread tests control ordering at
+  documented safe boundaries and assert externally relevant state rather than
+  relying on a fortunate scheduler interleaving.
+- Use real SQLite temporary files for normal persistence semantics. Inject
+  faults only at a narrow persistence/backend seam for outcomes that cannot be
+  produced reliably, such as an unknown commit result. Never mock SQL into
+  behavior that the real schema would reject.
+- Crash tests run the production component in a child process and terminate
+  that process at a named boundary. A simulated crash or injected torn value
+  must not be described as proof of physical power-loss behavior.
+- Timing assertions on the host use exact virtual boundaries. Hardware timing
+  assertions use documented asymmetric tolerance and record the raw samples;
+  they do not assume laboratory-grade determinism from Linux scheduling.
+- A failed persistence test preserves the database, WAL and shared-memory files
+  together while investigating the failure. Hardware failures additionally capture
+  relevant configuration, service journal, device trace, test seed and host
+  metadata without retaining secret keys.
+
+Permanent [hardware evidence](tests/hardware/evidence/README.md) keeps costly
+results, their source/fixture and limitations, useful failure lessons and the
+minimum supporting captures. After validating a result or resolving a failure,
+curate that record and delete redundant raw runs, including ignored files.
+Keep unresolved diagnostic inputs only while they remain useful; complete
+failed-session bundles and routine host logs are not permanent requirements.
+
+The current low-level `FakeOsClock` is manually controlled. Reading monotonic or
+realtime never advances either value. Tests call `advance_elapsed_us()` to move
+both clocks together or `step_realtime_us()` to move realtime independently;
+monotonic time cannot move backward. It contains no time policy, sleeps or
+automatic scheduling behavior.
+
+Reusable builders, reference models, named barriers and bounded subprocess
+helpers are intentionally not implemented in advance. Add each with the first
+production component and test family that establishes its actual input,
+observable-state or coordination boundary. The organization and independence
+rules are in [`tests/support/README.md`](tests/support/README.md). Chrony,
+DS3231, SX1262, host-health and persistence fakes likewise wait for their
+production ports.
+
+## Protocol ingress
+
+### Host tests
+
+- **Reviewed valid current reading:** Feed a checked-in authenticated current-reading frame through the production ingress path and verify the decoded transport and application identities, processing result, selected ACK and immutable pre-TX profile fields.
+- **Reviewed valid backlog reading:** Repeat the valid path with a backlog domain and prove that domain selection changes only the protocol-defined behavior while `message_id` and `sample_id` retain their distinct meanings.
+- **Validation-order matrix:** Parameterize failures at PHY/header length, node lookup, authentication, direction/control and exact body-structure stages and assert the first applicable protocol result and silence/response policy.
+- **Untrusted clear header:** Supply unknown node IDs, invalid clear-header encodings and tampered authenticated-data bytes and verify that no unauthenticated value reaches node state, queue admission or ACK construction.
+- **Authentication failure:** Exercise wrong keys, modified ciphertext and modified tags and require silence, the exact processing result and no application-candidate reservation.
+- **Authenticated malformed reading:** Authenticate structurally invalid bodies at every constrained field or flag and verify the protocol-selected malformed response without decoding absent or invalid application values as accepted data.
+- **Wrong-direction packet:** Authenticate a downlink ACK domain received as uplink, require `WRONG_DIRECTION`, no response under every queue state, and at most the permitted profile-only admission attempt.
+- **Unsupported authenticated input:** Exercise supported framing with an unsupported control, domain or version and verify the exact rejection ACK domain/status and complete profile content.
+- **Deterministic ACK reconstruction:** Reconstruct an ACK repeatedly from the same authenticated uplink and outcome with no receiver history and require byte-for-byte equality, including after unrelated messages have been handled.
+- **Nonce identity:** Verify every ingress authentication and ACK construction uses `node_id || message_id || domain` and never incorporates `sample_id`; use deliberately different transport and sample values.
+- **Acceptance ordering:** Prove an authenticated valid reading becomes accepted only after `PersistenceAdmissionState.AVAILABLE` and successful exact pair reservation, and that airtime suppression cannot reverse that acceptance.
+- **Retry-later selection:** Cover persistence unavailable and queue-full results for every response-eligible authenticated packet, requiring no acceptance, no cached outcome and the deterministic `ACK_RETRY_LATER_DOWNLINK` response when airtime permits.
+- **Profile completeness:** Verify all stable profile inputs and the exact selected ACK frame are fixed before ACK selection, then require one complete immutable typed profile containing the terminal TX result and optional timestamps to be published against the already reserved queue slot.
+- **Occurrence ownership:** Reject construction, copying, dataclass replacement, foreign/stale completion and overlapping `begin()` calls for the opaque occurrence handle; preserve its original accepted candidate and reservation after invalid uses, and retain only the one active occurrence until completion.
+- **Radio completion evidence:** Require explicit completion state before publication; reject unfinished states and confirmed-rearm reports lacking T6 without consuming the occurrence, accept an immediately pending new RX event after rearm, and preserve missing error-path timestamps for terminal shutdown/recovery/hardware failure. Verify private evolving radio facts cannot change the published frozen entity.
+- **Ingress properties:** Use Hypothesis to generate valid and invalid headers, bodies and authenticated frames around every integer and length boundary, comparing the result with a small independent validation-order model.
+
+### Hardware tests
+
+- **Target runtime compatibility:** On the Pi, import the installed production package and process the reviewed current, backlog and invalid frames without radio hardware, proving compatibility with the deployed Python, cryptography and generated-codec versions.
+
+Protocol-ingress latency and bounded-load measurements are benchmarks rather
+than correctness tests. They live under
+[`benchmarks/protocol_ingress/`](benchmarks/protocol_ingress/), run only through
+their explicit benchmark entry points, and are never selected by an ordinary
+receiver test target. Curated target runs retain raw samples, environment and
+source identity alongside a concise summary. Their coarse timing margin is
+characterization evidence only: it excludes Linux scheduling and radio-profile
+transition time and does not redefine protocol correctness or establish an
+end-to-end ACK deadline.
+
+## Radio
+
+### Host tests
+
+- **Initialization profile:** Use a transcript-recording fake SX1262 backend and verify initialization installs the complete protocol `UPLINK_RX_PROFILE`, clears or accounts for IRQs, confirms `SetRx` and only then enters `RX_SINGLE`.
+- **Initialization terminals:** Distinguish absent/unreachable resources as `HARDWARE_MISSING` from reachable hardware whose bounded initialization exhausts as `INITIALIZATION_FAILED`; neither state may transmit or transition again in the same process.
+- **Post-reset status:** Reproduce the captured initial `0x2A` through the real command backend, require fresh standby confirmation, accept only the startup `0x0020` device-error bit, and require clean errors after calibration. Reject malformed/missing status, wrong reset mode, later command failures and every other device-error bit.
+- **Failed-startup cleanup:** Preserve the fatal initialization cause and terminal state while reporting actual safe-state/handle-release success or failure. Cover safe standby failure, close failure, both failures, absent assessment and the remaining startup deadline; retain separate precise fatal cleanup episodes. Terminal shutdown must return retained safety without I/O. Held-BUSY has fatal INITIALIZE and CLEANUP timeout episodes and an unconfirmed safety result.
+- **Resource lifecycle evidence:** Through the production Linux adapter/backend/owner, fail GPIO/SPI acquisition and both resource releases independently and together. Preserve the primary and each release errno/stage in immutable lifecycle evidence and distinct cleanup episodes, attempt each acquired resource once, and cover controlled shutdown and subsequent no-op close. Unexpected exceptions remain CORE failures, including mixed expected/unexpected cleanup failures.
+- **RX event classification:** Parameterize RxDone, header error, CRC error, TX-timeout and unexpected IRQ combinations and verify exact clearing, packet-copy and recovery behavior without treating ordinary IRQ outcomes as diagnostics.
+- **Failed reception before ingress:** Cover header/CRC rejection and failures before/during/after packet copying, including IRQ-clear failure after a complete copy. Require RADIO_ERROR, no authentication, candidate, acceptance or ACK; preserve successfully copied bytes and actual T0/T1/T2/IRQ metadata. Verify bounded restoration/termination before profile-only publication, ordinary admission failure and the pending-clock-boundary exception. Missing or untrusted T0/T1 must never be fabricated. Later failure after acceptance must retain that accepted reservation instead.
+- **Correlated event confirmation:** Replay IRQ `0x0200` with status `0x26` for finite RX and TX timeout, including completion before active mode is sampled. Require immutable IRQ/status/device-error evidence, a fresh correctly timed edge, standby fallback, preserved immediate edges and fresh confirmed standby before later writes. Reject wrong mode, mixed/absent IRQ, device errors, processing/execution failures, stale/missing/future/late edges and malformed reads. Retain confirmed TX outcomes if later cleanup/restoration fails; ordinary command failures remain strict.
+- **Pi-owned packet snapshot:** Mutate the fake radio buffer immediately after `ReadBuffer` and prove authentication, profiling and persistence use the independent bytes copied before later radio commands.
+- **Response-free RX rearm:** For every silent or airtime-suppressed outcome, verify the complete receive profile is restored and `SetRx` confirmed before `RX_SINGLE` is asserted.
+- **ACK profile transition:** Verify the exact order `WriteBuffer`, external tentative allowance consumption, complete inverted-IQ `ACK_TX_PROFILE`, `SetTx`, terminal IRQ handling, complete normal-IQ boosted `UPLINK_RX_PROFILE`, and confirmed `SetRx`.
+- **Definite pre-SetTx failure:** Fail every operation before `SetTx` can take effect and require no `TX_ACTIVE`, reclaimed tentative allowance when permitted, `SET_TX_FAILED` with T4 absent before any SetTx attempt, no false transmitted result and bounded restoration or recovery.
+- **Started or uncertain SetTx:** Return confirmed-start and uncertain command outcomes and require `TX_ACTIVE` semantics, retained airtime charge and recovery before any new `SetRx` under a possibly partial profile. Separately inject TX-profile uncertainty before SetTx and require retained charge, absent T4, and `TX_UNCONFIRMED` even when recovery restores RX.
+- **Missing or delayed TxDone:** Exercise no terminal IRQ, a terminal IRQ at the deadline and one after it; verify `TX_UNCONFIRMED` for an unconfirmed terminal outcome, distinguish a confirmed timeout IRQ's `TX_TIMEOUT`, and verify charge retention, recovery reason and bounded exit without an unbounded wait.
+- **BUSY and SPI failures:** Inject BUSY timeouts and SPI failures at every semantic operation and assert command-effect certainty, one recovery episode, exact diagnostic root cause and no continuation under an assumed mode.
+- **Soft and hard recovery:** Cover soft success, soft failure followed by reset/full-initialization success, absent hardware during recovery and final exhaustion; require exactly one episode diagnostic and a confirmed receive profile before success.
+- **Event immediately after recovery:** Raise DIO1 as recovery confirms `SetRx`; prove restoration returns `RX_SINGLE`, the preceding occurrence completes, and the next receive turn consumes the retained event with its original timestamp. Inject repeated post-restoration polling failures and prove they cannot retain the previous packet reservation or accumulate its deferred diagnostics.
+- **GPIO stream recovery:** Compose the production Linux adapter, SX1262 backend and owner over their physical dependency fakes. Lose an event, reject the gap, recover and deliver subsequent packets without restarting. Cover stale events queued during recovery, soft and hard resynchronization, strict normal reads, malformed/regressing/future metadata, failed reads, deadline/buffer exhaustion, low-DIO1 checks and immediate SetRx completion. Failed stream synchronization must not increment recovery success or erase the original episode.
+- **Diagnostic catalogue enforcement:** Attempt every allowed radio operation/error/context family and representative undefined combinations, requiring exact fixed context bytes for allowed cases and construction failure for undefined cases.
+- **Controlled radio shutdown:** From each non-terminal state, request shutdown and verify new TX suppression, conservative active-operation termination, safe configured radio state and terminal `SHUTDOWN` without relying on later cleanup for correctness.
+- **Interrupted recovery accounting:** Stop at owner-controlled primitive boundaries before or during either recovery level; require exactly one original episode completed in `SHUTDOWN`, one failure count, truthful attempted-level results and retained actual failure evidence. Safe cleanup uses `ERROR`, unsafe cleanup `FATAL`; an actual cleanup failure has its separate diagnostic. Include unresolved startup/cleanup IRQs in the allowed catalogue matrix.
+- **Radio state-machine properties:** Generate valid and faulted operation sequences against a small reference model and assert that `RX_SINGLE` always implies a confirmed complete receive profile and that terminal states have no outgoing transition.
+
+### Hardware tests
+
+- **Device and permission probe:** Open the configured SPI device and GPIO lines as the receiver service user, verify direction/edge configuration and report missing or inaccessible resources within the configured startup deadline.
+- **Real initialization:** Reset and initialize the attached SX1262, install the complete uplink profile and confirm bounded entry into receive mode using production adapters.
+- **Manual held-BUSY startup:** With the raw radio BUSY disconnected and only the Pi input tied high, require bounded INITIALIZATION_FAILED, the fatal INITIALIZE / BUSY_TIMEOUT episode, no SPI transfer/RX entry/TX attempt and handle release. Run the case alone; retain unconfirmed safe cleanup as a failed session requiring powered-off selector restoration and a fresh nominal run. Manual restart is not runtime recovery evidence.
+- **Real BUSY behavior:** Measure BUSY assertion and release around representative commands, prove every wait is bounded and retain the command trace when a timeout occurs.
+- **DIO1 timestamp path:** Trigger controlled radio IRQs and verify libgpiod delivers rising edges with ordered kernel monotonic timestamps that populate the expected profiling fields.
+- **Normal-IQ uplink reception:** With the component RF peer, receive a reviewed payload under the exact protocol sync word/profile and verify length, bytes, IRQs and plausible RSSI/SNR without imposing exact RF-strength assertions.
+- **Inverted-IQ ACK transmission:** Transmit a reviewed ACK and require the peer to receive its exact bytes only under the expected inverted-IQ profile.
+- **Profile restoration:** Alternate bounded receive and transmit operations and prove normal-IQ boosted RX is restored after every ACK before the next uplink is accepted.
+- **Radio timing characterization:** Measure SetTx-to-TxDone and receive-deadline behavior against calculated airtime and the documented asymmetric hardware tolerance, recording raw monotonic samples.
+- **Hardware reset recovery:** Force a safe recoverable fault with a controllable fixture, require soft recovery or reset/full initialization as appropriate, and prove the final known state rather than only checking a return code.
+- **Safe-state teardown:** End tests from RX, TX-adjacent, recovery and ordinary idle conditions and verify the module reaches the configured safe shutdown state; an uncertain state aborts later radio cases.
+
+The approved peer is the real C6 radio application, coordinated from laptop
+tests/rf/ with a separate Pi component process in
+receiver/test_apps/radio_peer/. Reuse the production Pi radio components where
+their fixed profile and state contract applies; deliberate alternative-profile
+cases identify the lower layer they exercise. The component peer and
+[joint runner](../tests/rf/README.md) implement RF-001/003/006/008/009/010/012/013;
+their [manual-fixture evidence](../tests/rf/evidence/README.md) records costly
+physical results. Nominal tests are rerun when needed; host checks do not prove RF outcomes. RF-006's finite burst explicitly exercises Sx1262/LinuxRadioIo.
+Independent waveform/timestamp qualification and
+controlled BUSY-gate recovery retain their separate deferred status.
+Only a multimeter is currently available; voltage readings do not establish
+edge timing. Do not add a speculative peer port.
+The operator has also deferred the unavailable SN74LVC1G32 BUSY fault gate.
+Its synchronized physical soft/hard recovery cases remain required but unrun;
+nominal non-peer cases do not require the gate. A static held-BUSY startup
+failure cannot substitute for those runtime recovery cases.
+The agreed manual carrier has only `radio_nominal` (selector 1-2) and
+`radio_busy_held` (2-3). Fixture input must explicitly select and confirm the
+matching wiring before device access; old gate-based confirmations are invalid.
+Use the existing 50 ms service-latency allowance for the manual case's 2 s
+startup-return check, retaining raw monotonic samples separately from the
+deferred independent timing qualification.
+
+The implemented non-peer cases and their explicit fixture/source-staging
+procedure are in [hardware/RADIO_TESTS.md](tests/hardware/RADIO_TESTS.md).
+The [coverage map](tests/RADIO_COVERAGE.md) separates host evidence, unrun
+physical cases and communicator-only admission obligations.
+Required radio evidence belongs under `tests/hardware/evidence/radio/` in the
+development checkout. Treat Pi storage and `/tmp` as volatile; copy and verify
+needed captures before they disappear, then follow the permanent retention
+policy above. Summarize resolved failures and retain one source identity per
+tested tree instead of archiving every session.
+
+When a capture instrument is available, retain its independent timebase and
+NSS/BUSY/DIO1/RESET samples alongside kernel timestamps. The approved initial
+relative rate allowance is 5,000 ppm plus measured capture quantization.
+For the 61,696 us ACK airtime, allow that amount early and additionally 5 ms
+TCXO startup plus 10 ms command/ramp margin late when measuring from NSS end
+to TxDone. Finite RX-timeout measurements additionally account for the radio's
+15.625 us timer quantum and oscillator startup. Record Python service latency
+separately with a 50 ms late-only budget. These thresholds require the actual
+instrument specification; there is no current physical timing result.
+
+## PersistQueue
+
+### Host tests
+
+- **Constructor and slot bounds:** Reject capacities below one or above the pilot maximum of 500, construct both boundary values, and prove all backing arrays have fixed identity and length for the queue lifetime.
+- **Exact entity-count limit:** Reserve at empty, one-below, exact and full boundaries with mixed entity kinds and verify every reservation consumes exactly one slot without byte charges or Python-object-size inspection.
+- **Atomic measurement/profile reservation:** Require one token to own one slot for the complete typed pair and prove neither batch selection nor cancellation can expose or split a partial measurement/profile unit.
+- **Profile-only reservation:** Verify response-eligible rejections and silent occurrences reserve one ordinary slot and preserve their distinct response policies outside the queue.
+- **Reservation lifecycle:** Cover reserve, publish an existing immutable object, permitted pre-response cancel, double publish, double cancel, stale and foreign tokens, with invariant violations rejected deterministically.
+- **Outstanding reservation visibility:** Prove a reservation counts immediately but the persistence consumer cannot claim it until publication.
+- **Opaque publication:** Publish under full queue pressure and require the consumer to receive the identical object reference without a second capacity check, copying, serialization, field validation or kind-specific builder.
+- **FIFO across entity kinds:** Interleave measurement/profile, profile-only, clock observation, health and diagnostic units and require global publication order with no priority, sampling, eviction or reordering.
+- **Persistence admission gate:** Parameterize every unavailable state and prove new reservations return `PERSISTENCE_UNAVAILABLE`, already published work remains owned and synchronous control commands retain their separate path.
+- **Admission-count matrix:** For every entity kind and result, verify exactly one matrix cell increments per reservation call, including a successful health request containing its own updated `RESERVED` count.
+- **Non-recursive diagnostics:** Fail an ordinary entity admission and a diagnostic admission with queue-full and persistence-unavailable outcomes and require no diagnostic sequence allocation, no diagnostic construction and no second reservation.
+- **Claim and completion ownership:** Verify claimed units remain queue-owned through attempt, rollback, replay and quarantine work and are released only by confirmed or reconciled durability. Acknowledge a positive complete FIFO prefix, preserve the same live lease and exact token/entity identities for its suffix, reject invalid counts without mutation, and invalidate the lease only when empty. Cover tail publication and ring wraparound after partial removal.
+- **Quarantine evidence:** Round-trip every allowed neutral value kind and queue-unit shape through canonical tagged JSON; preserve invalid field types, lengths and arbitrary-size integers exactly; reject unsupported/cyclic values, duplicate or unknown keys/tags, noncanonical JSON/base64/integers, excessive depth/nodes/output, and any attempt to interpret decoded evidence as a production entity.
+- **Poison retention:** Make evidence encoding fail for an unsupported or over-limit poisoned value and prove the active FIFO head and following entries remain claimed and owned rather than being acknowledged or bypassed.
+- **Close and wake semantics:** Cover empty and nonempty closure, blocked producer/consumer wakeup, publication racing closure and shutdown drain without lost items or indefinite waits.
+- **Queue state-machine properties:** Generate reservation, publication, claim, rollback, durable acknowledgement and close sequences against an independent entity-count/FIFO model and assert count, token and ownership invariants after every step.
+- **Deterministic SPSC interleavings:** Use named barriers/events and bounded joins with real `threading.Thread` producer and consumer calls to cover admission-state publication versus reservation, publication versus claim, acknowledgement versus a new reservation, retry, closure and clear/recheck wakeup ordering without timing sleeps.
+
+### Hardware tests
+
+- **Configured-capacity construction:** Construct the production 500-slot queue on the Pi, verify its fixed backing lengths and exercise every slot without recursive object-size or RSS characterization.
+- **Sustained handoff:** Run communicator-style publication and persistence-style batch claims concurrently for a bounded interval and verify FIFO identities, stable accounting and no deadlock on the target interpreter.
+- **Queue-pressure recovery:** Pause the consumer until the 500-slot entity bound rejects new work, resume it and prove admission recovers without eviction, reordering or a recursive diagnostic storm.
+- **Target queue close/drain:** Close a populated queue during sustained handoff and verify existing reservations may finish, every published entity drains and both threads terminate without hanging. Process-signal and owning-service shutdown policy belong to later lifecycle integration tests.
+- **Target lock latency:** Measure reservation, publication, claim and acknowledgement latency under sustained SPSC contention on the Pi and record percentiles plus maxima. The bounded run must finish without deadlock, but Linux scheduling supplies no hard per-call latency ceiling; representative external CPU and SQLite load belong to later integration tests.
+
+The `PersistQueue` implementation stage owns the ring, typed handoff values,
+evidence codec and queue-only coordination assertions above. Protocol response
+selection, admission-matrix updates and non-recursive diagnostic policy remain
+future communicator work; SQLite dispositions, the persistence worker and
+process-signal lifecycle behavior remain future persistence/integration work.
+Recursive heap sizing and RSS-based admission are deliberately not test
+requirements for the 500-slot pilot unless later measurements reopen that
+decision.
+
+## Persistence
+
+The startup/repository implementation covers opening identity checks,
+WAL/FULL enforcement, durable lifecycle insertion, concrete row projection and
+SQLite integer boundaries using real temporary databases. Its Pi tests verify
+the production connection and record deployed SQLite capabilities. Raw
+singleton reads do not perform communicator-state classification or recovery.
+The caller-driven ordinary component now has deterministic transaction,
+classification, enrichment, replay, storage-failure and poison/recovery coverage.
+Explicit checkpoint recovery, bounded process-kill tests and an independent
+persistence model also have host coverage. Pi tests exercise mixed ordinary
+transactions, named crash boundaries, a bounded full filesystem, permissions,
+read-only remounts and corrupt-file maintenance. The
+[FULL/NORMAL storage benchmark](benchmarks/ordinary_persistence/README.md)
+retains raw target evidence separately from correctness tests.
+
+The caller-driven component is now integrated into the sole persistence worker.
+Its host suites exercise interruptible waiting, automatic threshold dispatch,
+control fairness/cancellation, raw communicator-state classification and atomic
+recovery, shared storage recovery, and persistence-owned shutdown. Target
+cases measure control latency and checkpoint stalls, run a seeded mixed-work
+soak with CPU/fsync load, and kill/restart the real worker at named boundaries.
+The bounded test caller does not implement the production communicator. Full
+service signals, radio safe-state/airtime settlement, live time policy and
+physical power interruption remain with their owning components/fixtures.
+See the [worker evidence](tests/hardware/evidence/persistence_worker/README.md)
+for source identity, timing limits, costly-test results and failure lessons.
+
+The ordinary storage destructive fixture runs pytest under a root supervisor,
+which mounts only a dedicated 4 MiB tmpfs below the marked test root. A child
+selected by `--receiver-storage-user` (default `cura`; use `cura-receiver` for
+installed-UID qualification) runs every storage assertion with no supplementary
+groups or process capabilities and with privilege elevation disabled. The child
+can request only read-only/read-write remounts of that fixture; it never invokes
+sudo. The root supervisor bounds and reaps the child, retains assertion failures,
+UID/capability evidence and bounded database artifacts, then unmounts and records
+restoration. No service-account sudo authorization is needed or granted.
+
+Run only `test_target_bounded_full_recovery` and `test_target_access_recovery`
+under this supervisor. Other ordinary-storage tests run directly as the
+unprivileged account. Retain the existing hardware/destructive confirmation and
+marked-root options. The read-only case closes its SQLite handles before
+remounting, then verifies a real reopen after restoring write access. Permission
+denial changes only the child's own database. Normal transaction measurements
+and the benchmark use the deployed storage filesystem; tmpfs failure tests do
+not establish physical power-loss durability.
+Current service-UID target results and local snapshot/restoration checks are
+recorded in the [pilot runtime evidence](tests/evidence/2026-09-19-pilot-runtime/README.md#current-persistence-and-storage-qualification).
+
+### Host tests
+
+- **Generated schema freshness:** Run receiver generation in validate and check modes, verify checked-in outputs are current and verify the exact `schema.sql` SHA-256, schema version and SQLite application ID.
+- **Database initialization:** Create a file database from packaged `schema.sql`, bind the configured group metadata and verify strict tables, immutable catalogues, foreign keys, integrity checks and singleton constraints.
+- **Startup identity validation:** Parameterize missing, malformed, newer, older, gapped and fingerprint-mismatched metadata plus a different `group_id`; require `UNAVAILABLE_INCOMPATIBLE_SCHEMA` without modifying or importing secrets into the database.
+- **Required SQL projections:** Check missing tables and columns across ordinary, lifecycle, communicator-state and both quarantine families through read-only startup preflight, the actual writable startup connection and recovery. Require incompatible admission before lifecycle insertion or recovery success; preserve rejected database/WAL bytes and database/WAL/SHM identities and sizes. Keep integrity/I/O classifications and valid raw-envelope recovery intact.
+- **WAL/FULL enforcement:** Verify a usable connection actually enters WAL mode and reports `synchronous=FULL`; injected refusal of either setting prevents ordinary admission.
+- **Receiver-instance start:** Insert exactly one durable lifecycle row with increasing database-local ordinal before publishing `AVAILABLE`, and reject identity collision or malformed Linux boot identity.
+- **Reading classification matrix:** Cover `FIRST_SEEN`, `RETRANSMISSION`, `DUPLICATE_SAME_CONTENT`, `DUPLICATE_CONFLICT` and `MESSAGE_ID_CONFLICT` with exact canonical/noncanonical rows and occurrence profiles.
+- **Conflict evidence:** Prove canonical rows are never replaced, every admitted occurrence keeps its profile evidence and persistence creates no conflict `DiagnosticV1`.
+- **Atomic pair transaction:** Fail after each reading-message/profile write boundary and verify the complete measurement/profile unit is either wholly committed or remains queue-owned with no partial durable effect.
+- **Batch commit ownership:** Exercise successful commit, definite pre-commit failure and `OUTCOME_UNKNOWN`; only confirmed commit or exact reconciliation may acknowledge units.
+- **Database handle ownership:** Transfer the actual validated path/connection/group binding through startup; cover path aliases, wrong handoff types, file replacement and same-file reopen, with unchanged original artifacts on rejection.
+- **Immediate FIFO completion:** During isolation remove each durably completed prefix before later failure, preserve frozen work for the suffix, and verify counter totals, unknown ordinary/quarantine outcomes and FIFO classification without a completed-disposition ledger.
+- **Last-resort restoration:** Preserve rejected originals outside the database, exercise best-effort evidence-capture failures, stop before restoring an older valid backup and restart with a new instance. Explicitly demonstrate accepted loss of the old volatile queue and history absent from the backup, no in-process switch to replaced storage and no automatic restoration.
+- **Ordinary identity replay:** For every queue entity identity, reconcile absent, exactly equal and differing stored rows; insert absent work, accept exact rows unchanged and close as incompatible on collision without update or quarantine.
+- **Measurement replay side effects:** Validate each stored persistence classification against its required reading-message and canonical-sample relation, including impossible partial ownership.
+- **Frozen health enrichment:** Sample a complete `ReceiverHealthV1` once, force retry and ambiguous commit, and prove host fields and both sampling timestamps are never resampled.
+- **Communicator-state precedence:** Cover missing row, SQL envelope/digest corruption, valid-digest unknown version, supported structural corruption and pure policy mismatch in the normative exclusive order.
+- **Raw state envelope:** Using the production schema and opener, store wrong SQL classes, NULLs, invalid singleton IDs, multiple rows, malformed digest lengths and digest-valid unknown versions. Require whole-database integrity to pass and exact raw values to survive for handwritten state classification/archival. Do not bypass integrity or constraints to manufacture these application-state cases; physical database corruption still fails startup.
+- **Communicator-state generations:** Test generation-one creation, next generation, exact idempotent replay, stale generation, generation gap, conflicting bytes and unknown commit reconciliation.
+- **Corrupt-state recovery:** Preserve every exact rejected singleton row and install the synthetic worst-case generation-one ledger atomically before TX can become eligible.
+- **Non-UTF-8 state evidence:** Put invalid UTF-8 TEXT in each raw envelope column with normal SQLite operations. Require startup/load classification as application corruption and direct SQL archival retaining exact bytes and classes, including duplicate rows, while TEXT can never masquerade as BLOB. Verify BLOB-only calculated digests, real rollback after archival and unknown-commit reconciliation without duplicate archive effects.
+- **Unsupported/policy recovery:** Enforce the complete conservative rolling-window wait, restart-reset wait and atomic archive plus empty generation-one replacement without decoding or repairing the rejected state.
+- **Closed storage-failure classifier:** Map low space, disk full, corruption, incompatibility, global/transient I/O, entity-specific reproducible faults and unrecognized errors to their exact distinct paths, with unknown results failing closed as `UNAVAILABLE_IO`.
+- **Retry scheduler:** Verify finite per-attempt SQLite waits and interruptible 250 ms doubling backoff capped at 5 seconds, no maximum retry count, no early retry after unrelated wakeup and recovery only after validation plus pending commit/reconciliation and any failed checkpoint retry.
+- **Explicit checkpoint recovery:** Exercise an empty queue and pending ordinary/quarantine effects when a checkpoint fails. Verify the closed classifier, retained checkpoint-pending condition independent of queue slots, closed new admission, exact retry deadlines through the cap, required revalidation and recovery only after both the checkpoint and pending entity effects succeed. Distinguish a non-error incomplete PASSIVE result caused by a real reader from an I/O failure, retain remaining WAL, and require operator recovery for corruption/incompatibility. No synthetic entity or application-row recovery probe is allowed.
+- **Retained frozen batch:** On global failure, retain original immutable units and every derived classification/enrichment value without reconstruction or poison classification.
+- **Shared control storage recovery:** Fail a control operation with an empty queue and no failed checkpoint; require closed admission and independent validation-plus-PASSIVE work. Interleave ordinary/quarantine failures and successful controls, preserving the existing deadline and frozen values, immediate durable-prefix removal and all outstanding recovery requirements. Only failed due recovery attempts advance backoff. Cover non-error partial/no-fresh-work checkpoints, actual checkpoint counters, rejected replacement and operator-only corruption/incompatibility. Never replay a failed/timed-out mutating control automatically or use an application-row recovery probe.
+- **Corruption preservation:** On corruption, close admission and preserve database, WAL and shared-memory files together without delete, truncate, rebuild or silent epoch replacement. For corrupt or incompatible startup rejection, require unchanged database/WAL bytes and retained identities and sizes of all existing artifacts; permit SQLite-managed shared-memory WAL-index and coordination bookkeeping as defined in `ARCHITECTURE.md`.
+- **Poison isolation:** Require an entity-specific failure to reproduce alone before quarantine, then store exact canonical `QuarantineEvidenceV1` bytes and provenance durably before later valid units proceed. `UNSUPPORTED_ENTITY_SCHEMA` is non-emittable by the pilot; test unsupported-spec rejection at the queue boundary without fabricating admission.
+- **Non-quarantinable clock boundary:** Reproduce an isolated `ClockObservationV1` failure and require retained queue head plus incompatible admission, with no bypass or quarantine.
+- **Quarantine reconciliation:** Cover confirmed, definite-failure and ambiguous quarantine commits, accepting only an exactly matching frozen row and retaining the active lease otherwise. Apply the closed classifier to quarantine too: low space/full retain their states, corruption preserves artifacts and requires maintenance, incompatible rows require operator recovery, and other global/transient faults use paced I/O recovery.
+- **No automatic retention:** Populate every retained table and prove normal operation and checkpointing never delete active-epoch canonical, profile, health, diagnostic or quarantine history.
+- **Integer storage boundaries:** Persist every queue-bound unsigned value at `INT64_MAX` and reject the next value before SQL silently changes its meaning.
+- **Subprocess crash matrix:** Terminate a child before transaction, during writes, before commit, after commit may have run and after acknowledgement and verify startup recovery/reconciliation for each durable outcome.
+- **Persistence state-machine properties:** Generate batches, failures, retries, identity collisions and restarts against a small durable reference model and compare queue ownership, admission state and committed identities after each action.
+
+### Hardware tests
+
+- **Deployed SQLite capabilities:** On the Pi, record Python and SQLite versions/compile options and verify the production connection establishes all required pragmas and integrity checks on the target filesystem.
+- **Target transaction workload:** Persist realistic mixtures of every entity kind with production encodings and batch sizes, then verify exact rows, foreign keys, integrity and queue acknowledgements.
+- **FULL versus NORMAL benchmark:** On an isolated test database on the deployed storage, measure throughput, commit-latency percentiles, queue growth, WAL growth and checkpoint stalls for both modes while retaining `FULL` as the pilot correctness setting.
+- **Checkpoint behavior:** Grow WAL beyond configured thresholds under concurrent publication, run bounded checkpoints and prove control work and queue growth are not ignored indefinitely.
+- **Process-kill recovery:** Kill the persistence test process at named transaction and acknowledgement boundaries, restart against the same files and require exact replay or reconciliation without duplicate mutation.
+- **Bounded full-filesystem recovery:** Use a dedicated bounded test filesystem or loop device, never the pilot filesystem, to produce low-space and disk-full outcomes and verify rollback, retained work, closed admission, paced recovery and later success.
+- **Read-only and transient storage recovery:** Change only the isolated fixture's access or mount state, verify `UNAVAILABLE_IO` and continued retained retries, then restore it and require validation plus successful commit before `AVAILABLE`.
+- **Corrupt-artifact handling:** Corrupt a copied test database or WAL, verify the service preserves all artifacts and refuses ordinary admission, then recover only through the explicit test maintenance procedure.
+- **Physical interruption:** When a safe externally controlled power fixture exists, interrupt the Pi during selected WAL/`FULL` operations and compare recovery with the documented SQLite assumptions; until then this remains a destructive manual test and subprocess/reboot cases must not claim equivalent proof.
+
+## Concurrency
+
+### Host tests
+
+- **Exclusive resource ownership:** Instrument radio, configuration and SQLite adapters with thread identity checks and prove only the communicator touches radio/live policy while only persistence performs filesystem and database I/O.
+- **Radio path independence:** Block an ordinary SQLite transaction at controlled barriers and verify the communicator can continue bounded RX processing, reserve available queue capacity and suppress or select ACKs without waiting for that transaction.
+- **Control wakes idle persistence:** Submit a synchronous control command while persistence is idle and while it is in interruptible backoff and require immediate wakeup without polling.
+- **Submission versus batch dispatch:** Control both sides of the scheduler-lock ordering point and prove submission either runs before the ordinary attempt or immediately after that one attempt reaches its safe boundary.
+- **No transaction preemption:** Submit control and shutdown work during every open SQLite phase and prove execution waits for commit, rollback or reconciliation rather than entering filesystem I/O concurrently.
+- **Fairness in both directions:** Sustain sequential control commands and ordinary batches and require at most the documented one-command bypass followed by one due ordinary attempt, with neither path starved.
+- **Cancellation before effect:** Expire a queued and a running-precommit control command and prove atomic cancellation prevents it from crossing `COMMIT`.
+- **Unknown post-commit outcome:** Expire a mutating command after `COMMIT` may have run and require ordered `COMMIT_MAY_HAVE_RUN` handling plus exact serialized reconciliation before later conflicting work.
+- **Lost-wakeup races:** Exhaustively gate clearing/rechecking the shared wakeup against concurrent queue publication, control insertion and shutdown and require every kind of work to be observed.
+- **Shutdown races:** Signal shutdown during idle, radio handling, queue reservation, batch transaction, backoff, control command and reconciliation and verify bounded ownership-preserving termination.
+- **Immutable cross-thread values:** Attempt to reuse or mutate published entities, state snapshots, admission snapshots and control requests and verify the receiving thread observes frozen values or rejects the violation.
+- **Deterministic stress schedules:** Generate long operation schedules with explicit barriers and repeatable seeds, asserting safety invariants continuously and emitting the minimal recorded schedule on failure.
+
+### Hardware tests
+
+- **Pi scheduling under load:** Run both production threads with controlled CPU and storage load and verify progress counters, bounded control completion and absence of deadlock for a documented duration.
+- **Persistence stall isolation:** Stall a real target-storage transaction or checkpoint and measure that communicator in-memory work continues while queue capacity remains, without claiming hard real-time scheduling.
+- **Control latency at safe boundaries:** Measure control-command completion when submitted during idle, an ordinary commit and retry backoff, proving observed ordering matches the cooperative contract.
+- **Signal-under-load behavior:** Send the real supervisor termination signal during active queue and persistence work and require bounded exit, correct clean-stop eligibility and preserved failure artifacts.
+- **Long-run race soak:** Repeatedly publish mixed entities, request state commits and trigger bounded recoverable storage failures on the Pi, recording seeds and thread stacks for any timeout; mark the case slow and keep it serial.
+
+## Time policy and timestamp analysis
+
+The pure implementation consumes supplied immutable values and performs no
+Chrony, kernel-clock sampling, DS3231, queue or output-storage operations.
+`time_policy.py` separates tracking candidates from accepted observations;
+`time_observations.py` returns bounded candidate samples, provenance proposals
+and upper due-time bounds. These values do not acknowledge publication or
+durable RTC provenance. Callers still own generation rechecks at actual I/O
+boundaries, scheduling lead time and side-effect ordering.
+
+The 2026-09-20 refactoring removes the independent network-skew cutoff and
+calculates one initial network error per result, then grows it from query start
+to each use. Runtime tests check one calculation across poll/step/kernel paths
+and acceptance above the former 10-ppm ceiling. RTC admission now projects the
+bounded operation before device work; actual-stage checks remain. The measured
+RTC bracket, whole-second term, saved readback bound, drift and holdover aging
+already existed and are reused, with their boundary tests retained.
+
+Local qualification on the revised source: `make test-receiver-host` passed
+3,457 tests; the RF-tooling host suite passed 349 tests; generated-code checks
+passed. Hardware cases were only imported/collected (59), with no device
+execution. These results do not establish Pi RTC progress, offline service
+acceptance, physical power-loss behavior or a successful bench. The elapsed
+rate's [broader qualification remains explicitly deferred](ARCHITECTURE.md#chrony-integration),
+as does the separate [late-SPI retention limitation](ARCHITECTURE.md#deferred-limitation-late-spi-transmission).
+
+Current host coverage is mapped as follows. The required families below remain
+the full pilot obligations; partial coverage here does not remove their later
+integration requirements.
+
+| Required family | Pure coverage | Runtime or integration responsibility (coverage below) |
+|---|---|---|
+| Independent quality axes | `test_time_policy.py`: meaningful combinations, present-RTC holdover requirement, startup probe and rejection of persisted snapshots as current authority | Startup orchestration with loaded state and fresh probes |
+| Conservative duration conversions | `test_elapsed_duration.py`: normative values, unit boundaries, checked scalar/intermediate overflow and generated integer inequalities | Use by later radio/time-service callers |
+| Chrony result validation | `test_time_policy.py`: normalized fields, unavailable input, selected/synchronized source, unsigned diagnostic skew, freshness and arithmetic rejection | Local socket/version contract, parser and fractional-unit normalization |
+| Network-error arithmetic | `test_time_policy.py`: integral root-delay/dispersion inputs, sign-independent complete error, upward age growth and entry crossing without a new initial sum | Conservative conversion of real chrony output |
+| Trust hysteresis | `test_time_policy.py`: every current quality at all 35/40-second boundaries; observation tests enforce the separate strict UTC budget | Live boundary publication |
+| Poll and observation deadlines | `test_time_observations.py`: caps, zero rate, shortened strict horizon and refresh due times | Earlier scheduling with bounded operation lead time and missed-deadline transitions |
+| Network observation bracket | `test_time_observations.py`: generation, complete ordering/span, freshness and normalized kernel verdict | `adjtimex()` and raw metadata classification, including expected `TIME_ERROR`/`STA_UNSYNC` |
+| Quality ABA rejection | `test_time_policy.py`, `test_time_observations.py`: away-and-back generation mismatch | Checks after each real fallible operation and before publication/commit |
+| Direct RTC observation | `test_time_observations.py`: exact midpoint, half-bracket, fixed margin, durable uncertainty and stored pre-read drift | DS3231 read adapter and live state/publication |
+| Holdover age limits | `test_time_observations.py`: exact abstract age limits, adjacent representable whole-second ages, nonzero brackets and no age reset on reread | Offline deployment behavior |
+| RTC refresh ordering | `test_time_observations.py`: ordered supplied timestamps and provenance proposal arithmetic only | Derive/write/read-back/commit execution, failures/crashes and acknowledgement ordering |
+| RTC source threshold | `test_time_observations.py`: inclusive five-second start/commit predicates, growth, poll expiry and generation invalidation | `test_rtc_refresh_episode.py`: full-operation preflight before I/O, inclusive projected error, exclusive poll horizon, absent-provenance budget and saved uncertainty above five seconds |
+| Clock-step state machine | Pure tracking decision distinguishes required step from ordinary trust expiry; recorded-history model tests permanent gaps for every command outcome | Boundary admission, command execution, stable polling, deadline and retry state machine |
+| Step-boundary FIFO | Correlation tests consume recorded non-bypassable boundaries; existing persistence tests remain authoritative for storage handling | Communicator boundary-publication ordering against real queue admission and commands |
+| UTC correlation segments | `test_clock_correlation.py`: preceding/later selection, zero UTC, ties, step gaps, immutable inputs, scalar limits and instance/boot fences | Loading analysis inputs from an application-owned database snapshot |
+| Process-start boundary | `test_clock_correlation.py`: durable instance projections and same-boot/reboot fences | Complete service restart integration |
+| Realtime-step immunity | `test_time_observations.py`: existing manual OS clock, fixed monotonic waits/deadlines/intervals under forward/backward realtime steps | Target clock behavior and maximum-slew evidence |
+| Logical direct anchors | `test_logical_timestamps.py`: earliest eligible accepted current occurrence, classifications, RX_DONE provenance and exact scalar interval/representable pilot run_ms limits | Application-owned history loading and output materialization |
+| Logical extrapolation and competing anchors | `test_logical_timestamps.py`: both directions, continuity/identity fences, direct priority, nearest/newer selection, immutable output and independent generated chain walks | Output-storage adapter, when introduced |
+| Time-policy state-machine properties | `test_time_analysis_properties.py`: independent merged-stream oracle against generated recorded network/RTC observations, quality loss, steps, starts and events | Generated runtime command/RTC/persistence episode schedules |
+
+The runtime extension adds these concrete component suites. Its platform fakes
+were introduced after each production port and with the first runtime consumer;
+reference models and episode builders remain local.
+
+| Component responsibility | Implemented coverage |
+|---|---|
+| Bounded normalized Linux inputs | `host/test_linux_kernel_clock.py`, `test_linux_chrony.py`, `test_linux_ds3231.py`: native ABI, fixed arguments, conservative parser conversion, OS failures, deadlines, uncertain completion, actual bounded children, native helper and deployment checks |
+| Live time ownership and step state | `host/test_runtime_time.py`: quality/health axes, exact expiry, generation ABA, observation admission, retained boundaries, fresh-authorized steps, bounded stable polling and retries |
+| RTC refresh and persistence | Same suite and `host/test_rtc_refresh_episode.py`: preflight and actual-time five-second rechecks, mandatory read-back, prior-proof invalidation, exact commit/load reconciliation using real SQLite, saved uncertainty above five seconds reused offline, six SIGKILL/restart milestones; no airtime policy is synthesized |
+| Complete-state coordinator | Same suite: unknown invalidation/verification commits retained across failed reloads; exact preceding/requested reconciliation, conflicting airtime bytes/generations, blocked new commits and RTC writes, and renewed invalidation before retry using real worker/SQLite state |
+| Chrony deployment procedure | `host/test_chrony_deployment.py`: pre-start policy/exit status, real host config expansion when available, and actual audit entrypoint rejecting mismatched configuration paths, process arguments and unenforced checks |
+| Step publication and process loss | Same suite: four SIGKILL cases before/after boundary and following-profile persistence; preserved database/WAL/SHM, real replacement-worker startup and stored-history correlation fences |
+| Diagnostic contract | `host/test_time_diagnostics.py` and runtime cases: exact 80-byte context, operation/status/error matrix, latch suppression/reset, immutable episode trigger and caller-owned diagnostic identity/admission |
+| Real Pi component inputs | `hardware/test_runtime_time.py`: native header ABI, real clock/Chrony/RTC input brackets, safe OS failures, process restart/boot identity, supplied-provenance offline startup, effective time-writer audit |
+| Invasive Pi components | `hardware/test_time_mutations.py`: capability-free receiver child, native-helper write/read-back, durable invalidation before replacement, explicit forward/backward steps and persisted correlation gaps, positive/negative maximum slew using the laptop reference bridge |
+| Operator-created oscillator-stop fault | `hardware/test_ds3231_osf.py`: valid pre-fault baseline, confirmed RTC-04 power/cell cycle, changed boot, current OSF boot evidence and production-adapter `INVALID`/`EINVAL` capture before RTC-05 recovery; the operator run owns physical restoration |
+| Controller fault qualification | `hardware/test_time_mutations.py::test_ds3231_controller_fault`: four held-SCL/SDA read/write cases, confirmed temporary wiring, physical pad levels, actual ioctl and pending-SIGKILL evidence, bounded completion/reaping and restoration. Dedicated RTC-only fixture keeps normal Chrony running; read cleanup verifies without writing, write cleanup explicitly restores after authorized submission, and uncertain cleanup stops dependent cases. Target execution is required before claiming qualification |
+
+Short run summaries and the evidence worth keeping are in
+[`hardware/evidence/runtime_time/README.md`](tests/hardware/evidence/runtime_time/README.md).
+Current-source installed-UID time/offline/step verification and its bounded
+historical-evidence reuse are recorded in the
+[19 September pilot runtime qualification](tests/evidence/2026-09-19-pilot-runtime/README.md).
+For installed-profile nominal RTC-refresh and forward/backward-step qualification,
+pass `--receiver-time-user cura-receiver` to the root-supervised fixture. Its
+component child runs under that actual unprivileged account; the default remains
+`cura` for the historical bench setup. Root is rejected as the component identity.
+This option does not change the physical controller-fault fixture or constitute
+service-sandbox/RF acceptance.
+That overview includes the historical passes' limitations. Routine output goes
+in an ignored `runtime_time/raw/` directory or outside the repository. Keep
+manual/slow measurements, useful failure lessons and the evidence needed to
+check them; discard repetitive logs after diagnosis. New runtime/slew runs use
+the Make targets above and `receiver/tests/hardware/time_reference.py --help`
+for the laptop-reference options, with fresh source staging and fixture roots.
+A supplied test provenance value proves the offline component's treatment of
+that input; it is not a physical RTC calibration or a complete receiver-service
+boot test. Current-process restart evidence does not prove a changed boot ID
+across reboot. Full receiver-service lifecycle/reboot integration stays with
+that owner's implementation. Physical OSF fault injection follows the existing
+[DS3231 operator procedure](hardware/ds3231/OPERATOR_TESTS.md); its earlier
+results do not claim a run of these new adapters. The configured RTC operation
+budget is an acceptance bound; nominal reads do not establish the kernel's
+worst-case failure bound.
+The [component fault procedure](tests/hardware/RTC_FAULT_TESTS.md) defines the
+operator confirmations, temporary connections, execution order and restoration
+for these two fault families.
+The controller investigation and pilot qualification are summarized in
+[DS3231 LIMITATION.md](hardware/ds3231/LIMITATION.md).
+Fault cleanup distinguishes released GPIO inputs from recovered high bus
+pads: bounded production read recovery may start with low pads after confirmed
+GPIO release; high pads and a valid read are required before any restoration
+write. Host subprocess tests cover low-valued release replies without killing
+the holder's cleanup, while target tests establish actual GPIO ownership and
+electrical recovery.
+The [receiver test carrier](hardware/TEST_CARRIER.md) owns their common schematic
+and shunt states. Normal suites use open fault shunts; only the connected
+controller-fault suite checks and owns the two injection GPIOs.
+
+Pure observation helpers retain their reject-with-`None` default. Their explicit
+`report_calculation_failure=True` option lets the runtime distinguish checked
+arithmetic failure for TIME diagnostics without duplicating the equations.
+
+### Host tests
+
+- **Independent quality axes:** Exercise every meaningful `SystemTimeQuality`/`RtcHealth` combination, including `NETWORK_SYNCED + MISSING`, and prove persisted last-observed values never become current startup authority.
+- **Conservative duration conversions:** Check integer equality and one-unit boundaries for minimum-wait lengthening and maximum-lifetime shortening, including the documented 3,613.32-second and 29.889-second examples.
+- **Chrony result validation:** Reject unavailable, stale, unsynchronized, unreliable, structurally invalid and arithmetic-overflow results and accept only a fresh bounded result from the configured local socket contract.
+- **Network-error arithmetic:** Verify checked conservative formation of absolute remaining correction, half root delay, root dispersion and sampling margin without cancellation from sign.
+- **Trust hysteresis:** Cover at/below 35 seconds, the open 35-to-40-second band, exactly 40 seconds and above 40 seconds from each current quality.
+- **Poll and observation deadlines:** Verify one-minute chrony, three-hour online, one-hour holdover and three-hour RTC-refresh caps shorten whenever the calculated UTC-error horizon expires first.
+- **Initial tracking progress:** Before the first poll, tracking is immediately due (deadline zero). With a clock advancing on every read, the real scheduler must dispatch the first poll, publish network trust from valid evidence, and schedule the subsequent poll in the future.
+- **Network observation bracket:** Parameterize generation equality, monotonic ordering, bracket width, tracking freshness and kernel metadata around `adjtimex()`; accept the expected no-`rtcsync` `TIME_ERROR`/`STA_UNSYNC` pair when chrony is otherwise valid.
+- **Quality ABA rejection:** Change time quality away and back during a sampled operation and prove the changed `clock_state_generation` invalidates the result despite equal final enum values.
+- **Direct RTC observation:** Verify whole-second midpoint, half-second representation term, converted half-bracket, fixed margin, durable verification uncertainty and pre-read RTC drift are combined exactly.
+- **Holdover age limits:** Reproduce the documented approximately 24.46-day cadence and 39.93-day absolute examples, then check equality, next-unit and nonzero-read-bracket boundaries.
+- **Pilot RTC read recovery:** Exercise transport failures followed by success, INVALID without retry, expiry before entry, the exact three-second boundary and a last in-flight read returning late. Keep successful UTC brackets separate from total recovery duration and preserve the first diagnostic trigger. Prove that failed pre-write recovery preserves prior durable provenance and issues no write, while a successful preflight rechecks source/generation and derives fresh UTC before exactly one write. Unknown writes still require read-back and never trigger a blind write retry. Explicit operator recovery owns invalid-RTC initialization.
+- **RTC refresh ordering:** Exercise derive, write, read-back, generation recheck and durable provenance commit, with failures/crashes after every step and no usable provenance before acknowledged commit.
+- **RTC scheduler continuation:** `test_communicator.py::test_scheduler_rtc_refresh_reaches_durable_verification` drives the production scheduler/runtime through write/readback and acknowledged provenance in real SQLite. A frozen-clock control and clocks advancing by 1 or 100 microseconds on every read must all complete within a bounded number of turns. Before the continuation-readiness repair, both advancing cases stopped after the pre-write read while the control passed; the same cases now all pass. Companion tests preserve radio/stop interleaving, source/generation rejection before writing and future start/retry deadlines. This host evidence does not establish physical RTC writes or installed-service offline holdover on the Pi.
+- **Unresolved complete-state commits:** Lose an invalidation or verification reply after real persistence, fail repeated serialized loads, and prove no new state mutation or RTC write occurs. Resolve exact requested and preceding states separately; reject different canonical contents even at the requested generation. Inspect actual durable absent provenance before a resumed write and recheck source validity after reconciliation.
+- **RTC source threshold:** Require the stricter five-second source-error bound both at refresh start and before commit, independently of the broader network-trust threshold.
+- **Clock-step state machine:** Cover boundary publication failure, command rejection, confirmed submission, unknown command outcome, stable-time polling, deadline and bounded retry without blind resubmission after an unknown result.
+- **Step-boundary FIFO:** Prove no explicit step precedes complete boundary publication, later ordinary entities cannot overtake it, and an isolated boundary failure closes admission without quarantine.
+- **Pending clock boundary and packets:** Fill the real queue, retain an expired/step boundary, release capacity and verify no later ordinary admission overtakes it. Pause new packet processing while blocked; if expiry is discovered after packet copy, rearm without ingress, ACK or a profile. Verify stop responsiveness, no fabricated reservation counts, no loss of accepted reservations and resumption after boundary publication.
+- **UTC correlation segments:** Select the latest preceding or permitted first later trusted observation within one receiver instance, reject cross-instance/boot correlation and permanently exclude the half-open step-discontinuity gap.
+- **Process-start boundary:** Verify a durable new instance start closes the previous instance and permits later-observation backfill only to its own start when no explicit step boundary intervenes.
+- **Realtime-step immunity:** Step the fake realtime clock forward and backward while monotonic deadlines, retry waits and live event intervals continue unchanged; bounded slew affects only conservative elapsed-rate calculations.
+- **Logical direct anchors:** Choose the earliest anchor-eligible accepted current occurrence with derived `RX_DONE` UTC, enforce `run_ms + Tair <= 30,000 ms` at the exact boundary and reject conflict classifications.
+- **Logical extrapolation:** Exercise consecutive sample, deep-sleep, previous-metric and identity-lifetime requirements in both directions, break invalid chains and never replace already materialized analysis output.
+- **Competing logical anchors:** Prefer a sample's own direct anchor, otherwise the reachable anchor with the fewest valid sample hops and the newer anchor on ties; preserve materialized output when new anchors arrive.
+- **Time-policy state-machine properties:** Generate quality changes, observations, steps, RTC operations, process starts and events against an independent correlation model and shrink any unsafe UTC assignment.
+
+### Hardware tests
+
+- **Linux boot and monotonic identity:** Verify `/proc` boot identity is stable across receiver-process restarts, changes across Pi reboot and scopes observed monotonic values through durable receiver instances.
+- **Real chrony tracking adapter:** Query only the configured local Unix socket, parse real tracking output and compare supported fields with independent `chronyc` evidence without granting arbitrary command construction.
+- **Real adjtimex sampling:** Capture production monotonic brackets and `adjtimex()` metadata under synchronized chronyd with `rtcsync` disabled, including the expected kernel unsynchronized status pair.
+- **DS3231 read contract:** Read the bound RTC through the production adapter, verify bounded bracket and whole-second representation, and classify missing, invalid and I/O/deadline outcomes with a safe fixture.
+- **Offline holdover startup:** Start the isolated test service without network synchronization after valid durable RTC provenance and require direct RTC-based holdover without waiting for the network or periodically copying RTC time into Linux.
+- **Unproven RTC startup:** Remove or invalidate only the test provenance and prove a plausible RTC bootstrap value does not establish `RTC_HOLDOVER` authority.
+- **RTC write/read-back:** Under destructive opt-in, save the fixture state, perform a network-qualified RTC refresh, verify read-back and durable provenance ordering, then restore and independently verify host/device state.
+- **Maximum slew-rate validation:** Compare disciplined `CLOCK_MONOTONIC` with an independent elapsed-time reference during configured maximum positive and negative slew and validate the 3,700 ppm receiver bound; this is slow and destructive.
+  For the laptop/SSH fixture, retain every reference sample (including invalid
+  replies) and computed interval even when the case fails. Sample each direction
+  for at least 20 minutes, extending only while interval width remains at least
+  200 ppm, up to 40 minutes. At the first interval narrower than 200 ppm after
+  the minimum duration, immediately require the complete interval within
+  ±3,700 ppm and the requested-direction magnitude conclusively above 3,300 ppm.
+  Do not extend a resolved rate failure to seek a pass. Insufficient resolution
+  at the maximum duration fails. Bound component execution to 45 minutes,
+  including reference exchanges, and preserve mandatory fixture restoration.
+- **Explicit step integration:** Under destructive isolation, execute forward and backward chrony-step episodes and prove complete boundary publication before the command, FIFO persistence ordering, permanent correlation gaps and recovery only at the first later trusted observation.
+- **Deployment time-writer audit:** Require the documented `ExecStartPre`/`ExecStart` and actual MainPID arguments before checking expanded configuration, the declared slew/leap policy, no automatic-step directive or `rtcsync`/`rtcfile`, disabled command port and no competing enabled system-clock or RTC writer. Follow the trusted-operator procedure; this is not proof against concurrent privileged configuration changes.
+
+## Receiver TX-airtime policy
+
+### Host tests
+
+- **Bucket boundary aging:** Exercise exact start/end, partially overlapping oldest bucket, complete expiration and long-idle bulk reset while retaining a bucket until its full interval is conservatively outside the rolling window.
+- **Per-bucket retention:** Give each newly charged bucket a fixed deadline from its monotonic interval start; preserve it through copies, snapshots, top-ups, settlement and pending-state reconciliation. Cover positional zero slots, an empty current slot, 62-slot wrap/capacity and the final 250-ms oldest-slot overlap, without early removal or admission scans.
+- **Sustained airtime availability:** Reproduce review F-001 through the production policy, shared owner and real SQLite for at least eight virtual hours, with one ACK request per minute, one-second retries and continuously fresh unchanged-offset time. Under the default policy and healthy persistence, bound each deferral to one second and every successful-ACK gap to 61 seconds while independently checking the continuous-window charge limit. Include a reviewed late-created-bucket example and preservation across failed/unknown commits; model agreement alone is insufficient.
+- **Cached-total reconstruction:** Load valid and inconsistent ledgers, recompute `total_used`, reject checked overflow or mismatch and prove ACK admission updates totals without scanning the full ring.
+- **Grid continuation:** Reconstruct chronological positions using zero elapsed credit without trusted time, or a conservative UTC difference after both errors. Preserve a partial recovered phase so top-ups cannot obtain a fresh whole-interval grant against a shorter fixed retention. Loaded charge remains unspendable.
+- **Grant headroom:** Check bucket and global headroom equality/one-unit boundaries and require a durable current-process increment before any allowance becomes spendable. A named scheduling barrier between time sampling and grant preparation must not pair old UTC with a later monotonic origin or extend the original deadline.
+- **Spend and settlement:** Tentatively spend an ACK charge, settle exact used airtime, reclaim only definitely unused allowance and atomically precharge a later bucket when budget permits.
+- **SetTx certainty charging:** Parameterize definite pre-SetTx failure, confirmed start, uncertain command and missing terminal outcome; reclaim only the first and retain every possible transmission.
+- **Crash before and after grant commit:** Prove a pre-commit crash enables no TX and a post-commit crash leaves the complete increment charged and unspendable to the replacement process.
+- **Repeated crashes:** Generate consecutive process failures and show conservative precharges accumulate without exceeding bucket/global budget or reopening spent allowance.
+- **Settlement failures:** Cover definite commit failure and unknown outcome, retaining the preceding authoritative generation and suppressing TX until exact reconciliation.
+- **Time-trust loss:** Remove UTC trust or change offset/generation while a monotonic grant is valid; keep allowance, original grant deadline and retention unchanged, with no extra state write. Snapshot quality remains truthful.
+- **Bounded UTC reconstruction:** Cover opposite recording/restart errors approaching 40 seconds and subtract both explicit bounds from elapsed credit. Generate physical-clock extremes and independently check full-window retention under the supported normal TX envelope. Cover near-end snapshots and repeated unknown-time restarts without extending live deadlines; no fixed UTC guard or UTC-expiration snapshot deferral remains. Arbitrarily delayed physical SPI execution is the explicitly deferred limitation, not a proved test outcome.
+- **Missing/corrupt history:** Start from generation zero, with and without trusted UTC, synthesize `[4, 8, 8, 8, 8]` seconds in the newest five slots for pilot defaults and forbid TX until the checked generation-one state commits.
+- **Unsupported/policy mismatch wait:** Start the complete conservative rolling-window wait only after TX is known disabled, restart the wait on process restart and permit empty-ledger replacement only after the full wait; UTC is optional.
+- **Budget exhaustion semantics:** Accept and publish an otherwise valid reading when no ACK allowance exists, record airtime suppression and never change acceptance to retry-later.
+- **Reference-model properties:** Generate bucket charges, grants, spends, time advances, trust changes, settlements and crashes and compare every decision with an independent continuous-window model.
+
+Current-layout host qualification (2026-09-20): 3443 receiver host tests and
+349 RF-tooling host tests pass. This includes real SQLite, controlled child
+SIGKILL and virtual-time model/availability coverage. Hardware fixtures were
+updated and collected only; target/reboot/RF and bench qualification remain
+NOT RUN for this changed source and encoding. Historical evidence retains its
+original source/layout scope.
+
+### Hardware tests
+
+- **Target monotonic grant lifetime:** Commit a test grant on the Pi, measure its shortened monotonic lifetime and prove it freezes at the logical bucket boundary rather than one arbitrary minute after commit.
+- **Process-restart baseline:** Restart the isolated receiver process within one Linux boot and verify loaded charge is unspendable, a new increment is durably required and no persisted monotonic timestamp is reused.
+- **Pi-reboot reconstruction:** Reboot with trusted RTC/network time and credit only bounded elapsed UTC; repeat without trusted time and reconstruct with zero credit. Both retain loaded charges without spending them. A full loaded current bucket suppresses TX until a later interval/headroom allows a new durable increment; lack of UTC alone is not a TX gate.
+- **Real-radio charge result:** With the component RF fixture, exercise one definite pre-SetTx failure and one confirmed/uncertain attempted transmission and verify durable settlement follows command certainty, not whether the peer observed the packet.
+- **Continuous-window observation:** Run a slow, legally bounded sequence spanning bucket edges and confirm no set of attempted ACK transmissions exceeds the configured 36 seconds in any continuous 3,600-second observation period.
+
+The first three target families are airtime/time/persistence component tests and
+arrive with the durable airtime implementation. The final two require the
+production SX1262 component and RF fixture; policy-only or injected certainty
+results cannot satisfy them. They remain required at that component stage.
+
+The implemented target cases are `tests/hardware/test_tx_airtime.py` and
+`tests/hardware/test_tx_airtime_reboot.py`. The first measures a grant selected
+with two seconds left in its logical minute. Its observations permit no early
+expiration, at most 500 ms late detection and a final allowed sample within
+50 ms of the deadline; raw samples are retained. Both use the actual Linux
+clocks, time adapters, state owner and SQLite worker. A reviewed existing-history
+row establishes the fixture; missing-state recovery remains conservative.
+The current airtime fixture uses the production total-error-and-age policy,
+without a separate skew ceiling. Source selection, synchronization and freshness
+still apply; Chrony's `Normal` leap state alone does not establish trusted time.
+Historical evidence records its former 10,000-ppb fixture ceiling and retains
+that scope; it is not qualification of the revised source-admission policy.
+
+For reboot coverage, stage the current sources with `source-manifest.json`
+containing the SHA-256 of every staged source file, then run the bounded external
+controller from the host:
+
+```sh
+CURA_PI_PASSWORD=... python receiver/tools/test_airtime_reboot.py \
+  --host cura@cura-receiver --remote-source /absolute/isolated/source \
+  --python /absolute/target/venv/bin/python \
+  --remote-test-root /var/tmp/cura-airtime-unique-run \
+  --output /absolute/new/local/evidence \
+  --confirm-receiver-destructive
+```
+
+The controller creates the dedicated sentinel-marked data root, verifies source
+hashes before every phase, and performs two real Pi reboots. Each phase uses the
+registered hardware/destructive flags. The second mode supplies an absent
+component Chrony socket and has no valid RTC provenance, exercising real adapter
+failure and untrusted-time suppression without changing system time services.
+The controller bounds each command and uses a 180-second reconnect loop for a
+changed boot identity and restored network synchronization. It verifies the existing
+Chrony configuration hash and active state and records final host state even
+after failure. The read-only Chrony/RTC fixture may require root; root-owned
+configuration and database files must have trusted ancestry (for example under
+the dedicated `/var/tmp` root). This privilege does not establish receiver-user
+deployment permissions. Raw pytest/JUnit, clock/state JSON, source manifests and
+database/WAL/SHM snapshots remain evidence; no radio command is executed.
+
+## Deployment and lifecycle
+
+Current component tests cover strict configuration loading, canonical boot-ID
+reading, UUIDv4 process identities and the ordering through durable instance
+insertion. A bounded child-process kill verifies lifecycle durability without
+cleanup hooks; Pi tests run separate processes under the same real kernel boot.
+They do not claim coverage of full admission/radio startup, systemd, clean-stop
+control, RTC bootstrap, process-local communicator counters or Pi reboot.
+
+### Host tests
+
+- **Configuration loading boundary:** Verify only persistence invokes the strict receiver-group loader, returns an immutable secret-bearing snapshot and never exposes keys through logs, health, diagnostics or profiles.
+- **Startup ordering:** Gate every startup stage and prove storage/configuration/database validation and durable receiver-instance insertion precede ordinary admission, while initial time observation and communicator-state reconciliation precede radio TX.
+- **Storage prerequisite:** Simulate missing, read-only and unusable required storage and require no radio operation; distinguish this from an otherwise usable database with missing communicator state, where RX may continue but TX fails closed.
+- **Instance identities:** Generate a new receiver instance for clean restart, crash restart and Pi-reboot simulation, preserve or change Linux boot identity as appropriate and reset every process-local sequence.
+- **Initial clock observation:** Require exactly one initial observation after current time/RTC state is established and before later ordinary queue work, including an explicit untrusted observation when no trusted source exists.
+- **Controlled clean stop:** Exercise radio safe-state, grant settlement, bounded queue drain, exact clean-stop commit, checkpoint and close ordering and mark clean only when all stated preconditions hold.
+- **Failed controlled stop:** Fail queue drain, airtime settlement, marker commit, checkpoint and database close independently and verify which failures forbid the marker and which occur after its already durable meaning.
+- **Clean-stop idempotency:** Repeat the identical request, reconcile unknown commit and reject conflicting markers or unmet database/queue preconditions.
+- **Crash semantics:** Terminate without shutdown hooks at every lifecycle phase and verify correctness comes from durable startup/state/replay rules rather than an assumed cleanup callback.
+- **Terminal initialization/recovery diagnostic:** Enter each terminal radio failure, finalize at most one best-effort fatal diagnostic when admission permits and never claim that diagnostic durability is guaranteed.
+- **Static systemd/chrony contract:** Validate packaged unit/config artifacts for required mounts, RTC-bootstrap completion ordering, no network-online dependency, restart delay/rate limit, bounded stop timeout, service identity and suspend prevention.
+- **No pilot-data dependency:** Verify every test configuration points at dedicated test paths and refuses an accidentally supplied production database, receiver-group file or service name.
+- **Shared installed path inputs:** Exercise runtime and storage preflight with the same complete `CURA_RECEIVER_CONFIGURATION`/`CURA_RECEIVER_DATABASE`/`SQLITE_TMPDIR` environment. Reject partial, empty, relative, traversing or overlapping paths before hardware/storage access. With `CURA_RECEIVER_TEST_ROOT`, reject paths outside the root and roots overlapping production directories, including Linux double-leading-slash aliases. Verify the real isolated SQLite preflight and unchanged policy defaults; installed unit permissions/mounts and nonsymlink target directories require separate target verification.
+- **Chrony startup privilege:** Preserve the vendor's privileged `!` launch prefix in the configuration-checking drop-in. Audit `ExecStartEx` for the exact command and `no-setuid` flag as well as actual MainPID arguments; removing the prefix under inherited `User=_chrony` must fail qualification. Confirm successful startup on the installed target; argv checks alone cannot qualify privilege.
+
+### Hardware tests
+
+- **Boot service startup:** Boot the Pi with the isolated test deployment and verify systemd ordering after required storage and RTC-bootstrap completion without waiting for network-online.
+- **Bootstrap failure continuation:** Make the test RTC missing, invalid or unresponsive and prove the boot-scoped bootstrap completes within its deadline and the receiver starts offline as untrusted.
+- **Bootstrap once per Linux boot:** Restart the receiver service repeatedly under one boot and prove RTC-to-system bootstrap is not repeated; reboot and verify one new bootstrap episode.
+- **Service-user privileges:** Run as the configured unprivileged user and verify only required storage, GPIO, SPI, RTC and chrony-socket access, with no `CAP_SYS_TIME` or unintended writable paths.
+- **Automatic crash restart:** Kill the process, verify nonzero delayed/rate-limited restart, a new receiver-instance identity and conservative recovery under the unchanged Linux boot identity.
+- **Clean service restart:** Stop and restart after a successful bounded drain and verify the exact clean-stop marker, lifecycle ordinal order and new process identity.
+- **Unclean service stop:** Exceed a controlled stop precondition or kill during it and verify no false clean marker and correct next-start recovery.
+- **Pi reboot lifecycle:** Reboot after clean and unclean instances and verify both identities, lifecycle ordering, clock scope and durable queue/state consequences.
+- **Suspend prevention:** While the isolated service is active, verify the deployment prevents host suspend as required; after stop, verify the test did not leave a persistent inhibitor.
+- **Missing hardware restart policy:** Remove or deny only the test fixture's required device, verify bounded terminal failure and supervisor rate limiting, then restore it and prove normal recovery.
+
+## End-to-end receiver behavior
+
+The [application coverage map](tests/APPLICATION_COVERAGE.md) tracks production
+owners, initial component coverage and remaining integration obligations.
+
+End-to-end host tests use the complete production communicator and persistence
+components with injected platform adapters. They are implemented before the RF
+suite because they can establish the complete application contract
+deterministically.
+
+### Host tests
+
+- **Valid reading to durable row:** Inject a reviewed authenticated frame through the fake radio, obtain the deterministic accepted ACK transcript, drain persistence and verify the exact canonical reading and complete occurrence profile.
+- **Lost-ACK retransmission:** Complete persistence but hide TX completion from the simulated node, inject the identical retry and verify another admitted profile plus `RETRANSMISSION` without a second canonical reading.
+- **Failed ACK transmission:** Fail after `SetTx` may have started, require retained charge and published `TX_UNCONFIRMED` after bounded radio recovery or the exact confirmed terminal result, then retry and persist normally. Separately cover fatal exceptions before SetTx, during attempted TX with unknown outcome and after confirmed TxDone/timeout. Require bounded terminal cleanup before profile publication, preserved known ACK facts, UNKNOWN_INTERRUPTED only for unknown attempted TX, and profile publication before the diagnostic. Failed cleanup must not fabricate radio safety or a clean-stop marker.
+- **Current-to-backlog conversion:** Inject distinct current and backlog transport messages carrying one exact sample and require one canonical row, one noncanonical matching row and `DUPLICATE_SAME_CONTENT` evidence.
+- **Persistence unavailable:** Stall or fail SQLite, verify admission closes, response-eligible packets select retry-later without reservations, retained work recovers and later health exposes aggregate outage evidence when possible.
+- **Airtime-suppressed acceptance:** Exhaust the durable ACK allowance, inject a valid reading and prove it is accepted, published and persisted without radio transmission.
+- **Clock-boundary pipeline:** Publish events around ordinary untrusted and step-discontinuity observations, persist them through the FIFO and verify analysis derives UTC only for permitted segments.
+- **Graceful and crash restart:** Run the complete process through clean stop and child-process kill, then restart from the same database and verify identities, state reconciliation, queue-loss semantics and continued correct admission.
+
+### Hardware tests
+
+These scenarios run the production receiver service on Pi and a separately
+controlled real C6 node. Laptop pytest coordinates them as described under
+Framework and organization. Each selected scenario requires the implemented
+production paths and applicable current host, component and deployment
+evidence listed by the approved pilot gate. Unselected scenarios remain
+explicit required deferred coverage with IDs and revisit conditions. A
+component peer result cannot establish complete receiver acceptance.
+
+- **First valid RF reading (RF-020):** Transmit one reviewed current reading over the pilot PHY, require the exact authenticated accepted ACK at the node and verify the receiver's canonical SQLite row and complete profiling timestamps.
+- **Lost accepted ACK (RF-021):** Suppress or miss the first downlink at the node, retransmit the identical uplink and verify deterministic ACK bytes, one canonical reading and two occurrence profiles with retransmission classification.
+- **Failed receiver TX outcome (RF-031):** Force a controllable post-SetTx failure, verify conservative charge/profile/recovery behavior and prove the node's later retry succeeds without cached receiver history.
+- **Current then backlog RF identity (RF-022):** Send the same sample first as current and later as a newly constructed backlog message and verify transport IDs differ while application classification and stored bodies remain correct.
+- **Authenticated rejection and silence matrix (RF-023):** Send representative authenticated malformed, unsupported and wrong-direction packets plus unauthenticated traffic and verify exact rejection ACKs or required silence over RF and in persistence evidence.
+- **Queue and persistence backpressure (RF-024):** Stall the isolated persistence path, fill the bounded queue, require retry-later responses only for eligible packets and verify nodes retain/retry readings after recovery.
+- **Airtime-suppressed RF acceptance (RF-025):** Exhaust receiver ACK allowance legally, transmit a valid reading, observe no downlink and prove persistence still accepts the occurrence; retry later and verify duplicate classification.
+- **Profile transition interoperability (RF-008 / RF-004):** Alternate normal-IQ node uplinks and inverted-IQ receiver ACKs across multiple episodes and prove neither side receives the wrong direction profile or stale IRQ/buffer contents.
+- **Clock and timestamp evidence (RF-026):** Run online and approved offline-holdover episodes and verify stored monotonic events, trusted observations and derived direct/logical timestamps against independent test timing evidence.
+- **Receiver process restart (RF-027):** Restart or crash the service between node attempts and verify new receiver identity, unchanged Linux boot identity, conservative airtime state and correct durable duplicate handling.
+- **Pi reboot (RF-028):** Reboot between node attempts, verify both receiver and boot identities change, restore time/state conservatively and accept or suppress ACK exactly as the durable contracts require.
+- **Complete pilot soak (RF-030):** Run a legally airtime-bounded mixed current/backlog workload with health sampling, checkpoints and controlled recoverable faults, then reconcile every transmitted logical message, ACK observation, SQLite identity, profile and diagnostic/health aggregate.
+
+Shared executions must retain every mapped ID's distinct assertions and
+source-bound evidence. RF-008/RF-020 cover positive transitions and stale
+contents; RF-004 retains both negative assertions: C6 rejection of normal IQ
+during downlink RX and Pi rejection of inverted IQ during normal uplink RX.
+Both negatives remain proposed deferred coverage, including full-service
+verification; component results cannot close that end-to-end obligation.
+RF-030 has separate bench and field results: the bench phase precedes deployment,
+and the at-least-one-week field phase follows first deployment.
+
+### Approved pilot RF envelope
+
+The [2026-09-18 DEC-003/DEP-023 decision](../tests/rf/OPERATING_ENVELOPE.md)
+approves the documented firmware and receiver schematics/configuration at
+configured +14 dBm, including autonomous wakes, retries and resets. RF-018
+source/configuration evidence disposition is accepted; physical measurement
+remains deferred NOT RUN and numerical uncertainty is unmeasured. Existing
+receiver production airtime enforcement and operator-owned component-test
+accounting remain unchanged. This approval does not close service or aggregate
+deployment acceptance.
+
+Application shutdown diagnostic boundary: close the real ordinary queue, then
+exercise definite and unknown clean-stop failures. Require no diagnostic
+reservation, no diagnostic identity allocation or admission-counter increment,
+no reopening or alternate write, and bounded exact-marker reconciliation.
+Previously queued diagnostics still drain normally. An unresolved marker is
+never reported as confirmed; this permitted diagnostic loss is distinct from
+QUEUE_FULL or PERSISTENCE_UNAVAILABLE.
+
+Ingress admission ownership regressions construct every normal/retry variant before
+reservation. Injected construction/allocation failure leaves no reservation or
+admission count; an exception after successful binding retains the exact owned
+handle for terminal completion, preserving acceptance without fabricated TX times.
+
+RTC refresh cancellation coverage must use incremental production episodes:
+stop during pre-read, after invalidation, during possibly applied write, between
+read retries and during unknown provenance commit; assert at most one external
+action per turn, radio priority between actions, retained failure root and actual
+write counters, conservative provenance, and the original shutdown deadline.
+
+### Pinned Chrony connection failure regression
+
+Verify tracking maps chronyc4.6.1 exit1, empty stdout and exact connection-error
+stderr to UNAVAILABLE. Altered envelopes/overflow remain invalid and deadline
+expiry takes precedence; step uncertainty remains unchanged. On the Pi, use a
+deliberately absent isolated socket with real chronyc and the installed adapter.
+Also verify the real socket under the service UID after persistent access
+permissions are installed; a root-only query cannot establish that access.
+
+
+### Pilot Chrony reply-socket access
+
+Under the installed receiver UID and actual systemd sandbox, require successful
+real tracking, cleanup of receiver-created reply sockets, and rejection of
+unlink/rename of daemon-owned socket entries and writes outside allowed paths.
+Verify directory01770 and daemon socket0660 with Chrony ownership and receiver
+group after each daemon restart. Missing Chrony must remain compatible with
+untrusted offline startup. PERM-001 in deploy/README.md defers a broader permissions
+review until after the pilot; these checks do not establish command-level isolation.
+
+The production RF service procedure in [tests/rf/README.md](../tests/rf/README.md#production-receiver-service-rf-020) permits deliberate offline zero-airtime test database preparation only after operator-attested all-transmitter silence for the complete conservatively converted rolling window. It uses production state encoding/validation, creates a separate new candidate and never changes production missing-history recovery or fabricates current clock/RTC trust. Shared preflight requires fresh network time and valid airtime prerequisites; only actual RF results establish ACK delivery.

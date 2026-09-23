@@ -8,13 +8,13 @@
 #include "protocol_v2_lora_crypto.h"
 
 static bool make_raw_ack(uint8_t output[CURA_LORA_V2_ACK_FRAME_SIZE],
-                         const uint8_t node_id[8], uint32_t sample_id,
+                         const uint8_t node_id[8], uint32_t message_id,
                          uint8_t control, cura_lora_v2_domain_t domain,
                          uint8_t status) {
   const cura_lora_v2_clear_header_t initial = {
       .control = control,
       .domain = domain,
-      .sample_id = sample_id,
+      .message_id = message_id,
   };
   cura_lora_v2_clear_header_t header = initial;
   memcpy(header.node_id, node_id, sizeof(header.node_id));
@@ -36,7 +36,7 @@ static bool retries_reuse_identical_frame(void) {
   fake_node_core_script_tx_done(tx1_set, tx1_done);
   fake_node_core_script_rx_deadline(retry_at);
   CORE_TEST_ASSERT(core_test_script_ack(
-      0U, CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
+      CORE_TEST_FIRST_MESSAGE_ID, CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
       CURA_LORA_V2_ACK_STATUS_ACCEPTED, retry_at + UINT64_C(1000),
       retry_at + UINT64_C(1000) + core_test_reading_airtime_us(),
       retry_at + UINT64_C(120000)));
@@ -47,6 +47,16 @@ static bool retries_reuse_identical_frame(void) {
   CORE_TEST_ASSERT(memcmp(fake_node_core.transmissions[0].payload,
                           fake_node_core.transmissions[1].payload,
                           CURA_LORA_V2_READING_FRAME_SIZE) == 0);
+  cura_lora_v2_clear_header_t header;
+  cura_lora_v2_reading_t reading;
+  CORE_TEST_ASSERT(core_test_decode_transmission(0U, &header, &reading));
+  CORE_TEST_ASSERT_EQ_U32(CORE_TEST_FIRST_MESSAGE_ID, header.message_id);
+  CORE_TEST_ASSERT_EQ_U32(0U, reading.sample_id);
+  CORE_TEST_ASSERT_EQ_SIZE(1U, fake_node_core.message_claim_call_count);
+  CORE_TEST_ASSERT_EQ_U32(CORE_TEST_FIRST_MESSAGE_ID,
+                          fake_node_core.delivery_events[0].message_id);
+  CORE_TEST_ASSERT_EQ_U32(CORE_TEST_FIRST_MESSAGE_ID,
+                          fake_node_core.delivery_events[1].message_id);
   CORE_TEST_ASSERT_EQ_SIZE(2U, fake_node_core.random_call_count);
   CORE_TEST_ASSERT_EQ_U32(NODE_CORE_RETRY_JITTER_MIN_US,
                           fake_node_core.random_minimums[0]);
@@ -71,8 +81,9 @@ static bool invalid_acks_share_one_receive_interval(void) {
 
   uint8_t valid[CURA_LORA_V2_ACK_FRAME_SIZE];
   CORE_TEST_ASSERT(fake_node_core_make_ack(
-      valid, CORE_TEST_IDENTITY.node_key, CORE_TEST_IDENTITY.node_id, 0U,
-      CURA_LORA_V2_CONTROL, CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
+      valid, CORE_TEST_IDENTITY.node_key, CORE_TEST_IDENTITY.node_id,
+      CORE_TEST_FIRST_MESSAGE_ID, CURA_LORA_V2_CONTROL,
+      CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
       CURA_LORA_V2_ACK_STATUS_ACCEPTED));
   fake_node_core_script_rx_packet(valid, sizeof(valid) - 1U,
                                   tx_done + UINT64_C(1000),
@@ -89,47 +100,49 @@ static bool invalid_acks_share_one_receive_interval(void) {
   memcpy(foreign_id, CORE_TEST_IDENTITY.node_id, sizeof(foreign_id));
   foreign_id[0] ^= UINT8_C(0x80);
   uint8_t packet[CURA_LORA_V2_ACK_FRAME_SIZE];
-  CORE_TEST_ASSERT(make_raw_ack(packet, foreign_id, 0U, CURA_LORA_V2_CONTROL,
+  CORE_TEST_ASSERT(make_raw_ack(packet, foreign_id, CORE_TEST_FIRST_MESSAGE_ID,
+                                CURA_LORA_V2_CONTROL,
                                 CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
                                 CURA_LORA_V2_ACK_STATUS_ACCEPTED));
   fake_node_core_script_rx_packet(packet, sizeof(packet),
                                   tx_done + UINT64_C(3000),
                                   tx_done + UINT64_C(3000));
 
-  CORE_TEST_ASSERT(make_raw_ack(packet, CORE_TEST_IDENTITY.node_id, 1U,
-                                CURA_LORA_V2_CONTROL,
-                                CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
-                                CURA_LORA_V2_ACK_STATUS_ACCEPTED));
+  CORE_TEST_ASSERT(make_raw_ack(
+      packet, CORE_TEST_IDENTITY.node_id, CORE_TEST_FIRST_MESSAGE_ID + 1U,
+      CURA_LORA_V2_CONTROL, CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
+      CURA_LORA_V2_ACK_STATUS_ACCEPTED));
   fake_node_core_script_rx_packet(packet, sizeof(packet),
                                   tx_done + UINT64_C(4000),
                                   tx_done + UINT64_C(4000));
 
-  CORE_TEST_ASSERT(make_raw_ack(packet, CORE_TEST_IDENTITY.node_id, 0U,
-                                UINT8_C(0x21),
+  CORE_TEST_ASSERT(make_raw_ack(packet, CORE_TEST_IDENTITY.node_id,
+                                CORE_TEST_FIRST_MESSAGE_ID, UINT8_C(0x21),
                                 CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
                                 CURA_LORA_V2_ACK_STATUS_ACCEPTED));
   fake_node_core_script_rx_packet(packet, sizeof(packet),
                                   tx_done + UINT64_C(5000),
                                   tx_done + UINT64_C(5000));
 
-  CORE_TEST_ASSERT(make_raw_ack(packet, CORE_TEST_IDENTITY.node_id, 0U,
-                                CURA_LORA_V2_CONTROL,
-                                CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK,
-                                CURA_LORA_V2_ACK_STATUS_ACCEPTED));
+  CORE_TEST_ASSERT(make_raw_ack(
+      packet, CORE_TEST_IDENTITY.node_id, CORE_TEST_FIRST_MESSAGE_ID,
+      CURA_LORA_V2_CONTROL, CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK,
+      CURA_LORA_V2_ACK_STATUS_ACCEPTED));
   fake_node_core_script_rx_packet(packet, sizeof(packet),
                                   tx_done + UINT64_C(6000),
                                   tx_done + UINT64_C(6000));
 
-  CORE_TEST_ASSERT(make_raw_ack(packet, CORE_TEST_IDENTITY.node_id, 0U,
-                                CURA_LORA_V2_CONTROL,
-                                CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
-                                CURA_LORA_V2_ACK_STATUS_RETRY_LATER));
+  CORE_TEST_ASSERT(make_raw_ack(
+      packet, CORE_TEST_IDENTITY.node_id, CORE_TEST_FIRST_MESSAGE_ID,
+      CURA_LORA_V2_CONTROL, CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
+      CURA_LORA_V2_ACK_STATUS_RETRY_LATER));
   fake_node_core_script_rx_packet(packet, sizeof(packet),
                                   tx_done + UINT64_C(7000),
                                   tx_done + UINT64_C(7000));
 
   CORE_TEST_ASSERT(
-      make_raw_ack(packet, CORE_TEST_IDENTITY.node_id, 0U, CURA_LORA_V2_CONTROL,
+      make_raw_ack(packet, CORE_TEST_IDENTITY.node_id,
+                   CORE_TEST_FIRST_MESSAGE_ID, CURA_LORA_V2_CONTROL,
                    CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK, UINT8_C(99)));
   fake_node_core_script_rx_packet(packet, sizeof(packet),
                                   tx_done + UINT64_C(8000),
@@ -152,7 +165,7 @@ static bool invalid_acks_share_one_receive_interval(void) {
   CORE_TEST_ASSERT(
       core_test_has_diagnostic(CURAG_EDOM_CORE, CURAG_ECORE_EACK_NODE_ID));
   CORE_TEST_ASSERT(
-      core_test_has_diagnostic(CURAG_EDOM_CORE, CURAG_ECORE_EACK_SAMPLE_ID));
+      core_test_has_diagnostic(CURAG_EDOM_CORE, CURAG_ECORE_EACK_MESSAGE_ID));
   CORE_TEST_ASSERT(
       core_test_has_diagnostic(CURAG_EDOM_CORE, CURAG_ECORE_EACK_CONTROL));
   CORE_TEST_ASSERT(
@@ -172,13 +185,15 @@ static bool unknown_ack_status_reports_status_diagnostic(void) {
 
   uint8_t packet[CURA_LORA_V2_ACK_FRAME_SIZE];
   CORE_TEST_ASSERT(
-      make_raw_ack(packet, CORE_TEST_IDENTITY.node_id, 0U, CURA_LORA_V2_CONTROL,
+      make_raw_ack(packet, CORE_TEST_IDENTITY.node_id,
+                   CORE_TEST_FIRST_MESSAGE_ID, CURA_LORA_V2_CONTROL,
                    CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK, UINT8_C(99)));
   fake_node_core_script_rx_packet(packet, sizeof(packet), tx_done + 1000U,
                                   tx_done + 1000U);
   CORE_TEST_ASSERT(fake_node_core_make_ack(
-      packet, CORE_TEST_IDENTITY.node_key, CORE_TEST_IDENTITY.node_id, 0U,
-      CURA_LORA_V2_CONTROL, CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
+      packet, CORE_TEST_IDENTITY.node_key, CORE_TEST_IDENTITY.node_id,
+      CORE_TEST_FIRST_MESSAGE_ID, CURA_LORA_V2_CONTROL,
+      CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
       CURA_LORA_V2_ACK_STATUS_ACCEPTED));
   fake_node_core_script_rx_packet(packet, sizeof(packet), tx_done + 2000U,
                                   tx_done + 2000U);
@@ -211,11 +226,11 @@ static bool radio_progress_and_rx_errors_are_accounted(void) {
       fake_node_core_script_tx_error(radio_error, true, false,
                                      UINT64_C(1001000), 0U, UINT64_C(1100000));
     } else if (variant == 3U) {
-      fake_node_core_script_tx_done(UINT64_C(1001000), UINT64_C(1098536));
+      fake_node_core_script_tx_done(UINT64_C(1001000), UINT64_C(1103656));
       fake_node_core_script_rx_error(radio_error, UINT64_C(1100000));
     } else {
       fake_node_core_script_tx_error(radio_error, true, true, UINT64_C(1001000),
-                                     UINT64_C(1098536), UINT64_C(1100000));
+                                     UINT64_C(1103656), UINT64_C(1105000));
     }
     core_test_run(&rtc, &platform);
     const uint8_t expected_attempts = variant == 0U ? UINT8_C(0) : UINT8_C(1);
@@ -263,11 +278,11 @@ static bool ack_retry_timestamp_boundary_is_enforced(void) {
   node_rtc_record_t rtc;
   node_platform_ports_t platform;
   core_test_setup(&rtc, &platform);
-  const uint64_t tx_done = UINT64_C(1098536);
+  const uint64_t tx_done = UINT64_C(1103656);
   const uint64_t retry_at =
       tx_done + NODE_CORE_ACK_WAIT_US + NODE_CORE_RETRY_JITTER_MIN_US;
   CORE_TEST_ASSERT(core_test_script_ack(
-      0U, CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
+      CORE_TEST_FIRST_MESSAGE_ID, CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
       CURA_LORA_V2_ACK_STATUS_ACCEPTED, UINT64_C(1001000), tx_done, retry_at));
   core_test_run(&rtc, &platform);
   CORE_TEST_ASSERT_EQ_SIZE(1U, fake_node_core.transmission_count);
@@ -276,15 +291,16 @@ static bool ack_retry_timestamp_boundary_is_enforced(void) {
   core_test_setup(&rtc, &platform);
   uint8_t accepted[CURA_LORA_V2_ACK_FRAME_SIZE];
   CORE_TEST_ASSERT(fake_node_core_make_ack(
-      accepted, CORE_TEST_IDENTITY.node_key, CORE_TEST_IDENTITY.node_id, 0U,
-      CURA_LORA_V2_CONTROL, CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
+      accepted, CORE_TEST_IDENTITY.node_key, CORE_TEST_IDENTITY.node_id,
+      CORE_TEST_FIRST_MESSAGE_ID, CURA_LORA_V2_CONTROL,
+      CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
       CURA_LORA_V2_ACK_STATUS_ACCEPTED));
   fake_node_core_script_tx_done(UINT64_C(1001000), tx_done);
   fake_node_core_script_rx_packet(accepted, sizeof(accepted), retry_at + 1U,
                                   retry_at + 1U);
   fake_node_core_script_rx_deadline(retry_at);
   CORE_TEST_ASSERT(core_test_script_ack(
-      0U, CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
+      CORE_TEST_FIRST_MESSAGE_ID, CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
       CURA_LORA_V2_ACK_STATUS_ACCEPTED, retry_at + UINT64_C(1000),
       retry_at + UINT64_C(1000) + core_test_reading_airtime_us(),
       retry_at + UINT64_C(120000)));
@@ -298,6 +314,9 @@ static bool ack_retry_timestamp_boundary_is_enforced(void) {
 static bool budget_boundaries_are_inclusive_and_independent(void) {
   const uint64_t minimum_window_us = core_test_reading_min_tx_window_us();
   const uint64_t airtime_charge_us = core_test_reading_airtime_charge_us();
+  CORE_TEST_ASSERT_EQ_U64(UINT64_C(102656), core_test_reading_airtime_us());
+  CORE_TEST_ASSERT_EQ_U64(UINT64_C(112922), airtime_charge_us);
+  CORE_TEST_ASSERT_EQ_U64(UINT64_C(112704), minimum_window_us);
   CORE_TEST_ASSERT(node_core_attempt_fits(
       UINT64_C(1000), UINT64_C(1000) + minimum_window_us,
       NODE_CORE_TX_AIRTIME_BUDGET_US - airtime_charge_us));
@@ -354,7 +373,7 @@ static bool zero_epoch_first_attempt_timestamp_is_retained(void) {
   const uint64_t second_done = second_set + core_test_reading_airtime_us();
   const uint64_t accepted_at = second_done + UINT64_C(2000);
   CORE_TEST_ASSERT(core_test_script_ack(
-      0U, CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
+      CORE_TEST_FIRST_MESSAGE_ID, CURA_LORA_V2_DOMAIN_ACK_ACCEPTED_DOWNLINK,
       CURA_LORA_V2_ACK_STATUS_ACCEPTED, second_set, second_done, accepted_at));
   core_test_run(&rtc, &platform);
   CORE_TEST_ASSERT_EQ_U32((uint16_t)(accepted_at / UINT64_C(1000)),

@@ -32,7 +32,7 @@ typedef enum {
  *   encoded clear header || ciphertext body || eight-byte CCM tag
  *
  * The encoded 14-byte header is both transmitted in clear and supplied to CCM
- * as AAD. The nonce is built from header->node_id, header->sample_id and
+ * as AAD. The nonce is built from header->node_id, header->message_id and
  * header->domain. Ciphertext length equals plaintext_body_size.
  *
  * Parameters:

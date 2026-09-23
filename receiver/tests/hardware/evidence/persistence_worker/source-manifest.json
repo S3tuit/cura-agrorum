@@ -1,0 +1,1621 @@
+{
+  "head": "6f0f5ef006fd2d93284323b2f1af250cb3d56810",
+  "files": [
+    {
+      "path": ".gitignore",
+      "sha256": "bdba1741530015a13c40e7c7b2a77827cc8930c346c9a2164477f4ee9c9f0fc9",
+      "symlink": false
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "c6ade27d1d1bb2f80e35ce6a74b0c12823be789c6fa76d7c387fdb6702b63fbe",
+      "symlink": false
+    },
+    {
+      "path": "Makefile",
+      "sha256": "948e1ab2a9eb7d7d39f92bc62bd4c504b548a9f6e1d4194e39d26bb9a763d387",
+      "symlink": false
+    },
+    {
+      "path": "README.md",
+      "sha256": "4cec9a00fdadcf34274b9583e835afee7548d3cfd9c9e9e08a1b489363f592d8",
+      "symlink": false
+    },
+    {
+      "path": "firmware/ARCHITECTURE.md",
+      "sha256": "02e30f93f86166055f9524ea7f36d1235ea1153f945c55a3a3e99ffef3edd91f",
+      "symlink": false
+    },
+    {
+      "path": "firmware/CMakeLists.txt",
+      "sha256": "6cdb532500707b59d6f335cc34f27023ac760b3ea79b9099c896e9a00fbcf80b",
+      "symlink": false
+    },
+    {
+      "path": "firmware/INTERFACE.md",
+      "sha256": "dd23f1eb5d3eb52a6c93ec455baac1848c99bf2eca3e27286e7fd9a4cb0a520b",
+      "symlink": false
+    },
+    {
+      "path": "firmware/TESTING.md",
+      "sha256": "aa08838e0c549c84d22e91fbca999683076ca27646f4d9daccc1433e32bbac5b",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_common/CMakeLists.txt",
+      "sha256": "fdfa90b1121c922e48c766da912a4c3991d7fd5ff1dc585541ca2d9a9e511f92",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_common/include/node_common.h",
+      "sha256": "6392ac9de744ed514b8891606cb73ac4980a3457c0e68b96f3dc44caf64b9caf",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_common/node_common.c",
+      "sha256": "5e050cce2cb5ceaec3f19c7f8926d8654cc9fda2d6f2df879ca28ce15063244e",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_core/CMakeLists.txt",
+      "sha256": "5f05b571b9a4f0858e01e0c87d5c0ac09f0a624a4e9b18c4b9edd6e734aa50ac",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_core/include/node_core.h",
+      "sha256": "b30a27b085b08507a24ecadce08974aa6a04b33835a9a4ef1686f0940126055d",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_core/include/node_platform_ports.h",
+      "sha256": "689a5a9145700fb647580e8489d087d3a757ea5bbb087695f1d78215886097c8",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_core/node_core.c",
+      "sha256": "f5ac75ed977cc2589c7d57bfd6a0b8e82d27e07a846fe18b76438c13ffcbafa1",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_persistence/CMakeLists.txt",
+      "sha256": "9236b33a30d50f67166a391cfc1235cc5455a0b1b0935dbbb07ad22a83e97ab8",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_persistence/idf_component.yml",
+      "sha256": "b8e779ce5fe0563d1a080dd9a19aa805099afd1bed5012341c3aee468d9df64a",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_persistence/include/node_persistence.h",
+      "sha256": "bd4aec1f2fe39afbda49405edd3fa21762162e52c0178378b251d2370a9593ea",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_persistence/node_persistence.c",
+      "sha256": "06827e97d291dbbbb9ee43bdb190e5fcafef4ef8d014f9e349de874f4bb65183",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_persistence/node_persistence_backend_esp.c",
+      "sha256": "1615c22ecb01a12170c0c3e70e5e985777dbf358c71382cd15fcc4e9b61ac8b2",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_persistence/node_persistence_record.c",
+      "sha256": "cfb83bfe0442a8f8775774b606c80aff83cf26fcf5286a016175f45ecae068ea",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_persistence/private_include/node_persistence_backend.h",
+      "sha256": "b5d865cba623b43044447c4aadceb336cca17c9765d3fee817664bf5fcfe3d0a",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_persistence/private_include/node_persistence_record.h",
+      "sha256": "b0b891b78d35b9da0bb8210831b9a994c686fa2a1ad387d0a8057a8098196d89",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_platform_esp/CMakeLists.txt",
+      "sha256": "4f6b10d237d6e59bb5d8188a8e0c14eb50009449be1c0e33568d8824652b691f",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_platform_esp/include/node_platform_esp.h",
+      "sha256": "db540e782adec19891152bd55869462b434106fe90d358915819919e528313b9",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_platform_esp/node_platform_esp.c",
+      "sha256": "f0e930a3e990796dda5be662ef5eb9c5983affdeec3a1c0a2c076922373ed1ad",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_sensors/CMakeLists.txt",
+      "sha256": "e6fd2f015c14b90697dab9bf454b507daea22341d7886c71aafc43787e8e0575",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_sensors/Kconfig",
+      "sha256": "f5a0e73d92add4b5cedcbee1d970ea276143e19442be8f022e4d42aaf5ad33ef",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_sensors/idf_component.yml",
+      "sha256": "efc814129b4d08054d99eb8804d8bddb289ffa456d0a72dcbff7c8d0139fc501",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_sensors/include/node_sensors.h",
+      "sha256": "8877a89fa18e5fbbe740e60b2c3bf992a71136f303c5813a1cdd251815ec9fb6",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_sensors/include/soil_sensor.h",
+      "sha256": "138e16beb7dd85d4cba325bec7eed95e73514ccfd60dec1fff649aeafb0dc9bf",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_sensors/node_sensors.c",
+      "sha256": "726e99b489a3ab6e5fbad6b37b65bbf553f09045958f3d2ce0e70d50b328994d",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_sensors/node_sensors_backend_esp.c",
+      "sha256": "1c04667f99d31ceb4c3cd31d24fa9c1dc71b24ab9b61b1d7ce59ba8e16dca7a3",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_sensors/node_sensors_ds18b20_identity.c",
+      "sha256": "a31999e085dcb099aa97c2eb69e54b87cc11ff8d5776ad8e0687c47a9b41ece0",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_sensors/node_sensors_power_gate_esp.c",
+      "sha256": "566e44d36489b49fe9baef0e928987dbd036a513bf3a76e40f5834d1e2bfe1c3",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_sensors/private_include/node_sensors_backend.h",
+      "sha256": "3f895167f9dd4e11dfd8cf08ec16235bf94b004cb492f06ac79533fd2fa62014",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_sensors/private_include/node_sensors_ds18b20_identity.h",
+      "sha256": "8d8540a52476b88bfe98cbd9218cc1156f07632bdfd1c005ab480f0f2c314829",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_sensors/private_include/node_sensors_power_gate.h",
+      "sha256": "1a0bced588f6fd4bcc871755835a7228e15a8532c0a3d2668db37f7f1c081b3c",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/node_sensors/soil_sensor.c",
+      "sha256": "5d172736a2e033f3ef8fb22f3eb8c6bc8beffcf984e061630516808fb3e1848d",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/protocol_v2_lora/CMakeLists.txt",
+      "sha256": "7b24a087b22e05b6222b886961108e24cdb581a2fef9aa361641a8cf63ae2ef5",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/protocol_v2_lora/include/protocol_v2_lora_crypto.h",
+      "sha256": "f30749c553f490d9a3b89e28ec5d6e6a37abde722a84ea27a056d0f7432fbfa9",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/protocol_v2_lora/include/protocol_v2_lora_schema_generated.h",
+      "sha256": "efa1264060c0f4319325bc6eb3697adbbc0e4ea214505917039fab46b54880e6",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/protocol_v2_lora/protocol_v2_lora_crypto.c",
+      "sha256": "3595a1508dd888dc917a043bddee328ee1ebcf96e78ac7c8d0468e9fcdfebcea",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/protocol_v2_lora/protocol_v2_lora_schema_generated.c",
+      "sha256": "810b499dee53627416c8c4d29b0df1f693f61a91b842245fc48730bb59bc4b2b",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/sx1262_radio/CMakeLists.txt",
+      "sha256": "c1a25813c2a6e3f7eb70187c9b486d4e2d4b1be3ab9fa330791439fca7a76d18",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/sx1262_radio/Kconfig",
+      "sha256": "a4123a48f29469f49b14a89ecc632407393ce9499f798ff2835a439c412d22f1",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/sx1262_radio/include/sx1262_radio.h",
+      "sha256": "a1ce2887f5091f030b1b857af74308b90dccb0ab54019314edfd8adf9f3be0d3",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/sx1262_radio/private_include/sx1262_radio_backend.h",
+      "sha256": "1314a5979e82a3e67c91b104f591694b546bf5f8e95e08a69eff413b6c926fba",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/sx1262_radio/private_include/sx1262_radio_timing.h",
+      "sha256": "c5a66b7a61ee8f7bb99fd163af50aa0975d3e73f324b17c33f420d55e818c68e",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/sx1262_radio/sx1262_radio.c",
+      "sha256": "a7428232e905e1f9fec729220a70d953b49633f15898487d5e72ae706029126c",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/sx1262_radio/sx1262_radio_backend_common.c",
+      "sha256": "4e9852e1801287a7774894044b0bf61f09191b3149f5055adbb304a3d2184ce0",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/sx1262_radio/sx1262_radio_backend_esp.c",
+      "sha256": "e8d50ad03e41d88bbf49785ab18a9bee0b4572459101ef3e0c447c642e4d61c1",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/sx1262_radio/sx1262_radio_timing.c",
+      "sha256": "d90f64d2973b8d8b149a975bb56d6034d9761ebf5b4dc612bb8077a8b2ee9bcf",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/sx1262_radio/vendor/semtech_sx126x_driver/LICENSE.txt",
+      "sha256": "ddfd54618b03c470fa3bccccb59de26582cab020b02013ae824362233f7bf877",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/sx1262_radio/vendor/semtech_sx126x_driver/README.cura.md",
+      "sha256": "5265bacc9a2edb5cea16ed17ee0cf5911cf5dc96c92badbd87ea65de7ff4210b",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/sx1262_radio/vendor/semtech_sx126x_driver/sx126x.c",
+      "sha256": "364465db57f5ebaf216934dc45676ff83a8cdee162a1d1b5b6da8cea61dfa4ca",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/sx1262_radio/vendor/semtech_sx126x_driver/sx126x.h",
+      "sha256": "798e0aa7d773992371d82f747ebe66e00c6c0ec54b3b3a0f528822828e0d063f",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/sx1262_radio/vendor/semtech_sx126x_driver/sx126x_hal.h",
+      "sha256": "b70a5de4265a0074ab3c8577a4fd55f10634e02351fabc5c16f752cccc102d2c",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/sx1262_radio/vendor/semtech_sx126x_driver/sx126x_regs.h",
+      "sha256": "dd64a28905140a9d6d21bc91c18db4fa039e24503d8534e333bf48300a3dfb28",
+      "symlink": false
+    },
+    {
+      "path": "firmware/components/sx1262_radio/vendor/semtech_sx126x_driver/sx126x_status.h",
+      "sha256": "043780bfeecdfb9d22137cbac33521aa2c40d052e3338c74ff0ff86feb176235",
+      "symlink": false
+    },
+    {
+      "path": "firmware/dependencies.lock",
+      "sha256": "39f4a52c5094b34e15c1ba17e8e786137e32fa8d405e85e3b3b439a4c8ecb93c",
+      "symlink": false
+    },
+    {
+      "path": "firmware/main/CMakeLists.txt",
+      "sha256": "d3a8ad81a2136f3b8633dcd72d89a86e41d0ec01c297118694846549252124eb",
+      "symlink": false
+    },
+    {
+      "path": "firmware/main/app_main.c",
+      "sha256": "ac15bb8421a7b206eb798585c20cde1d1805424f3cdbc2534c63cf95f4614fbc",
+      "symlink": false
+    },
+    {
+      "path": "firmware/maintenance/erase_storage/CMakeLists.txt",
+      "sha256": "0747507cfd097792554fad38ed128760d2c6c7a7f4dbd6cf547499e1bb022c6b",
+      "symlink": false
+    },
+    {
+      "path": "firmware/maintenance/erase_storage/README.md",
+      "sha256": "6513c2583db94146cb8f8dbb8aaa41d2d10a426f2dd5cef2bd8cb6e6b83aefec",
+      "symlink": false
+    },
+    {
+      "path": "firmware/maintenance/erase_storage/dependencies.lock",
+      "sha256": "edc88a43cdc322f436104335bd42dff998c5058a8c44d508f72660cabcaafa6e",
+      "symlink": false
+    },
+    {
+      "path": "firmware/maintenance/erase_storage/main/CMakeLists.txt",
+      "sha256": "1501a863d2cb03e37f2a47d5cb2c302c8363da05cd311fdcc4a6232cece2e1fd",
+      "symlink": false
+    },
+    {
+      "path": "firmware/maintenance/erase_storage/main/erase_storage.c",
+      "sha256": "13be0fc1f2ac6c7fb8f2f319b8d18231273fa888e44f0307165f203c7713b168",
+      "symlink": false
+    },
+    {
+      "path": "firmware/maintenance/erase_storage/main/idf_component.yml",
+      "sha256": "b8e779ce5fe0563d1a080dd9a19aa805099afd1bed5012341c3aee468d9df64a",
+      "symlink": false
+    },
+    {
+      "path": "firmware/maintenance/erase_storage/sdkconfig.defaults",
+      "sha256": "35d3fa5db0544d44277d0d41d2be18ad2c55474449fc5846cbde9287655c1c13",
+      "symlink": false
+    },
+    {
+      "path": "firmware/partitions.csv",
+      "sha256": "3af073ab2bce7f9c113d76eed159b24cad39508e5501681b74fb9b9c86b4f191",
+      "symlink": false
+    },
+    {
+      "path": "firmware/sdkconfig.defaults",
+      "sha256": "09b63da34551a2b259833929600ad0a062efa3a0d04221934d79c7cb05ba780c",
+      "symlink": false
+    },
+    {
+      "path": "firmware/test_apps/on_device/CMakeLists.txt",
+      "sha256": "1798a19cab7bb89734aac19ef86861f22ef9ed656d10378494bad388d472794f",
+      "symlink": false
+    },
+    {
+      "path": "firmware/test_apps/on_device/README.md",
+      "sha256": "a96cb40e66441bf008ed8ff88895e37dadf363ce50222cadbd6362f79e6a8d20",
+      "symlink": false
+    },
+    {
+      "path": "firmware/test_apps/on_device/dependencies.lock",
+      "sha256": "9fa73a9593d5a924b1d9db8f8b32520e7f9b8c0b337da688e61f5d8f2052ffbc",
+      "symlink": false
+    },
+    {
+      "path": "firmware/test_apps/on_device/main/CMakeLists.txt",
+      "sha256": "23dcf8452363a0055806b387eba6611a3e4bc2e7ae926b35379d5e3e05a01078",
+      "symlink": false
+    },
+    {
+      "path": "firmware/test_apps/on_device/main/persistence_test_support.c",
+      "sha256": "ce24de424126ad77a51874f50ae5df70b2abee1074ff76733f03813ed37ab35b",
+      "symlink": false
+    },
+    {
+      "path": "firmware/test_apps/on_device/main/persistence_test_support.h",
+      "sha256": "71b3c2447779eadfeaa3fc5f6d2fea65477d90e050d647d7f0329b1f59a42e12",
+      "symlink": false
+    },
+    {
+      "path": "firmware/test_apps/on_device/main/test_app_main.c",
+      "sha256": "2ab40c4c5e2158166d3c89db029ba20a5027b8635c4cb72a384987c580940f1c",
+      "symlink": false
+    },
+    {
+      "path": "firmware/test_apps/on_device/main/test_node_persistence_on_device.c",
+      "sha256": "7eb2ce27b0700770e3d7a321b977e97b594e85c2930833157f2b8ae5a0112e11",
+      "symlink": false
+    },
+    {
+      "path": "firmware/test_apps/on_device/main/test_node_platform_esp_on_device.c",
+      "sha256": "a8a94e5050155363420164ac17ecdde464c1ba2509c4b8c489d91512b941ea2d",
+      "symlink": false
+    },
+    {
+      "path": "firmware/test_apps/on_device/partitions.csv",
+      "sha256": "bee06560d1643d450a78a45c7783556defc00535ab3a501b9c3d9836c9630f91",
+      "symlink": false
+    },
+    {
+      "path": "firmware/test_apps/on_device/pytest_node_persistence.py",
+      "sha256": "471617a9520b1475dfe74258a043ea2e9b497cd84862cad6419f965734193857",
+      "symlink": false
+    },
+    {
+      "path": "firmware/test_apps/on_device/sdkconfig.defaults",
+      "sha256": "cc9a1a8d564e6d3e9c2471218c3aa0fc7b9cd9956e0d960195223410b7d5c4dd",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/CMakeLists.txt",
+      "sha256": "17c20032143a639f19861507f908a8389f65b7fc14aaae1ef25921de2c00cccc",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fake_esp_gpio.c",
+      "sha256": "e2ff43f9da1a1ce9708a534bcfec24af2402801150807e19fab42edba8b740f5",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fake_esp_gpio.h",
+      "sha256": "94f16040f20706595c1aecbda17a56ace9e9dc55b469e5ebf41f0a102205d18c",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fake_node_core_dependencies.c",
+      "sha256": "efeca80fc5e19561841175e037a52ee2d3f28278d5505679a007e6cd417c2c12",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fake_node_core_dependencies.h",
+      "sha256": "0953561ef0d77353bae83e52015cd20a2f7f0cb064129fd05269b99c7e1306f3",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fake_node_persistence_backend.c",
+      "sha256": "588c0b8f8742d157eaf561f5c5bd5201836511b221fdce77ced56d5dfc7b7f2e",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fake_node_persistence_backend.h",
+      "sha256": "2f69779b7f6e325ef5baff0baf07a50efd4b629087e6cb06396454f1e4c0ead5",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fake_node_sensors_backend.c",
+      "sha256": "724455208cd2a62d62ef3a44e0d4c040e266b040db9c5382f33b97fc34000790",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fake_node_sensors_backend.h",
+      "sha256": "b36fb791b097a1a560d721474b85c04d5afb3f10398e5f0e56b1a9875336e86f",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fake_sx1262_radio_backend.c",
+      "sha256": "443be8c7daea8387127aee7175ca667d47ebd8bc6c58eb72406a477cb34a8807",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fake_sx1262_radio_backend.h",
+      "sha256": "13a502dff79106a35957cf6132b058f295390d202470367fff56773993f50f3a",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fakes/driver/gpio.h",
+      "sha256": "05bcbbcf67ac7a7290aa036532b0c146cb009c8bbb9aa95dfccfa3eb3360ccca",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fakes/esp_err.h",
+      "sha256": "126ad962524062d1c43c6d3c7b3e528465ec85ab702b8b4c1dc33858373a9899",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fakes/esp_log.h",
+      "sha256": "b42689fa0f7c4f47fc86cd74399607b153f7451d564d13efe9b56c571da0f49e",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fakes/esp_random.h",
+      "sha256": "25ac653fc3ebfcdcb9fe55aca32225d2c9691187879cba374eb2af63b22979b0",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fakes/esp_sleep.h",
+      "sha256": "04a6543f596f7e44b642850359427441d176139554a938f7d23d71fcd4e105b1",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fakes/esp_system.h",
+      "sha256": "e43a6f8b4db53ac39ad86dc244908f0def4b3d1ea1d4eddf91baa5eb51bf86d3",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fakes/esp_timer.h",
+      "sha256": "3fecee76f39abd79ad6cda09f4c27f37941bdd6924f49ff57688baf66a628786",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fakes/freertos/FreeRTOS.h",
+      "sha256": "d619e0a70c8415d98ee9f733b6e8fc4481d2abd1dfa5470879baa10e3770ceae",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fakes/freertos/task.h",
+      "sha256": "62ec6b8fa4d398fc2e7ee64ca1897c4b0e8b9a71068725a53e931b424b589ee9",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/fakes/sdkconfig.h",
+      "sha256": "f6a43ab939b97f0798eaaa7f9fde77b7434ef315b8da719c2e4577757d24e324",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/node_core_test.h",
+      "sha256": "9b760ab7738a9f172e3ee06a89305a013f60d63b4996d872cadaa3e3f7ff64bf",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/node_persistence_test.h",
+      "sha256": "92febaf44089fb6d6401c1beecde3b178bf67d231e129fb5119beb7dc7574b7d",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/test_node_core.c",
+      "sha256": "ae7d69aceaebc9a8285494b4a06b2c2b0c6b1d0f5321db41685775cdcfad0404",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/test_node_core_delivery.c",
+      "sha256": "99b4778092349261b1aa6a990eb610a8f7fdc777fdc17a26b30a67aef3e7748b",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/test_node_core_finalization.c",
+      "sha256": "0eb1acf63c1302f66bc37b85fe56e4e0ce5d526f0277cf02c447cad40e29ead0",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/test_node_core_initialization.c",
+      "sha256": "990ab24d3706570a8e934ddf99b0babc69b48cb0bbbcf35b101c5947014fedfd",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/test_node_core_support.c",
+      "sha256": "2188f3314e71d55a452c9fe588ba0e658a6251465f18c945929d95f092dd7766",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/test_node_core_transitions.c",
+      "sha256": "5849715b591a4f6d6eef880a2b51744c1cbffb92dab664e3ca8a285a0130d5d1",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/test_node_persistence.c",
+      "sha256": "a95a6a3f26ba540f3b50fd6dc9870b6c2fa4ef5f2bd2c00b92a2cb0dd292f4a9",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/test_node_persistence_faults.c",
+      "sha256": "575ed845cc392dd4998275ada0bfa6d1602d8bbc2a2ca8d959161a5b86e2ea9d",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/test_node_persistence_nvs.c",
+      "sha256": "df9d5b1711c93fc74a69b23d6469e1a1aaf92f8d035109c952b50217fc46d0c8",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/test_node_persistence_records.c",
+      "sha256": "4c45113a58dc8da8269f13e674b3ea3239ffc3f9018c6aa65278389c48f0064c",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/test_node_persistence_recovery.c",
+      "sha256": "d1ac75aa040b7e2afc89e0c59326cfae3f1f09cab2911cb066a4cebdfadc234b",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/test_node_persistence_retention.c",
+      "sha256": "f53a7ab01a4cdcd95b5b7cc432b31c2733a7a29c7ce76df4c12923ca552229b1",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/test_node_persistence_support.c",
+      "sha256": "f1dc5ac75bc5425b1889a69f797c0af297f9d0c8f1473b21c4419217c2caa7e6",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/test_node_platform_esp.c",
+      "sha256": "d31afd4bbe2919441b1e4af69a630b1a070ade3932f803466b497904c02bb963",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/test_node_sensors.c",
+      "sha256": "2595bad92307d0c7db506f59b30ba88e5eeabd21132d079b088dfea78d146050",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/test_node_sensors_identity.c",
+      "sha256": "0cbbfb93e2bc319f6d3e6ad1b5a6505bb60de9649fd92f03713b9e6fc1e4d097",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/host/test_sx1262_radio.c",
+      "sha256": "b51b9ed7752ea22f52fe9d6ebb15480d63bc462554ef74bdd83d918c19783843",
+      "symlink": false
+    },
+    {
+      "path": "firmware/tests/requirements-hardware.txt",
+      "sha256": "cfa7452e32891202ab463509202daa8f7f7858989dbce721f09b14a6c8ac255b",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v1-wifi/README.md",
+      "sha256": "f9c878d69641af02f2d913716118e4fe465756e17e81ccafe1f86423375d3443",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v1-wifi/schemas/ack_v1.json",
+      "sha256": "213f0299c8643709c8e81b1822dc463ba63253fe15615a9b22b1c7e8cef13095",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v1-wifi/schemas/fault_v1.json",
+      "sha256": "736cc56a8e7df66cc588e774f46c6cbcaac6f5be5cb82a255bf6baa7f4b5a1bb",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v1-wifi/schemas/reading_v1.json",
+      "sha256": "45593e7fe4bd2ea84e9571b05d8c924788af0ca9df0b7ac887330dabf02eda00",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v1-wifi/tools/generate.py",
+      "sha256": "f50883b1c560da0a6f641f76f4bffc19413d3da981b0f2b310816932e93b0a7b",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v1-wifi/wire/v1.md",
+      "sha256": "a6aa3b5915dc194d27b4317930e0e9459b5bc9d1db572b501b7322a8c38d2fed",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/README.md",
+      "sha256": "bec89e47331b2c4a682e9f84b1d34220788d5da25371ec43b1b4bd3a8d1036cb",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/python/cura_protocol_v2_lora/__init__.py",
+      "sha256": "73172f384b536dd7a05d97a9f410190b933ff93dcd2e96f0b6242b324285c9a7",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/python/cura_protocol_v2_lora/receiver_group.py",
+      "sha256": "d25d60a34394e120474f78c68d8c2e44bef9d11c12470997793880d222bf8dc8",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/python/pyproject.toml",
+      "sha256": "eb35753e190f6d5debb68f51e53e88a7a3c3da03549950c187172bc4967f1b9f",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/requirements-test.txt",
+      "sha256": "b3d2d6dc9f0f0a305b2ad21c618d83291b9e12efd2eda921e759ab81528df81e",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/schemas/protocol_v2_lora.json",
+      "sha256": "4de5275eb0d4ce55180e43318466fe0d4a1a9f6bc564bc606c3eb9893ebba3a2",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/test-vectors/golden_vectors.json",
+      "sha256": "23d9fac31aeb2f9fa55be141fd265364efe1e6eeeb57a4c8f0cccbf4ce1997b4",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tests/README.md",
+      "sha256": "114378b686f8a7f3321923cf40af1c2e13556c0d8fe76497de60b869c3b2e3bf",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tests/c/fuzz_codec.c",
+      "sha256": "96f4fc42e73bc6e10bc98ea1c2d6a1bb312aec1be0289104a0192d065b2d79c3",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tests/c/test_codec_sanitized.c",
+      "sha256": "2f37df447fc9a06f66acae07cba548e29152560865affb32d7e20e8cc13770f1",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tests/c/test_crypto_sanitized.c",
+      "sha256": "16ba824578b4771612f0770a2ed91532118ea800764b8649bd94ba4b8378a443",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tests/conftest.py",
+      "sha256": "1cd1be7484acfd628fe409546f14fb4861db73c96bcb61c946398a4c35027db6",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tests/test_c_sanitized.py",
+      "sha256": "d2425ad524628fd4c8d3279bb1b9e050c5bd137abb4231576d79f34876ee2e4a",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tests/test_crypto.py",
+      "sha256": "8d2fab41f0eb8c30f74211fc71c314686bf7629a37ab0a3edfc59303d149de9a",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tests/test_crypto_sanitized.py",
+      "sha256": "a23c3d807e9cf75f1a94152337da654f239af545c86b32dd924292a234a1e212",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tests/test_generation.py",
+      "sha256": "af29b5f675753326f6176d66b75dc9aa71aa6dd318ca953917d1369c66acd184",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tests/test_golden.py",
+      "sha256": "5cd24551e746798c6f8dd0606a5eff18a225c17ba19f09260c13ff8ea521de03",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tests/test_libfuzzer.py",
+      "sha256": "b2bb5b6e6a132746e3093fba9d822beb068bd63bbbd9ba54523356bea937b670",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tests/test_properties.py",
+      "sha256": "31af238a4230bb897f1413a801fa547cb2f8c63068a05180e566f9178766a42e",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tests/test_provisioning_tools.py",
+      "sha256": "70587abefe4588e1b3bf0ae4e3d89325dbb656ec20bd4fbc3214933540e68535",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tests/test_receiver_group.py",
+      "sha256": "c3d061fe79613491ac2120f9bfe32355551341368bff4fc14b3d665ea10fe2bc",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tests/test_validation.py",
+      "sha256": "bc4e187f7c71e018cbd2b3f18967a1302c0f7433477fed16980bad79bd2b5f14",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tools/generate.py",
+      "sha256": "0aba252a164d08be96ad76f5060a21cad39e556fa9778ae799565e0487606a7e",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tools/init_receiver_group.py",
+      "sha256": "d0900f07c89cc3b0a09723d6d6c3b9d6073f805a88099e074404b259572a2353",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tools/provision_node.py",
+      "sha256": "38568ce3428af23f0323312112c946efc26c1a21b5e91ed46b5ebff8d278e3b3",
+      "symlink": false
+    },
+    {
+      "path": "protocol/protocol-v2-lora/tools/provisioning_common.py",
+      "sha256": "a0882f1080ce7c3be187549c2d45909c61344686c058d1508405a8871e1627a2",
+      "symlink": false
+    },
+    {
+      "path": "receiver/ARCHITECTURE.md",
+      "sha256": "2a1c7c13c30bd79e7e4989c280c666f9e0760e230a2b010b3dd61ce6924f4784",
+      "symlink": false
+    },
+    {
+      "path": "receiver/INTERFACE.md",
+      "sha256": "823ebe621ed64acbdfc0b05e12333551280914e5e3fc5cc61855e39d6065779a",
+      "symlink": false
+    },
+    {
+      "path": "receiver/INTERFACE_DIAGNOSTIC.md",
+      "sha256": "fcebb8456b09b6871f38a0bff83c2d257b8ee7c80581503c9272fc89f3d5f8e4",
+      "symlink": false
+    },
+    {
+      "path": "receiver/README.md",
+      "sha256": "3daa9131ab2dd94c5d67a5b5feea4dbf5799909ccd795f91583077b778c6d79d",
+      "symlink": false
+    },
+    {
+      "path": "receiver/TESTING.md",
+      "sha256": "0c4c20c3f19f13569638f218e30715ca592ae9238d434a608fcfd4b9096f2c88",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/README.md",
+      "sha256": "cbdf5cec2acc9b2dfcf3a5c2ab1e1d85eaff8a3132bfc8f6550f59cf0330b050",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/ordinary_persistence/README.md",
+      "sha256": "6a4321d59cad2e975e31491dc96855ef7c6d124654dc0571c55175c75c719f0e",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/ordinary_persistence/results/2026-09-07-rpi3-fd7238479215/README.md",
+      "sha256": "cc26431f49fc933076eefd9f7443bbf115a8e9c1968428a20dea3f88e6eca54e",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/ordinary_persistence/results/2026-09-07-rpi3-fd7238479215/full-batch-1/raw.json",
+      "sha256": "9311bd98745f5f5e5e804cfcce2085b145f38ff29941dd2b4994af61bd40055f",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/ordinary_persistence/results/2026-09-07-rpi3-fd7238479215/full-batch-1/summary.json",
+      "sha256": "88b4a66faf4f5a128a3cf83e4649922f9cbe6cba78f52eb5243ce5dc205997a8",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/ordinary_persistence/results/2026-09-07-rpi3-fd7238479215/full-batch-16/raw.json",
+      "sha256": "c182fa7c611e0b2aef93cc5031cee44788c93b4ead0511e8555ae84148e56c52",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/ordinary_persistence/results/2026-09-07-rpi3-fd7238479215/full-batch-16/summary.json",
+      "sha256": "a2f9ff159d1d7811ebac1b8ec39380ab3316b5afe18d0525d68c35b1bd2e0785",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/ordinary_persistence/results/2026-09-07-rpi3-fd7238479215/full-batch-64/raw.json",
+      "sha256": "25c3ab5dc1882f7de7b2a45fcd3491c1f968c22f4d1cd44fe41478b8689c90f9",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/ordinary_persistence/results/2026-09-07-rpi3-fd7238479215/full-batch-64/summary.json",
+      "sha256": "4de02a62226c0e5e7aec6ab56807c561e89682193fd9337d1b601da39c3e9a42",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/ordinary_persistence/results/2026-09-07-rpi3-fd7238479215/metadata.json",
+      "sha256": "6b2a954327718ec5081cfa34626f3a2ed809297499edd6809679d86d91a0d206",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/ordinary_persistence/results/2026-09-07-rpi3-fd7238479215/normal-batch-1/raw.json",
+      "sha256": "70dd14af2a685f7e719c4502cd80a95581ff9c441fc8274291d3d457bcde5722",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/ordinary_persistence/results/2026-09-07-rpi3-fd7238479215/normal-batch-1/summary.json",
+      "sha256": "39f8a57744886f8cf78ea49d06ab0cb4d48adc2e70e3067e452f6e8db190f90b",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/ordinary_persistence/results/2026-09-07-rpi3-fd7238479215/normal-batch-16/raw.json",
+      "sha256": "0d5c6080715078a81363b9bb4825e65e40232d196b1d2173a02dcfd501214e06",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/ordinary_persistence/results/2026-09-07-rpi3-fd7238479215/normal-batch-16/summary.json",
+      "sha256": "a9a14e64c6cd3abdb1d41c611ab8ef031dbb758f8b450c0103c3d0fe64d83382",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/ordinary_persistence/results/2026-09-07-rpi3-fd7238479215/normal-batch-64/raw.json",
+      "sha256": "c741f59658fd9864a65ab428378228059e51e607462d264463453ca298cb882f",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/ordinary_persistence/results/2026-09-07-rpi3-fd7238479215/normal-batch-64/summary.json",
+      "sha256": "7ca5dfca3ba5fd867ceaec347e1a64accc541bafaf8d88c36d679b723367a3e4",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/ordinary_persistence/results/2026-09-07-rpi3-fd7238479215/source-manifest.json",
+      "sha256": "fd7238479215f7a55f4994772373c5559061a76deb4d715eef9d9b47119d866a",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/ordinary_persistence/results/2026-09-07-rpi3-fd7238479215/summary.json",
+      "sha256": "2a0efeb5662b7cbf16dc14b475cf9e1d0e99b9f57a9b4978e0ce29a1fd57009b",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/ordinary_persistence/run.py",
+      "sha256": "003e155125e70b1d402ca2c4626f616b0381fe9de63b4364c7f76183a159cc11",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/protocol_ingress/README.md",
+      "sha256": "543105366dbbdd7dada9211f2edd42b48db19290feb1c44a173c396b0a71e223",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/protocol_ingress/results/2026-09-04-rpi3-d12acce5a4b7/README.md",
+      "sha256": "dceb8e04cbcdaac4160b2ec4907671c431fd0107b03afda0d96ae5faa1f9d841",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/protocol_ingress/results/2026-09-04-rpi3-d12acce5a4b7/idle/raw.json",
+      "sha256": "fe3d3362201a935b56479ece341fd9eb94ae3a8c0a932d9b664f9387b432a0fd",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/protocol_ingress/results/2026-09-04-rpi3-d12acce5a4b7/idle/summary.md",
+      "sha256": "978f8015011abf4379257c3e847b7b7512219201b6ee5ef9a951e30976274720",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/protocol_ingress/results/2026-09-04-rpi3-d12acce5a4b7/load/raw.json",
+      "sha256": "3a2fed8d89053be06f0cfe77f344c21b6c8559f3312c3b448dfc43c95c9f4ba7",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/protocol_ingress/results/2026-09-04-rpi3-d12acce5a4b7/load/summary.md",
+      "sha256": "07e3ca3c6c8a9ecae5efb6ea935d444de8b8d68e873bf8eb9f5c639affc80e09",
+      "symlink": false
+    },
+    {
+      "path": "receiver/benchmarks/protocol_ingress/run.py",
+      "sha256": "b38db255ef4c1a87f3bbf5e122050bb721a5a9a4d716392291ec83be64db769b",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/__init__.py",
+      "sha256": "c1a097ed661455a20ddf3d7a4b2afb8e85f5113b9fbcbdb6f896fc4c747d6710",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/communicator_state_persistence.py",
+      "sha256": "905499de11852453f37435c19ccf9056d2c016fad0195981849d1d06ee4c5a58",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/database_initializer.py",
+      "sha256": "563526c0d4214453f8d123bd35ae8f66f533ba1178f470085427b1cfeb4b49ff",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/elapsed_duration.py",
+      "sha256": "e4696b1055f831db0f6664c189dccb22bf12f90c7a0e635ad0cadf4e51534901",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/generated/README.md",
+      "sha256": "dd7b7b2078ecca1f691c65d8feab8dcfa558df6b2892f05a23ed09a17d123ee8",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/generated/__init__.py",
+      "sha256": "aa1d3f7852ad0badf2acb45352d4940be291547804c27cfee41a3fc30c2c9ff6",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/generated/protocol_v2_lora_generated.py",
+      "sha256": "6f6057431d9bfcc115f7d14f101569b8086f55fac59f75a9eac8b2100f342fd3",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/generated/receiver_entities_generated.py",
+      "sha256": "6ab716695a3a9abdc0ccfc9d9dd38400a972d7b62bdba54a43d05abc219fa3cb",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/generated/receiver_enums_generated.py",
+      "sha256": "9e1eaf73aafecb94d1448eb8c043d36dba50e14ff879f2681b8b508105ce8f20",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/ordinary_persistence.py",
+      "sha256": "e40dc27481182f3193947bb9383e44de4b6ad8d3912a4c0311c6075fdf56fec4",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/persist_queue.py",
+      "sha256": "6defd0a2ef6b1dc744dadc36360e5008bc1da131406cca6932f1df6aba9e17f5",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/persist_queue_entities.py",
+      "sha256": "8ba7532edaa278dc7c0ed723f8f7f4d27e2e1cd8704a7334877e51f21795d692",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/persistence_control_channel.py",
+      "sha256": "da59ae19ed92ac832970eecac62db05e6e6f2dec52db9f417d3e147312e0517e",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/persistence_control_execution.py",
+      "sha256": "9b41fbdd888b9b3b072b49434136d166e369bfae9495abd09114dfe215a2cf8e",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/persistence_control_operations.py",
+      "sha256": "31c717db8ed30e91ccc2e17d1336039fdbc2940869b5aea1cf2fb737c9fc4460",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/persistence_control_values.py",
+      "sha256": "4b6add5dc3a25dd0bc3936c90168822109bc31ed6eb0aa1f00e6231b7d55b67d",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/persistence_failures.py",
+      "sha256": "df4fcd920c12f681b3beb33a29cdbbd852e41c0cf8d2b66bd61fbefdae1a33ba",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/persistence_recovery.py",
+      "sha256": "3d1617d8a994f323c31039ed63837945abcd41ffd720eb6353d9f1e3f659d245",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/persistence_worker.py",
+      "sha256": "923e873523ac9580f1a1302b0492526efa8fdd086c4a73e8e44fdcfe0e2748e0",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/platform/__init__.py",
+      "sha256": "ad4d3e91add175d06ca3a76013e7403477937656b499fa3074662ab097601935",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/platform/linux_boot_identity.py",
+      "sha256": "dbb17137bc5c2de86ba80897423803b1430688d1189e3162223b10096e334959",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/platform/linux_clocks.py",
+      "sha256": "7706cab7d73d848539d2d7b8646385d7260cb230bb0a84a231864bacd3d787bb",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/platform/linux_host_observations.py",
+      "sha256": "a139872bacc80f9f4e54ef32cf3ebb778d035f8275d00e2f6ce32ea0660ac30d",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/ports/__init__.py",
+      "sha256": "3e0b76ca5db519b22ad20b80865b634b44d828d87a8f0923804929f91925e242",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/ports/clocks.py",
+      "sha256": "7ae58e40b06be78dd5535f0fe83f3440911da735d2f9b4f5bd7362e3d63ae9c1",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/ports/host_observations.py",
+      "sha256": "c8eab1b235596aae413a01847e42554fb1badc1f57791f30be9ba90c8ca83fe4",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/protocol_ingress.py",
+      "sha256": "742306afbf1c8c094635fa5c1532823b1258202d9864b5a361277f6f20b37dd8",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/protocol_v2_lora_crypto.py",
+      "sha256": "ae32b65e5cb7d9f140067635bd2fe6f77f3e708cd1122e1f84891ba7e4f60468",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/quarantine_evidence.py",
+      "sha256": "077692be48dc81038113066d7d3eb7e8393cecb5fb14f5157e9858337cdacfab",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/reading_persistence.py",
+      "sha256": "8f06383839512ac9f276f3e60ef9638d76c06b07b32226b7db2ed37d8dff7f9c",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/receiver_configuration.py",
+      "sha256": "0452a1a8dd1da357020881fbc0853721cb70bd79bbae1f7473a3b3207e494cd5",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/receiver_startup.py",
+      "sha256": "8df0946a4b7bf1793d296d5e64d6d9ac54d2658082b355e0561e7f8d8988552c",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/sqlite_database.py",
+      "sha256": "55809bf0e06b645d2fb06629857db558d28139b9342dbbca5ab80408f61fa3ad",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/sqlite_repository.py",
+      "sha256": "3dc813f8457b47090f58dc8f4e5c387ddd10c80ef8176333464f6326ce482704",
+      "symlink": false
+    },
+    {
+      "path": "receiver/cura_receiver/sqlite_transactions.py",
+      "sha256": "7dea33aa0dc0af2de2889edc7b52f7fae0313f8d3825b9e6c1dceb973c417f3b",
+      "symlink": false
+    },
+    {
+      "path": "receiver/db/README.md",
+      "sha256": "a5f3fa8d8d028a8918f0d0f196376b7f9a5a7b50f503a920a1eb6328f770468e",
+      "symlink": false
+    },
+    {
+      "path": "receiver/db/schema.sql",
+      "sha256": "b0982d44c5616f68e62ba62e084a011f59feff8645ed09c973ce9da822288ca7",
+      "symlink": false
+    },
+    {
+      "path": "receiver/db/schema_source.sql",
+      "sha256": "c4d94c2e1869e192d0ef691000adfd7857ed7a5e2c88ee3cabce43b71f69c8a7",
+      "symlink": false
+    },
+    {
+      "path": "receiver/pytest.ini",
+      "sha256": "16754e072976216f142d4e083c13c68430161c8e67806c068fba1524954c91d2",
+      "symlink": false
+    },
+    {
+      "path": "receiver/requirements-test.txt",
+      "sha256": "58d552e4fdfc71f742a90c922e3039b707b7ae3cda435fda6046e9298e0b267f",
+      "symlink": false
+    },
+    {
+      "path": "receiver/schemas/README.md",
+      "sha256": "161cb20320be0d99c03e93409b940620b404f10939f581dd96c6c112cc0e3ee1",
+      "symlink": false
+    },
+    {
+      "path": "receiver/schemas/receiver_entities.json",
+      "sha256": "17ab343345f882806bcc898ef8bcb6244c322373033fefe510a182d94a5b1f61",
+      "symlink": false
+    },
+    {
+      "path": "receiver/schemas/receiver_enums.json",
+      "sha256": "2a3e3882bebcadf7d7e4ba21014c6a553cba0c0d39f14a5a3ad7abab8261f66a",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/__init__.py",
+      "sha256": "cd4082db6aafb04cdc56c319b93f6feb7aad02547f34958069e25681a806d93d",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/conftest.py",
+      "sha256": "c30ec67ab27fc08434daae9bcd19aac7d046cbc294a524a6b410fc4fe0acba64",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/hardware/__init__.py",
+      "sha256": "b081999b1e76b5c12a8fcabd6e2945fef87b2e5473e9d462c4dc6c793ae4010e",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/hardware/conftest.py",
+      "sha256": "21a942c1635a3ff24d651ebe87f10d2a8762c1f75f8e8d46dae06ef149b29747",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/hardware/test_ordinary_persistence.py",
+      "sha256": "d3c197c1a9265e514c41dafef4b05e78e2e722c1347e6b0d56f98e463371c457",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/hardware/test_persist_queue.py",
+      "sha256": "afde6c81db26c01cda2938bbeb095a21e41d074d4ed054765aeb348184eee9f0",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/hardware/test_persistence_worker.py",
+      "sha256": "d6e22965b3bc14ae7e6ce57adf8eb6c4b6212d3dc8e6c4e4fdfd9fc891223e41",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/hardware/test_protocol_ingress.py",
+      "sha256": "f8380a4a0dfbed8b544172acf9011346020b39755ee6b48543fec5292f5d902c",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/hardware/test_receiver_startup.py",
+      "sha256": "faee3161247b63180c96020307b48ec733ba0ff9435e2a3b1242f2b98601d4a5",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/__init__.py",
+      "sha256": "598b49844ca888e37d882aa4362b1857412c99b1363e7f124254d503270accc1",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/conftest.py",
+      "sha256": "b447a781a6fbc7b507a840138ba4a4f49582cb15e17fcba654c5801b3d6b2b26",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_communicator_state_persistence.py",
+      "sha256": "eaba137b0eb1a43a8b37b07e602a50f5f81944f7ac66608f83b6be047aea43f4",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_database_evidence.py",
+      "sha256": "c034297e3bd0a945d1977d6b33f9978f1630e2adce863dc612245ea8cbfe012e",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_database_initializer.py",
+      "sha256": "96fc2bbf93eef116be4128ececd4ef3575400195456a260c184dc2411d59893d",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_elapsed_duration.py",
+      "sha256": "2de517b986d0e131d80a1a6a2cf5c211c4a1e6469a06c8969e54ad80304363c3",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_fake_os_clock.py",
+      "sha256": "cc07b31ec799305e8b999cdd1184bd44c5660088505b7ada584acd73f5922445",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_hardware_test_harness.py",
+      "sha256": "2cc125c83714124439cd520f3c8bc3bd000c1276a03fd81d64830db6eab075ce",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_linux_clocks.py",
+      "sha256": "d2db6d5c46d268c144785626539fdcc1e8633d97d5423b8bedd65d5aa45db776",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_linux_host_observations.py",
+      "sha256": "4b60e6bb393471c2dfbbb31f50653ccce70da41fa351da0d1ffce3fa9480f077",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_operator_restoration.py",
+      "sha256": "e4426156d4c77e094ae630bb413ce1521b5c5794aca82818b06da99a8e28bd4a",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_ordinary_persistence.py",
+      "sha256": "c2107daddb95c5406cd05def2c1bef3355e997ea1604e96da1b2f727c051fdf9",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_package_boundaries.py",
+      "sha256": "f5004a6565e6fae8e9915a44cda57caa7e3d2a3a59bd9feaf1feed753e04da16",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_persist_queue.py",
+      "sha256": "b3cc5d1f5bbcafed7c1599af67559a02df3b2863bef5be614d3929a4dbad6915",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_persist_queue_entities.py",
+      "sha256": "8af05ca5418c651df5b99266714a3ce15b584fdcd104b0e15e154e107dad57f8",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_persist_queue_threads.py",
+      "sha256": "e68c6112bbea8bb148d3c426ac3cab496092c0c2a4e174be59a9c02253d41983",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_persistence_checkpoint.py",
+      "sha256": "5843e590c5cc16638071335ab6900b60c0caecc206342747ee6d102072d06543",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_persistence_control_channel.py",
+      "sha256": "8ba774e0dc755d436fb01a6f21bdea353fa9d4763132dc9a543c87576958a593",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_persistence_control_operations.py",
+      "sha256": "94c58d2b732922c14cc364692ea7aba13bc9cc3c74e1175faf1fed4f823babcc",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_persistence_control_values.py",
+      "sha256": "264e69e40f472a951d482247d02af3c78c34d0dfca1d1afe9d5b5d5c4b9abd30",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_persistence_crash.py",
+      "sha256": "5a13d9a1b979a1750707c01b04f824bde0917392c1c0a5d4d3242e670bec6f76",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_persistence_failures.py",
+      "sha256": "f1b06e2b598f28b06b98a046059c88e2295f713d04cfac05813b2cddedc8149f",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_persistence_model.py",
+      "sha256": "2e7cddbe9cb53e9476c91e9d96a48e3d7c4bb07256e9b31d50839284f0b0a1c8",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_persistence_properties.py",
+      "sha256": "94c25684fdbcac1a75868064f73e1bb351d4d2cfa8670fdb890b28639ebd7e9b",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_persistence_quarantine.py",
+      "sha256": "e4bdc6f35774b8561872a328cc56180122deffc4aec05f7488a16b26c1700d18",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_persistence_shared_recovery.py",
+      "sha256": "738e9aa41b1177bfe06e7d3511614530b74b227118e11351a6a2b7234608e815",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_persistence_worker.py",
+      "sha256": "9c0a3ca4fb31bf886a8cf487450b68dea0d59899cbdc3200475b02243c9bf30e",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_persistence_worker_concurrency.py",
+      "sha256": "ce4c8227b219a079ea5adb08d84b71d090cecbcd600c7509b664e606d98dc985",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_persistence_worker_crash.py",
+      "sha256": "009b69d1563392283c74909fc7ebc8c93a96a4cb33fd7fe64736a7e63eacc8b2",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_persistence_worker_lifecycle.py",
+      "sha256": "2f5d3ec9e7e9043fada4d4ff9778440c806e6c7af548d94768e0c112c02d575e",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_persistence_worker_schedules.py",
+      "sha256": "0b8822110f7af717678042057e4d335cbd226c5f5d7f23d767f4619013f09f1c",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_protocol_ingress_admission.py",
+      "sha256": "debb43357c2bcdefcb2bce816443be6ec5cb29c3bd40bf884418e6c48452643e",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_protocol_ingress_boundary.py",
+      "sha256": "98fb7062700688e6fd52ea6bb5e45dd92bffb2a133cb385facbcd4f3ad2c00f9",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_protocol_ingress_builder.py",
+      "sha256": "6342afb1a48c35520eeb703c5d23ffd6121ad74b2899a9e6bec0f6497c2f0db9",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_protocol_ingress_completion.py",
+      "sha256": "381db7b20760022f91df1aa5e7401e5ff118b39dedc506e266fc06042d5d9066",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_protocol_ingress_decisions.py",
+      "sha256": "f247cd240532d0bb7a78719c018e9483a3ed779b1a11f62f6b1bd76241115b34",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_protocol_ingress_identity.py",
+      "sha256": "830c041f5103723cba645358bc80fb18b0e779c0ba074294920eef3b535e40c9",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_protocol_ingress_occurrence.py",
+      "sha256": "efbd9c8bfaf4e0cab8cb7a56269a5b456c2996cc2f3c62d38d7a8b9772ddbd6e",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_protocol_ingress_properties.py",
+      "sha256": "a2a62e66a1e38db432bc5620ded552c1c8041f43797640261e0ddff90168cd35",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_protocol_ingress_reviewed.py",
+      "sha256": "12114ba92aeae83df889645e9144b0b8367566a763b5895b011d2afa779af55f",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_protocol_ingress_validation.py",
+      "sha256": "96cb8aad47b7f887d85fffa577b51be3460f8ac40d308c1bd81f35a0a4aaac7c",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_quarantine_evidence.py",
+      "sha256": "8ba4a13cc54b430d6ef4ee9e3cd58ae1e642f550c501f46872724b7334c3b327",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_receiver_configuration.py",
+      "sha256": "057b177e44a4318a0449612bbd6f0161609c3dd17aa05098f05e27907a8990a6",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_receiver_interface_generation.py",
+      "sha256": "d4a00473c65ac62deb73a34bd2b93807dfac8499a68be691569bc97c749ed0ac",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_receiver_startup.py",
+      "sha256": "1c1d3aded0c18c096daf1f304fb7de0c560323c6afaa81e5771b43a5598dd196",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_sqlite_database.py",
+      "sha256": "4b080f04c408499ca15af8bf394e60ba57e61254c253ffc513994aecf076f801",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/host/test_sqlite_repository.py",
+      "sha256": "d23f6b6bff352a941607a081887adfbe4b5542eddf68280afd19b6ff7b783b46",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/support/README.md",
+      "sha256": "4bcaae6a3a944492ed606b5d3106bf3d9c9a2fbaf3fc191951d45a4e02710381",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/support/__init__.py",
+      "sha256": "866c35579dc5a0b96a12bc4015db6297cbe32bf3d5ab955a8be5f0ffc823ce17",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/support/builders/__init__.py",
+      "sha256": "516c7ae19d5b5558a9a567e48aa23a9cc37fc7bd4a7dd18ae4ca4b1cc2907f50",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/support/builders/persistence.py",
+      "sha256": "3fba2b2cc17a0e0d4e056fd4373eaf322c590ef02b650362b135a068d07c0b5b",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/support/builders/persistence_control.py",
+      "sha256": "dd57c37c6d39521a8646f57cc03b24a50617f1165377b125693e8c6839420772",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/support/builders/protocol_ingress.py",
+      "sha256": "7ff1b030cc9fc00e567ee4ecd9999f4f4e85c1834afdae3803fc1356a5d74ef0",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/support/coordination/__init__.py",
+      "sha256": "0485d11f661ce0dc3453fee2802474bfcebc0e130c4862dfff4f0f4a855fdab8",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/support/coordination/persistence_crash.py",
+      "sha256": "4c4a2c43a00754a03514c794ed3d39de53713b7556689b5f543c5e23f4bbc7b7",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/support/coordination/persistence_worker.py",
+      "sha256": "855664bb412f1bb9ffa270dda03a8a383c8270130efe25800107e4eb85e3605a",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/support/coordination/threads.py",
+      "sha256": "a9db1efd3824ba3a30b0060f520b06379cfa6febbd07ef3461da9f5805554f71",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/support/coordination/worker_crash.py",
+      "sha256": "0548a8d1f69d750fdb81f264fe5edf2b41b838c93859283450b5cfe7d12f923a",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/support/fakes/__init__.py",
+      "sha256": "21e2330dc9c106098945c3f9c43a25f1033b873f167fda494941687b02d20e66",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/support/fakes/os_clock.py",
+      "sha256": "e61fdc874ac011457c75a9af77a228056c8fc423900b7771475c7ec1d54d2470",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/support/models/__init__.py",
+      "sha256": "e4d479cb4af6903aab0186c479767b45aeb3a030ebd007e14df03846a81f07db",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/support/models/ordinary_persistence.py",
+      "sha256": "bd81fa0384d158bad860151229c8a8d20fc585a23e9e11728f768731986da1c1",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/support/models/persist_queue.py",
+      "sha256": "57cd43d59d9cc800c5c325d20238f50867b351c141b9ec28bdbd26bf96105f0c",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tests/support/models/protocol_ingress.py",
+      "sha256": "b015a5a9c65b84a578ee4dd70758ab3628490868a05cf6a4a2d552a80fd588ae",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tools/README.md",
+      "sha256": "8be0831754f793d5cdfab730ab673752e1ceed0e9f57b9bdf318a91e7c4a2504",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tools/capture_database_evidence.py",
+      "sha256": "903234b4ca10ccf8275f3dea587c7ac2da7fab0c8da50640d88779016f4525d4",
+      "symlink": false
+    },
+    {
+      "path": "receiver/tools/generate.py",
+      "sha256": "89d005ae7d91799094db47a2f96ee4f85d8a0883427992a0238f508aebbb9f69",
+      "symlink": false
+    },
+    {
+      "path": "server/.env.example",
+      "sha256": "50447c2657fc75ab925d78d0151d18ebe965c384a40225d83cfc2ca77fa69e69",
+      "symlink": false
+    },
+    {
+      "path": "server/README.md",
+      "sha256": "5a0ab742897bc589bc93d48659c92542abfd9e233853232664e8a157335b0a2e",
+      "symlink": false
+    },
+    {
+      "path": "server/compose.yaml",
+      "sha256": "36ac0fabe36a861324232bc0964eedc31716d1607df2f41a7ce4e444acaa30ff",
+      "symlink": false
+    },
+    {
+      "path": "server/cura_server/__init__.py",
+      "sha256": "5e0df7f12bb630f1a45361faa48779a6fa01895edf755b70db7dc7c132dfc459",
+      "symlink": false
+    },
+    {
+      "path": "server/cura_server/__main__.py",
+      "sha256": "a3f40bd86a246a784020e801966632eaa3cd4d4b3dd63db26dd4bf4da9daa6d8",
+      "symlink": false
+    },
+    {
+      "path": "server/cura_server/db.py",
+      "sha256": "877f33e62531d7920671793b90d98db14d8b4ed4cbea9f9eff53e384eaa29098",
+      "symlink": false
+    },
+    {
+      "path": "server/cura_server/generated/__init__.py",
+      "sha256": "28c5820312d43881b24a1622d595c5a209336032b52bfc1ba08cb67470ed3567",
+      "symlink": false
+    },
+    {
+      "path": "server/cura_server/generated/ack_v1.py",
+      "sha256": "e975ecafc5d0799d70cfc55ea00da7f36f870fd9103eb5a7cd5e2e533a9149d5",
+      "symlink": false
+    },
+    {
+      "path": "server/cura_server/generated/fault_v1.py",
+      "sha256": "8bbca90cc6638dd86239a5f6aa86ee4af4a9f8841e989f18e20989123e8451bd",
+      "symlink": false
+    },
+    {
+      "path": "server/cura_server/generated/reading_v1.py",
+      "sha256": "9ab037b7cb48d1f4a4ec1ee2afe2f7054724fe3d00d92441a49253939d0a8f1e",
+      "symlink": false
+    },
+    {
+      "path": "server/cura_server/protocol.py",
+      "sha256": "caf677ad4e96494403185896f08560f84b322ed4c87bc985d39686c42591c78a",
+      "symlink": false
+    },
+    {
+      "path": "server/cura_server/server.py",
+      "sha256": "8609a04b334cdd5aa24908fc011f52c1788be4c5cb77c0d30d112b3b3bec47b4",
+      "symlink": false
+    },
+    {
+      "path": "server/db/README.md",
+      "sha256": "c5040c5884a994afe2ee11597a2db0c70c43fe756643b5eaf529cf8e39b33795",
+      "symlink": false
+    },
+    {
+      "path": "server/db/migrations/001_init_schema.sql",
+      "sha256": "38103aed780ada42ffb89f55078364b0536961a8157bac0bf283d3ab7b60bf51",
+      "symlink": false
+    },
+    {
+      "path": "server/deploy/field-hotspot.sh",
+      "sha256": "22878b9f81f3e4d0fa5d5f57fef51353a42a1a798e85d6104cc4ded389c3959b",
+      "symlink": false
+    },
+    {
+      "path": "server/pyproject.toml",
+      "sha256": "801abe14340793f7a5fdc9a0c6b0d0c9a5adcdbf3b107f40534cb039079236be",
+      "symlink": false
+    }
+  ],
+  "tree_sha256": "1b86a33964437780364eec4408a45b40007885e7a39d20c117ff09c6b0ab81e3"
+}

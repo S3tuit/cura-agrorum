@@ -1,0 +1,15 @@
+Reference ID    : 25F735B2 (nettuno.ntp.irh.it)
+Stratum         : 3
+Ref time (UTC)  : Sat Sep 12 15:26:37 2026
+System time     : 91674.656250000 seconds slow of NTP time
+Last offset     : -0.001540615 seconds
+RMS offset      : 0.001571872 seconds
+Frequency       : 6.536 ppm fast
+Residual freq   : -2.071 ppm
+Skew            : 4.392 ppm
+Root delay      : 0.023012511 seconds
+Root dispersion : 0.002446580 seconds
+Update interval : 65.0 seconds
+Leap status     : Normal
+
+command_exit=0

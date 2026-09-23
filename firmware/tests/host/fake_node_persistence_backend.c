@@ -39,9 +39,10 @@ typedef struct {
   char root[TEST_ROOT_SIZE];
   bool initialized;
   bool littlefs_mounted;
-  bool nvs_found;
-  uint32_t nvs_committed;
-  uint32_t nvs_staged;
+  bool nvs_found[NODE_PERSISTENCE_NVS_COUNTER_COUNT];
+  uint32_t nvs_committed[NODE_PERSISTENCE_NVS_COUNTER_COUNT];
+  uint32_t nvs_staged[NODE_PERSISTENCE_NVS_COUNTER_COUNT];
+  bool nvs_staged_dirty[NODE_PERSISTENCE_NVS_COUNTER_COUNT];
   fake_handle_t handles[HANDLE_CAPACITY];
   fake_fault_t fault;
   fake_backend_trace_entry_t trace[TRACE_CAPACITY];
@@ -217,6 +218,7 @@ static int32_t fake_nvs_open(node_persistence_nvs_handle_t *out_handle) {
 }
 
 static int32_t fake_nvs_get(node_persistence_nvs_handle_t handle,
+                            node_persistence_nvs_counter_t counter,
                             uint32_t *out_value, bool *out_found) {
   (void)handle;
   bool partial = false;
@@ -229,18 +231,20 @@ static int32_t fake_nvs_get(node_persistence_nvs_handle_t handle,
                completed, failure);
     return failure;
   }
-  if (out_value == NULL || out_found == NULL) {
+  if (counter >= NODE_PERSISTENCE_NVS_COUNTER_COUNT || out_value == NULL ||
+      out_found == NULL) {
     trace_call(FAKE_BACKEND_OP_NVS_GET, FAKE_BACKEND_RESOURCE_NVS, 0U, 0U, 0U,
                EINVAL);
     return EINVAL;
   }
-  *out_found = s_fake.nvs_found;
-  *out_value = s_fake.nvs_committed;
+  *out_found = s_fake.nvs_found[counter];
+  *out_value = s_fake.nvs_committed[counter];
   trace_call(FAKE_BACKEND_OP_NVS_GET, FAKE_BACKEND_RESOURCE_NVS, 0U, 0U, 0U, 0);
   return 0;
 }
 
 static int32_t fake_nvs_set(node_persistence_nvs_handle_t handle,
+                            node_persistence_nvs_counter_t counter,
                             uint32_t value) {
   (void)handle;
   bool partial = false;
@@ -248,8 +252,12 @@ static int32_t fake_nvs_set(node_persistence_nvs_handle_t handle,
   const int32_t failure = consume_failure(
       FAKE_BACKEND_OP_NVS_SET, FAKE_BACKEND_RESOURCE_NVS, &partial, &completed);
   (void)partial;
+  if (counter >= NODE_PERSISTENCE_NVS_COUNTER_COUNT) {
+    return EINVAL;
+  }
   if (failure == 0) {
-    s_fake.nvs_staged = value;
+    s_fake.nvs_staged[counter] = value;
+    s_fake.nvs_staged_dirty[counter] = true;
   }
   trace_call(FAKE_BACKEND_OP_NVS_SET, FAKE_BACKEND_RESOURCE_NVS, 0U,
              sizeof(value), failure == 0 ? sizeof(value) : completed, failure);
@@ -263,10 +271,15 @@ static int32_t fake_nvs_commit(node_persistence_nvs_handle_t handle) {
   const int32_t failure =
       consume_failure(FAKE_BACKEND_OP_NVS_COMMIT, FAKE_BACKEND_RESOURCE_NVS,
                       &partial, &completed);
-  (void)partial;
-  if (failure == 0) {
-    s_fake.nvs_committed = s_fake.nvs_staged;
-    s_fake.nvs_found = true;
+  if (failure == 0 || partial) {
+    for (size_t index = 0U; index < NODE_PERSISTENCE_NVS_COUNTER_COUNT;
+         ++index) {
+      if (s_fake.nvs_staged_dirty[index]) {
+        s_fake.nvs_committed[index] = s_fake.nvs_staged[index];
+        s_fake.nvs_found[index] = true;
+        s_fake.nvs_staged_dirty[index] = false;
+      }
+    }
   }
   trace_call(FAKE_BACKEND_OP_NVS_COMMIT, FAKE_BACKEND_RESOURCE_NVS, 0U, 0U,
              completed, failure);
@@ -629,8 +642,8 @@ static uint32_t fake_crc32_iso_hdlc(const uint8_t *input, size_t length) {
 static const node_persistence_backend_t BACKEND = {
     .nvs_init = fake_nvs_init,
     .nvs_open = fake_nvs_open,
-    .nvs_get_next_sample_id = fake_nvs_get,
-    .nvs_set_next_sample_id = fake_nvs_set,
+    .nvs_get_counter = fake_nvs_get,
+    .nvs_set_counter = fake_nvs_set,
     .nvs_commit = fake_nvs_commit,
     .nvs_close = fake_nvs_close,
     .littlefs_mount = fake_littlefs_mount,
@@ -676,9 +689,10 @@ void fake_backend_reset(void) {
   remove_test_file(NODE_PERSISTENCE_MOUNT_PATH "/diagnostic.log");
   remove_test_file(NODE_PERSISTENCE_MOUNT_PATH "/delivery.log");
   s_fake.littlefs_mounted = false;
-  s_fake.nvs_found = false;
-  s_fake.nvs_committed = 0U;
-  s_fake.nvs_staged = 0U;
+  memset(s_fake.nvs_found, 0, sizeof(s_fake.nvs_found));
+  memset(s_fake.nvs_committed, 0, sizeof(s_fake.nvs_committed));
+  memset(s_fake.nvs_staged, 0, sizeof(s_fake.nvs_staged));
+  memset(s_fake.nvs_staged_dirty, 0, sizeof(s_fake.nvs_staged_dirty));
   memset(&s_fake.fault, 0, sizeof(s_fake.fault));
   memset(s_fake.trace, 0, sizeof(s_fake.trace));
   s_fake.trace_count = 0U;
@@ -687,7 +701,8 @@ void fake_backend_reset(void) {
 void fake_backend_simulate_restart(void) {
   close_test_handles();
   s_fake.littlefs_mounted = false;
-  s_fake.nvs_staged = s_fake.nvs_committed;
+  memcpy(s_fake.nvs_staged, s_fake.nvs_committed, sizeof(s_fake.nvs_staged));
+  memset(s_fake.nvs_staged_dirty, 0, sizeof(s_fake.nvs_staged_dirty));
   memset(&s_fake.fault, 0, sizeof(s_fake.fault));
 }
 
@@ -704,6 +719,12 @@ void fake_backend_fail_on(fake_backend_operation_t operation,
       .remaining_matches = occurrence,
       .status = status,
   };
+}
+
+void fake_backend_ambiguous_nvs_commit_on(uint32_t occurrence, int32_t status) {
+  fake_backend_fail_on(FAKE_BACKEND_OP_NVS_COMMIT, FAKE_BACKEND_RESOURCE_NVS,
+                       occurrence, status);
+  s_fake.fault.partial_write = true;
 }
 
 void fake_backend_partial_write_on(fake_backend_resource_t resource,
@@ -742,14 +763,34 @@ size_t fake_backend_count(fake_backend_operation_t operation,
 bool fake_backend_littlefs_is_mounted(void) { return s_fake.littlefs_mounted; }
 
 void fake_backend_seed_next_sample_id(uint32_t value) {
-  s_fake.nvs_found = true;
-  s_fake.nvs_committed = value;
-  s_fake.nvs_staged = value;
+  s_fake.nvs_found[NODE_PERSISTENCE_NVS_COUNTER_SAMPLE] = true;
+  s_fake.nvs_committed[NODE_PERSISTENCE_NVS_COUNTER_SAMPLE] = value;
+  s_fake.nvs_staged[NODE_PERSISTENCE_NVS_COUNTER_SAMPLE] = value;
+  s_fake.nvs_staged_dirty[NODE_PERSISTENCE_NVS_COUNTER_SAMPLE] = false;
 }
 
-bool fake_backend_next_sample_id_found(void) { return s_fake.nvs_found; }
+bool fake_backend_next_sample_id_found(void) {
+  return s_fake.nvs_found[NODE_PERSISTENCE_NVS_COUNTER_SAMPLE];
+}
 
-uint32_t fake_backend_next_sample_id(void) { return s_fake.nvs_committed; }
+uint32_t fake_backend_next_sample_id(void) {
+  return s_fake.nvs_committed[NODE_PERSISTENCE_NVS_COUNTER_SAMPLE];
+}
+
+void fake_backend_seed_next_message_id(uint32_t value) {
+  s_fake.nvs_found[NODE_PERSISTENCE_NVS_COUNTER_MESSAGE] = true;
+  s_fake.nvs_committed[NODE_PERSISTENCE_NVS_COUNTER_MESSAGE] = value;
+  s_fake.nvs_staged[NODE_PERSISTENCE_NVS_COUNTER_MESSAGE] = value;
+  s_fake.nvs_staged_dirty[NODE_PERSISTENCE_NVS_COUNTER_MESSAGE] = false;
+}
+
+bool fake_backend_next_message_id_found(void) {
+  return s_fake.nvs_found[NODE_PERSISTENCE_NVS_COUNTER_MESSAGE];
+}
+
+uint32_t fake_backend_next_message_id(void) {
+  return s_fake.nvs_committed[NODE_PERSISTENCE_NVS_COUNTER_MESSAGE];
+}
 
 bool fake_backend_file_exists(const char *component_path) {
   char translated[TEST_PATH_SIZE];

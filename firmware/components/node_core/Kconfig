@@ -1,0 +1,14 @@
+menu "Node cycle"
+config NODE_DEEP_SLEEP_SECONDS
+    int "Deep sleep duration in seconds"
+    range 10 900
+    default 900
+    help
+        Production uses 900 seconds. Accelerated RF qualification uses 10.
+config NODE_RF_SLEEP_OBSERVATION
+    bool "Emit RF test sleep-entry observation"
+    default n
+    help
+        Test builds only: emit a marker after cycle finalization and successful
+        timer configuration, immediately before the terminal sleep call.
+endmenu

@@ -1,0 +1,846 @@
+{
+  "schema": 1,
+  "run_id": "da09e5ce7bcc4a05ae5c861a72338d81",
+  "metadata": {
+    "operation": "repeat",
+    "exploration": false,
+    "expected_dut": "cc8da2fc0224",
+    "requested_count": 100,
+    "fixture": "nominal",
+    "carrier_revision": "nominal carrier per SENSOR_CARRIER.md; user confirmed ready",
+    "port": "/dev/ttyUSB0",
+    "elf_sha256": "f759f33adf7ccfa6e113448a4620ef84183bd02956ea6feb2dee29177be20914",
+    "config_sha256": "9a551aa40f4360b5c52d404aaa64d7ad909809d1a1ed4c2380e2ba55eded110d",
+    "source_version": "c6bbd90-dirty",
+    "rom0": "DF00000050F93828",
+    "rom1": "7E000000540FA728"
+  },
+  "build": {
+    "sources": {
+      "firmware/components/bosch_bme280/CMakeLists.txt": "4fa540e74237a8d22f85041075719226fbc7ae3acdd1d18361361f01ea3b8dc5",
+      "firmware/components/bosch_bme280/resolve_source.cmake": "488d77e569ca39018fec9a6ae4554b4c5470ccc5906268c71d09b3d168d362f8",
+      "firmware/components/bosch_bme280/source_pin.cmake": "482b11cc69927a4ee8d891e2b9ba2b9d7bc823a1e46cb08791644cfe7638e9d9",
+      "firmware/components/node_common/CMakeLists.txt": "fdfa90b1121c922e48c766da912a4c3991d7fd5ff1dc585541ca2d9a9e511f92",
+      "firmware/components/node_common/include/node_common.h": "6392ac9de744ed514b8891606cb73ac4980a3457c0e68b96f3dc44caf64b9caf",
+      "firmware/components/node_common/node_common.c": "5e050cce2cb5ceaec3f19c7f8926d8654cc9fda2d6f2df879ca28ce15063244e",
+      "firmware/components/node_core/include/node_platform_ports.h": "689a5a9145700fb647580e8489d087d3a757ea5bbb087695f1d78215886097c8",
+      "firmware/components/node_platform_esp/CMakeLists.txt": "2542949ef12a027aeed9769887e82a4a51768d72b93ab36650a98bc3d2fac231",
+      "firmware/components/node_platform_esp/include/node_platform_esp.h": "f4b2867ddc71d7a9257003d0f0a46da9a4d1332fb81571bee73f7a91e89632ae",
+      "firmware/components/node_platform_esp/node_platform_esp.c": "7ad7be0487168695723fa9a5d541bcee699ad73bf150e909a34ca3f143290e49",
+      "firmware/components/node_sensors/CMakeLists.txt": "b1b230fd91a43b15871eff47fffcaa7b88d5ff8afd731d2957198d303fba9277",
+      "firmware/components/node_sensors/idf_component.yml": "31856e13c46d1b37185af66ce6cf866b61f1f3a6e013c1505eb7a0f9340f42c6",
+      "firmware/components/node_sensors/include/node_sensors.h": "5111c4ed8b6b7206ceaf1904a42d0d0baf485a2afb8e7ac5202977fd1679ccfd",
+      "firmware/components/node_sensors/include/soil_sensor.h": "138e16beb7dd85d4cba325bec7eed95e73514ccfd60dec1fff649aeafb0dc9bf",
+      "firmware/components/node_sensors/node_sensors.c": "483c337167430df74b647b235b4877fd92d2e99b8aa3811e5b4f9297af878c78",
+      "firmware/components/node_sensors/node_sensors_backend_esp.c": "fd8d338d71b4b4b6d26cfe4d0253fa1c12edac603268b8072529de486ea182c6",
+      "firmware/components/node_sensors/node_sensors_bme280_esp.c": "1fc6aa773e3d3706f32441a33018df66c86afcf99eccf9d0ca8884c4a1799418",
+      "firmware/components/node_sensors/node_sensors_ds18b20_gpio_esp.c": "ca19f244d31685824c4da3ecb98c87260149fa40f3ca95d683af5eb2e8850af8",
+      "firmware/components/node_sensors/node_sensors_ds18b20_identity.c": "a31999e085dcb099aa97c2eb69e54b87cc11ff8d5776ad8e0687c47a9b41ece0",
+      "firmware/components/node_sensors/node_sensors_power_gate_esp.c": "566e44d36489b49fe9baef0e928987dbd036a513bf3a76e40f5834d1e2bfe1c3",
+      "firmware/components/node_sensors/private_include/node_sensors_backend.h": "786933bb5c6bee090305199dae8c666952f6f04061712e94817d753da194c8d3",
+      "firmware/components/node_sensors/private_include/node_sensors_ds18b20_gpio.h": "ca82a34b693495154f31c49dae7c0ef2a936ae5e87854f5d0f2a9515d0f152f7",
+      "firmware/components/node_sensors/private_include/node_sensors_ds18b20_identity.h": "8d8540a52476b88bfe98cbd9218cc1156f07632bdfd1c005ab480f0f2c314829",
+      "firmware/components/node_sensors/private_include/node_sensors_power_gate.h": "1a0bced588f6fd4bcc871755835a7228e15a8532c0a3d2668db37f7f1c081b3c",
+      "firmware/components/node_sensors/soil_sensor.c": "5d172736a2e033f3ef8fb22f3eb8c6bc8beffcf984e061630516808fb3e1848d",
+      "firmware/components/protocol_v2_lora/include/protocol_v2_lora_schema_generated.h": "efa1264060c0f4319325bc6eb3697adbbc0e4ea214505917039fab46b54880e6",
+      "firmware/test_apps/sensor_carrier/CMakeLists.txt": "c0163be0ce134610bc0a7fb9b193c46bc2bade762dd276695af05979d712b8f4",
+      "firmware/test_apps/sensor_carrier/carrier_evidence.py": "5170a836646126b97a24b74b858a8628c39fc3a427c619ca0e8d2cc1fe05cd76",
+      "firmware/test_apps/sensor_carrier/carrier_exploration.py": "85075a4648e299758981f4dd70c55e221d9f01c8a12058d6a5c6ba8348b8223b",
+      "firmware/test_apps/sensor_carrier/carrier_guided.py": "e1e4e7641f707f62434d2e0c8d1703681d5e4a50c91441ec4747290dc43c46e0",
+      "firmware/test_apps/sensor_carrier/carrier_runner.py": "82b588580f0961e2abf33caf1724be581180cace2f3fd7a416456753be0d6b5d",
+      "firmware/test_apps/sensor_carrier/conftest.py": "abc4feb4b14eabe90114ce767820c693cd9db0ff57a8917c95780ee70b1f185f",
+      "firmware/test_apps/sensor_carrier/dependencies.lock": "9fde80c3d7df5f099eed4547f8de5ae84995b835c611b8d15f77d7c2a5a39760",
+      "firmware/test_apps/sensor_carrier/main/CMakeLists.txt": "d5d25f67f786d75d046a18d66f61f32d600068dfe6e585f88dfbc25b64f75df0",
+      "firmware/test_apps/sensor_carrier/main/carrier_bme_preflight.c": "0c41d4d07654481cdda08a89d6b9605435c3f000113ae9ac3e35a0028233d706",
+      "firmware/test_apps/sensor_carrier/main/carrier_bme_preflight.h": "bf27ddfcfe703545fb4a984585936041640428bfb9f874fd3f9cacb0acecccce",
+      "firmware/test_apps/sensor_carrier/main/carrier_checks.c": "18b599252115736a4aaeed691da548607ca15d3515ca62bdd44a2082f69f8be0",
+      "firmware/test_apps/sensor_carrier/main/carrier_checks.h": "be4d0d23ede8a5f42f8e078e2ac0d987a1fa5d80b09643f7c35b40e164335def",
+      "firmware/test_apps/sensor_carrier/main/carrier_console.c": "fbda830115adf26902c9604ca29df907e9443c3fdace698acae492a9b9831418",
+      "firmware/test_apps/sensor_carrier/main/carrier_hold.c": "60b62d58bd84de66ba6810a016274e05ad4d3508b59aa7542e85b11cbd74507b",
+      "firmware/test_apps/sensor_carrier/main/carrier_hold.h": "2b16a0984cdd2b6b42d8ee03c8d1cba146b3fb74fe66bb2a053147c9f402937f",
+      "firmware/test_apps/sensor_carrier/main/carrier_observer.c": "295beb989450f9e91e83cdec2fa4817c17850d7a831e3c334c6113e406129927",
+      "firmware/test_apps/sensor_carrier/main/carrier_observer.h": "c16fe0ef0c716491b897557ddde14610823b7243285a57427991dd6331340a0a",
+      "firmware/test_apps/sensor_carrier/main/test_app_main.c": "e4be64907567c4c9948d2f014962e8a06b7d8e251dfa9a8da16f8dabbaa1a9dd",
+      "firmware/test_apps/sensor_carrier/main/test_sensor_carrier.c": "841d3dd3b4718427b89107fc68d4a8caffcf9f635e369c519bec1bdf6a34a2d2",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__ds18b20/CMakeLists.txt": "c31dcf92cc7fc828f792c9e801a1cc1f5cb94d832865db22d34a7802c9841a03",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__ds18b20/examples/ds18b20_read/CMakeLists.txt": "ab4256498caf9b7906e3bc7a6f32d1b93e2db27d03a2407114fcad4e2c3c7ec7",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__ds18b20/examples/ds18b20_read/main/CMakeLists.txt": "e8ad23b92ba5a09880622cafc87e95c7d60e728966897547f02e63ada32da9f1",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__ds18b20/examples/ds18b20_read/main/ds18b20_example_main.c": "8a78f94fb6bcd341d90976b7007d00dff201178701d7cb07ddb9473840840bbb",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__ds18b20/examples/ds18b20_read/main/idf_component.yml": "057ef3a37a626bbfcb85c3edd930e9227f560f7f090be47269664d76b4583edf",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__ds18b20/examples/ds18b20_sensor_hub/CMakeLists.txt": "120e47181658a75305689c33c47f3b0fc06f13fa6b6e286b88b9b3e70f377726",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__ds18b20/examples/ds18b20_sensor_hub/main/CMakeLists.txt": "89dee195bf4b22217033b42a31c5d87ba927e2b9b0ab72ba4496695c51b3ac81",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__ds18b20/examples/ds18b20_sensor_hub/main/ds18b20_sensor_hub_example.c": "13e25408ddf3f323e8986f0a337b5bc67bc0e514a0883e4858f5cdbeb72d520e",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__ds18b20/examples/ds18b20_sensor_hub/main/idf_component.yml": "057ef3a37a626bbfcb85c3edd930e9227f560f7f090be47269664d76b4583edf",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__ds18b20/idf_component.yml": "f36de57bc18f528dbd0568eddf07f3532a1a4bbae994e260f1935b2f4216efa9",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__ds18b20/include/ds18b20.h": "223dc38bafce9145791c21a28928b37e31012c69a3dfaa929208c8b576f92a2b",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__ds18b20/include/ds18b20_types.h": "f503925004da3ec7ffc6e893a95ec6fe20fea56ca9d1e7ecfcb68a5619dfea03",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__ds18b20/src/ds18b20.c": "2abd2410318776cb5b308546e8ddba06d9fffb237da38077d9d485edd9a3bfbe",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__ds18b20/src/ds18b20_sensor_hub.c": "d87b5460217e382d99fd01eb0911da57a8ed1666207e62c9f301e1886db4793b",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/.build-test-rules.yml": "d34faa08f404a108c17bcaf9709561dbc978c4f4fea0b912857758064430e069",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/CMakeLists.txt": "8f26f2f876456b7533884d02b72dfee3481fe8617420c34cbfacf8c03dbc187a",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/idf_component.yml": "d35e0d775e35092ca98acdd87fc9acf208fbe6a1fc6541a02a3c1b8baaff5394",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/include/onewire_bus.h": "7ce89bf88b6f62101f53a2290bd932aa5a1c2c75249079dc7485abd4bcbed4f8",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/include/onewire_bus_impl_rmt.h": "a8aeebf3cd5f23ddd00c76ec43dfd6f1a30eee819814fb0c0d50a1e292834511",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/include/onewire_bus_impl_uart.h": "403a3cb182173148f7999dbfbd800b9baab80f51c3f00607b1ccfc18a91af108",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/include/onewire_cmd.h": "f0de787a3337b59e6a85c8a245ef5b56710830233ceeabf5fe59d1c0a0c50b38",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/include/onewire_crc.h": "9db2a7b437a6f72a0711698c9fad5ceca60458e828557cc38a3c8fc217fd5e06",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/include/onewire_device.h": "f6b8202100de34d4b102953839e10df33b7850c35c599fb1d5bcf33ec1305773",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/include/onewire_types.h": "bbfbaffac8df97fe53fcf42550f63dad9e3c29fac3fb26a03d735075eed85b31",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/interface/onewire_bus_interface.h": "b03cea2218f99845b4486b7112760e08e4b7eb6b6dcc238f8d745afc593eae19",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/src/onewire_bus_api.c": "894fdc649d552fe090c19bd3eb9e1433db71f95b8455b86faf5463636905ab3e",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/src/onewire_bus_impl_rmt.c": "9bf7ebe0fd68f9dd64b1121607c906d7fdb0a453793ed928cd3cc0c25f5eef8d",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/src/onewire_bus_impl_uart.c": "00f18bf1c3ea011c0952ca8dbf898a74094985932d7da2b4c8ff15ad99244576",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/src/onewire_crc.c": "06a7ce5ffffbd1cbf4de35155cba2d5b903f718a0fbc3478265c09a4458a4ce0",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/src/onewire_device.c": "3612afec5795eb9f47adef0b340c33c8584dde4d66d9581621ae203a6e9e031a",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/test_apps/CMakeLists.txt": "4035fd2167868739138e691d3080616b9d3b5c69adf567fbd33fb74b36a143ce",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/test_apps/main/CMakeLists.txt": "2c724c0cf0fe496ed895d2360a281ad0c81b398c43cdfccb290c5b627c852f9a",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/test_apps/main/idf_component.yml": "76ba47c24c863880ee8e6667ccde3ca1b68454993f31fd45755d5faa2ab83edc",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/test_apps/main/onewire_bus_test.c": "f25f3a330bcc50fb30da60470c38401b88a3858415abe56668cf386e4f49a2d4",
+      "firmware/test_apps/sensor_carrier/managed_components/espressif__onewire_bus/test_apps/pytest_onewire_bus.py": "c00451c79c16e3e3010045c21a21cb8c8e82217b898946061a4d133d096eca11",
+      "firmware/test_apps/sensor_carrier/partitions.csv": "9b8494b57d1eb9ce8b9e9637d70a1500e2ee421f8bf2380aa58e4974b398840a",
+      "firmware/test_apps/sensor_carrier/pytest_sensor_carrier.py": "09f5635671eba2e1cede4a3ce98cb174bad2eb745d667bc51f3f8799ad75d244",
+      "firmware/test_apps/sensor_carrier/runner_tests/test_bme_preflight.py": "02bd0cf0a4fb9e977890acf2fcfd453a757dbf6c62055771fb97eed4f83b4225",
+      "firmware/test_apps/sensor_carrier/runner_tests/test_boot_record.py": "a16ac92b226100fded0986215cb6509f94c15bdd91c3bbd2e49c94e76fd27f6d",
+      "firmware/test_apps/sensor_carrier/runner_tests/test_build_seal.py": "57f644bf1dac27bc0696655cdc6162101ce4109756aea0122bee79d5ce97b502",
+      "firmware/test_apps/sensor_carrier/runner_tests/test_console.py": "554fbe50acc1e0ea314c7e2eaa2776200cb46701bc7947d9f4fe144ae3464b06",
+      "firmware/test_apps/sensor_carrier/runner_tests/test_exploration.py": "aa068363fb479cdb91a99dfe1e06aaab9e05f4622bd59078c0fdc3fb3e549b2a",
+      "firmware/test_apps/sensor_carrier/runner_tests/test_fixture_checks.py": "86c8b667222d738ea3b2a4f67eeefc785cf1defad40c520f62eaac9499689936",
+      "firmware/test_apps/sensor_carrier/runner_tests/test_hold.py": "c49128ed696e4f52a6eb7ac4ff9629570f881b2cf9695abe4f8a396fceb55457",
+      "firmware/test_apps/sensor_carrier/runner_tests/test_manual_sleep.py": "a80d1b33da24ffe66232d296a99723011a03d6caf8ba58d1b53bb5d4b36810b6",
+      "firmware/test_apps/sensor_carrier/runner_tests/test_missing_ds.py": "00ede21b6fd274b2816d0b7f0d80715405c756105c49135b8584212fc3bc8ee5",
+      "firmware/test_apps/sensor_carrier/runner_tests/test_observer.py": "d01c5d068696b79bb809c869a8e0b53fe7134db5bf1d787266710e10cc4cd297",
+      "firmware/test_apps/sensor_carrier/runner_tests/test_report.py": "a5d018c580448d1890537812cb187a00bc16c061188dc0a33f9cc23df2952aa9",
+      "firmware/test_apps/sensor_carrier/runner_tests/test_runner.py": "aa632a4a9705593e212c807f796af00f5a67acd401390db360f317cb0348d614",
+      "firmware/test_apps/sensor_carrier/runner_tests/test_stage04.py": "aa50e9933575c07802390d98f586c12937daf57ef0c25cb57f3ca1465c087c69",
+      "firmware/test_apps/sensor_carrier/sdkconfig": "8598cb4242eaf45e54e90bbfc3ee9bf133927fcae137335e4087010573e3d33a",
+      "firmware/test_apps/sensor_carrier/sdkconfig.defaults": "ebf9793616eb1d61a75b34a798fe632ad050438350d4eba0cdd844b411488b2c"
+    },
+    "bosch_bme280": {
+      "repository": "https://github.com/S3tuit/BME280_SensorAPI.git",
+      "commit": "5f4119ed6ee638abc573e75516ad9aa6e1cd612a",
+      "selection": "fetched_pin",
+      "sources": {
+        "bme280.c": "adbabdc46abb03cfe79ddbabd19662f7e14c30f947d43f38e32a3274dc478b7c",
+        "bme280.h": "6f144510e103f0ab1a24244a71f7ff8ab7f23147b4899aa7bfd0f526062d2163",
+        "bme280_defs.h": "541bbd32498b8603bc8fe8eafac26b15d09fb032d37448ca88e7aa398d6a0769",
+        "LICENSE": "8c966978a9f67992e824d0b76381eab42f240c0049881f7bf2b46c2c093191aa"
+      }
+    },
+    "elf_sha256": "f759f33adf7ccfa6e113448a4620ef84183bd02956ea6feb2dee29177be20914",
+    "config_sha256": "9a551aa40f4360b5c52d404aaa64d7ad909809d1a1ed4c2380e2ba55eded110d"
+  },
+  "status": "software_passed_operator_acceptance_pending",
+  "events": [
+    {
+      "kind": "preflight",
+      "at": "2026-09-14T10:23:04.905217+00:00",
+      "case": "carrier nominal preflight",
+      "serial": "\r\n2\r\nRunning carrier nominal preflight...\r\nCARRIER_ROM value=DF00000050F93828 family=28 type=DS18B20\r\nCARRIER_ROM value=7E000000540FA728 family=28 type=DS18B20\r\nCARRIER_DISCOVERY count=2 ds18b20=2 status=0 cleanup=0\r\nCARRIER_BME address=76 register=D0 id=60 status=0\r\nCARRIER_BME_CLEANUP status=0\r\nCARRIER_PREFLIGHT nominal_complete_resources_released_reset_required\r\n./main/test_sensor_carrier.c:178:carrier nominal preflight:PASS\r\nTest ran in 53ms\r\n\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:07.041325+00:00",
+      "index": 1,
+      "requested": 100,
+      "serial": "\r\n100\r\nCARRIER_SAMPLE result=00000000 duration_us=1351910 validity=1f soil0_mv=2587 soil1_mv=2584 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2581 pressure_pa=96812 humidity_centi_pct=4497\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800718 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2587 mv1=2584 power_released=1\r\nCARRIER_BME_TCAL raw=7C6C3A673200\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C200807B006C78 driver_result=0 temperature=25.8054135 pressure=96811.8252 humidity=44.9672379\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:08.463816+00:00",
+      "index": 2,
+      "requested": 100,
+      "serial": "W (1961) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1327956 validity=1f soil0_mv=2590 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96814 humidity_centi_pct=4492\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800680 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2590 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C100807A006C70 driver_result=0 temperature=25.8003716 pressure=96813.7173 humidity=44.9218675\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:09.887302+00:00",
+      "index": 3,
+      "requested": 100,
+      "serial": "W (3391) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330998 validity=1f soil0_mv=2591 soil1_mv=2586 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2581 pressure_pa=96818 humidity_centi_pct=4495\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800529 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C000807C006C75 driver_result=0 temperature=25.8104553 pressure=96818.0446 humidity=44.9503024\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:11.308946+00:00",
+      "index": 4,
+      "requested": 100,
+      "serial": "W (4821) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331013 validity=1f soil0_mv=2591 soil1_mv=2587 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2581 pressure_pa=96815 humidity_centi_pct=4494\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800528 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C100807C006C73 driver_result=0 temperature=25.8104553 pressure=96815.3408 humidity=44.9389739\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:12.732249+00:00",
+      "index": 5,
+      "requested": 100,
+      "serial": "W (6251) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331000 validity=1f soil0_mv=2591 soil1_mv=2588 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2581 pressure_pa=96820 humidity_centi_pct=4495\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800593 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2588 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF00807B006C75 driver_result=0 temperature=25.8054135 pressure=96819.9367 humidity=44.9502453\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:14.154344+00:00",
+      "index": 6,
+      "requested": 100,
+      "serial": "W (7681) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331009 validity=1f soil0_mv=2591 soil1_mv=2588 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2581 pressure_pa=96815 humidity_centi_pct=4497\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800537 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2588 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C100807B006C78 driver_result=0 temperature=25.8054135 pressure=96814.529 humidity=44.9672379\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:15.578255+00:00",
+      "index": 7,
+      "requested": 100,
+      "serial": "W (9111) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331089 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2581 pressure_pa=96815 humidity_centi_pct=4499\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800531 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C100807B006C7C driver_result=0 temperature=25.8054135 pressure=96814.529 humidity=44.9898944\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:17.000547+00:00",
+      "index": 8,
+      "requested": 100,
+      "serial": "W (10541) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331095 validity=1f soil0_mv=2591 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2581 pressure_pa=96820 humidity_centi_pct=4501\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800592 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF00807B006C80 driver_result=0 temperature=25.8054135 pressure=96819.9367 humidity=45.0125509\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:18.473567+00:00",
+      "index": 9,
+      "requested": 100,
+      "serial": "W (11971) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331002 validity=1f soil0_mv=2591 soil1_mv=2587 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96816 humidity_centi_pct=4502\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C0008079006C82 driver_result=0 temperature=25.7953298 pressure=96815.6405 humidity=45.0237654\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:19.895810+00:00",
+      "index": 10,
+      "requested": 100,
+      "serial": "W (13401) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331011 validity=1f soil0_mv=2592 soil1_mv=2588 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2581 pressure_pa=96821 humidity_centi_pct=4501\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800534 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2588 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF00807C006C80 driver_result=0 temperature=25.8104553 pressure=96820.7485 humidity=45.0126087\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:21.317514+00:00",
+      "index": 11,
+      "requested": 100,
+      "serial": "W (14831) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330911 validity=1f soil0_mv=2591 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2581 pressure_pa=96815 humidity_centi_pct=4500\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800593 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C100807C006C7E driver_result=0 temperature=25.8104553 pressure=96815.3408 humidity=45.0012803\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:22.739460+00:00",
+      "index": 12,
+      "requested": 100,
+      "serial": "W (16261) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330924 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2581 pressure_pa=96815 humidity_centi_pct=4500\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C100807B006C7E driver_result=0 temperature=25.8054135 pressure=96814.529 humidity=45.0012227\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:24.161358+00:00",
+      "index": 13,
+      "requested": 100,
+      "serial": "W (17691) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331004 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96813 humidity_centi_pct=4503\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800531 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C1008079006C83 driver_result=0 temperature=25.7953298 pressure=96812.9368 humidity=45.0294293\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:25.585171+00:00",
+      "index": 14,
+      "requested": 100,
+      "serial": "W (19121) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330920 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96816 humidity_centi_pct=4501\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800597 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C0008079006C80 driver_result=0 temperature=25.7953298 pressure=96815.6405 humidity=45.0124375\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:27.056962+00:00",
+      "index": 15,
+      "requested": 100,
+      "serial": "W (20551) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330913 validity=1f soil0_mv=2591 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96816 humidity_centi_pct=4497\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C000807A006C79 driver_result=0 temperature=25.8003716 pressure=96816.4211 humidity=44.9728447\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:28.482552+00:00",
+      "index": 16,
+      "requested": 100,
+      "serial": "W (21981) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330926 validity=1f soil0_mv=2591 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96808 humidity_centi_pct=4497\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800530 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C300807A006C79 driver_result=0 temperature=25.8003716 pressure=96808.3097 humidity=44.9728447\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:29.905326+00:00",
+      "index": 17,
+      "requested": 100,
+      "serial": "W (23411) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330914 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96814 humidity_centi_pct=4497\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800593 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C100807A006C78 driver_result=0 temperature=25.8003716 pressure=96813.7173 humidity=44.9671806\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:31.327664+00:00",
+      "index": 18,
+      "requested": 100,
+      "serial": "W (24841) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330922 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96811 humidity_centi_pct=4493\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800537 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C200807A006C72 driver_result=0 temperature=25.8003716 pressure=96811.0135 humidity=44.9331958\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:32.749138+00:00",
+      "index": 19,
+      "requested": 100,
+      "serial": "W (26271) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330915 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2544 temp1_centi_c=2519 enclosure_centi_c=2580 pressure_pa=96818 humidity_centi_pct=4496\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800531 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF008079006C76 driver_result=0 temperature=25.7953298 pressure=96818.3443 humidity=44.9557974\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:34.172072+00:00",
+      "index": 20,
+      "requested": 100,
+      "serial": "W (27701) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330922 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96810 humidity_centi_pct=4494\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800592 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C2008079006C73 driver_result=0 temperature=25.7953298 pressure=96810.233 humidity=44.9388052\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:35.596515+00:00",
+      "index": 21,
+      "requested": 100,
+      "serial": "W (29131) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331002 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2579 pressure_pa=96812 humidity_centi_pct=4497\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C1008078006C78 driver_result=0 temperature=25.7902879 pressure=96812.125 humidity=44.9670682\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:37.069040+00:00",
+      "index": 22,
+      "requested": 100,
+      "serial": "W (30561) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331011 validity=1f soil0_mv=2592 soil1_mv=2585 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2579 pressure_pa=96823 humidity_centi_pct=4496\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800534 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2585 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BD008078006C77 driver_result=0 temperature=25.7902879 pressure=96822.9401 humidity=44.9614042\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:38.492056+00:00",
+      "index": 23,
+      "requested": 100,
+      "serial": "W (31991) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330911 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2579 pressure_pa=96818 humidity_centi_pct=4496\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800593 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF008078006C77 driver_result=0 temperature=25.7902879 pressure=96817.5325 humidity=44.9614042\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:39.913439+00:00",
+      "index": 24,
+      "requested": 100,
+      "serial": "W (33421) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330924 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2578 pressure_pa=96823 humidity_centi_pct=4501\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BC008075006C7F driver_result=0 temperature=25.7751624 pressure=96823.2083 humidity=45.0065424\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:41.333989+00:00",
+      "index": 25,
+      "requested": 100,
+      "serial": "W (34851) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330918 validity=1f soil0_mv=2591 soil1_mv=2586 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2578 pressure_pa=96821 humidity_centi_pct=4506\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800531 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BD008075006C88 driver_result=0 temperature=25.7751624 pressure=96820.5046 humidity=45.0575155\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:42.757133+00:00",
+      "index": 26,
+      "requested": 100,
+      "serial": "W (36281) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330920 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2577 pressure_pa=96819 humidity_centi_pct=4514\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800596 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BD008073006C96 driver_result=0 temperature=25.7650787 pressure=96818.9122 humidity=45.1366891\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:44.179732+00:00",
+      "index": 27,
+      "requested": 100,
+      "serial": "W (37711) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330913 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2578 pressure_pa=96815 humidity_centi_pct=4513\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF008075006C94 driver_result=0 temperature=25.7751624 pressure=96815.0972 humidity=45.1254783\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:45.602624+00:00",
+      "index": 28,
+      "requested": 100,
+      "serial": "W (39141) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330926 validity=1f soil0_mv=2591 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2577 pressure_pa=96820 humidity_centi_pct=4509\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800530 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BD008074006C8E driver_result=0 temperature=25.7701205 pressure=96819.724 humidity=45.0914406\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:47.074356+00:00",
+      "index": 29,
+      "requested": 100,
+      "serial": "W (40571) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331000 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2577 pressure_pa=96811 humidity_centi_pct=4504\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800593 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C0008073006C85 driver_result=0 temperature=25.7650787 pressure=96810.8012 humidity=45.0404104\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:48.498030+00:00",
+      "index": 30,
+      "requested": 100,
+      "serial": "W (42001) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330922 validity=1f soil0_mv=2591 soil1_mv=2586 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2577 pressure_pa=96814 humidity_centi_pct=4506\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800537 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF008074006C88 driver_result=0 temperature=25.7701205 pressure=96814.3166 humidity=45.0574593\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:49.920538+00:00",
+      "index": 31,
+      "requested": 100,
+      "serial": "W (43431) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330916 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2577 pressure_pa=96814 humidity_centi_pct=4510\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800531 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF008073006C8F driver_result=0 temperature=25.7650787 pressure=96813.5048 humidity=45.0970452\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:51.345088+00:00",
+      "index": 32,
+      "requested": 100,
+      "serial": "W (44861) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330922 validity=1f soil0_mv=2591 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2578 pressure_pa=96823 humidity_centi_pct=4506\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800592 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BC008075006C88 driver_result=0 temperature=25.7751624 pressure=96823.2083 humidity=45.0575155\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:52.768675+00:00",
+      "index": 33,
+      "requested": 100,
+      "serial": "W (46291) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330916 validity=1f soil0_mv=2591 soil1_mv=2585 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2577 pressure_pa=96820 humidity_centi_pct=4505\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800534 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2585 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BD008074006C87 driver_result=0 temperature=25.7701205 pressure=96819.724 humidity=45.0517958\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:54.192401+00:00",
+      "index": 34,
+      "requested": 100,
+      "serial": "W (47721) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331011 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2577 pressure_pa=96825 humidity_centi_pct=4507\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800534 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BB008074006C8B driver_result=0 temperature=25.7701205 pressure=96825.1313 humidity=45.07445\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:55.613693+00:00",
+      "index": 35,
+      "requested": 100,
+      "serial": "W (49151) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331085 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2578 pressure_pa=96823 humidity_centi_pct=4507\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800593 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BC008075006C8A driver_result=0 temperature=25.7751624 pressure=96823.2083 humidity=45.0688427\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:57.087976+00:00",
+      "index": 36,
+      "requested": 100,
+      "serial": "W (50581) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330924 validity=1f soil0_mv=2591 soil1_mv=2585 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2577 pressure_pa=96822 humidity_centi_pct=4507\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2585 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BC008074006C8B driver_result=0 temperature=25.7701205 pressure=96822.4277 humidity=45.07445\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:58.511779+00:00",
+      "index": 37,
+      "requested": 100,
+      "serial": "W (52011) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331091 validity=1f soil0_mv=2591 soil1_mv=2586 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2578 pressure_pa=96815 humidity_centi_pct=4507\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800530 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF008075006C8B driver_result=0 temperature=25.7751624 pressure=96815.0972 humidity=45.0745063\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:23:59.933983+00:00",
+      "index": 38,
+      "requested": 100,
+      "serial": "W (53441) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330920 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2578 pressure_pa=96826 humidity_centi_pct=4509\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800596 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BB008075006C8E driver_result=0 temperature=25.7751624 pressure=96825.912 humidity=45.0914971\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:01.357033+00:00",
+      "index": 39,
+      "requested": 100,
+      "serial": "W (54871) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331000 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2577 pressure_pa=96822 humidity_centi_pct=4509\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BC008074006C8D driver_result=0 temperature=25.7701205 pressure=96822.4277 humidity=45.085777\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:02.778089+00:00",
+      "index": 40,
+      "requested": 100,
+      "serial": "W (56301) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331013 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2578 pressure_pa=96816 humidity_centi_pct=4510\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800530 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF008076006C90 driver_result=0 temperature=25.7802042 pressure=96815.909 humidity=45.1028831\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:04.200792+00:00",
+      "index": 41,
+      "requested": 100,
+      "serial": "W (57731) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331001 validity=1f soil0_mv=2591 soil1_mv=2585 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2578 pressure_pa=96821 humidity_centi_pct=4509\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800593 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2585 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BD008075006C8D driver_result=0 temperature=25.7751624 pressure=96820.5046 humidity=45.0858335\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:05.622366+00:00",
+      "index": 42,
+      "requested": 100,
+      "serial": "W (59161) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330922 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2578 pressure_pa=96821 humidity_centi_pct=4506\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800537 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BD008075006C89 driver_result=0 temperature=25.7751624 pressure=96820.5046 humidity=45.0631791\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:07.094747+00:00",
+      "index": 43,
+      "requested": 100,
+      "serial": "W (60591) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330916 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2579 pressure_pa=96811 humidity_centi_pct=4505\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800531 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C1008077006C87 driver_result=0 temperature=25.7852461 pressure=96811.3133 humidity=45.0519684\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:08.516833+00:00",
+      "index": 44,
+      "requested": 100,
+      "serial": "W (62021) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330922 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2579 pressure_pa=96814 humidity_centi_pct=4504\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800592 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C0008077006C85 driver_result=0 temperature=25.7852461 pressure=96814.017 humidity=45.0406409\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:09.937090+00:00",
+      "index": 45,
+      "requested": 100,
+      "serial": "W (63451) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331002 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2579 pressure_pa=96817 humidity_centi_pct=4503\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800534 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF008077006C83 driver_result=0 temperature=25.7852461 pressure=96816.7207 humidity=45.0293133\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:11.360676+00:00",
+      "index": 46,
+      "requested": 100,
+      "serial": "W (64881) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330924 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96818 humidity_centi_pct=4500\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800534 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF008079006C7D driver_result=0 temperature=25.7953298 pressure=96818.3443 humidity=44.9954456\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:12.780939+00:00",
+      "index": 47,
+      "requested": 100,
+      "serial": "W (66311) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330912 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96818 humidity_centi_pct=4496\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800593 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF008079006C77 driver_result=0 temperature=25.7953298 pressure=96818.3443 humidity=44.9614614\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:14.205017+00:00",
+      "index": 48,
+      "requested": 100,
+      "serial": "W (67741) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330924 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96825 humidity_centi_pct=4500\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BD00807A006C7E driver_result=0 temperature=25.8003716 pressure=96824.5325 humidity=45.001165\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:15.676652+00:00",
+      "index": 49,
+      "requested": 100,
+      "serial": "W (69171) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331004 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96816 humidity_centi_pct=4505\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800531 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C0008079006C86 driver_result=0 temperature=25.7953298 pressure=96815.6405 humidity=45.0464211\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:17.097537+00:00",
+      "index": 50,
+      "requested": 100,
+      "serial": "W (70601) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330920 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2579 pressure_pa=96817 humidity_centi_pct=4506\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800597 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF008077006C88 driver_result=0 temperature=25.7852461 pressure=96816.7207 humidity=45.0576322\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:18.517546+00:00",
+      "index": 51,
+      "requested": 100,
+      "serial": "W (72031) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330914 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2578 pressure_pa=96821 humidity_centi_pct=4509\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BD008076006C8D driver_result=0 temperature=25.7802042 pressure=96821.3164 humidity=45.0858922\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:19.938972+00:00",
+      "index": 52,
+      "requested": 100,
+      "serial": "W (73461) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330926 validity=1f soil0_mv=2591 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2579 pressure_pa=96812 humidity_centi_pct=4508\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800531 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C1008078006C8C driver_result=0 temperature=25.7902879 pressure=96812.125 humidity=45.0803457\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:21.362185+00:00",
+      "index": 53,
+      "requested": 100,
+      "serial": "W (74891) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331001 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2579 pressure_pa=96818 humidity_centi_pct=4511\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800593 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF008078006C91 driver_result=0 temperature=25.7902879 pressure=96817.5325 humidity=45.1086645\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:22.784980+00:00",
+      "index": 54,
+      "requested": 100,
+      "serial": "W (76321) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330922 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2579 pressure_pa=96825 humidity_centi_pct=4510\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800537 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BC008077006C8F driver_result=0 temperature=25.7852461 pressure=96824.832 humidity=45.0972783\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:24.259093+00:00",
+      "index": 55,
+      "requested": 100,
+      "serial": "W (77751) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331002 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96816 humidity_centi_pct=4508\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800531 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C0008079006C8C driver_result=0 temperature=25.7953298 pressure=96815.6405 humidity=45.0804043\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:25.681528+00:00",
+      "index": 56,
+      "requested": 100,
+      "serial": "W (79181) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330922 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2579 pressure_pa=96815 humidity_centi_pct=4509\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800592 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C0008078006C8D driver_result=0 temperature=25.7902879 pressure=96814.8288 humidity=45.0860095\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:27.102818+00:00",
+      "index": 57,
+      "requested": 100,
+      "serial": "W (80611) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330916 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2579 pressure_pa=96812 humidity_centi_pct=4510\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C1008078006C90 driver_result=0 temperature=25.7902879 pressure=96812.125 humidity=45.1030008\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:28.524469+00:00",
+      "index": 58,
+      "requested": 100,
+      "serial": "W (82041) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331011 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2579 pressure_pa=96814 humidity_centi_pct=4514\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800534 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C0008077006C96 driver_result=0 temperature=25.7852461 pressure=96814.017 humidity=45.1369239\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:29.946734+00:00",
+      "index": 59,
+      "requested": 100,
+      "serial": "W (83471) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330998 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96816 humidity_centi_pct=4513\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800593 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C000807A006C94 driver_result=0 temperature=25.8003716 pressure=96816.4211 humidity=45.1257716\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:31.366261+00:00",
+      "index": 60,
+      "requested": 100,
+      "serial": "W (84901) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330924 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2581 pressure_pa=96815 humidity_centi_pct=4515\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C100807B006C98 driver_result=0 temperature=25.8054135 pressure=96814.529 humidity=45.1484862\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:32.839230+00:00",
+      "index": 61,
+      "requested": 100,
+      "serial": "W (86331) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331004 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2544 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96818 humidity_centi_pct=4515\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800531 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF008079006C98 driver_result=0 temperature=25.7953298 pressure=96818.3443 humidity=45.1483698\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:34.261287+00:00",
+      "index": 62,
+      "requested": 100,
+      "serial": "W (87761) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330920 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2581 pressure_pa=96815 humidity_centi_pct=4514\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800596 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C100807B006C96 driver_result=0 temperature=25.8054135 pressure=96814.529 humidity=45.1371585\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:35.682576+00:00",
+      "index": 63,
+      "requested": 100,
+      "serial": "W (89191) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331000 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96808 humidity_centi_pct=4513\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C3008079006C95 driver_result=0 temperature=25.7953298 pressure=96807.5292 humidity=45.1313786\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:37.103738+00:00",
+      "index": 64,
+      "requested": 100,
+      "serial": "W (90621) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330926 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2579 pressure_pa=96818 humidity_centi_pct=4514\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800530 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF008078006C97 driver_result=0 temperature=25.7902879 pressure=96817.5325 humidity=45.1426468\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:38.526948+00:00",
+      "index": 65,
+      "requested": 100,
+      "serial": "W (92051) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330914 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2519 enclosure_centi_c=2580 pressure_pa=96829 humidity_centi_pct=4514\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800593 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BB008079006C97 driver_result=0 temperature=25.7953298 pressure=96829.1595 humidity=45.1427061\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:39.951255+00:00",
+      "index": 66,
+      "requested": 100,
+      "serial": "W (93481) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330922 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96827 humidity_centi_pct=4513\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800537 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BC00807A006C94 driver_result=0 temperature=25.8003716 pressure=96827.2363 humidity=45.1257716\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:41.371990+00:00",
+      "index": 67,
+      "requested": 100,
+      "serial": "W (94911) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330915 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2581 pressure_pa=96825 humidity_centi_pct=4511\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800531 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BD00807B006C92 driver_result=0 temperature=25.8054135 pressure=96825.3444 humidity=45.1145029\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:42.844205+00:00",
+      "index": 68,
+      "requested": 100,
+      "serial": "W (96341) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330922 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2581 pressure_pa=96828 humidity_centi_pct=4513\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800592 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BC00807B006C94 driver_result=0 temperature=25.8054135 pressure=96828.0482 humidity=45.1258307\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:44.269288+00:00",
+      "index": 69,
+      "requested": 100,
+      "serial": "W (97771) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330916 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96824 humidity_centi_pct=4515\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BD008079006C98 driver_result=0 temperature=25.7953298 pressure=96823.7519 humidity=45.1483698\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:45.693292+00:00",
+      "index": 70,
+      "requested": 100,
+      "serial": "W (99201) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330924 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2519 enclosure_centi_c=2580 pressure_pa=96827 humidity_centi_pct=4515\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800534 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BC00807A006C99 driver_result=0 temperature=25.8003716 pressure=96827.2363 humidity=45.1540907\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:47.115174+00:00",
+      "index": 71,
+      "requested": 100,
+      "serial": "W (100631) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330911 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2581 pressure_pa=96833 humidity_centi_pct=4514\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800593 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BA00807B006C97 driver_result=0 temperature=25.8054135 pressure=96833.4559 humidity=45.1428224\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:48.537098+00:00",
+      "index": 72,
+      "requested": 100,
+      "serial": "W (102061) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330924 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2580 pressure_pa=96827 humidity_centi_pct=4514\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BC00807A006C97 driver_result=0 temperature=25.8003716 pressure=96827.2363 humidity=45.1427631\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:49.958670+00:00",
+      "index": 73,
+      "requested": 100,
+      "serial": "W (103491) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330917 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2581 pressure_pa=96833 humidity_centi_pct=4514\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800531 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BA00807B006C96 driver_result=0 temperature=25.8054135 pressure=96833.4559 humidity=45.1371585\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:51.379597+00:00",
+      "index": 74,
+      "requested": 100,
+      "serial": "W (104921) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330920 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2582 pressure_pa=96840 humidity_centi_pct=4517\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800597 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52B800807D006C9C driver_result=0 temperature=25.8154972 pressure=96840.4875 humidity=45.1712608\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:52.853278+00:00",
+      "index": 75,
+      "requested": 100,
+      "serial": "W (106351) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330913 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2582 pressure_pa=96846 humidity_centi_pct=4517\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52B600807D006C9C driver_result=0 temperature=25.8154972 pressure=96845.8953 humidity=45.1712608\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:54.274672+00:00",
+      "index": 76,
+      "requested": 100,
+      "serial": "W (107781) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330926 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2581 pressure_pa=96842 humidity_centi_pct=4517\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800530 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52B700807C006C9B driver_result=0 temperature=25.8104553 pressure=96842.3794 humidity=45.1655373\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:55.696373+00:00",
+      "index": 77,
+      "requested": 100,
+      "serial": "W (109211) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330914 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2519 enclosure_centi_c=2583 pressure_pa=96842 humidity_centi_pct=4513\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800593 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52B800807F006C94 driver_result=0 temperature=25.8255809 pressure=96842.0802 humidity=45.1260647\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:57.120867+00:00",
+      "index": 78,
+      "requested": 100,
+      "serial": "W (110641) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330922 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2583 pressure_pa=96835 humidity_centi_pct=4513\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800537 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BB008080006C94 driver_result=0 temperature=25.8306227 pressure=96834.7803 humidity=45.1261237\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:58.542304+00:00",
+      "index": 79,
+      "requested": 100,
+      "serial": "W (112071) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330915 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2582 pressure_pa=96835 humidity_centi_pct=4511\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800531 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BA00807D006C91 driver_result=0 temperature=25.8154972 pressure=96835.0797 humidity=45.1089567\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:24:59.964542+00:00",
+      "index": 80,
+      "requested": 100,
+      "serial": "W (113501) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330922 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2583 pressure_pa=96834 humidity_centi_pct=4510\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800592 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BB00807F006C8F driver_result=0 temperature=25.8255809 pressure=96833.9684 humidity=45.0977438\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:01.438015+00:00",
+      "index": 81,
+      "requested": 100,
+      "serial": "W (114931) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330917 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2519 enclosure_centi_c=2582 pressure_pa=96828 humidity_centi_pct=4511\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BD00807E006C91 driver_result=0 temperature=25.820539 pressure=96827.7799 humidity=45.1090156\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:02.860506+00:00",
+      "index": 82,
+      "requested": 100,
+      "serial": "W (116361) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331011 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2583 pressure_pa=96829 humidity_centi_pct=4505\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800534 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BD008080006C86 driver_result=0 temperature=25.8306227 pressure=96829.3724 humidity=45.0468238\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:04.281376+00:00",
+      "index": 83,
+      "requested": 100,
+      "serial": "W (117791) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330911 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2519 enclosure_centi_c=2582 pressure_pa=96827 humidity_centi_pct=4507\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800593 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BD00807D006C8A driver_result=0 temperature=25.8154972 pressure=96826.968 humidity=45.0693081\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:05.702208+00:00",
+      "index": 84,
+      "requested": 100,
+      "serial": "W (119221) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331011 validity=1f soil0_mv=2591 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2582 pressure_pa=96819 humidity_centi_pct=4505\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2591 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C000807D006C87 driver_result=0 temperature=25.8154972 pressure=96818.8564 humidity=45.0523157\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:07.123698+00:00",
+      "index": 85,
+      "requested": 100,
+      "serial": "W (120651) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330917 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2583 pressure_pa=96821 humidity_centi_pct=4506\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800531 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C0008080006C88 driver_result=0 temperature=25.8306227 pressure=96821.2606 humidity=45.0581525\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:08.547631+00:00",
+      "index": 86,
+      "requested": 100,
+      "serial": "W (122081) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330920 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2582 pressure_pa=96819 humidity_centi_pct=4505\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800596 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C000807D006C87 driver_result=0 temperature=25.8154972 pressure=96818.8564 humidity=45.0523157\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:09.969889+00:00",
+      "index": 87,
+      "requested": 100,
+      "serial": "W (123511) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330913 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2519 enclosure_centi_c=2582 pressure_pa=96816 humidity_centi_pct=4504\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C100807D006C84 driver_result=0 temperature=25.8154972 pressure=96816.1525 humidity=45.0353232\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:11.444128+00:00",
+      "index": 88,
+      "requested": 100,
+      "serial": "W (124941) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330926 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2519 enclosure_centi_c=2583 pressure_pa=96818 humidity_centi_pct=4506\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800531 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C100807F006C89 driver_result=0 temperature=25.8255809 pressure=96817.7448 humidity=45.0637585\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:12.867363+00:00",
+      "index": 89,
+      "requested": 100,
+      "serial": "W (126371) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330913 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2582 pressure_pa=96817 humidity_centi_pct=4507\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800593 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C100807E006C8A driver_result=0 temperature=25.820539 pressure=96816.9643 humidity=45.0693665\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:14.288952+00:00",
+      "index": 90,
+      "requested": 100,
+      "serial": "W (127801) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331009 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2583 pressure_pa=96819 humidity_centi_pct=4508\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800537 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C1008080006C8C driver_result=0 temperature=25.8306227 pressure=96818.5566 humidity=45.0808097\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:15.709420+00:00",
+      "index": 91,
+      "requested": 100,
+      "serial": "W (129231) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330915 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2519 enclosure_centi_c=2582 pressure_pa=96816 humidity_centi_pct=4507\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800531 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C100807D006C8A driver_result=0 temperature=25.8154972 pressure=96816.1525 humidity=45.0693081\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:17.130132+00:00",
+      "index": 92,
+      "requested": 100,
+      "serial": "W (130661) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330922 validity=1f soil0_mv=2593 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2582 pressure_pa=96822 humidity_centi_pct=4507\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800592 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2593 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF00807D006C8B driver_result=0 temperature=25.8154972 pressure=96821.5603 humidity=45.0749722\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:18.551725+00:00",
+      "index": 93,
+      "requested": 100,
+      "serial": "W (132091) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330916 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2582 pressure_pa=96819 humidity_centi_pct=4507\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C000807D006C8A driver_result=0 temperature=25.8154972 pressure=96818.8564 humidity=45.0693081\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:20.025258+00:00",
+      "index": 94,
+      "requested": 100,
+      "serial": "W (133521) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330924 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2582 pressure_pa=96819 humidity_centi_pct=4508\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800534 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C000807D006C8C driver_result=0 temperature=25.8154972 pressure=96818.8564 humidity=45.0806364\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:21.445719+00:00",
+      "index": 95,
+      "requested": 100,
+      "serial": "W (134951) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330911 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2519 enclosure_centi_c=2582 pressure_pa=96822 humidity_centi_pct=4509\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800593 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF00807D006C8D driver_result=0 temperature=25.8154972 pressure=96821.5603 humidity=45.0863005\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:22.868641+00:00",
+      "index": 96,
+      "requested": 100,
+      "serial": "W (136381) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330924 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2582 pressure_pa=96813 humidity_centi_pct=4510\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C200807D006C8F driver_result=0 temperature=25.8154972 pressure=96813.4487 humidity=45.0976286\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:24.289176+00:00",
+      "index": 97,
+      "requested": 100,
+      "serial": "W (137811) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330918 validity=1f soil0_mv=2592 soil1_mv=2587 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2583 pressure_pa=96823 humidity_centi_pct=4511\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800531 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2587 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52BF00807F006C92 driver_result=0 temperature=25.8255809 pressure=96823.1527 humidity=45.1147364\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:25.712660+00:00",
+      "index": 98,
+      "requested": 100,
+      "serial": "W (139241) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330920 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2581 pressure_pa=96818 humidity_centi_pct=4515\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800597 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C000807C006C98 driver_result=0 temperature=25.8104553 pressure=96818.0446 humidity=45.1485456\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:27.136810+00:00",
+      "index": 99,
+      "requested": 100,
+      "serial": "W (140671) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1330913 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2513 enclosure_centi_c=2582 pressure_pa=96820 humidity_centi_pct=4517\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800533 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C000807E006C9B driver_result=0 temperature=25.820539 pressure=96819.6682 humidity=45.1656563\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "iteration",
+      "at": "2026-09-14T10:25:28.608905+00:00",
+      "index": 100,
+      "requested": 100,
+      "serial": "W (142101) gpio: conflict found for GPIO[2]\r\nCARRIER_SAMPLE result=00000000 duration_us=1331013 validity=1f soil0_mv=2592 soil1_mv=2586 temp0_centi_c=2550 temp1_centi_c=2519 enclosure_centi_c=2581 pressure_pa=96815 humidity_centi_pct=4521\r\nCARRIER_DIAGNOSTIC operation=0 schema=0 length=0 context=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\r\nCARRIER_OBSERVER conversions=1 reads=3 wait_us=800530 adc=2/2 onewire=1/1 ds=2/2 bme=1 invalid=0\r\nCARRIER_SOIL_OBSERVER stabilization_calls=1 stabilization_ms=200 reads0=16 reads1=16 delays0=15 delays1=15 cali0=1 cali1=1 mv0=2592 mv1=2586 power_released=1\r\nCARRIER_BME_DATA reads=1 read_error=0 error_register=00 raw=52C100807C006CA2 driver_result=0 temperature=25.8104553 pressure=96815.3408 humidity=45.2051844\r\nCARRIER_BME_SLEEP status=00 control=24 mode=0 result=0\r\n"
+    },
+    {
+      "kind": "software_completed",
+      "at": "2026-09-14T10:25:28.611884+00:00",
+      "operation": "repeat"
+    }
+  ]
+}

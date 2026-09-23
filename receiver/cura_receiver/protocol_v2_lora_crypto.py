@@ -1,5 +1,8 @@
 """Authenticated frame construction for Cura Agrorum LoRa protocol v2.
 
+The clear authenticated header carries transport ``message_id``. Application
+``sample_id`` is present only in an authenticated, decoded reading body.
+
 Wire contract: protocol/protocol-v2-lora/README.md, especially "Routine
 packet", "CCM nonce", and "Receiver validation".
 """
@@ -12,11 +15,15 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 
 from .generated import protocol_v2_lora_generated as schema
+from .generated import receiver_enums_generated as E
+from .core_diagnostics import CoreFault
 
 
 MIN_BODY_SIZE = schema.ACK_BODY_SIZE
 MAX_BODY_SIZE = schema.READING_BODY_SIZE
-MIN_FRAME_SIZE = schema.CLEAR_HEADER_SIZE + MIN_BODY_SIZE + schema.TAG_SIZE
+# Received frames need a complete header and tag to authenticate. Body shape
+# is protocol policy applied afterward; outbound construction still needs a body.
+MIN_FRAME_SIZE = schema.CLEAR_HEADER_SIZE + schema.TAG_SIZE
 MAX_FRAME_SIZE = schema.CLEAR_HEADER_SIZE + MAX_BODY_SIZE + schema.TAG_SIZE
 
 
@@ -76,15 +83,19 @@ def seal_frame(
     except (AttributeError, schema.CodecError) as exc:
         raise CryptoError(f"invalid clear header: {exc}") from exc
 
-    encrypted_body_and_tag = AESCCM(
-        key,
-        tag_length=schema.TAG_SIZE,
-    ).encrypt(nonce, body, associated_data)
+    try:
+        encrypted_body_and_tag = AESCCM(key, tag_length=schema.TAG_SIZE).encrypt(nonce, body, associated_data)
+    except MemoryError:
+        raise
+    except Exception as error:
+        raise CoreFault(E.CoreDiagnosticErrorCode.CRYPTO_BACKEND, E.DiagnosticOperation.ENCODE,
+            E.CorePhase.ACK_PREPARATION, E.CoreFailureStage.ENCRYPT_ACK) from error
+
     return associated_data + encrypted_body_and_tag
 
 
 def open_frame(node_key: bytes, frame: bytes) -> AuthenticatedFrame:
-    """Authenticate a complete frame and return its trusted decoded contents."""
+    """Authenticate header/tag framing, leaving body-shape policy to the caller."""
 
     key = _require_node_key(node_key)
     encoded_frame = _require_bytes(frame, "frame")
@@ -109,8 +120,12 @@ def open_frame(node_key: bytes, frame: bytes) -> AuthenticatedFrame:
         ).decrypt(nonce, encrypted_body_and_tag, associated_data)
     except InvalidTag as exc:
         raise AuthenticationError("frame authentication failed") from exc
+    except MemoryError:
+        raise
+    except Exception as error:
+        raise CoreFault(E.CoreDiagnosticErrorCode.CRYPTO_BACKEND, E.DiagnosticOperation.DECODE,
+            E.CorePhase.PACKET_PROCESSING, E.CoreFailureStage.AUTHENTICATE_FRAME) from error
 
-    _require_body_size(len(plaintext_body))
     return AuthenticatedFrame(
         header=header,
         plaintext_body=plaintext_body,

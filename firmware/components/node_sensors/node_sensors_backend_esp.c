@@ -7,33 +7,21 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "bme280.h"
 #include "driver/gpio.h"
 #include "ds18b20.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "i2c_bus.h"
 #include "node_sensors.h"
 #include "node_sensors_ds18b20_identity.h"
+#include "node_sensors_ds18b20_gpio.h"
 #include "node_sensors_power_gate.h"
 #include "onewire_bus.h"
 #include "onewire_device.h"
 #include "sdkconfig.h"
 #include "soil_sensor.h"
 
-#define BME280_I2C_PORT I2C_NUM_0
-#define BME280_I2C_FREQUENCY_HZ 100000U
 #define DS18B20_CHANNEL_COUNT 2U
-
-typedef struct {
-  i2c_bus_handle_t bus;
-  bme280_handle_t sensor;
-  bool initialized;
-  esp_err_t initialization_result;
-} bme280_backend_state_t;
-
-static bme280_backend_state_t s_bme280;
 
 static node_sensors_backend_result_t result_none(void) {
   return (node_sensors_backend_result_t){
@@ -143,8 +131,7 @@ void node_sensors_backend_sample_ds18b20(
     if (bus != NULL) {
       retain_cleanup_error(onewire_bus_del(bus), &cleanup_result);
     }
-    retain_cleanup_error(gpio_reset_pin((gpio_num_t)CONFIG_CURA_DS18B20_GPIO),
-                         &cleanup_result);
+    retain_cleanup_error(node_sensors_ds18b20_release_gpio(), &cleanup_result);
     if (cleanup_result != ESP_OK) {
       out_result->cleanup = result_esp(CURAG_OP_CLEANUP, cleanup_result);
     }
@@ -245,91 +232,9 @@ void node_sensors_backend_sample_ds18b20(
     retain_cleanup_error(onewire_del_device_iter(iterator), &cleanup_result);
   }
   retain_cleanup_error(onewire_bus_del(bus), &cleanup_result);
-  retain_cleanup_error(gpio_reset_pin((gpio_num_t)CONFIG_CURA_DS18B20_GPIO),
-                       &cleanup_result);
+  retain_cleanup_error(node_sensors_ds18b20_release_gpio(), &cleanup_result);
 
   if (cleanup_result != ESP_OK) {
     out_result->cleanup = result_esp(CURAG_OP_CLEANUP, cleanup_result);
   }
-}
-
-static esp_err_t initialize_bme280(void) {
-  if (s_bme280.initialized) {
-    return s_bme280.initialization_result;
-  }
-  s_bme280.initialized = true;
-
-  const i2c_config_t bus_configuration = {
-      .mode = I2C_MODE_MASTER,
-      .sda_io_num = CONFIG_CURA_I2C_SDA_GPIO,
-      .scl_io_num = CONFIG_CURA_I2C_SCL_GPIO,
-      .sda_pullup_en = GPIO_PULLUP_ENABLE,
-      .scl_pullup_en = GPIO_PULLUP_ENABLE,
-      .master.clk_speed = BME280_I2C_FREQUENCY_HZ,
-      .clk_flags = 0,
-  };
-  s_bme280.bus = i2c_bus_create(BME280_I2C_PORT, &bus_configuration);
-  if (s_bme280.bus == NULL) {
-    s_bme280.initialization_result = ESP_FAIL;
-    return s_bme280.initialization_result;
-  }
-
-  s_bme280.sensor = bme280_create(s_bme280.bus, UINT8_C(0x76));
-  if (s_bme280.sensor == NULL) {
-    s_bme280.initialization_result = ESP_ERR_NO_MEM;
-    return s_bme280.initialization_result;
-  }
-
-  s_bme280.initialization_result = bme280_default_init(s_bme280.sensor);
-  if (s_bme280.initialization_result == ESP_OK) {
-    s_bme280.initialization_result = bme280_set_sampling(
-        s_bme280.sensor, BME280_MODE_FORCED, BME280_SAMPLING_X1,
-        BME280_SAMPLING_X1, BME280_SAMPLING_X1, BME280_FILTER_OFF,
-        BME280_STANDBY_MS_0_5);
-  }
-  return s_bme280.initialization_result;
-}
-
-node_sensors_backend_result_t node_sensors_backend_sample_bme280(
-    node_sensors_backend_enclosure_t *out_enclosure) {
-  if (out_enclosure == NULL) {
-    return result_esp(CURAG_OP_VALIDATE, ESP_ERR_INVALID_ARG);
-  }
-  memset(out_enclosure, 0, sizeof(*out_enclosure));
-
-  esp_err_t result = initialize_bme280();
-  if (result != ESP_OK) {
-    return result_driver(CURAG_OP_INITIALIZE, result);
-  }
-  result = bme280_take_forced_measurement(s_bme280.sensor);
-
-  float temperature = 0.0F;
-  float pressure_hpa = 0.0F;
-  float humidity_pct = 0.0F;
-  if (result == ESP_OK) {
-    result = bme280_read_temperature(s_bme280.sensor, &temperature);
-  }
-  if (result == ESP_OK) {
-    result = bme280_read_pressure(s_bme280.sensor, &pressure_hpa);
-  }
-  if (result == ESP_OK) {
-    result = bme280_read_humidity(s_bme280.sensor, &humidity_pct);
-  }
-
-  const float pressure_pa = pressure_hpa * 100.0F;
-  const float humidity_centi_pct = humidity_pct * 100.0F;
-  if (result == ESP_OK &&
-      (!convert_centi(temperature, &out_enclosure->temperature_centi_c) ||
-       !isfinite(pressure_pa) || pressure_pa < 0.0F ||
-       pressure_pa > (float)UINT32_MAX || !isfinite(humidity_centi_pct) ||
-       humidity_centi_pct < 0.0F || humidity_centi_pct > (float)UINT16_MAX)) {
-    result = ESP_ERR_INVALID_RESPONSE;
-  }
-  if (result == ESP_OK) {
-    out_enclosure->pressure_pa = (uint32_t)(pressure_pa + 0.5F);
-    out_enclosure->humidity_centi_pct = (uint16_t)(humidity_centi_pct + 0.5F);
-  } else {
-    memset(out_enclosure, 0, sizeof(*out_enclosure));
-  }
-  return result_driver(CURAG_OP_READ, result);
 }

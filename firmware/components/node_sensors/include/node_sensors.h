@@ -69,8 +69,8 @@ err_curag_t node_sensors_sample_all(node_sensor_sample_t *out_sample,
 
 /*
  * Best-effort, idempotent enforcement of the switched sensor rail's off
- * state. This is a successful no-op if the component has not touched the gate
- * during the current wake.
+ * state. Every call attempts gate release, including before sampling in this
+ * wake. It never initializes a sensor bus or enables the rail.
  */
 err_curag_t node_sensors_force_power_off(diagn_context_t *out_diag);
 

@@ -1,7 +1,44 @@
-.PHONY: test-host test-hardware test-hardware-all test-hardware-slow \
-	test-hardware-build
+.PHONY: test-host test-receiver test-receiver-host test-receiver-hardware \
+		test-receiver-hardware-slow test-receiver-hardware-all \
+		test-receiver-hardware-destructive test-hardware test-hardware-all \
+		test-hardware-slow test-hardware-build \
+		benchmark-receiver-protocol-ingress \
+		benchmark-receiver-protocol-ingress-load
 
 PORT ?= /dev/ttyUSB0
+.DEFAULT_GOAL := test-host
+RF_ARGS ?=
+RF_TEST_PYTHON := $(abspath .venv/bin/python)
+
+.PHONY: test-rf-build test-rf-production-build test-rf-node-ack test-rf-service test-rf-host test-rf-component-nominal \
+        test-rf-component-dio1_disconnected test-rf-component-radio_absent
+
+test-rf-build:
+	idf.py -C firmware/test_apps/radio build
+	$(RF_TEST_PYTHON) tests/rf/inputs.py --seal-build firmware/test_apps/radio/build
+
+test-rf-host:
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(RF_TEST_PYTHON) -m pytest -c tests/rf/pytest.ini tests/rf/host
+
+test-rf-production-build:
+	idf.py -C firmware build
+	$(RF_TEST_PYTHON) tests/rf/production_node.py --seal-build firmware/build
+
+test-rf-node-ack:
+	$(RF_TEST_PYTHON) tests/rf/run_ack.py $(RF_ARGS)
+
+test-rf-service:
+	$(RF_TEST_PYTHON) tests/rf/run_service.py $(RF_ARGS)
+
+test-rf-component-nominal:
+	$(RF_TEST_PYTHON) tests/rf/run.py --fixture-state nominal $(RF_ARGS)
+
+test-rf-component-dio1_disconnected:
+	$(RF_TEST_PYTHON) tests/rf/run.py --fixture-state dio1_disconnected $(RF_ARGS)
+
+test-rf-component-radio_absent:
+	$(RF_TEST_PYTHON) tests/rf/run.py --fixture-state radio_absent $(RF_ARGS)
+
 HARDWARE_TEST_APP := $(abspath firmware/test_apps/on_device)
 HARDWARE_TEST_BUILD := $(HARDWARE_TEST_APP)/build
 HARDWARE_TEST_PYTEST := $(abspath .venv/bin/python) -m pytest
@@ -12,12 +49,89 @@ HARDWARE_TEST_ARGS := \
 	--build-dir=$(HARDWARE_TEST_BUILD) \
 	--target=esp32c6 \
 	--port=$(PORT)
+RECEIVER_PYTEST := $(abspath .venv/bin/python) -m pytest
+RECEIVER_PYTEST_ARGS := -c $(abspath receiver/pytest.ini)
+RECEIVER_TEST_ROOT ?=
+CONFIRM_RECEIVER_DESTRUCTIVE ?=
+RECEIVER_BENCHMARK_OUTPUT ?=
+RECEIVER_BENCHMARK_WARMUPS ?= 200
+RECEIVER_BENCHMARK_SAMPLES ?= 2000
+RECEIVER_BENCHMARK_MAX_RUNTIME_SECONDS ?= 60
+RECEIVER_BENCHMARK_SOURCE_COMMIT ?=
+RECEIVER_BENCHMARK_SOURCE_TREE_STATE ?= auto
+RECEIVER_BENCHMARK_PYTHON := $(abspath .venv/bin/python)
+RECEIVER_PROTOCOL_INGRESS_BENCHMARK := \
+	$(abspath receiver/benchmarks/protocol_ingress/run.py)
 
 test-host:
 	CCACHE_DISABLE=1 cmake -S firmware/tests/host -B firmware/build-host \
 		-DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER_LAUNCHER=
 	CCACHE_DISABLE=1 cmake --build firmware/build-host
 	ctest --test-dir firmware/build-host --output-on-failure
+
+test-receiver: test-receiver-host
+
+test-receiver-host:
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(RECEIVER_PYTEST) $(RECEIVER_PYTEST_ARGS) \
+		$(abspath receiver/tests/host)
+
+test-receiver-hardware:
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(RECEIVER_PYTEST) $(RECEIVER_PYTEST_ARGS) \
+		$(abspath receiver/tests/hardware) --receiver-hardware \
+		-m 'hardware and not slow and not destructive and not rf_peer'
+
+test-receiver-hardware-slow:
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(RECEIVER_PYTEST) $(RECEIVER_PYTEST_ARGS) \
+		$(abspath receiver/tests/hardware) --receiver-hardware \
+		-m 'hardware and slow and not destructive and not rf_peer'
+
+test-receiver-hardware-all:
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(RECEIVER_PYTEST) $(RECEIVER_PYTEST_ARGS) \
+		$(abspath receiver/tests/hardware) --receiver-hardware \
+		-m 'hardware and not destructive and not rf_peer'
+
+test-receiver-hardware-destructive:
+	@if [ "$(CONFIRM_RECEIVER_DESTRUCTIVE)" != "YES" ]; then \
+		echo "Set CONFIRM_RECEIVER_DESTRUCTIVE=YES to run destructive receiver tests."; \
+		exit 2; \
+	fi
+	@if [ -z "$(RECEIVER_TEST_ROOT)" ]; then \
+		echo "Set RECEIVER_TEST_ROOT to a dedicated marked absolute directory."; \
+		exit 2; \
+	fi
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(RECEIVER_PYTEST) $(RECEIVER_PYTEST_ARGS) \
+		$(abspath receiver/tests/hardware) --receiver-hardware \
+		--confirm-receiver-destructive \
+		--receiver-test-root="$(RECEIVER_TEST_ROOT)" \
+		-m 'hardware and destructive and not rf_peer'
+
+benchmark-receiver-protocol-ingress:
+	@if [ -z "$(RECEIVER_BENCHMARK_OUTPUT)" ]; then \
+		echo "Set RECEIVER_BENCHMARK_OUTPUT to a new result directory."; \
+		exit 2; \
+	fi
+	PYTHONPATH=$(abspath receiver) $(RECEIVER_BENCHMARK_PYTHON) \
+		$(RECEIVER_PROTOCOL_INGRESS_BENCHMARK) --mode idle \
+		--output-dir="$(RECEIVER_BENCHMARK_OUTPUT)" \
+		--warmups=$(RECEIVER_BENCHMARK_WARMUPS) \
+		--samples=$(RECEIVER_BENCHMARK_SAMPLES) \
+		--max-runtime-seconds=$(RECEIVER_BENCHMARK_MAX_RUNTIME_SECONDS) \
+		--source-commit="$(RECEIVER_BENCHMARK_SOURCE_COMMIT)" \
+		--source-tree-state=$(RECEIVER_BENCHMARK_SOURCE_TREE_STATE)
+
+benchmark-receiver-protocol-ingress-load:
+	@if [ -z "$(RECEIVER_BENCHMARK_OUTPUT)" ]; then \
+		echo "Set RECEIVER_BENCHMARK_OUTPUT to a new result directory."; \
+		exit 2; \
+	fi
+	PYTHONPATH=$(abspath receiver) $(RECEIVER_BENCHMARK_PYTHON) \
+		$(RECEIVER_PROTOCOL_INGRESS_BENCHMARK) --mode load \
+		--output-dir="$(RECEIVER_BENCHMARK_OUTPUT)" \
+		--warmups=$(RECEIVER_BENCHMARK_WARMUPS) \
+		--samples=$(RECEIVER_BENCHMARK_SAMPLES) \
+		--max-runtime-seconds=$(RECEIVER_BENCHMARK_MAX_RUNTIME_SECONDS) \
+		--source-commit="$(RECEIVER_BENCHMARK_SOURCE_COMMIT)" \
+		--source-tree-state=$(RECEIVER_BENCHMARK_SOURCE_TREE_STATE)
 
 test-hardware-build:
 	idf.py -C $(HARDWARE_TEST_APP) -B $(HARDWARE_TEST_BUILD) build

@@ -1,0 +1,103 @@
+{
+  "schema": 1,
+  "run": "53ac7f51c1604ca2adad3b501dbfefd0",
+  "status": "FAIL",
+  "failure": "SSH timeout; peer completion record lost",
+  "operator_report": "Wi-Fi was temporarily unavailable",
+  "capture_root": "/tmp/cura-production-preparation-9b1tykup/rf019-current-accepted-53ac7f51c1604ca2adad3b501dbfefd0/run",
+  "hashes": {
+    "pi.stderr": "f389753721f4a8a7b6b70e7be21ffd9bcc063ada2f7058256fa62fe4b27f1074",
+    "pi.jsonl": "2b15aedc232b88d08c0509978826a2f4c5d37f9f8fc278bb2e706ed5b53f1bcf",
+    "run.json": "b281ae00faa553227571780cd020dea24979174a2a23532d54951d280d844e9d",
+    "final-stop-mac.json": "920826be6a7b235873ee7166459584f205098ff79acec337907a473f59052437",
+    "failure-after-binding.json": "b12d340160e9811566a3fadecf3ace2b3d7439c3942d23e726d7713f8e3e0872",
+    "failure-after-records.json": "f307b4ce48d92b8377358aa352497eba381451ecf3a93724ae90394e7e1ef9f1",
+    "radio-restoration.json": "705e07f9a9ca6ca382e981eff1ddc53b7f7fe6f023daf30261798b9d4fea5fa1"
+  },
+  "storage": {
+    "image_sha256": "5de83a97efdd3ea5e0446eac1a3834fc762924b6decb73af7bfbef48f35dbdc4",
+    "logs": {
+      "delivery.log": [
+        {
+          "cycle_sample_id": 62,
+          "domain": 1,
+          "message_id": 63,
+          "offset": 0,
+          "payload": "3e0000003e0000003f000000015d050000",
+          "sample_id": 62,
+          "start_offset_ms": 1373,
+          "type": 4
+        },
+        {
+          "attempt_count": 1,
+          "cycle_sample_id": 62,
+          "domain": 1,
+          "final_result": 2,
+          "message_id": 63,
+          "offset": 31,
+          "payload": "3e0000003e0000003f000000010102",
+          "sample_id": 62,
+          "type": 5
+        },
+        {
+          "cycle_sample_id": 63,
+          "domain": 1,
+          "message_id": 64,
+          "offset": 60,
+          "payload": "3f0000003f000000400000000166050000",
+          "sample_id": 63,
+          "start_offset_ms": 1382,
+          "type": 4
+        },
+        {
+          "attempt_count": 1,
+          "cycle_sample_id": 63,
+          "domain": 1,
+          "final_result": 1,
+          "message_id": 64,
+          "offset": 91,
+          "payload": "3f0000003f00000040000000010101",
+          "sample_id": 63,
+          "type": 5
+        },
+        {
+          "cycle_sample_id": 63,
+          "domain": 2,
+          "message_id": 65,
+          "offset": 120,
+          "payload": "3f0000003e000000410000000212070000",
+          "sample_id": 62,
+          "start_offset_ms": 1810,
+          "type": 4
+        },
+        {
+          "attempt_count": 1,
+          "cycle_sample_id": 63,
+          "domain": 2,
+          "final_result": 1,
+          "message_id": 65,
+          "offset": 151,
+          "payload": "3f0000003e00000041000000020101",
+          "sample_id": 62,
+          "type": 5
+        }
+      ],
+      "diagnostic.log": null,
+      "pending.log": [],
+      "quarantine.log": null
+    },
+    "schema": 1
+  },
+  "cleanup": {
+    "node_stopped": true,
+    "peer_exited": true,
+    "production_service_inactive": true,
+    "private_credentials_removed": true,
+    "subsequent_radio_safe_shutdown": true,
+    "restoration_tx_attempts": 0
+  },
+  "limits": [
+    "Original peer cleanup receipt unavailable; subsequent restoration does not prove original cleanup.",
+    "No RF-019 pass; no automatic retry."
+  ]
+}

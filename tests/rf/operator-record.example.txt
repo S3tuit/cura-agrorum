@@ -1,0 +1,15 @@
+Operator / date / time basis:
+Physical C6 transmitter:
+Physical Pi transmitter:
+Prior sub-band activity and retained-history reference, separately for each end:
+Approved operating regime/reference:
+Selected run ID and exact parameters:
+Reserved maximum C6 charge:
+Reserved maximum Pi charge:
+Episode/batch trigger and latest possible TX end:
+Outcome and actual attempted counts (retain uncertain attempts):
+Operator pacing / next admitted episode:
+Cleanup and nominal-restoration reference:
+
+Use EPISODES.md's simple totals; conservative whole-batch records are sufficient.
+The runner retains this record without interpreting or resetting its history.

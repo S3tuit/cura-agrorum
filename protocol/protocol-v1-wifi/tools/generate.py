@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Generate protocol code shared by firmware and server.
+"""Generate legacy Wi-Fi v1 protocol code.
 
 This script is the source-of-truth generator for Cura Agrorum wire structs.
-It reads JSON schemas from protocol/wifi-protocol-v1/schemas/ and writes
+It reads JSON schemas from protocol/protocol-v1-wifi/schemas/ and writes
 matching C headers for the ESP32 firmware plus Python dataclass/struct decoders
-for the server.
+when --python-output-dir is explicitly supplied. The retired server is not recreated.
 
 Current generated protocol payloads:
   * reading_t: the sensor reading frame sent after sampling.
@@ -16,14 +16,14 @@ It also manages the local node identity used by firmware:
   * firmware/main/node_identity.h is generated from that UUID and included by C.
 
 Normal use:
-  python3 protocol/wifi-protocol-v1/tools/generate.py
+  python3 protocol/protocol-v1-wifi/tools/generate.py
 
 This regenerates tracked protocol outputs and, if node_uuid.txt does not exist,
 creates one with a new UUID. Keep node_uuid.txt with the physical node and do
 not commit it.
 
 CI/check use:
-  python3 protocol/wifi-protocol-v1/tools/generate.py --check
+  python3 protocol/protocol-v1-wifi/tools/generate.py --check
 
 This verifies generated tracked outputs are current. It does not create a new
 node UUID when the UUID file is missing, so fresh checkouts can run it safely.
@@ -42,7 +42,6 @@ from typing import Any
 PROTOCOL_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(__file__).resolve().parents[3]
 GENERATOR_PATH = Path(__file__).resolve().relative_to(REPO_ROOT)
-DEFAULT_PY_INIT = REPO_ROOT / "server" / "cura_server" / "generated" / "__init__.py"
 DEFAULT_NODE_UUID = REPO_ROOT / "firmware" / "main" / "node_uuid.txt"
 DEFAULT_NODE_IDENTITY = REPO_ROOT / "firmware" / "main" / "node_identity.h"
 
@@ -51,24 +50,20 @@ DEFAULT_NODE_IDENTITY = REPO_ROOT / "firmware" / "main" / "node_identity.h"
 class ProtocolOutput:
   schema: Path
   c_header: Path
-  py_schema: Path
 
 
 PROTOCOL_OUTPUTS = (
     ProtocolOutput(
         schema=PROTOCOL_ROOT / "schemas" / "reading_v1.json",
         c_header=REPO_ROOT / "firmware" / "main" / "reading.h",
-        py_schema=REPO_ROOT / "server" / "cura_server" / "generated" / "reading_v1.py",
     ),
     ProtocolOutput(
         schema=PROTOCOL_ROOT / "schemas" / "ack_v1.json",
         c_header=REPO_ROOT / "firmware" / "main" / "ack.h",
-        py_schema=REPO_ROOT / "server" / "cura_server" / "generated" / "ack_v1.py",
     ),
     ProtocolOutput(
         schema=PROTOCOL_ROOT / "schemas" / "fault_v1.json",
         c_header=REPO_ROOT / "firmware" / "main" / "fault.h",
-        py_schema=REPO_ROOT / "server" / "cura_server" / "generated" / "fault_v1.py",
     ),
 )
 
@@ -88,6 +83,10 @@ BYTES_RE = re.compile(r"^bytes\[(\d+)\]$")
 def main(argv: list[str] | None = None) -> int:
   parser = argparse.ArgumentParser(description="Generate Cura Agrorum protocol files")
   parser.add_argument("--check", action="store_true")
+  parser.add_argument(
+      "--python-output-dir", type=Path,
+      help="Optional directory for legacy Python decoders; no server output by default",
+  )
   parser.add_argument("--node-uuid-file", type=Path, default=DEFAULT_NODE_UUID)
   parser.add_argument(
       "--node-identity-header",
@@ -96,18 +95,19 @@ def main(argv: list[str] | None = None) -> int:
   )
   args = parser.parse_args(argv)
 
-  outputs: dict[Path, str] = {
-      DEFAULT_PY_INIT: '"""Generated protocol schema modules."""\n',
-  }
+  outputs: dict[Path, str] = {}
+  if args.python_output_dir is not None:
+    outputs[args.python_output_dir / "__init__.py"] = '"""Generated protocol schema modules."""\n'
 
   for protocol_output in PROTOCOL_OUTPUTS:
     schema = load_schema(protocol_output.schema)
     outputs[protocol_output.c_header] = generate_c_header(
         schema, protocol_output.schema
     )
-    outputs[protocol_output.py_schema] = generate_python_schema(
-        schema, protocol_output.schema
-    )
+    if args.python_output_dir is not None:
+      outputs[args.python_output_dir / f"{protocol_output.schema.stem}.py"] = generate_python_schema(
+          schema, protocol_output.schema
+      )
 
   node_uuid = load_node_uuid(args.node_uuid_file, create=not args.check)
   if node_uuid is not None:

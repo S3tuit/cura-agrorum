@@ -5,8 +5,10 @@ enclosure measurements from a remote sensor node. The current design uses an
 ESP32-C6 node and a Raspberry Pi receiver connected over authenticated EU868
 LoRa.
 
-This repository owns the production firmware, receiver, wire protocol, and
-server code. Experiments and their firmware, acquisition tools, datasets,
+This repository owns the production firmware, receiver, and wire protocol, together with their test procedures and Git-tracked validation
+evidence. Component test results and reviewed raw captures stay next to the
+corresponding tests so their instructions and outcomes can be found together.
+Experiments and their firmware, acquisition tools, datasets,
 analysis, findings, reference material, and deployment records live in the
 separate
 [`cura-agrorum-logbook`](https://github.com/S3tuit/cura-agrorum-logbook)
@@ -20,11 +22,15 @@ The project is working toward the one-week pilot described in the logbook's
 [`field-pilot-v2`](https://github.com/S3tuit/cura-agrorum-logbook/blob/main/deployments/field-pilot-v2/README.md)
 record. The pilot will use development hardware to:
 
-- measure soil moisture and temperature at two depths;
+- collect sensor readings using practical available placement; planned depths
+  are optional for this LoRa-protocol pilot;
 - validate LoRa reliability, retries, RSSI and SNR in the intended field;
-- verify receiver timestamping, offline retention and later forwarding; and
+- verify receiver timestamping and durable local retention on the Pi; and
 - measure operating-state energy to guide the battery, radio, antenna,
   enclosure and custom-PCB design.
+
+This pilot has no Internet access. Readings stay on the Pi; no remote server,
+uploader or automatic forwarding is required.
 
 This is a communications and measurement pilot, not yet a battery-life or
 solar-autonomy test.
@@ -38,7 +44,6 @@ solar-autonomy test.
   protocol.
 - `receiver/` — Python v2 codec and authenticated-frame building blocks for
   the Raspberry Pi receiver.
-- `server/` — legacy code retained temporarily and scheduled for removal.
 
 The logbook may depend on public components exposed from
 `firmware/components/`. Production code in this repository must not depend on

@@ -1,0 +1,257 @@
+{
+  "schema": 1,
+  "status": "PASS",
+  "run": "bd2e446a11ae4cf5bd88fa40bfab38dd",
+  "case": "RF-019.current.wrong_message",
+  "scope": "accelerated10-second production-source ACK policy; not production cadence or full receiver service",
+  "result": {
+    "cadence_scope": "accelerated ACK policy",
+    "case": "RF-019.current.wrong_message",
+    "host_deadline_assertion": "separate prerequisite",
+    "packets": 34,
+    "scope": "production_node_controlled_peer",
+    "sleep_seconds": 10,
+    "status": "PASS",
+    "wakes": 3
+  },
+  "raw_capture": "/tmp/cura-production-preparation-9b1tykup/RF-019-current-wrong_message-bd2e446a11ae4cf5bd88fa40bfab38dd",
+  "sleep": {
+    "boundary": "cycle finalized, timer configured, entering sleep",
+    "case": "RF-019.current.wrong_message",
+    "run": "bd2e446a11ae4cf5bd88fa40bfab38dd",
+    "sleep_seconds": 10,
+    "wakes": 3
+  },
+  "intervals_seconds": [
+    12.089297,
+    40.325269
+  ],
+  "observation": {
+    "currents": [
+      {
+        "message_id": 83,
+        "body": {
+          "sample_id": 79,
+          "run_ms": 1361,
+          "soil_0_mv": 2578,
+          "soil_1_mv": 2687,
+          "soil_temp_0_centi_c": 2931,
+          "soil_temp_1_centi_c": 2525,
+          "enclosure_centi_c": 2508,
+          "enclosure_pressure_pa": 97018,
+          "enclosure_humidity_centi_pct": 6502,
+          "reset_reason": 1,
+          "previous_current_tx_attempts": 0,
+          "previous_awake_ms": 0,
+          "previous_current_delivery_ms": 0,
+          "previous_cycle_tx_attempts": 0,
+          "previous_cycle_accepted_readings": 0,
+          "flags": 254
+        },
+        "bytes": "4f0000005105120a7f0a730bdd09cc09fa7a010066190100000000000000fe00",
+        "at": 22967792451
+      },
+      {
+        "message_id": 84,
+        "body": {
+          "sample_id": 80,
+          "run_ms": 1361,
+          "soil_0_mv": 2578,
+          "soil_1_mv": 2687,
+          "soil_temp_0_centi_c": 2944,
+          "soil_temp_1_centi_c": 2531,
+          "enclosure_centi_c": 2510,
+          "enclosure_pressure_pa": 97012,
+          "enclosure_humidity_centi_pct": 6529,
+          "reset_reason": 8,
+          "previous_current_tx_attempts": 1,
+          "previous_awake_ms": 1770,
+          "previous_current_delivery_ms": 0,
+          "previous_cycle_tx_attempts": 1,
+          "previous_cycle_accepted_readings": 0,
+          "flags": 511
+        },
+        "bytes": "500000005105120a7f0a800be309ce09f47a010081190801ea0600000100ff01",
+        "at": 22979881748
+      },
+      {
+        "message_id": 85,
+        "body": {
+          "sample_id": 81,
+          "run_ms": 1361,
+          "soil_0_mv": 2578,
+          "soil_1_mv": 2686,
+          "soil_temp_0_centi_c": 2969,
+          "soil_temp_1_centi_c": 2531,
+          "enclosure_centi_c": 2508,
+          "enclosure_pressure_pa": 97021,
+          "enclosure_humidity_centi_pct": 6528,
+          "reset_reason": 8,
+          "previous_current_tx_attempts": 32,
+          "previous_awake_ms": 30021,
+          "previous_current_delivery_ms": 0,
+          "previous_cycle_tx_attempts": 32,
+          "previous_cycle_accepted_readings": 0,
+          "flags": 511
+        },
+        "bytes": "510000005105120a7e0a990be309cc09fd7a010080190820457500002000ff01",
+        "at": 23020207017
+      }
+    ],
+    "attempts": {
+      "83": 1,
+      "84": 32,
+      "85": 1
+    },
+    "replies": {
+      "83": {
+        "action": "retry_later",
+        "frames": [
+          "2004fb25c40751b35256530000003ef5967f7860447514"
+        ]
+      },
+      "84": {
+        "action": "wrong_message",
+        "frames": [
+          "2003fb25c40751b35256ffffffff2117fa2d227583c74d"
+        ]
+      },
+      "85": {
+        "action": "retry_later",
+        "frames": [
+          "2004fb25c40751b3525655000000aed1e7744de3c4e68e"
+        ]
+      }
+    },
+    "backlog_seen": [],
+    "packet_count": 34
+  },
+  "after_records": {
+    "image_sha256": "b52e0a35803cfc518458739fd93c5c7bc15e57ec9479cec7351316edcd1db15b",
+    "logs": {
+      "delivery.log": [
+        {
+          "cycle_sample_id": 79,
+          "domain": 1,
+          "message_id": 83,
+          "offset": 0,
+          "payload": "4f0000004f00000053000000015d050000",
+          "sample_id": 79,
+          "start_offset_ms": 1373,
+          "type": 4
+        },
+        {
+          "attempt_count": 1,
+          "cycle_sample_id": 79,
+          "domain": 1,
+          "final_result": 2,
+          "message_id": 83,
+          "offset": 31,
+          "payload": "4f0000004f00000053000000010102",
+          "sample_id": 79,
+          "type": 5
+        },
+        {
+          "cycle_sample_id": 80,
+          "domain": 1,
+          "message_id": 84,
+          "offset": 60,
+          "payload": "5000000050000000540000000166050000",
+          "sample_id": 80,
+          "start_offset_ms": 1382,
+          "type": 4
+        },
+        {
+          "attempt_count": 32,
+          "cycle_sample_id": 80,
+          "domain": 1,
+          "final_result": 6,
+          "message_id": 84,
+          "offset": 91,
+          "payload": "500000005000000054000000012006",
+          "sample_id": 80,
+          "type": 5
+        },
+        {
+          "cycle_sample_id": 81,
+          "domain": 1,
+          "message_id": 85,
+          "offset": 120,
+          "payload": "5100000051000000550000000166050000",
+          "sample_id": 81,
+          "start_offset_ms": 1382,
+          "type": 4
+        },
+        {
+          "attempt_count": 1,
+          "cycle_sample_id": 81,
+          "domain": 1,
+          "final_result": 2,
+          "message_id": 85,
+          "offset": 151,
+          "payload": "510000005100000055000000010102",
+          "sample_id": 81,
+          "type": 5
+        }
+      ],
+      "diagnostic.log": [
+        {
+          "application_offset_ms": 1770,
+          "context": "",
+          "context_schema": 0,
+          "cycle_sample_id": 80,
+          "error_code": 10,
+          "error_domain": 4,
+          "flags": 7,
+          "message_id": 84,
+          "offset": 0,
+          "operation": 2,
+          "payload": "04000a000700ea060000500000005400000002000000",
+          "type": 3
+        }
+      ],
+      "pending.log": [
+        {
+          "offset": 0,
+          "payload": "4f0000005105120a7f0a730bdd09cc09fa7a010066190100000000000000fe00",
+          "reading_body": "4f0000005105120a7f0a730bdd09cc09fa7a010066190100000000000000fe00",
+          "sample_id": 79,
+          "type": 1
+        },
+        {
+          "offset": 46,
+          "payload": "500000005105120a7f0a800be309ce09f47a010081190801ea0600000100ff01",
+          "reading_body": "500000005105120a7f0a800be309ce09f47a010081190801ea0600000100ff01",
+          "sample_id": 80,
+          "type": 1
+        },
+        {
+          "offset": 92,
+          "payload": "510000005105120a7e0a990be309cc09fd7a010080190820457500002000ff01",
+          "reading_body": "510000005105120a7e0a990be309cc09fd7a010080190820457500002000ff01",
+          "sample_id": 81,
+          "type": 1
+        }
+      ],
+      "quarantine.log": null
+    },
+    "schema": 1
+  },
+  "cleanup": {
+    "peer_safe_shutdown": true,
+    "c6_stopped_in_loader": true,
+    "temporary_credentials_removed": true
+  },
+  "hashes": {
+    "run.json": "a518e68cc2de3b81ff0d364234bde12cfc09a37f5f38ac2f7554613c65e40763",
+    "source-manifest.json": "d4f1e33039ccc5c1945cdb2fd7c173ead16a1c0e728a597a04b3b92882d077fb",
+    "production-build.json": "0e8f84f81ffc5b6789fce5bcca5d10448d2a0efc6cbb18fc02c1145f9e24ac02",
+    "pi.jsonl": "ddb2756724945f98d1c0dfc98696bfd65d0a9deeb1ecbd6686f0132d530738b1",
+    "c6-uart.bin": "06a71207c936dbea3d06e1615df6495539f64c1fc7534beda2a12c3ca97d9260",
+    "before.bin": "c082a6acf738fbdf0a9d125d4396f2771475c16b09adbdfd56cd6b6a29e8553e",
+    "after.bin": "b52e0a35803cfc518458739fd93c5c7bc15e57ec9479cec7351316edcd1db15b",
+    "host-deadline.json": "1e748621aaea63a62ef1f06a759960012cce827a079cd84e26bd66a1ff268135",
+    "sleep-observation.json": "2b7ef5b8a7eb92a498c3279d4a15c2e50b7c22eb55d93a6cae60c850219efb66",
+    "final-stop-mac.json": "920826be6a7b235873ee7166459584f205098ff79acec337907a473f59052437"
+  }
+}

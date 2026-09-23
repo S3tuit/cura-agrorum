@@ -1,0 +1,48 @@
+tracking_before
+Reference ID    : 55C7D663 (ntp2.leontp.com)
+Stratum         : 2
+Ref time (UTC)  : Mon Sep 14 09:50:12 2026
+System time     : 0.000000000 seconds fast of NTP time
+Last offset     : +0.004811198 seconds
+RMS offset      : 0.004811198 seconds
+Frequency       : 6.020 ppm fast
+Residual freq   : +26.798 ppm
+Skew            : 0.164 ppm
+Root delay      : 0.045411907 seconds
+Root dispersion : 0.001497430 seconds
+Update interval : 64.3 seconds
+Leap status     : Normal
+before_epoch=1789379447.363363731 before_utc=2026-09-14T09:50:47.363363731+0000
+hwclock from util-linux 2.41.5
+System Time: 1789379447.367043
+Using the rtc interface to the clock.
+Assuming hardware clock is kept in UTC time.
+Waiting for clock tick...
+ioctl(4, RTC_UIE_ON, 0): Invalid argument
+Waiting in loop for time from /dev/rtc0 to change
+...got clock tick
+Time read from Hardware Clock: 2026/09/14 09:50:48
+Hw clock time : 2026/09/14 09:50:48 = 1789379448 seconds since 1969
+Time since last adjustment is 1789379448 seconds
+Calculated Hardware Clock drift is 0.000000 seconds
+2026-09-14 09:50:47.012788+00:00
+after_epoch=1789379448.357413267 after_utc=2026-09-14T09:50:48.357413267+0000
+hwclock_exit=0
+after_date_exit=0
+tracking_after
+Reference ID    : 55C7D663 (ntp2.leontp.com)
+Stratum         : 2
+Ref time (UTC)  : Mon Sep 14 09:50:12 2026
+System time     : 0.000000000 seconds fast of NTP time
+Last offset     : +0.004811198 seconds
+RMS offset      : 0.004811198 seconds
+Frequency       : 6.020 ppm fast
+Residual freq   : +26.798 ppm
+Skew            : 0.164 ppm
+Root delay      : 0.045411907 seconds
+Root dispersion : 0.001526495 seconds
+Update interval : 64.3 seconds
+Leap status     : Normal
+tracking_after_exit=0
+
+command_exit=0

@@ -32,6 +32,8 @@ void hwtest_assert_reading_equal(const cura_lora_v2_reading_t *expected,
 
 void hwtest_seed_next_sample_id(uint32_t value);
 uint32_t hwtest_read_next_sample_id(void);
+void hwtest_seed_next_message_id(uint32_t value);
+uint32_t hwtest_read_next_message_id(void);
 
 void hwtest_snapshot(const char *path, hwtest_snapshot_t *out_snapshot);
 void hwtest_assert_snapshot_equal(const hwtest_snapshot_t *expected,
@@ -51,6 +53,9 @@ size_t
 hwtest_encode_delivery_record(const node_delivery_event_t *event,
                               uint8_t output[NODE_PERSISTENCE_RECORD_MAX_SIZE]);
 void hwtest_recalculate_record_crc(uint8_t *record, size_t record_length);
+bool hwtest_pending_tail_matches_binding(
+    uint32_t expected_message_id,
+    const cura_lora_v2_authenticated_reading_frame_t *expected_frame);
 
 node_diagnostic_event_t hwtest_make_diagnostic(diagn_context_t *context,
                                                uint8_t marker);

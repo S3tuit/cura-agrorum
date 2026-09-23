@@ -1,8 +1,10 @@
 #include "node_platform_esp.h"
 
 #include <stddef.h>
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #include "esp_err.h"
 #include "esp_log.h"
@@ -12,6 +14,8 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "protocol_v2_lora_schema_generated.h"
+#include "node_sensors.h"
 
 #define NODE_PLATFORM_ESP_FATAL_RESTART_DELAY_MS UINT32_C(60000)
 
@@ -49,16 +53,69 @@ static uint32_t uniform_u32_inclusive(void *context, uint32_t minimum,
 static uint8_t get_reset_reason(void *context) {
   (void)context;
   const int reason = (int)esp_reset_reason();
-  if (reason < 0 || reason > (int)UINT8_MAX) {
-    return (uint8_t)ESP_RST_UNKNOWN;
+
+  switch (reason) {
+  case ESP_RST_UNKNOWN:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_UNKNOWN;
+  case ESP_RST_POWERON:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_POWERON;
+  case ESP_RST_EXT:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_EXT;
+  case ESP_RST_SW:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_SW;
+  case ESP_RST_PANIC:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_PANIC;
+  case ESP_RST_INT_WDT:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_INT_WDT;
+  case ESP_RST_TASK_WDT:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_TASK_WDT;
+  case ESP_RST_WDT:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_WDT;
+  case ESP_RST_DEEPSLEEP:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_DEEPSLEEP;
+  case ESP_RST_BROWNOUT:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_BROWNOUT;
+  case ESP_RST_SDIO:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_SDIO;
+  case ESP_RST_USB:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_USB;
+  case ESP_RST_JTAG:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_JTAG;
+  case ESP_RST_EFUSE:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_EFUSE;
+  case ESP_RST_PWR_GLITCH:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_PWR_GLITCH;
+  case ESP_RST_CPU_LOCKUP:
+    return CURA_LORA_V2_RESET_REASON_ESP_RST_CPU_LOCKUP;
+  default:
+    break;
   }
-  return (uint8_t)reason;
+
+  if (reason >= 16 && reason <= (int)UINT8_MAX) {
+    return (uint8_t)reason;
+  }
+  return CURA_LORA_V2_RESET_REASON_ESP_RST_UNKNOWN;
+}
+
+void node_platform_esp_restart(void) {
+  diagn_context_t diagnostic;
+  const err_curag_t result = node_sensors_force_power_off(&diagnostic);
+  if (result != CURAG_OK) {
+    ESP_LOGE(TAG, "sensor force-off before restart failed: 0x%08" PRIx32,
+             (uint32_t)result);
+  }
+  esp_restart();
+  abort();
 }
 
 static void enter_deep_sleep_for(void *context, uint64_t duration_us) {
   (void)context;
   const esp_err_t status = esp_sleep_enable_timer_wakeup(duration_us);
   if (status == ESP_OK) {
+#ifdef CONFIG_NODE_RF_SLEEP_OBSERVATION
+    printf("RF_NODE_SLEEP duration_us=%" PRIu64 "\n", duration_us);
+    fflush(stdout);
+#endif
     esp_deep_sleep_start();
     abort();
   }
@@ -66,8 +123,7 @@ static void enter_deep_sleep_for(void *context, uint64_t duration_us) {
   ESP_LOGE(TAG, "timer wakeup configuration failed: %s (%d)",
            esp_err_to_name(status), (int)status);
   vTaskDelay(pdMS_TO_TICKS(NODE_PLATFORM_ESP_FATAL_RESTART_DELAY_MS));
-  esp_restart();
-  abort();
+  node_platform_esp_restart();
 }
 
 static const node_platform_ports_t PORTS = {

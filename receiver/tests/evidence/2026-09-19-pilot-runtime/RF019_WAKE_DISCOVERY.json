@@ -1,0 +1,127 @@
+{
+  "schema": 1,
+  "run": "6e500505af184f97b4cb5b9db6f18eb6",
+  "case": "RF-019.current.accepted",
+  "status": "FAIL",
+  "failure": "ValueError: scheduled wake outside observation bound",
+  "capture_root": "/tmp/cura-production-preparation-9b1tykup/rf019-current-accepted-6e500505af184f97b4cb5b9db6f18eb6/run",
+  "capture_sha256": {
+    "pi.jsonl": "3992cddf217a8ef5d103b3ff01c9c91a3b4217e7c631d9e82f019f6add20c12b",
+    "c6-uart.bin": "1b0e68c01489a49a138feb68e290701e6a26916637857ef6d312cda5c3ce3654",
+    "run.json": "395d8e1541f8d8308de74825aae59fb146c2374c0f4dba6e485808eb56314c88",
+    "final-stop-mac.json": "920826be6a7b235873ee7166459584f205098ff79acec337907a473f59052437",
+    "failure-after-binding.json": "d75ee6dcdef4294d52011c56583dd270e1ec9353f488417f0774a27b35bb5a15",
+    "failure-after-records.json": "a7d604cd37d607bb6c779c946d2d9071daf48c40d9a36a0587590ff1e1e66298",
+    "production-build.json": "272be286c2d855dbced148cedeb84fbb63bf04058a4d3ba137b0928fe66e7f6a",
+    "source-manifest.json": "f5e614ab45db3251419c909209b266a3ce5fbab3282d49bee3afb84fb2d7f236"
+  },
+  "received_interval_us": 896733577,
+  "rx_done_pi_monotonic_ns": [
+    14615919345382,
+    15512652922526
+  ],
+  "peer_set_tx_attempts": 1,
+  "peer_cleanup": {
+    "state": "SHUTDOWN",
+    "receive_event": null,
+    "episodes": [],
+    "t6_set_rx_issued_monotonic_us": null,
+    "busy": {
+      "total_us": 7709,
+      "maximum_us": 211,
+      "count": 56,
+      "timeout_count": 0,
+      "last_timeout_opcode": null
+    },
+    "tx": null,
+    "safe_shutdown": true
+  },
+  "node_stopped_in_loader": true,
+  "receiver_service": "inactive",
+  "private_peer_credentials_removed": true,
+  "storage": {
+    "image_sha256": "580080604c7f4cb4c4da16c3425a53bb6f406a05d8f22b7c8eb834d84532006d",
+    "logs": {
+      "delivery.log": [
+        {
+          "cycle_sample_id": 59,
+          "domain": 1,
+          "message_id": 60,
+          "offset": 0,
+          "payload": "3b0000003b0000003c000000015d050000",
+          "sample_id": 59,
+          "start_offset_ms": 1373,
+          "type": 4
+        },
+        {
+          "cycle_sample_id": 60,
+          "domain": 1,
+          "message_id": 61,
+          "offset": 31,
+          "payload": "3c0000003c0000003d000000015c050000",
+          "sample_id": 60,
+          "start_offset_ms": 1372,
+          "type": 4
+        },
+        {
+          "attempt_count": 1,
+          "cycle_sample_id": 60,
+          "domain": 1,
+          "final_result": 2,
+          "message_id": 61,
+          "offset": 62,
+          "payload": "3c0000003c0000003d000000010102",
+          "sample_id": 60,
+          "type": 5
+        },
+        {
+          "cycle_sample_id": 61,
+          "domain": 1,
+          "message_id": 62,
+          "offset": 91,
+          "payload": "3d0000003d0000003e0000000166050000",
+          "sample_id": 61,
+          "start_offset_ms": 1382,
+          "type": 4
+        }
+      ],
+      "diagnostic.log": null,
+      "pending.log": [
+        {
+          "offset": 0,
+          "payload": "3b0000005105100a7f0af009e309e609947a01003c180100000000000000fe00",
+          "reading_body": "3b0000005105100a7f0af009e309e609947a01003c180100000000000000fe00",
+          "sample_id": 59,
+          "type": 1
+        },
+        {
+          "offset": 46,
+          "payload": "3c0000005105120a7e0af009e309e609907a01003c180100000000000000fe00",
+          "reading_body": "3c0000005105120a7e0af009e309e609907a01003c180100000000000000fe00",
+          "sample_id": 60,
+          "type": 1
+        },
+        {
+          "offset": 92,
+          "payload": "3d00000051050e0a7d0add09d709ca09967a0100a6180801ea0600000100ff01",
+          "reading_body": "3d00000051050e0a7d0add09d709ca09967a0100a6180801ea0600000100ff01",
+          "sample_id": 61,
+          "type": 1
+        }
+      ],
+      "quarantine.log": null
+    },
+    "schema": 1
+  },
+  "observations": [
+    "Authenticated message61/sample60 followed by message62/sample61; latter reset_reason8, flags511 and previous_current_tx_attempts1.",
+    "UART contains two POWERON boots then one SLEEP_WAKEUP; storage additionally contains sample59/message60 delivery start with no terminal outcome.",
+    "The extra startup wake was not observed by the peer. Exact triggering control-line transition remains unproven; no automatic retry.",
+    "Operator subsequently selected inclusive855..945s pragmatic received-uplink tolerance; original failure retained."
+  ],
+  "limits": [
+    "No RF-019 acceptance or RF-020 result.",
+    "No measured oscillator accuracy or proof that RC drift caused the interval.",
+    "Safe cleanup confirmed; production NVS/identity and failed records preserved."
+  ]
+}

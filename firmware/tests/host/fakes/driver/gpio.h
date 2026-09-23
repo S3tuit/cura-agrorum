@@ -7,6 +7,7 @@
 typedef int32_t gpio_num_t;
 
 typedef enum {
+  GPIO_MODE_DISABLE = 0,
   GPIO_MODE_INPUT = 1,
   GPIO_MODE_OUTPUT_OD = 2,
 } gpio_mode_t;

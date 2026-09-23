@@ -1,0 +1,15 @@
+Reference ID    : CCD8D64C (204.216.214.76)
+Stratum         : 3
+Ref time (UTC)  : Sat Sep 12 14:32:16 2026
+System time     : 0.000076031 seconds fast of NTP time
+Last offset     : +0.000490194 seconds
+RMS offset      : 0.021999151 seconds
+Frequency       : 5.609 ppm fast
+Residual freq   : -12.484 ppm
+Skew            : 0.895 ppm
+Root delay      : 0.033541661 seconds
+Root dispersion : 0.002424065 seconds
+Update interval : 64.6 seconds
+Leap status     : Normal
+
+command_exit=0

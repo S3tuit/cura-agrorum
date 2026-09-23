@@ -7,6 +7,11 @@
 typedef intptr_t node_persistence_file_handle_t;
 typedef uintptr_t node_persistence_nvs_handle_t;
 
+typedef uint8_t node_persistence_nvs_counter_t;
+#define NODE_PERSISTENCE_NVS_COUNTER_SAMPLE UINT8_C(0)
+#define NODE_PERSISTENCE_NVS_COUNTER_MESSAGE UINT8_C(1)
+#define NODE_PERSISTENCE_NVS_COUNTER_COUNT 2U
+
 #define NODE_PERSISTENCE_INVALID_FILE_HANDLE                                   \
   ((node_persistence_file_handle_t) - 1)
 #ifndef NODE_PERSISTENCE_MOUNT_PATH
@@ -29,10 +34,12 @@ typedef uintptr_t node_persistence_nvs_handle_t;
 typedef struct {
   int32_t (*nvs_init)(void);
   int32_t (*nvs_open)(node_persistence_nvs_handle_t *out_handle);
-  int32_t (*nvs_get_next_sample_id)(node_persistence_nvs_handle_t handle,
-                                    uint32_t *out_value, bool *out_found);
-  int32_t (*nvs_set_next_sample_id)(node_persistence_nvs_handle_t handle,
-                                    uint32_t value);
+  int32_t (*nvs_get_counter)(node_persistence_nvs_handle_t handle,
+                             node_persistence_nvs_counter_t counter,
+                             uint32_t *out_value, bool *out_found);
+  int32_t (*nvs_set_counter)(node_persistence_nvs_handle_t handle,
+                             node_persistence_nvs_counter_t counter,
+                             uint32_t value);
   int32_t (*nvs_commit)(node_persistence_nvs_handle_t handle);
   void (*nvs_close)(node_persistence_nvs_handle_t handle);
 

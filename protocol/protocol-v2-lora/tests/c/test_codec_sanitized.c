@@ -46,12 +46,13 @@ static bool headers_equal(const cura_lora_v2_clear_header_t *left,
                           const cura_lora_v2_clear_header_t *right) {
   return left->control == right->control && left->domain == right->domain &&
          bytes_equal(left->node_id, right->node_id, sizeof(left->node_id)) &&
-         left->sample_id == right->sample_id;
+         left->message_id == right->message_id;
 }
 
 static bool readings_equal(const cura_lora_v2_reading_t *left,
                            const cura_lora_v2_reading_t *right) {
-  return left->run_ms == right->run_ms && left->soil_0_mv == right->soil_0_mv &&
+  return left->sample_id == right->sample_id &&
+         left->run_ms == right->run_ms && left->soil_0_mv == right->soil_0_mv &&
          left->soil_1_mv == right->soil_1_mv &&
          left->soil_temp_0_centi_c == right->soil_temp_0_centi_c &&
          left->soil_temp_1_centi_c == right->soil_temp_1_centi_c &&
@@ -225,15 +226,15 @@ static bool test_decode_header_golden_and_boundaries(void) {
         CURA_LORA_V2_CODEC_OK);
   CHECK(headers_equal(&decoded, &TEST_GOLDEN_HEADER));
 
-  const uint32_t sample_ids[] = {
+  const uint32_t message_ids[] = {
       UINT32_C(0),          UINT32_C(1), UINT32_C(0x7fffffff),
       UINT32_C(0x80000000), UINT32_MAX,
   };
-  for (size_t index = 0; index < sizeof(sample_ids) / sizeof(sample_ids[0]);
+  for (size_t index = 0; index < sizeof(message_ids) / sizeof(message_ids[0]);
        index++) {
     cura_lora_v2_clear_header_t input = TEST_GOLDEN_HEADER;
     uint8_t encoded[CURA_LORA_V2_CLEAR_HEADER_SIZE];
-    input.sample_id = sample_ids[index];
+    input.message_id = message_ids[index];
 
     CHECK(cura_lora_v2_encode_clear_header(encoded, sizeof(encoded), &input) ==
           CURA_LORA_V2_CODEC_OK);

@@ -66,12 +66,13 @@ static bool headers_equal(const cura_lora_v2_clear_header_t *left,
                           const cura_lora_v2_clear_header_t *right) {
   return left->control == right->control && left->domain == right->domain &&
          memcmp(left->node_id, right->node_id, sizeof(left->node_id)) == 0 &&
-         left->sample_id == right->sample_id;
+         left->message_id == right->message_id;
 }
 
 static bool readings_equal(const cura_lora_v2_reading_t *left,
                            const cura_lora_v2_reading_t *right) {
-  return left->run_ms == right->run_ms && left->soil_0_mv == right->soil_0_mv &&
+  return left->sample_id == right->sample_id &&
+         left->run_ms == right->run_ms && left->soil_0_mv == right->soil_0_mv &&
          left->soil_1_mv == right->soil_1_mv &&
          left->soil_temp_0_centi_c == right->soil_temp_0_centi_c &&
          left->soil_temp_1_centi_c == right->soil_temp_1_centi_c &&
@@ -131,12 +132,13 @@ static cura_lora_v2_clear_header_t reader_take_header(fuzz_reader_t *reader) {
   for (size_t index = 0; index < sizeof(header.node_id); index++) {
     header.node_id[index] = reader_take_u8(reader);
   }
-  header.sample_id = reader_take_u32(reader);
+  header.message_id = reader_take_u32(reader);
   return header;
 }
 
 static cura_lora_v2_reading_t reader_take_valid_reading(fuzz_reader_t *reader) {
   cura_lora_v2_reading_t reading = {
+      .sample_id = reader_take_u32(reader),
       .run_ms = reader_take_u16(reader),
       .soil_0_mv = reader_take_u16(reader),
       .soil_1_mv = reader_take_u16(reader),
@@ -370,14 +372,14 @@ static void fuzz_build_nonce(fuzz_reader_t *reader) {
     require_condition(result == CURA_LORA_V2_CODEC_OK);
     require_condition(memcmp(output, header.node_id, sizeof(header.node_id)) ==
                       0);
-    require_condition(output[CURA_LORA_V2_NONCE_SAMPLE_ID_OFFSET] ==
-                      (uint8_t)header.sample_id);
-    require_condition(output[CURA_LORA_V2_NONCE_SAMPLE_ID_OFFSET + 1u] ==
-                      (uint8_t)(header.sample_id >> 8));
-    require_condition(output[CURA_LORA_V2_NONCE_SAMPLE_ID_OFFSET + 2u] ==
-                      (uint8_t)(header.sample_id >> 16));
-    require_condition(output[CURA_LORA_V2_NONCE_SAMPLE_ID_OFFSET + 3u] ==
-                      (uint8_t)(header.sample_id >> 24));
+    require_condition(output[CURA_LORA_V2_NONCE_MESSAGE_ID_OFFSET] ==
+                      (uint8_t)header.message_id);
+    require_condition(output[CURA_LORA_V2_NONCE_MESSAGE_ID_OFFSET + 1u] ==
+                      (uint8_t)(header.message_id >> 8));
+    require_condition(output[CURA_LORA_V2_NONCE_MESSAGE_ID_OFFSET + 2u] ==
+                      (uint8_t)(header.message_id >> 16));
+    require_condition(output[CURA_LORA_V2_NONCE_MESSAGE_ID_OFFSET + 3u] ==
+                      (uint8_t)(header.message_id >> 24));
     require_condition(output[CURA_LORA_V2_NONCE_DOMAIN_OFFSET] ==
                       header.domain);
     check_output_tail(output, CURA_LORA_V2_NONCE_SIZE, capacity);

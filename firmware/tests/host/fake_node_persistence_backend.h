@@ -52,6 +52,7 @@ void fake_backend_simulate_restart(void);
 void fake_backend_fail_on(fake_backend_operation_t operation,
                           fake_backend_resource_t resource, uint32_t occurrence,
                           int32_t status);
+void fake_backend_ambiguous_nvs_commit_on(uint32_t occurrence, int32_t status);
 
 /* Writes a prefix, then returns status from the selected FILE_WRITE call. */
 void fake_backend_partial_write_on(fake_backend_resource_t resource,
@@ -68,6 +69,9 @@ bool fake_backend_littlefs_is_mounted(void);
 void fake_backend_seed_next_sample_id(uint32_t value);
 bool fake_backend_next_sample_id_found(void);
 uint32_t fake_backend_next_sample_id(void);
+void fake_backend_seed_next_message_id(uint32_t value);
+bool fake_backend_next_message_id_found(void);
+uint32_t fake_backend_next_message_id(void);
 
 bool fake_backend_file_exists(const char *component_path);
 uint64_t fake_backend_file_size(const char *component_path);

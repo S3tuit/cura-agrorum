@@ -1,0 +1,248 @@
+[
+  {
+    "mode": "FULL",
+    "maximum_batch_entities": 1,
+    "offered_entities_per_second": 1000,
+    "offered": 10000,
+    "accepted": 1663,
+    "queue_full": 8337,
+    "acknowledged": 1663,
+    "elapsed_us": 15550292.975,
+    "entities_per_second": 106.94332271897277,
+    "transactions_per_second": 106.94332271897277,
+    "commit_latency_us": {
+      "50": 3293.631,
+      "95": 8175.562,
+      "99": 35292.299,
+      "100": 52356.947
+    },
+    "attempt_duration_us": {
+      "50": 7033.449,
+      "95": 12256.729,
+      "99": 38419.736,
+      "100": 55319.23
+    },
+    "checkpoint_duration_us": {
+      "50": 28878,
+      "95": 86235,
+      "99": 95656,
+      "100": 95656
+    },
+    "checkpoint_count": 52,
+    "queue_max_entities": 500,
+    "wal_max_bytes": 597432,
+    "actual_batch_mean": 1.0,
+    "table_counts": {
+      "clock_observations": 93,
+      "message_profiles": 1407,
+      "reading_messages": 1318,
+      "diagnostics": 82,
+      "receiver_health": 81
+    }
+  },
+  {
+    "mode": "NORMAL",
+    "maximum_batch_entities": 1,
+    "offered_entities_per_second": 1000,
+    "offered": 10000,
+    "accepted": 2208,
+    "queue_full": 7792,
+    "acknowledged": 2208,
+    "elapsed_us": 12574599.496,
+    "entities_per_second": 175.5920735847188,
+    "transactions_per_second": 175.5920735847188,
+    "commit_latency_us": {
+      "50": 195.517,
+      "95": 405.408,
+      "99": 2352.036,
+      "100": 3931.796
+    },
+    "attempt_duration_us": {
+      "50": 3596.281,
+      "95": 6732.624,
+      "99": 7006.002,
+      "100": 12347.04
+    },
+    "checkpoint_duration_us": {
+      "50": 51122,
+      "95": 66087,
+      "99": 133534,
+      "100": 133534
+    },
+    "checkpoint_count": 70,
+    "queue_max_entities": 500,
+    "wal_max_bytes": 609792,
+    "actual_batch_mean": 1.0,
+    "table_counts": {
+      "clock_observations": 108,
+      "message_profiles": 1872,
+      "reading_messages": 1764,
+      "diagnostics": 127,
+      "receiver_health": 101
+    }
+  },
+  {
+    "mode": "FULL",
+    "maximum_batch_entities": 16,
+    "offered_entities_per_second": 1000,
+    "offered": 10000,
+    "accepted": 2916,
+    "queue_full": 7084,
+    "acknowledged": 2916,
+    "elapsed_us": 11598023.301,
+    "entities_per_second": 251.42215395864721,
+    "transactions_per_second": 15.778550814277242,
+    "commit_latency_us": {
+      "50": 6002.275,
+      "95": 19084.564,
+      "99": 39586.495,
+      "100": 87044.919
+    },
+    "attempt_duration_us": {
+      "50": 60665.865,
+      "95": 78126.707,
+      "99": 93042.138,
+      "100": 141806.37
+    },
+    "checkpoint_duration_us": {
+      "50": 46281,
+      "95": 58660,
+      "99": 58660,
+      "100": 58660
+    },
+    "checkpoint_count": 6,
+    "queue_max_entities": 500,
+    "wal_max_bytes": 2076512,
+    "actual_batch_mean": 15.934426229508198,
+    "table_counts": {
+      "clock_observations": 142,
+      "message_profiles": 2489,
+      "reading_messages": 2342,
+      "diagnostics": 146,
+      "receiver_health": 139
+    }
+  },
+  {
+    "mode": "NORMAL",
+    "maximum_batch_entities": 16,
+    "offered_entities_per_second": 1000,
+    "offered": 10000,
+    "accepted": 3060,
+    "queue_full": 6940,
+    "acknowledged": 3060,
+    "elapsed_us": 11497693.316,
+    "entities_per_second": 266.14033927498787,
+    "transactions_per_second": 16.69900167999924,
+    "commit_latency_us": {
+      "50": 396.19,
+      "95": 687.278,
+      "99": 3233.634,
+      "100": 3311.237
+    },
+    "attempt_duration_us": {
+      "50": 54377.878,
+      "95": 68219.069,
+      "99": 84559.062,
+      "100": 87977.69
+    },
+    "checkpoint_duration_us": {
+      "50": 147157,
+      "95": 162052,
+      "99": 162052,
+      "100": 162052
+    },
+    "checkpoint_count": 7,
+    "queue_max_entities": 500,
+    "wal_max_bytes": 2035312,
+    "actual_batch_mean": 15.9375,
+    "table_counts": {
+      "clock_observations": 155,
+      "message_profiles": 2600,
+      "reading_messages": 2447,
+      "diagnostics": 151,
+      "receiver_health": 154
+    }
+  },
+  {
+    "mode": "FULL",
+    "maximum_batch_entities": 64,
+    "offered_entities_per_second": 1000,
+    "offered": 10000,
+    "accepted": 3131,
+    "queue_full": 6869,
+    "acknowledged": 3131,
+    "elapsed_us": 11245892.7,
+    "entities_per_second": 278.41275775288165,
+    "transactions_per_second": 4.3571463206295755,
+    "commit_latency_us": {
+      "50": 11634.877,
+      "95": 14322.479,
+      "99": 15408.812,
+      "100": 15408.812
+    },
+    "attempt_duration_us": {
+      "50": 234361.395,
+      "95": 246427.237,
+      "99": 249424.646,
+      "100": 249424.646
+    },
+    "checkpoint_duration_us": {
+      "50": 70273,
+      "95": 75576,
+      "99": 75576,
+      "100": 75576
+    },
+    "checkpoint_count": 2,
+    "queue_max_entities": 500,
+    "wal_max_bytes": 3267192,
+    "actual_batch_mean": 63.89795918367347,
+    "table_counts": {
+      "clock_observations": 157,
+      "message_profiles": 2661,
+      "reading_messages": 2505,
+      "diagnostics": 156,
+      "receiver_health": 157
+    }
+  },
+  {
+    "mode": "NORMAL",
+    "maximum_batch_entities": 64,
+    "offered_entities_per_second": 1000,
+    "offered": 10000,
+    "accepted": 3242,
+    "queue_full": 6758,
+    "acknowledged": 3242,
+    "elapsed_us": 11293909.44,
+    "entities_per_second": 287.0573752360458,
+    "transactions_per_second": 4.515708247081535,
+    "commit_latency_us": {
+      "50": 712.33,
+      "95": 947.117,
+      "99": 3032.337,
+      "100": 3032.337
+    },
+    "attempt_duration_us": {
+      "50": 222797.785,
+      "95": 238032.759,
+      "99": 241167.164,
+      "100": 241167.164
+    },
+    "checkpoint_duration_us": {
+      "50": 186046,
+      "95": 234550,
+      "99": 234550,
+      "100": 234550
+    },
+    "checkpoint_count": 2,
+    "queue_max_entities": 500,
+    "wal_max_bytes": 3254832,
+    "actual_batch_mean": 63.568627450980394,
+    "table_counts": {
+      "clock_observations": 160,
+      "message_profiles": 2755,
+      "reading_messages": 2595,
+      "diagnostics": 164,
+      "receiver_health": 163
+    }
+  }
+]

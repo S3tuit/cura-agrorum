@@ -1,0 +1,877 @@
+{
+  "kind": "Curated results; JSON values and JUnit outcomes extracted from original captures on 2026-09-17",
+  "provenance": "original_path fields identify historical inputs, which may be deleted; original_sha256 identifies their captured bytes. These are not live links or claims of retaining the original file.",
+  "date": "2026-09-16",
+  "source_manifest_sha256": "de38d29ec11c0652d73f94f0e496aee99d9f722abb02d5689cb0ce01d15d5168",
+  "source_recovery_commit": "4779361ff04180d34f846ea8942c9387092cc8cc",
+  "source_recovery_check": "All 327 manifest files match this commit; verified before removing the redundant original source archive.",
+  "component": {
+    "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30/component.xml",
+    "original_sha256": "46aa54da97f50e11b4d975aadc19937f01adf12f5d8cb958e474ccb5f4f758d7",
+    "extracted": {
+      "tests": 17,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "cases": [
+        {
+          "name": "test_target_shortened_grant_lifetime",
+          "seconds": "2.215",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_process_restart_airtime_baseline",
+          "seconds": "3.900",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_control_latency[idle]",
+          "seconds": "0.206",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_control_latency[commit]",
+          "seconds": "0.190",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_control_latency[backoff]",
+          "seconds": "0.181",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_threshold_checkpoint_stall",
+          "seconds": "0.365",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_worker_process_kill[startup_after_commit]",
+          "seconds": "1.015",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_worker_process_kill[state_after_archive]",
+          "seconds": "1.053",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_worker_process_kill[state_after_commit]",
+          "seconds": "1.045",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_worker_process_kill[marker_before_commit]",
+          "seconds": "1.030",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_worker_process_kill[marker_after_commit]",
+          "seconds": "1.039",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_worker_process_kill[ordinary_before_ack]",
+          "seconds": "1.159",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_worker_process_kill[before_close]",
+          "seconds": "1.044",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_real_chrony_tracking",
+          "seconds": "0.031",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_offline_component_startup[False]",
+          "seconds": "0.215",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_offline_component_startup[True]",
+          "seconds": "0.229",
+          "outcome": "passed"
+        },
+        {
+          "name": "test_target_sqlite_capabilities",
+          "seconds": "0.183",
+          "outcome": "passed"
+        }
+      ]
+    }
+  },
+  "lifetime_capture": {
+    "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30/component/test_target_shortened_grant_li0/grant-lifetime.json",
+    "sha256": "e8f84f01bb792bfb72598ae9ca685dfe0b7753dd50e3a96f03b0cbf774d7fb35"
+  },
+  "lifetime_clock": {
+    "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30/component/test_target_shortened_grant_li0/time-3da4ed8b96a84610abb7308706c6142a.json",
+    "original_sha256": "84d902f01be1775e1c6e882f89d089fde3084ddec81ee1cf8f305aeee441eff6",
+    "data": {
+      "instance": {
+        "receiver_instance_id": "b'=\\xa4\\xed\\x8b\\x96\\xa8F\\x10\\xab\\xb70\\x87\\x06\\xc6\\x14*'",
+        "started_at_monotonic_us": 3890829581
+      },
+      "boot": "d12925c16d554a1097140cf1da381f16",
+      "rtc_probe": {
+        "status": "Ds3231ReadStatus.OK",
+        "operation_started_at_monotonic_us": 3890908685,
+        "operation_finished_at_monotonic_us": 3890912620,
+        "rtc_utc_s": 1789583290,
+        "os_errno": null
+      },
+      "time_update": {
+        "failure": null,
+        "admission_result": "AdmissionResult.RESERVED",
+        "observation": {
+          "receiver_instance_id": "b'=\\xa4\\xed\\x8b\\x96\\xa8F\\x10\\xab\\xb70\\x87\\x06\\xc6\\x14*'",
+          "observation_sequence": 1,
+          "clock_state_generation": 1,
+          "sampled_at_monotonic_us": 3890927671,
+          "sampled_at_utc_us": 1789583293689324,
+          "step_discontinuity_boundary": false,
+          "system_time_quality": "SystemTimeQuality.NETWORK_SYNCED",
+          "rtc_health": "RtcHealth.PRESENT"
+        },
+        "step_result": null
+      },
+      "correlation": {
+        "sample": {
+          "monotonic_us": 3890927671,
+          "utc_us": 1789583293689324,
+          "error_bound_us": 1016320,
+          "quality": "SystemTimeQuality.NETWORK_SYNCED",
+          "generation": 1
+        },
+        "clock_state_generation": 1,
+        "valid_until_monotonic_us": 3950920195
+      },
+      "python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+      "sqlite": "3.46.1",
+      "platform": "Linux-6.18.50+rpt-rpi-v8-aarch64-with-glibc2.41",
+      "uid": 0,
+      "trusted_source_requested": true,
+      "fixture_maximum_network_skew_ppb": 10000
+    }
+  },
+  "restart": {
+    "seed": {
+      "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30/component/test_target_process_restart_ai0/seed.json",
+      "original_sha256": "4115e7ef7d6568fbe5aa08fb74f12eb0fad76577fbf0133488869e5cecb1e169",
+      "data": {
+        "instance": "e2fb162e5178426da26e12c337326edc",
+        "boot": "d12925c16d554a1097140cf1da381f16",
+        "started_at_monotonic_us": 3894585520,
+        "correlation": {
+          "sample": {
+            "monotonic_us": 3894688257,
+            "utc_us": 1789583297449912,
+            "error_bound_us": 1016325,
+            "quality": "SystemTimeQuality.NETWORK_SYNCED",
+            "generation": 1
+          },
+          "clock_state_generation": 1,
+          "valid_until_monotonic_us": 3954680688
+        },
+        "loaded_baseline_us": 1000000,
+        "generation": 3,
+        "buckets": [
+          {
+            "charged_airtime_us": 1067866,
+            "expires_at_utc_us": 1789587037456313
+          }
+        ]
+      }
+    },
+    "replacement": {
+      "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30/component/test_target_process_restart_ai0/replacement.json",
+      "original_sha256": "7555f23f4fab903573d842ae2f27873ceef0f99547ace030eee4101711a53fbf",
+      "data": {
+        "instance": "076fed68c7604c6aa3ffbe30456a4b89",
+        "boot": "d12925c16d554a1097140cf1da381f16",
+        "started_at_monotonic_us": 3896487194,
+        "correlation": {
+          "sample": {
+            "monotonic_us": 3896581672,
+            "utc_us": 1789583299343325,
+            "error_bound_us": 1016328,
+            "quality": "SystemTimeQuality.NETWORK_SYNCED",
+            "generation": 1
+          },
+          "clock_state_generation": 1,
+          "valid_until_monotonic_us": 3956574118
+        },
+        "loaded_baseline_us": 1067866,
+        "generation": 4,
+        "buckets": [
+          {
+            "charged_airtime_us": 8000000,
+            "expires_at_utc_us": 1789587037456313
+          }
+        ]
+      }
+    }
+  },
+  "controller": {
+    "original_path": "tx_airtime/per-bucket-retention/2026-09-16/reboot-retry/result.json",
+    "original_sha256": "4a44e1af7b9b762e879cd2a8a7b843b5e025f7f975467c7176423b32c931b983",
+    "data": {
+      "passed": true,
+      "before": {
+        "boot": "50c13fdc-112f-45a5-94d0-e1be4cfffb43",
+        "model": "Raspberry Pi 3 Model B Rev 1.2",
+        "config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7",
+        "chrony": "active",
+        "tracking": "25F735B2,37.247.53.178,3,1789584810.078337351,2.383090734,-0.000513232,0.001769920,5.859,-0.007,1.293,0.022943247,0.001832121,0.8,Normal",
+        "python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+        "sqlite": "3.46.1",
+        "platform": "Linux-6.18.50+rpt-rpi-v8-aarch64-with-glibc2.41",
+        "source_manifest_sha256": "de38d29ec11c0652d73f94f0e496aee99d9f722abb02d5689cb0ce01d15d5168"
+      },
+      "restored": {
+        "boot": "e1a42214-b38a-484e-8209-9541ecddceec",
+        "model": "Raspberry Pi 3 Model B Rev 1.2",
+        "config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7",
+        "chrony": "active",
+        "tracking": "5D5E5833,93.94.88.51,4,1789585074.757508330,3.527843714,-0.001002891,0.001002891,5.689,123.151,2.528,0.048792496,0.024107555,1.8,Normal",
+        "python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+        "sqlite": "3.46.1",
+        "platform": "Linux-6.18.50+rpt-rpi-v8-aarch64-with-glibc2.41",
+        "source_manifest_sha256": "de38d29ec11c0652d73f94f0e496aee99d9f722abb02d5689cb0ce01d15d5168"
+      }
+    }
+  },
+  "final_host": {
+    "original_path": "tx_airtime/per-bucket-retention/2026-09-16/reboot-retry/final-host-state.json",
+    "original_sha256": "fba875f89c8dc5470406503e470b989d0a178b07042c6b3ea79a425c1a56f0df",
+    "data": {
+      "boot": "e1a42214-b38a-484e-8209-9541ecddceec",
+      "model": "Raspberry Pi 3 Model B Rev 1.2",
+      "config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7",
+      "chrony": "active",
+      "tracking": "5D5E5833,93.94.88.51,4,1789585074.757508330,3.523582935,-0.001002891,0.001002891,5.689,123.151,2.528,0.048792496,0.024261769,1.8,Normal",
+      "python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+      "sqlite": "3.46.1",
+      "platform": "Linux-6.18.50+rpt-rpi-v8-aarch64-with-glibc2.41",
+      "source_manifest_sha256": "de38d29ec11c0652d73f94f0e496aee99d9f722abb02d5689cb0ce01d15d5168"
+    }
+  },
+  "reboot": {
+    "trusted": {
+      "before": {
+        "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/trusted/before.json",
+        "original_sha256": "78e39c2e7b2739249b639a36c38f5a89c6006439766978c9e6cd273d13f91f3b",
+        "data": {
+          "boot": "50c13fdc112f45a594d0e1be4cfffb43",
+          "instance": "adbf28b64bec442d84f721abb7c4355d",
+          "instance_started_at_monotonic_us": 312891090,
+          "sample": {
+            "monotonic_us": 312986436,
+            "utc_us": 1789584937792310,
+            "error_bound_us": 3375177,
+            "quality": "SystemTimeQuality.NETWORK_SYNCED",
+            "generation": 1
+          },
+          "generation": 2,
+          "total_used": 8000000,
+          "allowance": 7000000,
+          "state_sha256": "3ceac8e7acfdbc7a672c90d32b9e1e8253269adcadcf20eae6d1814bfd82caf8",
+          "buckets": [
+            {
+              "charged_airtime_us": 8000000,
+              "expires_at_utc_us": 1789588677798812
+            }
+          ],
+          "mode": "trusted"
+        }
+      },
+      "after": {
+        "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/trusted/after.json",
+        "original_sha256": "a89c9377276480eb977949363d02b5d45ce1907d78d3da7b2c6bd152748fd35b",
+        "data": {
+          "boot": "9f40a74aaf73403d9a5370e3fc17b2f6",
+          "instance": "ecfb64865d504f41877800eb8902b7a6",
+          "instance_started_at_monotonic_us": 56336618,
+          "sample": {
+            "monotonic_us": 56511691,
+            "utc_us": 1789585004299367,
+            "error_bound_us": 4896372,
+            "quality": "SystemTimeQuality.NETWORK_SYNCED",
+            "generation": 1
+          },
+          "generation": 2,
+          "total_used": 8000000,
+          "allowance": 0,
+          "state_sha256": "3ceac8e7acfdbc7a672c90d32b9e1e8253269adcadcf20eae6d1814bfd82caf8",
+          "buckets": [
+            {
+              "charged_airtime_us": 8000000,
+              "expires_at_utc_us": 1789588677798812
+            }
+          ],
+          "mode": "trusted"
+        }
+      },
+      "prepare": {
+        "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/trusted/prepare.xml",
+        "original_sha256": "9c81495e83983b61c3330f464e5a269125620b9f067ef4fb1eb6022a7ad1730b",
+        "extracted": {
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "cases": [
+            {
+              "name": "test_target_reboot_reconstruction",
+              "seconds": "0.272",
+              "outcome": "passed"
+            }
+          ]
+        }
+      },
+      "verify": {
+        "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/trusted/verify.xml",
+        "original_sha256": "ba1252b090040e9860bcc75c80cc142dff5bd9c7c9d7c50d8fb2f2a74dcf43e4",
+        "extracted": {
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "cases": [
+            {
+              "name": "test_target_reboot_reconstruction",
+              "seconds": "0.236",
+              "outcome": "passed"
+            }
+          ]
+        }
+      },
+      "clocks": [
+        {
+          "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/trusted/time-adbf28b64bec442d84f721abb7c4355d.json",
+          "original_sha256": "c97f4abcc544aa67e174d2720593b24fdcb991c7d6f3365932b4373d048ac277",
+          "data": {
+            "instance": {
+              "receiver_instance_id": "b'\\xad\\xbf(\\xb6K\\xecD-\\x84\\xf7!\\xab\\xb7\\xc45]'",
+              "started_at_monotonic_us": 312891090
+            },
+            "boot": "50c13fdc112f45a594d0e1be4cfffb43",
+            "rtc_probe": {
+              "status": "Ds3231ReadStatus.OK",
+              "operation_started_at_monotonic_us": 312967351,
+              "operation_finished_at_monotonic_us": 312971342,
+              "rtc_utc_s": 1789584936,
+              "os_errno": null
+            },
+            "time_update": {
+              "failure": null,
+              "admission_result": "AdmissionResult.RESERVED",
+              "observation": {
+                "receiver_instance_id": "b'\\xad\\xbf(\\xb6K\\xecD-\\x84\\xf7!\\xab\\xb7\\xc45]'",
+                "observation_sequence": 1,
+                "clock_state_generation": 1,
+                "sampled_at_monotonic_us": 312986436,
+                "sampled_at_utc_us": 1789584937792310,
+                "step_discontinuity_boundary": false,
+                "system_time_quality": "SystemTimeQuality.NETWORK_SYNCED",
+                "rtc_health": "RtcHealth.PRESENT"
+              },
+              "step_result": null
+            },
+            "correlation": {
+              "sample": {
+                "monotonic_us": 312986436,
+                "utc_us": 1789584937792310,
+                "error_bound_us": 3375177,
+                "quality": "SystemTimeQuality.NETWORK_SYNCED",
+                "generation": 1
+              },
+              "clock_state_generation": 1,
+              "valid_until_monotonic_us": 372978865
+            },
+            "python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+            "sqlite": "3.46.1",
+            "platform": "Linux-6.18.50+rpt-rpi-v8-aarch64-with-glibc2.41",
+            "uid": 0,
+            "trusted_source_requested": true,
+            "fixture_maximum_network_skew_ppb": 10000
+          }
+        },
+        {
+          "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/trusted/time-ecfb64865d504f41877800eb8902b7a6.json",
+          "original_sha256": "15174111bb2096e14501d23cc2345ab6fea2ec903f4ce9de562ce8f8cd52e8d3",
+          "data": {
+            "instance": {
+              "receiver_instance_id": "b'\\xec\\xfbd\\x86]POA\\x87x\\x00\\xeb\\x89\\x02\\xb7\\xa6'",
+              "started_at_monotonic_us": 56336618
+            },
+            "boot": "9f40a74aaf73403d9a5370e3fc17b2f6",
+            "rtc_probe": {
+              "status": "Ds3231ReadStatus.OK",
+              "operation_started_at_monotonic_us": 56492679,
+              "operation_finished_at_monotonic_us": 56496618,
+              "rtc_utc_s": 1789585004,
+              "os_errno": null
+            },
+            "time_update": {
+              "failure": null,
+              "admission_result": "AdmissionResult.RESERVED",
+              "observation": {
+                "receiver_instance_id": "b'\\xec\\xfbd\\x86]POA\\x87x\\x00\\xeb\\x89\\x02\\xb7\\xa6'",
+                "observation_sequence": 1,
+                "clock_state_generation": 1,
+                "sampled_at_monotonic_us": 56511691,
+                "sampled_at_utc_us": 1789585004299367,
+                "step_discontinuity_boundary": false,
+                "system_time_quality": "SystemTimeQuality.NETWORK_SYNCED",
+                "rtc_health": "RtcHealth.PRESENT"
+              },
+              "step_result": null
+            },
+            "correlation": {
+              "sample": {
+                "monotonic_us": 56511691,
+                "utc_us": 1789585004299367,
+                "error_bound_us": 4896372,
+                "quality": "SystemTimeQuality.NETWORK_SYNCED",
+                "generation": 1
+              },
+              "clock_state_generation": 1,
+              "valid_until_monotonic_us": 116504200
+            },
+            "python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+            "sqlite": "3.46.1",
+            "platform": "Linux-6.18.50+rpt-rpi-v8-aarch64-with-glibc2.41",
+            "uid": 0,
+            "trusted_source_requested": true,
+            "fixture_maximum_network_skew_ppb": 10000
+          }
+        }
+      ]
+    },
+    "unavailable": {
+      "before": {
+        "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/unavailable/before.json",
+        "original_sha256": "cfc736eb776d5e61bee6e954c718a8442f4e9f5c202738d74753e73305f9632f",
+        "data": {
+          "boot": "9f40a74aaf73403d9a5370e3fc17b2f6",
+          "instance": "2d758b54caee4e8bb706f6b5bec1722a",
+          "instance_started_at_monotonic_us": 61932232,
+          "sample": {
+            "monotonic_us": 62028702,
+            "utc_us": 1789585009816379,
+            "error_bound_us": 4878760,
+            "quality": "SystemTimeQuality.NETWORK_SYNCED",
+            "generation": 1
+          },
+          "generation": 2,
+          "total_used": 8000000,
+          "allowance": 7000000,
+          "state_sha256": "b18b8b201140dde2dd9e98557d679e06face28c667642457cf5cc4efe42fddec",
+          "buckets": [
+            {
+              "charged_airtime_us": 8000000,
+              "expires_at_utc_us": 1789588749822854
+            }
+          ],
+          "mode": "unavailable"
+        }
+      },
+      "after": {
+        "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/unavailable/after.json",
+        "original_sha256": "62a9af63f50b664564181108dbb434dc1bc46dae41525c15794d78cfde964651",
+        "data": {
+          "boot": "e1a42214b38a484e82099541ecddceec",
+          "instance": "2ba6370aa14e434c9d9b9d7357f2189b",
+          "instance_started_at_monotonic_us": 56010708,
+          "sample": null,
+          "generation": 2,
+          "total_used": null,
+          "allowance": 0,
+          "state_sha256": "b18b8b201140dde2dd9e98557d679e06face28c667642457cf5cc4efe42fddec",
+          "buckets": [
+            {
+              "charged_airtime_us": 8000000,
+              "expires_at_utc_us": 1789588749822854
+            }
+          ],
+          "mode": "unavailable"
+        }
+      },
+      "prepare": {
+        "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/unavailable/prepare.xml",
+        "original_sha256": "00f6ceb253d95412d5ec95385cc26feb20fd1143370b1bada0f0078d481af0ca",
+        "extracted": {
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "cases": [
+            {
+              "name": "test_target_reboot_reconstruction",
+              "seconds": "0.277",
+              "outcome": "passed"
+            }
+          ]
+        }
+      },
+      "verify": {
+        "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/unavailable/verify.xml",
+        "original_sha256": "722deeb9b325d992a82bd1dde50280f9f3dba9f5cbc56a64664999d727873d94",
+        "extracted": {
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "cases": [
+            {
+              "name": "test_target_reboot_reconstruction",
+              "seconds": "0.173",
+              "outcome": "passed"
+            }
+          ]
+        }
+      },
+      "clocks": [
+        {
+          "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/unavailable/time-2ba6370aa14e434c9d9b9d7357f2189b.json",
+          "original_sha256": "84d54961dd1a3ed7a85997439134ac9ccdaca1bee4fec6783caa4fef9db29323",
+          "data": {
+            "instance": {
+              "receiver_instance_id": "b'+\\xa67\\n\\xa1NCL\\x9d\\x9b\\x9dsW\\xf2\\x18\\x9b'",
+              "started_at_monotonic_us": 56010708
+            },
+            "boot": "e1a42214b38a484e82099541ecddceec",
+            "rtc_probe": {
+              "status": "Ds3231ReadStatus.OK",
+              "operation_started_at_monotonic_us": 56106581,
+              "operation_finished_at_monotonic_us": 56110600,
+              "rtc_utc_s": 1789585077,
+              "os_errno": null
+            },
+            "time_update": {
+              "failure": {
+                "operation": "DiagnosticOperation.READ",
+                "error_code": "TimeDiagnosticErrorCode.INVALID_RESPONSE",
+                "sampled_at_monotonic_us": 56123938,
+                "context": {
+                  "component": "TimeComponent.CHRONY",
+                  "stage": "TimeFailureStage.QUERY_TRACKING",
+                  "operation_duration_us": 5744,
+                  "primary_status": {
+                    "kind": "TimeBackendStatusKind.CHRONY_QUERY_STATUS",
+                    "value": 4
+                  },
+                  "secondary_status": null,
+                  "quality": [
+                    "SystemTimeQuality.UNTRUSTED",
+                    "SystemTimeQuality.UNTRUSTED"
+                  ],
+                  "rtc_health": [
+                    "RtcHealth.PRESENT",
+                    "RtcHealth.PRESENT"
+                  ],
+                  "flags": 128,
+                  "os_errno": null,
+                  "kernel_status_bits": null,
+                  "clock_state_generation": 1,
+                  "operation_generation": null,
+                  "related_clock_observation_sequence": null,
+                  "observed_value_us": null,
+                  "comparison_value_us": null,
+                  "threshold_us": null
+                }
+              },
+              "admission_result": "AdmissionResult.RESERVED",
+              "observation": {
+                "receiver_instance_id": "b'+\\xa67\\n\\xa1NCL\\x9d\\x9b\\x9dsW\\xf2\\x18\\x9b'",
+                "observation_sequence": 1,
+                "clock_state_generation": 1,
+                "sampled_at_monotonic_us": 56124160,
+                "sampled_at_utc_us": null,
+                "step_discontinuity_boundary": false,
+                "system_time_quality": "SystemTimeQuality.UNTRUSTED",
+                "rtc_health": "RtcHealth.PRESENT"
+              },
+              "step_result": null
+            },
+            "correlation": null,
+            "python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+            "sqlite": "3.46.1",
+            "platform": "Linux-6.18.50+rpt-rpi-v8-aarch64-with-glibc2.41",
+            "uid": 0,
+            "trusted_source_requested": false,
+            "fixture_maximum_network_skew_ppb": 10000
+          }
+        },
+        {
+          "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/unavailable/time-2d758b54caee4e8bb706f6b5bec1722a.json",
+          "original_sha256": "455ad2a773512b038df540ffb3de7a5a085c4eb9ed5c6203835d49652c7aa232",
+          "data": {
+            "instance": {
+              "receiver_instance_id": "b'-u\\x8bT\\xca\\xeeN\\x8b\\xb7\\x06\\xf6\\xb5\\xbe\\xc1r*'",
+              "started_at_monotonic_us": 61932232
+            },
+            "boot": "9f40a74aaf73403d9a5370e3fc17b2f6",
+            "rtc_probe": {
+              "status": "Ds3231ReadStatus.OK",
+              "operation_started_at_monotonic_us": 62009687,
+              "operation_finished_at_monotonic_us": 62013501,
+              "rtc_utc_s": 1789585009,
+              "os_errno": null
+            },
+            "time_update": {
+              "failure": null,
+              "admission_result": "AdmissionResult.RESERVED",
+              "observation": {
+                "receiver_instance_id": "b'-u\\x8bT\\xca\\xeeN\\x8b\\xb7\\x06\\xf6\\xb5\\xbe\\xc1r*'",
+                "observation_sequence": 1,
+                "clock_state_generation": 1,
+                "sampled_at_monotonic_us": 62028702,
+                "sampled_at_utc_us": 1789585009816379,
+                "step_discontinuity_boundary": false,
+                "system_time_quality": "SystemTimeQuality.NETWORK_SYNCED",
+                "rtc_health": "RtcHealth.PRESENT"
+              },
+              "step_result": null
+            },
+            "correlation": {
+              "sample": {
+                "monotonic_us": 62028702,
+                "utc_us": 1789585009816379,
+                "error_bound_us": 4878760,
+                "quality": "SystemTimeQuality.NETWORK_SYNCED",
+                "generation": 1
+              },
+              "clock_state_generation": 1,
+              "valid_until_monotonic_us": 122021064
+            },
+            "python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+            "sqlite": "3.46.1",
+            "platform": "Linux-6.18.50+rpt-rpi-v8-aarch64-with-glibc2.41",
+            "uid": 0,
+            "trusted_source_requested": true,
+            "fixture_maximum_network_skew_ppb": 10000
+          }
+        }
+      ]
+    }
+  },
+  "host_availability": {
+    "kind": "Historical virtual-clock result, not a hardware measurement",
+    "summary_original_sha256": "e3806031584f2acb6763333b22a51fb18ab65e29c6110ec418eb8b04b3abbe75",
+    "duration_seconds": 28800,
+    "request_period_seconds": 60,
+    "retry_period_seconds": 1,
+    "initial_history": "valid_empty",
+    "time": "fresh trusted samples with fixed UTC-minus-monotonic offset; virtual clocks advance at the physical reference rate",
+    "reviewed_commit": {
+      "sent": 417,
+      "maximum_gap_seconds": 3794,
+      "maximum_deferral_seconds": 3793,
+      "status": "regression_failed_as_expected"
+    },
+    "redesign": {
+      "sent": 480,
+      "maximum_gap_seconds": 74,
+      "maximum_deferral_seconds": 14,
+      "status": "passed"
+    }
+  },
+  "first_controller_attempt": {
+    "status": "failed",
+    "trusted_prepare": "passed",
+    "trusted_verify": "passed",
+    "unavailable_prepare": "passed",
+    "unavailable_verify": "NOT RUN",
+    "restoration_at_failure": "unverified",
+    "failure": "180-second SSH reconnect limit exceeded after second reboot",
+    "followup": "Connectivity recovered; independent inspection verified restoration before the fresh passing qualification."
+  },
+  "database_audit": {
+    "status": "passed_before_deletion",
+    "date": "2026-09-17",
+    "method": "SQLite integrity/foreign-key checks on disposable copies of each original DB/WAL/SHM set; reboot state blobs hashed against retained before/after observations.",
+    "limits": "Database files were deliberately discarded after this audit. This record cannot independently rerun database integrity checks.",
+    "databases": [
+      {
+        "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30/component/test_target_shortened_grant_li0/worker.db",
+        "integrity": "ok",
+        "foreign_key_errors": 0,
+        "expected_state_sha256": null,
+        "original_files": {
+          "db": {
+            "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30/component/test_target_shortened_grant_li0/worker.db",
+            "sha256": "71b156ee52df9475fbb06dc34d79bb7facdb9d9296fb0dfe93e7fca25a547348",
+            "bytes": 229376
+          }
+        }
+      },
+      {
+        "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30/component/test_target_process_restart_ai0/worker.db",
+        "integrity": "ok",
+        "foreign_key_errors": 0,
+        "expected_state_sha256": null,
+        "original_files": {
+          "db": {
+            "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30/component/test_target_process_restart_ai0/worker.db",
+            "sha256": "694a1679b11921385dc8c155a15406d7596a0129e5019cbd0f6fbc22343f426e",
+            "bytes": 229376
+          }
+        }
+      },
+      {
+        "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/trusted/prepare-evidence/worker.db",
+        "integrity": "ok",
+        "foreign_key_errors": 0,
+        "expected_state_sha256": "3ceac8e7acfdbc7a672c90d32b9e1e8253269adcadcf20eae6d1814bfd82caf8",
+        "original_files": {
+          "db": {
+            "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/trusted/prepare-evidence/worker.db",
+            "sha256": "d3cda06e9d2db6dfe606012dafdbfd726932f10e789381228c387bc6559cc069",
+            "bytes": 229376
+          },
+          "-wal": {
+            "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/trusted/prepare-evidence/worker.db-wal",
+            "sha256": "00d1193ef68412375f89afb384a8e8c5ab3c9767438475d3b9e35d6f2580acd0",
+            "bytes": 16512
+          },
+          "-shm": {
+            "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/trusted/prepare-evidence/worker.db-shm",
+            "sha256": "0f432e33deedf89303312aeb036f93f9065ba2d1957eb7dc7315218625c55fb6",
+            "bytes": 32768
+          }
+        }
+      },
+      {
+        "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/trusted/after-reboot-before-open/worker.db",
+        "integrity": "ok",
+        "foreign_key_errors": 0,
+        "expected_state_sha256": "3ceac8e7acfdbc7a672c90d32b9e1e8253269adcadcf20eae6d1814bfd82caf8",
+        "original_files": {
+          "db": {
+            "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/trusted/after-reboot-before-open/worker.db",
+            "sha256": "1c9a2d649575e6377f43596b137349c68be4788a0c7e1fa6995c5923ed177855",
+            "bytes": 229376
+          }
+        }
+      },
+      {
+        "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/trusted/verify-evidence/worker.db",
+        "integrity": "ok",
+        "foreign_key_errors": 0,
+        "expected_state_sha256": "3ceac8e7acfdbc7a672c90d32b9e1e8253269adcadcf20eae6d1814bfd82caf8",
+        "original_files": {
+          "db": {
+            "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/trusted/verify-evidence/worker.db",
+            "sha256": "1c9a2d649575e6377f43596b137349c68be4788a0c7e1fa6995c5923ed177855",
+            "bytes": 229376
+          },
+          "-wal": {
+            "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/trusted/verify-evidence/worker.db-wal",
+            "sha256": "ca77dad1ebdd49f7ad93a4419172d163a8f0d0ed84f0562ef187b691869cc1a6",
+            "bytes": 8272
+          },
+          "-shm": {
+            "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/trusted/verify-evidence/worker.db-shm",
+            "sha256": "16431571f8b9bf215f26e43bd01b5eea1f9031274804bfdc40efe99c9956ee8f",
+            "bytes": 32768
+          }
+        }
+      },
+      {
+        "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/trusted/worker.db",
+        "integrity": "ok",
+        "foreign_key_errors": 0,
+        "expected_state_sha256": "3ceac8e7acfdbc7a672c90d32b9e1e8253269adcadcf20eae6d1814bfd82caf8",
+        "original_files": {
+          "db": {
+            "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/trusted/worker.db",
+            "sha256": "d86083d2266551affc96de3d391feae36c2947338bb73d5492979aa5a78c6595",
+            "bytes": 229376
+          }
+        }
+      },
+      {
+        "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/unavailable/prepare-evidence/worker.db",
+        "integrity": "ok",
+        "foreign_key_errors": 0,
+        "expected_state_sha256": "b18b8b201140dde2dd9e98557d679e06face28c667642457cf5cc4efe42fddec",
+        "original_files": {
+          "db": {
+            "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/unavailable/prepare-evidence/worker.db",
+            "sha256": "d3cda06e9d2db6dfe606012dafdbfd726932f10e789381228c387bc6559cc069",
+            "bytes": 229376
+          },
+          "-wal": {
+            "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/unavailable/prepare-evidence/worker.db-wal",
+            "sha256": "8b32cff6b72af49a7ad532831d373c48a74fe9674a80bfb55739403ea9994363",
+            "bytes": 16512
+          },
+          "-shm": {
+            "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/unavailable/prepare-evidence/worker.db-shm",
+            "sha256": "3411141f98c4c74a639009956e4fb81948822f2e6081a30c6f641ae700ab4aec",
+            "bytes": 32768
+          }
+        }
+      },
+      {
+        "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/unavailable/after-reboot-before-open/worker.db",
+        "integrity": "ok",
+        "foreign_key_errors": 0,
+        "expected_state_sha256": "b18b8b201140dde2dd9e98557d679e06face28c667642457cf5cc4efe42fddec",
+        "original_files": {
+          "db": {
+            "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/unavailable/after-reboot-before-open/worker.db",
+            "sha256": "6c520c52aedbbc735a125b1165e7bf1619f0cf7838a394baa4967b5c56d3fbb9",
+            "bytes": 229376
+          }
+        }
+      },
+      {
+        "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/unavailable/verify-evidence/worker.db",
+        "integrity": "ok",
+        "foreign_key_errors": 0,
+        "expected_state_sha256": "b18b8b201140dde2dd9e98557d679e06face28c667642457cf5cc4efe42fddec",
+        "original_files": {
+          "db": {
+            "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/unavailable/verify-evidence/worker.db",
+            "sha256": "6c520c52aedbbc735a125b1165e7bf1619f0cf7838a394baa4967b5c56d3fbb9",
+            "bytes": 229376
+          },
+          "-wal": {
+            "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/unavailable/verify-evidence/worker.db-wal",
+            "sha256": "5f7d5ef40fe374a3331052322699939b815bfd99eff76973f09495cfcbd37649",
+            "bytes": 8272
+          },
+          "-shm": {
+            "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/unavailable/verify-evidence/worker.db-shm",
+            "sha256": "55fabd9f30784065825dc8a467eebe6996aa3ca13211133c9eca2c88a75c5183",
+            "bytes": 32768
+          }
+        }
+      },
+      {
+        "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/unavailable/worker.db",
+        "integrity": "ok",
+        "foreign_key_errors": 0,
+        "expected_state_sha256": "b18b8b201140dde2dd9e98557d679e06face28c667642457cf5cc4efe42fddec",
+        "original_files": {
+          "db": {
+            "original_path": "tx_airtime/per-bucket-retention/2026-09-16/target-data/cura-airtime-per-bucket-33220c30-reboot-retry/unavailable/worker.db",
+            "sha256": "7804ac629097c628d1f095cb2225d8d61b24f32374184efeabcc16b7d129bfb7",
+            "bytes": 229376
+          }
+        }
+      }
+    ]
+  },
+  "limits": [
+    "The availability bound applies to the recorded steady-time, empty-history, healthy-persistence scenario.",
+    "RF execution and continuous-window RF observation remain assigned to the radio stage.",
+    "Process SIGKILL and reboot are not physical power-loss evidence.",
+    "Root fixture access does not establish receiver-user permissions."
+  ]
+}

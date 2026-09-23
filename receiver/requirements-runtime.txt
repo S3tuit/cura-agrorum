@@ -1,0 +1,3 @@
+# Exact crypto version exercised by this application host implementation.
+cryptography==49.0.0
+-r requirements-radio.txt

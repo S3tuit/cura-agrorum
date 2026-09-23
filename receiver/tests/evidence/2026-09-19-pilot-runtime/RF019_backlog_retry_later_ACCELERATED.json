@@ -1,0 +1,332 @@
+{
+  "schema": 1,
+  "status": "PASS",
+  "run": "c6485fa2fcd5434188b6993b12dfec61",
+  "case": "RF-019.backlog.retry_later",
+  "scope": "accelerated10-second production-source ACK policy; not production cadence or full receiver service",
+  "result": {
+    "cadence_scope": "accelerated ACK policy",
+    "case": "RF-019.backlog.retry_later",
+    "host_deadline_assertion": "separate prerequisite",
+    "packets": 5,
+    "scope": "production_node_controlled_peer",
+    "sleep_seconds": 10,
+    "status": "PASS",
+    "wakes": 4
+  },
+  "raw_capture": "/tmp/cura-production-preparation-9b1tykup/RF-019-backlog-retry_later-c6485fa2fcd5434188b6993b12dfec61",
+  "sleep": {
+    "boundary": "cycle finalized, timer configured, entering sleep",
+    "case": "RF-019.backlog.retry_later",
+    "run": "c6485fa2fcd5434188b6993b12dfec61",
+    "sleep_seconds": 10,
+    "wakes": 4
+  },
+  "intervals_seconds": [
+    12.077314,
+    12.093293,
+    12.53584
+  ],
+  "observation": {
+    "currents": [
+      {
+        "message_id": 95,
+        "body": {
+          "sample_id": 89,
+          "run_ms": 1361,
+          "soil_0_mv": 2578,
+          "soil_1_mv": 2689,
+          "soil_temp_0_centi_c": 2950,
+          "soil_temp_1_centi_c": 2538,
+          "enclosure_centi_c": 2513,
+          "enclosure_pressure_pa": 97045,
+          "enclosure_humidity_centi_pct": 6474,
+          "reset_reason": 1,
+          "previous_current_tx_attempts": 0,
+          "previous_awake_ms": 0,
+          "previous_current_delivery_ms": 0,
+          "previous_cycle_tx_attempts": 0,
+          "previous_cycle_accepted_readings": 0,
+          "flags": 254
+        },
+        "bytes": "590000005105120a810a860bea09d109157b01004a190100000000000000fe00",
+        "at": 23756690449
+      },
+      {
+        "message_id": 96,
+        "body": {
+          "sample_id": 90,
+          "run_ms": 1361,
+          "soil_0_mv": 2578,
+          "soil_1_mv": 2688,
+          "soil_temp_0_centi_c": 2963,
+          "soil_temp_1_centi_c": 2538,
+          "enclosure_centi_c": 2514,
+          "enclosure_pressure_pa": 97036,
+          "enclosure_humidity_centi_pct": 6475,
+          "reset_reason": 8,
+          "previous_current_tx_attempts": 1,
+          "previous_awake_ms": 1760,
+          "previous_current_delivery_ms": 0,
+          "previous_cycle_tx_attempts": 1,
+          "previous_cycle_accepted_readings": 0,
+          "flags": 511
+        },
+        "bytes": "5a0000005105120a800a930bea09d2090c7b01004b190801e00600000100ff01",
+        "at": 23768767763
+      },
+      {
+        "message_id": 97,
+        "body": {
+          "sample_id": 91,
+          "run_ms": 1361,
+          "soil_0_mv": 2578,
+          "soil_1_mv": 2688,
+          "soil_temp_0_centi_c": 2975,
+          "soil_temp_1_centi_c": 2538,
+          "enclosure_centi_c": 2514,
+          "enclosure_pressure_pa": 97033,
+          "enclosure_humidity_centi_pct": 6473,
+          "reset_reason": 8,
+          "previous_current_tx_attempts": 1,
+          "previous_awake_ms": 1780,
+          "previous_current_delivery_ms": 0,
+          "previous_cycle_tx_attempts": 1,
+          "previous_cycle_accepted_readings": 0,
+          "flags": 511
+        },
+        "bytes": "5b0000005105120a800a9f0bea09d209097b010049190801f40600000100ff01",
+        "at": 23780861056
+      },
+      {
+        "message_id": 99,
+        "body": {
+          "sample_id": 92,
+          "run_ms": 1361,
+          "soil_0_mv": 2577,
+          "soil_1_mv": 2687,
+          "soil_temp_0_centi_c": 2981,
+          "soil_temp_1_centi_c": 2538,
+          "enclosure_centi_c": 2513,
+          "enclosure_pressure_pa": 97042,
+          "enclosure_humidity_centi_pct": 6479,
+          "reset_reason": 8,
+          "previous_current_tx_attempts": 1,
+          "previous_awake_ms": 2221,
+          "previous_current_delivery_ms": 350,
+          "previous_cycle_tx_attempts": 2,
+          "previous_cycle_accepted_readings": 1,
+          "flags": 1023
+        },
+        "bytes": "5c0000005105110a7f0aa50bea09d109127b01004f190801ad085e010201ff03",
+        "at": 23793396896
+      }
+    ],
+    "attempts": {
+      "95": 1,
+      "96": 1,
+      "97": 1,
+      "98": 1,
+      "99": 1
+    },
+    "replies": {
+      "95": {
+        "action": "retry_later",
+        "frames": [
+          "2004fb25c40751b352565f0000007516036325a993a057"
+        ]
+      },
+      "96": {
+        "action": "retry_later",
+        "frames": [
+          "2004fb25c40751b3525660000000d478da7db36a806066"
+        ]
+      },
+      "97": {
+        "action": "accepted",
+        "frames": [
+          "2003fb25c40751b3525661000000daf4ee5c3d6e933887"
+        ]
+      },
+      "98": {
+        "action": "retry_later",
+        "frames": [
+          "2004fb25c40751b35256620000001070edc2164a237fab"
+        ]
+      },
+      "99": {
+        "action": "retry_later",
+        "frames": [
+          "2004fb25c40751b352566300000060b6d58425308e7264"
+        ]
+      }
+    },
+    "backlog_seen": [
+      90
+    ],
+    "packet_count": 5
+  },
+  "after_records": {
+    "image_sha256": "6893de43893ca18bb9243c7cd3682769466f683c03408c755303f440c529d827",
+    "logs": {
+      "delivery.log": [
+        {
+          "cycle_sample_id": 89,
+          "domain": 1,
+          "message_id": 95,
+          "offset": 0,
+          "payload": "59000000590000005f000000015d050000",
+          "sample_id": 89,
+          "start_offset_ms": 1373,
+          "type": 4
+        },
+        {
+          "attempt_count": 1,
+          "cycle_sample_id": 89,
+          "domain": 1,
+          "final_result": 2,
+          "message_id": 95,
+          "offset": 31,
+          "payload": "59000000590000005f000000010102",
+          "sample_id": 89,
+          "type": 5
+        },
+        {
+          "cycle_sample_id": 90,
+          "domain": 1,
+          "message_id": 96,
+          "offset": 60,
+          "payload": "5a0000005a000000600000000166050000",
+          "sample_id": 90,
+          "start_offset_ms": 1382,
+          "type": 4
+        },
+        {
+          "attempt_count": 1,
+          "cycle_sample_id": 90,
+          "domain": 1,
+          "final_result": 2,
+          "message_id": 96,
+          "offset": 91,
+          "payload": "5a0000005a00000060000000010102",
+          "sample_id": 90,
+          "type": 5
+        },
+        {
+          "cycle_sample_id": 91,
+          "domain": 1,
+          "message_id": 97,
+          "offset": 120,
+          "payload": "5b0000005b000000610000000166050000",
+          "sample_id": 91,
+          "start_offset_ms": 1382,
+          "type": 4
+        },
+        {
+          "attempt_count": 1,
+          "cycle_sample_id": 91,
+          "domain": 1,
+          "final_result": 1,
+          "message_id": 97,
+          "offset": 151,
+          "payload": "5b0000005b00000061000000010101",
+          "sample_id": 91,
+          "type": 5
+        },
+        {
+          "cycle_sample_id": 91,
+          "domain": 2,
+          "message_id": 98,
+          "offset": 180,
+          "payload": "5b0000005a000000620000000226070000",
+          "sample_id": 90,
+          "start_offset_ms": 1830,
+          "type": 4
+        },
+        {
+          "attempt_count": 1,
+          "cycle_sample_id": 91,
+          "domain": 2,
+          "final_result": 2,
+          "message_id": 98,
+          "offset": 211,
+          "payload": "5b0000005a00000062000000020102",
+          "sample_id": 90,
+          "type": 5
+        },
+        {
+          "cycle_sample_id": 92,
+          "domain": 1,
+          "message_id": 99,
+          "offset": 240,
+          "payload": "5c0000005c000000630000000170050000",
+          "sample_id": 92,
+          "start_offset_ms": 1392,
+          "type": 4
+        },
+        {
+          "attempt_count": 1,
+          "cycle_sample_id": 92,
+          "domain": 1,
+          "final_result": 2,
+          "message_id": 99,
+          "offset": 271,
+          "payload": "5c0000005c00000063000000010102",
+          "sample_id": 92,
+          "type": 5
+        }
+      ],
+      "diagnostic.log": null,
+      "pending.log": [
+        {
+          "offset": 0,
+          "payload": "590000005105120a810a860bea09d109157b01004a190100000000000000fe00",
+          "reading_body": "590000005105120a810a860bea09d109157b01004a190100000000000000fe00",
+          "sample_id": 89,
+          "type": 1
+        },
+        {
+          "offset": 46,
+          "payload": "5a0000005105120a800a930bea09d2090c7b01004b190801e00600000100ff01",
+          "reading_body": "5a0000005105120a800a930bea09d2090c7b01004b190801e00600000100ff01",
+          "sample_id": 90,
+          "type": 1
+        },
+        {
+          "frame": "2002fb25c40751b352566200000038c8357a5d6defbb8ba462f4f1368d6d19c3549296a2afc48134f4069ec606f1cd49ff23e744f72e",
+          "message_id": 98,
+          "offset": 92,
+          "payload": "5a000000620000002002fb25c40751b352566200000038c8357a5d6defbb8ba462f4f1368d6d19c3549296a2afc48134f4069ec606f1cd49ff23e744f72e",
+          "sample_id": 90,
+          "type": 6
+        },
+        {
+          "offset": 168,
+          "payload": "5c0000005105110a7f0aa50bea09d109127b01004f190801ad085e010201ff03",
+          "reading_body": "5c0000005105110a7f0aa50bea09d109127b01004f190801ad085e010201ff03",
+          "sample_id": 92,
+          "type": 1
+        }
+      ],
+      "quarantine.log": null
+    },
+    "schema": 1
+  },
+  "cleanup": {
+    "peer_safe_shutdown": true,
+    "c6_stopped_in_loader": true,
+    "temporary_credentials_removed": true
+  },
+  "hashes": {
+    "run.json": "5cb389e91b85745285dad2f65929daba65bcd80a21461e1b84d8c05235ab8a48",
+    "source-manifest.json": "5c19bc8aeef93c8392ef37039cd44f3edf81a95b7e0951caf36f19f6503a166a",
+    "production-build.json": "0e8f84f81ffc5b6789fce5bcca5d10448d2a0efc6cbb18fc02c1145f9e24ac02",
+    "pi.jsonl": "4bed36e394826e18fda53df889e690bcf1efe5b51aa375baacb8ee8c6cb928cb",
+    "c6-uart.bin": "28d854e1dc1b0ed5257da5ac9d3d75decb80cf27034b99fcf67a2c07f3d13c95",
+    "before.bin": "819c6faf34bff86e17b6ca6e880116b1feb238d54c246bc1ba3b3ddc30582dd9",
+    "after.bin": "6893de43893ca18bb9243c7cd3682769466f683c03408c755303f440c529d827",
+    "host-deadline.json": "955c5280e925a9d700627fc14a1c7eb916d39ffe51f1449e3a8de9a5e9ad5c03",
+    "sleep-observation.json": "838f2867de66e97d4d4ab3de1b29250d264df1eec94d4743e6179857b64d207c",
+    "final-stop-mac.json": "920826be6a7b235873ee7166459584f205098ff79acec337907a473f59052437"
+  }
+}

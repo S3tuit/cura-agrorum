@@ -1,0 +1,15 @@
+hwclock from util-linux 2.41.5
+System Time: 1789379417.382820
+Using the rtc interface to the clock.
+Assuming hardware clock is kept in UTC time.
+Waiting for clock tick...
+ioctl(4, RTC_UIE_ON, 0): Invalid argument
+Waiting in loop for time from /dev/rtc0 to change
+...got clock tick
+Time read from Hardware Clock: 2026/09/14 09:50:18
+Hw clock time : 2026/09/14 09:50:18 = 1789379418 seconds since 1969
+Time since last adjustment is 1789379418 seconds
+Calculated Hardware Clock drift is 0.000000 seconds
+2026-09-14 09:50:17.021851+00:00
+
+command_exit=0

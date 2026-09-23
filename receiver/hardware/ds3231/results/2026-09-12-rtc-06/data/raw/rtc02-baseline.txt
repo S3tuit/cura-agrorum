@@ -1,0 +1,48 @@
+tracking_before
+Reference ID    : B99DE5FE (ns3.fibertelecom.it)
+Stratum         : 3
+Ref time (UTC)  : Sat Sep 12 20:08:04 2026
+System time     : 0.000553480 seconds fast of NTP time
+Last offset     : +0.000554382 seconds
+RMS offset      : 0.000398140 seconds
+Frequency       : 6.020 ppm fast
+Residual freq   : +0.011 ppm
+Skew            : 0.108 ppm
+Root delay      : 0.024403038 seconds
+Root dispersion : 0.009331484 seconds
+Update interval : 1025.0 seconds
+Leap status     : Normal
+before_epoch=1789243698.162044384 before_utc=2026-09-12T20:08:18.162044384+0000
+hwclock from util-linux 2.41.5
+System Time: 1789243698.165611
+Using the rtc interface to the clock.
+Assuming hardware clock is kept in UTC time.
+Waiting for clock tick...
+ioctl(4, RTC_UIE_ON, 0): Invalid argument
+Waiting in loop for time from /dev/rtc0 to change
+...got clock tick
+Time read from Hardware Clock: 2026/09/12 20:08:19
+Hw clock time : 2026/09/12 20:08:19 = 1789243699 seconds since 1969
+Time since last adjustment is 1789243699 seconds
+Calculated Hardware Clock drift is 0.000000 seconds
+2026-09-12 20:08:18.160771+00:00
+after_epoch=1789243699.007947048 after_utc=2026-09-12T20:08:19.007947048+0000
+hwclock_exit=0
+after_date_exit=0
+tracking_after
+Reference ID    : B99DE5FE (ns3.fibertelecom.it)
+Stratum         : 3
+Ref time (UTC)  : Sat Sep 12 20:08:04 2026
+System time     : 0.000553423 seconds fast of NTP time
+Last offset     : +0.000554382 seconds
+RMS offset      : 0.000398140 seconds
+Frequency       : 6.020 ppm fast
+Residual freq   : +0.011 ppm
+Skew            : 0.108 ppm
+Root delay      : 0.024403038 seconds
+Root dispersion : 0.009332458 seconds
+Update interval : 1025.0 seconds
+Leap status     : Normal
+tracking_after_exit=0
+
+command_exit=0

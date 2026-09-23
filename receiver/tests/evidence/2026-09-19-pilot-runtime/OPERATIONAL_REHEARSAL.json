@@ -1,0 +1,118 @@
+{
+  "exact_snapshot_restore": {
+    "database": {
+      "clean_generation": 0,
+      "clean_stop": 9218618505,
+      "health": {
+        "communicator_sampled_at_monotonic_us": 9207202973,
+        "radio_state_id": 2
+      },
+      "instance": "a6661e2d77e64068a7d4a104e4af75dc",
+      "latest_packet_us": null,
+      "linux_boot_id": "c85ef9dd94b0462096932dbc36a38b08",
+      "observed_monotonic_us": 9222410117,
+      "ordinal": 3,
+      "profiles": 0,
+      "samples": 0,
+      "started": 9206957734,
+      "state_generation": 0,
+      "total_readings": 0
+    },
+    "invocation": "51b0faecfbe7486f80a3dcbf9a0b0f25",
+    "state": {
+      "ActiveState": "inactive",
+      "ControlGroup": "",
+      "DropInPaths": "",
+      "ExecMainCode": "2",
+      "ExecMainStatus": "15",
+      "FragmentPath": "/etc/systemd/system/cura-pilot-vuh7p781.service",
+      "Group": "cura-receiver",
+      "InvocationID": "51b0faecfbe7486f80a3dcbf9a0b0f25",
+      "MainPID": "0",
+      "NRestarts": "0",
+      "NeedDaemonReload": "no",
+      "Result": "success",
+      "SubState": "dead",
+      "User": "cura-receiver",
+      "board_id": "00000000e0027211",
+      "boot_id": "c85ef9dd-94b0-4620-9693-2dbc36a38b08",
+      "configuration_sha256": "172ee26c48824f6d12798fe16312806225dea65c9a2954a3a766cacb7a08d4c4",
+      "dependencies": {
+        "cryptography": "49.0.0",
+        "gpiod": "2.5.0",
+        "spidev": "3.8"
+      },
+      "environment_sha256": "a0b54877c7cb51c76725b7b79943ec2de1a4993eb64c6663c8cb11c3f43c9d05",
+      "receiver_inhibitors": [],
+      "remaining_pids": [],
+      "unit_sha256": "f2a71da2684e42b47aab455006b2d2b14d65e70c573286cae2a088fa76279811"
+    }
+  },
+  "final_state": "Pi inactive with exact clean-stop record and no remaining processes/inhibitor; C6 verified in ROM loader; no continued autonomous run authorized by closure.",
+  "identity_rotation": {
+    "active": "fb25c40751b35256",
+    "full_erase_and_operator_cold_cycle": {
+      "boundary": "after full flash erase, before formatter or new production image execution",
+      "confirmation": "done",
+      "operator_confirmed": true
+    },
+    "retired": "f4d9d2cd33348a8d"
+  },
+  "monitoring": "No fixed cadence required; informal 24h bench check-ins at15/30/60 minutes and end are not acceptance criteria.",
+  "nominal_result": "NOMINAL_SENSOR_REHEARSAL.json",
+  "nominal_result_sha256": "37f918340f949ab02ecef2f11551bb895bc0a6c2613dc320902d3ae3604b365b",
+  "operator_controls": "User confirmed nominal fixtures, airtime authority, exclusive Pi radio use and physically exercised removal of all C6 power after erase. Stop-on-lost-control and no automatic restart remain in runbook.",
+  "preserve_backup_restore": "Prior group/database retained at handover-4f15917778f941e59c4733a8e3cf0ee2; exact snapshot restore/start/stop qualified separately; explicit zero fixture archived previous DB under before-zero-4aa33ea594714b698a05af152c69d3f6.",
+  "runbook": "tests/rf/PILOT_RUNBOOK.md",
+  "runbook_sha256": "fe3a6d53ac3984fe3a2c7b1c979ffc438d8062ab99261a11dd911cc38289abab",
+  "scope": "T-008/DEP-024 isolated operational rehearsal; not deployment acceptance",
+  "stop_rehearsal": {
+    "database": {
+      "clean_generation": 0,
+      "clean_stop": 9064618902,
+      "health": {
+        "communicator_sampled_at_monotonic_us": 9053193500,
+        "radio_state_id": 2
+      },
+      "instance": "a456889205da4e8b9692414786bf9bfc",
+      "latest_packet_us": null,
+      "linux_boot_id": "c85ef9dd94b0462096932dbc36a38b08",
+      "observed_monotonic_us": 9068291334,
+      "ordinal": 2,
+      "profiles": 0,
+      "samples": 0,
+      "started": 9052998702,
+      "state_generation": 0,
+      "total_readings": 0
+    },
+    "invocation": "ff3615c9db7b49dba0402309c9d5c80d",
+    "state": {
+      "ActiveState": "inactive",
+      "ControlGroup": "",
+      "DropInPaths": "",
+      "ExecMainCode": "2",
+      "ExecMainStatus": "15",
+      "FragmentPath": "/etc/systemd/system/cura-pilot-vuh7p781.service",
+      "Group": "cura-receiver",
+      "InvocationID": "ff3615c9db7b49dba0402309c9d5c80d",
+      "MainPID": "0",
+      "NRestarts": "0",
+      "NeedDaemonReload": "no",
+      "Result": "success",
+      "SubState": "dead",
+      "User": "cura-receiver",
+      "board_id": "00000000e0027211",
+      "boot_id": "c85ef9dd-94b0-4620-9693-2dbc36a38b08",
+      "configuration_sha256": "172ee26c48824f6d12798fe16312806225dea65c9a2954a3a766cacb7a08d4c4",
+      "dependencies": {
+        "cryptography": "49.0.0",
+        "gpiod": "2.5.0",
+        "spidev": "3.8"
+      },
+      "environment_sha256": "a0b54877c7cb51c76725b7b79943ec2de1a4993eb64c6663c8cb11c3f43c9d05",
+      "receiver_inhibitors": [],
+      "remaining_pids": [],
+      "unit_sha256": "f2a71da2684e42b47aab455006b2d2b14d65e70c573286cae2a088fa76279811"
+    }
+  }
+}

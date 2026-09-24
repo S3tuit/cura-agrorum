@@ -19,7 +19,7 @@ behind production decisions.
 ## Current goal
 
 The project is working toward the one-week pilot described in the logbook's
-[`field-pilot-v2`](https://github.com/S3tuit/cura-agrorum-logbook/blob/main/deployments/field-pilot-v2/README.md)
+[`field-pilot-v2`](https://github.com/S3tuit/cura-agrorum-logbook/blob/main/deployments/field-deployment-v2/README.md)
 record. The pilot will use development hardware to:
 
 - collect sensor readings using practical available placement; planned depths

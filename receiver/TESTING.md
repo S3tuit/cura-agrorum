@@ -256,12 +256,12 @@ Ordinary hardware targets continue to exclude `rf_peer`.
   relevant configuration, service journal, device trace, test seed and host
   metadata without retaining secret keys.
 
-Permanent [hardware evidence](tests/hardware/evidence/README.md) keeps costly
-results, their source/fixture and limitations, useful failure lessons and the
-minimum supporting captures. After validating a result or resolving a failure,
-curate that record and delete redundant raw runs, including ignored files.
-Keep unresolved diagnostic inputs only while they remain useful; complete
-failed-session bundles and routine host logs are not permanent requirements.
+Permanent [hardware evidence](tests/hardware/evidence/README.md) follows the
+[repository policy](../EVIDENCE.md): only destructive tests, physical-action
+tests or runs longer than five minutes. Keep a short report and essential
+observations/source identity. Fast hardware and host checks can be rerun.
+After investigation, move useful lessons to code/regressions or owning
+documentation and discard failed sessions, routine receipts and raw duplicates.
 
 The current low-level `FakeOsClock` is manually controlled. Reading monotonic or
 realtime never advances either value. Tests call `advance_elapsed_us()` to move
@@ -380,11 +380,9 @@ The implemented non-peer cases and their explicit fixture/source-staging
 procedure are in [hardware/RADIO_TESTS.md](tests/hardware/RADIO_TESTS.md).
 The [coverage map](tests/RADIO_COVERAGE.md) separates host evidence, unrun
 physical cases and communicator-only admission obligations.
-Required radio evidence belongs under `tests/hardware/evidence/radio/` in the
-development checkout. Treat Pi storage and `/tmp` as volatile; copy and verify
-needed captures before they disappear, then follow the permanent retention
-policy above. Summarize resolved failures and retain one source identity per
-tested tree instead of archiving every session.
+Apply the same retention threshold to radio tests. Treat Pi storage and `/tmp`
+as volatile: review needed captures before they disappear, retain only qualifying
+results, and put useful failure lessons in the coverage/procedure documentation.
 
 When a capture instrument is available, retain its independent timebase and
 NSS/BUSY/DIO1/RESET samples alongside kernel timestamps. The approved initial
@@ -395,6 +393,11 @@ to TxDone. Finite RX-timeout measurements additionally account for the radio's
 15.625 us timer quantum and oscillator startup. Record Python service latency
 separately with a 50 ms late-only budget. These thresholds require the actual
 instrument specification; there is no current physical timing result.
+
+A destructive read-only-remount test once exposed a closed SQLite handle
+escaping recovery as `ProgrammingError`. Keep
+`test_closed_handle_before_attempt_uses_storage_recovery` in the host persistence
+suite: closed-handle access must enter the ordinary storage-recovery path.
 
 ## PersistQueue
 
@@ -632,8 +635,7 @@ reference models and episode builders remain local.
 
 Short run summaries and the evidence worth keeping are in
 [`hardware/evidence/runtime_time/README.md`](tests/hardware/evidence/runtime_time/README.md).
-Current-source installed-UID time/offline/step verification and its bounded
-historical-evidence reuse are recorded in the
+The destructive installed-UID time/step subset is retained in the
 [19 September pilot runtime qualification](tests/evidence/2026-09-19-pilot-runtime/README.md).
 For installed-profile nominal RTC-refresh and forward/backward-step qualification,
 pass `--receiver-time-user cura-receiver` to the root-supervised fixture. Its
@@ -642,9 +644,9 @@ component child runs under that actual unprivileged account; the default remains
 This option does not change the physical controller-fault fixture or constitute
 service-sandbox/RF acceptance.
 That overview includes the historical passes' limitations. Routine output goes
-in an ignored `runtime_time/raw/` directory or outside the repository. Keep
-manual/slow measurements, useful failure lessons and the evidence needed to
-check them; discard repetitive logs after diagnosis. New runtime/slew runs use
+in ignored `receiver/tests/hardware/raw/` or outside the repository. Apply the
+retention threshold above; put useful lessons in the owning code or procedure
+and discard failed sessions and repetitive logs after diagnosis. New runtime/slew runs use
 the Make targets above and `receiver/tests/hardware/time_reference.py --help`
 for the laptop-reference options, with fresh source staging and fixture roots.
 A supplied test provenance value proves the offline component's treatment of
@@ -728,6 +730,13 @@ arithmetic failure for TIME diagnostics without duplicating the equations.
 
 ## Receiver TX-airtime policy
 
+Two historical defects have lasting regression value: one global retention
+deadline delayed an ACK by 3,793 s in the steady-time host scenario, motivating
+per-bucket deadlines; separate UTC/monotonic reads could add 30 s under
+descheduling, so use a paired observation. Keep these in the availability and
+clock-correlation tests. Their virtual-time runs are inexpensive to repeat and
+need no evidence archive.
+
 ### Host tests
 
 - **Bucket boundary aging:** Exercise exact start/end, partially overlapping oldest bucket, complete expiration and long-idle bulk reset while retaining a bucket until its full interval is conservatively outside the rolling window.
@@ -806,7 +815,9 @@ after failure. The read-only Chrony/RTC fixture may require root; root-owned
 configuration and database files must have trusted ancestry (for example under
 the dedicated `/var/tmp` root). This privilege does not establish receiver-user
 deployment permissions. Raw pytest/JUnit, clock/state JSON, source manifests and
-database/WAL/SHM snapshots remain evidence; no radio command is executed.
+database/WAL/SHM snapshots are temporary validation inputs. Curate the costly
+result and essential observations under the retention policy; no radio command
+is executed.
 
 ## Deployment and lifecycle
 

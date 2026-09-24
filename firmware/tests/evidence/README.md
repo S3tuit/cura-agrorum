@@ -2,7 +2,7 @@
 
 Historical runs from **2026-09-18**, on C6 `cc8da2fc0224` through its
 UART-labelled USB connector. Both qualify for retention because they destroy
-node storage, even though each runs in less than ten minutes.
+node storage, regardless of their short duration.
 
 | Test | Observed result | Why retained |
 |---|---|---|
@@ -28,8 +28,9 @@ removal does not change historical outcomes. Full build/dependency manifests,
 duplicate XML and verbose UART logs were discarded rather than moved elsewhere.
 
 Keep only destructive tests, tests requiring physical intervention, or runs of
-**10 minutes or longer**: a short result, identifying inputs, essential observations
+**more than five minutes**: a short result, identifying inputs, essential observations
 and restoration/limits. Routine rerunnable checks need no evidence archive.
 Do not add a source snapshot or full build seal merely to prove a test ran.
 
-From this directory, `sha256sum -c SHA256SUMS` checks the retained files.
+Follow the repository [evidence policy](../../../EVIDENCE.md); useful failure
+lessons belong in the owning code or documentation, not archived failed runs.

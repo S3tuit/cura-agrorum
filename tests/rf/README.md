@@ -340,13 +340,13 @@ release. A failed Python/peer/cleanup result cannot be replaced by a passing
 Unity subcase. First failure stops the batch. Missing prerequisites, zero
 selection, unexpected events/reset and missing completion cannot pass.
 
-Promote only manual-setup, destructive or long tests into [evidence/](evidence/README.md),
-with a short result report and essential supporting observations. Keep nominal
-runs temporarily for diagnosis, then discard them. Retain a failure only for a
-useful problem/cause/fix lesson, not a routine wiring or dependency mistake.
-Keep one recoverable source identity per tested tree; retain a source snapshot
-only when Git cannot recover it. Clear the remaining temporary captures after
-curation. Keep operator airtime history independently for admission/pacing.
+Promote only destructive tests, tests requiring physical actions, or runs longer
+than five minutes into [evidence/](evidence/README.md), following the repository
+[policy](../../EVIDENCE.md). Keep a short report and essential observations and
+source/build identity. Move useful lessons to code/regressions or owning
+documentation; discard failed sessions and routine wiring mistakes. Source
+transfer snapshots and full manifests are temporary execution inputs, not
+mandatory archive files. Keep operator airtime history independently for pacing.
 
 The component app enters real short deep sleep after its bounded command and
 wakes into a non-transmitting wait. RF-010's second wake requires a fresh host

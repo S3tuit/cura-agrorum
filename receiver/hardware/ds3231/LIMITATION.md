@@ -98,12 +98,10 @@ RTC refresh/replacement and both clock-step cases passed (**3 tests, 97.797
 seconds**), followed by **8 safe Pi tests in 6.597 seconds**. All restoration
 checks passed. The host suite passed **2,300 tests**.
 
-The [compact controller record](../../tests/hardware/evidence/runtime_time/controller-run.json)
-and [nominal-carrier record](../../tests/hardware/evidence/runtime_time/nominal-run.json)
-retain source-bound outcomes. The [source manifest](../../tests/hardware/evidence/runtime_time/controller-source-manifest.json) is
-`e457c8999da1abbe481743f62386f0e2717348199c8902d46e392d89e5c47aae`
-(214 source files). Earlier failed runs remain failures; their findings are
-summarized above instead of retaining a maintained debug-log collection.
+The [consolidated time record](../../tests/hardware/evidence/runtime_time/results.json)
+retains controller and intrusive nominal outcomes with relevant source hashes
+from manifest `e457c8999da1abbe481743f62386f0e2717348199c8902d46e392d89e5c47aae`.
+Earlier failure lessons are summarized here; their raw runs are discarded.
 
 ## Deferred work
 

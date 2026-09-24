@@ -318,5 +318,5 @@ required to implement or execute the deterministic host tests.
 - [Adafruit RTC wiring](https://learn.adafruit.com/adding-a-real-time-clock-to-raspberry-pi/wiring-the-rtc)
 
 The hardware selection is recorded in the sibling logbook at
-`cura-agrorum-logbook/deployments/field-pilot-v2/README.md`; this document owns
+`cura-agrorum-logbook/deployments/field-deployment-v2/README.md`; this document owns
 the reproducible test connections within the production repository.

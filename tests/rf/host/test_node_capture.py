@@ -104,9 +104,9 @@ def test_wrong_size_or_unformatted_image(tmp_path, binaries, size):
 
 
 def test_actual_c6_formatter_image(tmp_path, binaries):
-    evidence = Path(__file__).resolve().parents[3] / 'receiver/tests/evidence/2026-09-19-pilot-runtime'
-    binding = json.loads((evidence / 'NODE_IMAGE_DISCOVERY.json').read_text())
-    compressed = (evidence / 'empty-node-storage.bin.gz').read_bytes()
+    fixtures = Path(__file__).resolve().parent / 'fixtures'
+    binding = json.loads((fixtures / 'empty-node-storage.json').read_text())
+    compressed = (fixtures / 'empty-node-storage.bin.gz').read_bytes()
     assert hashlib.sha256(compressed).hexdigest() == binding['gzip_sha256']
     raw = gzip.decompress(compressed)
     assert len(raw) == binding['image_bytes'] == 2944 * 1024

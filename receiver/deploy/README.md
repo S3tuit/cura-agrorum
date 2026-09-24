@@ -157,6 +157,14 @@ ordinary untrusted runtime input. No membership in the daemon's group is needed.
 Verify real tracking, reply-socket cleanup, rejection of daemon-socket removal
 and unrelated writes, and permission restoration after daemon restart.
 
+Keep the post-start ownership/mode adjustment in one command: systemd reapplies
+RuntimeDirectory ownership/mode before each separate post-start command. Socket
+mode alone is insufficient because chronyc must create its reply socket and
+the receiver sandbox must permit that directory write. Preserve the vendor's
+`!` launch prefix and verify effective startup arguments/privilege behavior.
+For deliberate missing-device tests, count the journal's five bounded starts;
+the unit can retain `Result=exit-code` instead of `start-limit-hit`.
+
 ## Deferred post-pilot permissions review
 
 **PERM-001 — deferred, not qualified:** review permissions generally after the

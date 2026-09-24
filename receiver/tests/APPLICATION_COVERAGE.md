@@ -2,8 +2,8 @@
 
 The production receiver application is implemented and host-verified. This closes
 DEP-003's host phase; installed service, Pi timing/permissions and RF acceptance
-remain separate gates. The exact source manifest, commands and results are in
-[evidence/application_host/README.md](evidence/application_host/README.md).
+remain separate gates. Run `make test-receiver-host` to verify the current tree;
+fast host runs have no permanent archive under the [retention policy](../../EVIDENCE.md).
 The governing assertions remain in [TESTING.md](../TESTING.md),
 [INTERFACE.md](../INTERFACE.md) and [INTERFACE_DIAGNOSTIC.md](../INTERFACE_DIAGNOSTIC.md).
 

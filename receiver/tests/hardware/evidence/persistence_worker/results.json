@@ -1,334 +1,80 @@
 {
-  "kind": "Curated results; JSON values and JUnit outcomes extracted from original captures on 2026-09-17",
-  "provenance": "original_path fields identify historical inputs, which may be deleted; original_sha256 identifies their captured bytes. These are not live links or claims of retaining the original file.",
+  "kind": "Historical curation extract; no new test execution",
+  "retained_because": "Dedicated 4 MiB storage fixture: full space, permissions and read-only remount.",
+  "provenance": "Extracted from the prior tracked archive. Source hashes identify tested inputs, not current qualification; original raw captures are not retained.",
   "date": "2026-09-08",
-  "source_manifest_sha256": "997444effaad8a468a65480f6d56e7ac06e43a72a4b970725d1e9efd256b3ed2",
-  "component": {
-    "original_path": "persistence_worker/2026-09-08/target-results-v2.xml",
-    "original_sha256": "bc3d933c7956e5b6e74a0a0a1aff99971fa9cf18918422d88eb627ef093f39c0",
-    "extracted": {
-      "tests": 29,
-      "failures": 0,
-      "errors": 0,
-      "skipped": 0,
-      "cases": [
-        {
-          "name": "test_target_mixed_ordinary_workload[1]",
-          "seconds": "1.309",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_mixed_ordinary_workload[7]",
-          "seconds": "0.514",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_mixed_ordinary_workload[32]",
-          "seconds": "0.377",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_ordinary_process_kill[after_profile_write]",
-          "seconds": "1.028",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_ordinary_process_kill[before_commit]",
-          "seconds": "1.001",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_ordinary_process_kill[after_commit]",
-          "seconds": "1.003",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_ordinary_process_kill[after_acknowledgement]",
-          "seconds": "1.008",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_corrupt_artifacts_and_maintenance",
-          "seconds": "0.549",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_production_queue_preallocates_and_uses_all_500_slots",
-          "seconds": "0.059",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_queue_pressure_recovers_after_consumer_acknowledgement",
-          "seconds": "0.032",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_sustained_handoff_wraparound_latency_and_close_drain",
-          "seconds": "1.468",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_control_latency[idle]",
-          "seconds": "0.280",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_control_latency[commit]",
-          "seconds": "0.293",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_control_latency[backoff]",
-          "seconds": "0.274",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_threshold_checkpoint_stall",
-          "seconds": "0.615",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_worker_process_kill[startup_after_commit]",
-          "seconds": "1.092",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_worker_process_kill[state_after_archive]",
-          "seconds": "1.147",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_worker_process_kill[state_after_commit]",
-          "seconds": "1.162",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_worker_process_kill[marker_before_commit]",
-          "seconds": "1.091",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_worker_process_kill[marker_after_commit]",
-          "seconds": "1.112",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_worker_process_kill[ordinary_before_ack]",
-          "seconds": "1.264",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_worker_process_kill[before_close]",
-          "seconds": "1.131",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_worker_mixed_race_soak",
-          "seconds": "30.760",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_runtime_processes_reviewed_readings_without_radio[ \\x01\\x01\\x02\\x03\\x04\\x05\\x06\\x07\\x08D3\"\\x11\\xad\\xaew\\xb2\\xafVN\\xeaa\\x86\\x17D\\xee\\xf3'1c}\\x1d\\x12\\xac\\x8b\\x18o\\xe3c\\x88\\xc2\\xed\\xed\\x90\\xd5A\\xbb\\x93\\x0fT\\x83\\x08\\xb9]",
-          "seconds": "0.005",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_runtime_processes_reviewed_readings_without_radio[ \\x02\\x01\\x02\\x03\\x04\\x05\\x06\\x07\\x08D3\"\\x11\\x0b\\xad\\xc9\\x935\\xdbt\\x91\\x0f7\\x8a\\xea\\xc4\\x18\\x92\\x87KBY\\xd5\\x99\\xb5Y\\x14\\xddC\\xec\\xc7P&\\xb7C\\xe3k\\xb7\\x87adNw]",
-          "seconds": "0.005",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_runtime_rejects_invalid_authenticated_frame_without_radio",
-          "seconds": "0.003",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_sqlite_capabilities",
-          "seconds": "0.176",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_configuration_and_boot_identity",
-          "seconds": "0.007",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_process_restart_identities",
-          "seconds": "1.134",
-          "outcome": "passed"
-        }
-      ]
-    }
-  },
+  "status": "PASS",
   "destructive": {
-    "original_path": "persistence_worker/2026-09-08/destructive-results-v2.xml",
-    "original_sha256": "fb17fda994ab79d20b288f68b91f44d8b9899bdb0155b8d4c41cceaaf69c26a3",
-    "extracted": {
-      "tests": 3,
-      "failures": 0,
-      "errors": 0,
-      "skipped": 0,
-      "cases": [
-        {
-          "name": "test_target_bounded_full_recovery",
-          "seconds": "2.556",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_access_recovery[permissions]",
-          "seconds": "0.964",
-          "outcome": "passed"
-        },
-        {
-          "name": "test_target_access_recovery[readonly_mount]",
-          "seconds": "1.088",
-          "outcome": "passed"
-        }
-      ]
-    }
-  },
-  "timing_summary": {
-    "original_path": "persistence_worker/2026-09-08-summary.json",
-    "original_sha256": "ac654c431f49a69ed925725744e0510da6838a80a9e5cd37af83079a106e7f17",
-    "data": {
-      "fixture_mounts_after_teardown": [],
-      "percentiles": "nearest rank",
-      "metrics": {
-        "target-tests-v2/test_target_control_latency_ba0/worker-evidence.json": {
-          "phase": "backoff",
-          "control_latency_us": [
-            1333
-          ]
-        },
-        "target-tests-v2/test_target_control_latency_co0/worker-evidence.json": {
-          "phase": "commit",
-          "control_latency_us": [
-            13938
-          ]
-        },
-        "target-tests-v2/test_target_control_latency_id0/worker-evidence.json": {
-          "phase": "idle",
-          "control_latency_us": [
-            1482
-          ]
-        },
-        "target-tests-v2/test_target_threshold_checkpoi0/worker-evidence.json": {
-          "publication_64_entities_us": 7467,
-          "checkpoint_us": {
-            "count": 2,
-            "min": 22522,
-            "p50": 22522,
-            "p95": 23049,
-            "max": 23049
-          }
-        },
-        "target-tests-v2/test_target_worker_mixed_race_0/worker-evidence.json": {
-          "seed": 805031,
-          "accepted": 830,
-          "rejected": 1175,
-          "iterations": 2005,
-          "injected_failures": 52,
-          "commit_us": {
-            "count": 2191,
-            "min": 2050,
-            "p50": 2526,
-            "p95": 7168,
-            "max": 242012
-          },
-          "checkpoint_us": {
-            "count": 118,
-            "min": 2383,
-            "p50": 12623,
-            "p95": 27684,
-            "max": 66790
-          },
-          "control_pair_latency_us": {
-            "count": 2005,
-            "min": 5564,
-            "p50": 10926,
-            "p95": 32170,
-            "max": 250928
-          }
-        }
+    "tests": 3,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      {
+        "name": "test_target_bounded_full_recovery",
+        "seconds": "2.556",
+        "outcome": "passed"
+      },
+      {
+        "name": "test_target_access_recovery[permissions]",
+        "seconds": "0.964",
+        "outcome": "passed"
+      },
+      {
+        "name": "test_target_access_recovery[readonly_mount]",
+        "seconds": "1.088",
+        "outcome": "passed"
       }
-    }
+    ]
   },
-  "checkpoint": {
-    "original_path": "persistence_worker/2026-09-08/target-tests-v2/test_target_threshold_checkpoi0/worker-evidence.json",
-    "original_sha256": "54a1859fc61d333eaea450fb5b5c16f4df34fc8d8e62a039cd73d8cb54b2f9c3",
-    "data": {
-      "trace": [
-        "control",
-        "ordinary",
-        "ordinary",
-        "ordinary",
-        "ordinary",
-        "ordinary",
-        "ordinary",
-        "ordinary",
-        "ordinary",
-        "checkpoint"
-      ],
-      "wal_sizes_bytes": [
-        61832,
-        173072
-      ],
-      "checkpoint_us": [
-        22522,
-        23049
-      ],
-      "publication_64_entities_us": 7467,
-      "python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
-      "sqlite": "3.46.1",
-      "platform": "Linux-6.18.39+rpt-rpi-v8-aarch64-with-glibc2.41",
-      "control_deadline_us": 5000000,
-      "caller_scheduling_tolerance_us": 500000,
-      "thread_stacks": {
-        "547656440736": [
-          "  File \"<frozen runpy>\", line 198, in _run_module_as_main\n",
-          "  File \"<frozen runpy>\", line 88, in _run_code\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pytest/__main__.py\", line 9, in <module>\n    raise SystemExit(_console_main())\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/config/__init__.py\", line 253, in _console_main\n    code = _main(prog=_get_prog_name(sys.argv))\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/config/__init__.py\", line 229, in _main\n    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_hooks.py\", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_manager.py\", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_callers.py\", line 121, in _multicall\n    res = hook_impl.function(*args)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/main.py\", line 377, in pytest_cmdline_main\n    return wrap_session(config, _main)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/main.py\", line 330, in wrap_session\n    session.exitstatus = doit(config, session) or 0\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/main.py\", line 384, in _main\n    config.hook.pytest_runtestloop(session=session)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_hooks.py\", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_manager.py\", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_callers.py\", line 121, in _multicall\n    res = hook_impl.function(*args)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/main.py\", line 408, in pytest_runtestloop\n    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_hooks.py\", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_manager.py\", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_callers.py\", line 121, in _multicall\n    res = hook_impl.function(*args)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/runner.py\", line 118, in pytest_runtest_protocol\n    runtestprotocol(item, nextitem=nextitem)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/runner.py\", line 139, in runtestprotocol\n    reports.append(call_and_report(item, \"call\", log))\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/runner.py\", line 249, in call_and_report\n    call = CallInfo.from_call(\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/runner.py\", line 361, in from_call\n    result: TResult | None = func()\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/runner.py\", line 250, in <lambda>\n    lambda: runtest_hook(item=item, **kwds),\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_hooks.py\", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_manager.py\", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_callers.py\", line 121, in _multicall\n    res = hook_impl.function(*args)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/runner.py\", line 184, in pytest_runtest_call\n    item.runtest()\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/python.py\", line 1707, in runtest\n    self.ihook.pytest_pyfunc_call(pyfuncitem=self)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_hooks.py\", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_manager.py\", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/pluggy/_callers.py\", line 121, in _multicall\n    res = hook_impl.function(*args)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/.venv/lib/python3.13/site-packages/_pytest/python.py\", line 167, in pytest_pyfunc_call\n    result = testfunction(**testargs)\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/receiver/tests/hardware/test_persistence_worker.py\", line 260, in test_target_threshold_checkpoint_stall\n    evidence(\n",
-          "  File \"/home/cura/cura-worker-20260908-QoJENP/tree/receiver/tests/hardware/test_persistence_worker.py\", line 95, in evidence\n    str(key): traceback.format_stack(frame)\n"
-        ]
-      }
-    }
+  "source": {
+    "recorded_manifest_sha256": "997444effaad8a468a65480f6d56e7ac06e43a72a4b970725d1e9efd256b3ed2",
+    "relevant_files_sha256": {
+      "receiver/cura_receiver/__init__.py": "c1a097ed661455a20ddf3d7a4b2afb8e85f5113b9fbcbdb6f896fc4c747d6710",
+      "receiver/cura_receiver/communicator_state_persistence.py": "905499de11852453f37435c19ccf9056d2c016fad0195981849d1d06ee4c5a58",
+      "receiver/cura_receiver/database_initializer.py": "563526c0d4214453f8d123bd35ae8f66f533ba1178f470085427b1cfeb4b49ff",
+      "receiver/cura_receiver/elapsed_duration.py": "e4696b1055f831db0f6664c189dccb22bf12f90c7a0e635ad0cadf4e51534901",
+      "receiver/cura_receiver/generated/README.md": "dd7b7b2078ecca1f691c65d8feab8dcfa558df6b2892f05a23ed09a17d123ee8",
+      "receiver/cura_receiver/generated/__init__.py": "aa1d3f7852ad0badf2acb45352d4940be291547804c27cfee41a3fc30c2c9ff6",
+      "receiver/cura_receiver/generated/protocol_v2_lora_generated.py": "6f6057431d9bfcc115f7d14f101569b8086f55fac59f75a9eac8b2100f342fd3",
+      "receiver/cura_receiver/generated/receiver_entities_generated.py": "6ab716695a3a9abdc0ccfc9d9dd38400a972d7b62bdba54a43d05abc219fa3cb",
+      "receiver/cura_receiver/generated/receiver_enums_generated.py": "9e1eaf73aafecb94d1448eb8c043d36dba50e14ff879f2681b8b508105ce8f20",
+      "receiver/cura_receiver/ordinary_persistence.py": "e40dc27481182f3193947bb9383e44de4b6ad8d3912a4c0311c6075fdf56fec4",
+      "receiver/cura_receiver/persist_queue.py": "6defd0a2ef6b1dc744dadc36360e5008bc1da131406cca6932f1df6aba9e17f5",
+      "receiver/cura_receiver/persist_queue_entities.py": "8ba7532edaa278dc7c0ed723f8f7f4d27e2e1cd8704a7334877e51f21795d692",
+      "receiver/cura_receiver/persistence_control_channel.py": "da59ae19ed92ac832970eecac62db05e6e6f2dec52db9f417d3e147312e0517e",
+      "receiver/cura_receiver/persistence_control_execution.py": "9b41fbdd888b9b3b072b49434136d166e369bfae9495abd09114dfe215a2cf8e",
+      "receiver/cura_receiver/persistence_control_operations.py": "31c717db8ed30e91ccc2e17d1336039fdbc2940869b5aea1cf2fb737c9fc4460",
+      "receiver/cura_receiver/persistence_control_values.py": "4b6add5dc3a25dd0bc3936c90168822109bc31ed6eb0aa1f00e6231b7d55b67d",
+      "receiver/cura_receiver/persistence_failures.py": "df4fcd920c12f681b3beb33a29cdbbd852e41c0cf8d2b66bd61fbefdae1a33ba",
+      "receiver/cura_receiver/persistence_recovery.py": "3d1617d8a994f323c31039ed63837945abcd41ffd720eb6353d9f1e3f659d245",
+      "receiver/cura_receiver/persistence_worker.py": "923e873523ac9580f1a1302b0492526efa8fdd086c4a73e8e44fdcfe0e2748e0",
+      "receiver/cura_receiver/platform/__init__.py": "ad4d3e91add175d06ca3a76013e7403477937656b499fa3074662ab097601935",
+      "receiver/cura_receiver/platform/linux_boot_identity.py": "dbb17137bc5c2de86ba80897423803b1430688d1189e3162223b10096e334959",
+      "receiver/cura_receiver/platform/linux_clocks.py": "7706cab7d73d848539d2d7b8646385d7260cb230bb0a84a231864bacd3d787bb",
+      "receiver/cura_receiver/platform/linux_host_observations.py": "a139872bacc80f9f4e54ef32cf3ebb778d035f8275d00e2f6ce32ea0660ac30d",
+      "receiver/cura_receiver/ports/__init__.py": "3e0b76ca5db519b22ad20b80865b634b44d828d87a8f0923804929f91925e242",
+      "receiver/cura_receiver/ports/clocks.py": "7ae58e40b06be78dd5535f0fe83f3440911da735d2f9b4f5bd7362e3d63ae9c1",
+      "receiver/cura_receiver/ports/host_observations.py": "c8eab1b235596aae413a01847e42554fb1badc1f57791f30be9ba90c8ca83fe4",
+      "receiver/cura_receiver/protocol_ingress.py": "742306afbf1c8c094635fa5c1532823b1258202d9864b5a361277f6f20b37dd8",
+      "receiver/cura_receiver/protocol_v2_lora_crypto.py": "ae32b65e5cb7d9f140067635bd2fe6f77f3e708cd1122e1f84891ba7e4f60468",
+      "receiver/cura_receiver/quarantine_evidence.py": "077692be48dc81038113066d7d3eb7e8393cecb5fb14f5157e9858337cdacfab",
+      "receiver/cura_receiver/reading_persistence.py": "8f06383839512ac9f276f3e60ef9638d76c06b07b32226b7db2ed37d8dff7f9c",
+      "receiver/cura_receiver/receiver_configuration.py": "0452a1a8dd1da357020881fbc0853721cb70bd79bbae1f7473a3b3207e494cd5",
+      "receiver/cura_receiver/receiver_startup.py": "8df0946a4b7bf1793d296d5e64d6d9ac54d2658082b355e0561e7f8d8988552c",
+      "receiver/cura_receiver/sqlite_database.py": "55809bf0e06b645d2fb06629857db558d28139b9342dbbca5ab80408f61fa3ad",
+      "receiver/cura_receiver/sqlite_repository.py": "3dc813f8457b47090f58dc8f4e5c387ddd10c80ef8176333464f6326ce482704",
+      "receiver/cura_receiver/sqlite_transactions.py": "7dea33aa0dc0af2de2889edc7b52f7fae0313f8d3825b9e6c1dceb973c417f3b",
+      "receiver/db/README.md": "a5f3fa8d8d028a8918f0d0f196376b7f9a5a7b50f503a920a1eb6328f770468e",
+      "receiver/db/schema.sql": "b0982d44c5616f68e62ba62e084a011f59feff8645ed09c973ce9da822288ca7",
+      "receiver/db/schema_source.sql": "c4d94c2e1869e192d0ef691000adfd7857ed7a5e2c88ee3cabce43b71f69c8a7",
+      "receiver/tests/hardware/conftest.py": "21a942c1635a3ff24d651ebe87f10d2a8762c1f75f8e8d46dae06ef149b29747",
+      "receiver/tests/hardware/test_ordinary_persistence.py": "d3c197c1a9265e514c41dafef4b05e78e2e722c1347e6b0d56f98e463371c457"
+    },
+    "head": "6f0f5ef006fd2d93284323b2f1af250cb3d56810",
+    "tree_sha256": "1b86a33964437780364eec4408a45b40007885e7a39d20c117ff09c6b0ab81e3"
   },
-  "soak": {
-    "original_path": "persistence_worker/2026-09-08/target-tests-v2/test_target_worker_mixed_race_0/worker-evidence.json",
-    "sha256": "df6871da50c2cc991abbcfa82ebd99d63b2cb91d148ae447f1f2fee3bb7a6931"
-  },
-  "limits": [
-    "Historical source archive and crash databases were not copied here.",
-    "Process kill is not physical power-loss proof."
-  ]
+  "restoration": "No fixture mounts left.",
+  "target": "cura-receiver Pi; Linux 6.18.39+rpt-rpi-v8/aarch64; Python 3.13.5; SQLite 3.46.1; /dev/mmcblk0p2",
+  "limits": "Component storage faults only; no physical power-loss, full-service or deployment-soak acceptance."
 }

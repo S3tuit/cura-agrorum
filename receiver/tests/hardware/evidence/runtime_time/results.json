@@ -1,0 +1,1001 @@
+{
+  "kind": "Historical curation extract; no new test execution",
+  "retained_because": "Two >20-minute slew measurements, manual oscillator-stop and 30-minute battery outage, intrusive controller/clock fixtures.",
+  "provenance": "Extracted from the prior tracked archive. Source hashes identify tested inputs, not current qualification; original raw captures are not retained.",
+  "dates": "2026-09-14..2026-09-15",
+  "target": "Pi 3 / Adafruit DS3231; kernel 6.18.50+rpt-rpi-v8; Chrony 4.6.1",
+  "sources": {
+    "slew": {
+      "recorded_manifest_sha256": "e68f271a9bcb51b9e7c4e8e930386b7a6009248588d3cefc11666018e1c2e6bf",
+      "relevant_files_sha256": {
+        "receiver/cura_receiver/elapsed_duration.py": "6a799cda1ef2627ee9911d52285ca1b96b7c3fd64d927621fa412d90684b1e0d",
+        "receiver/cura_receiver/platform/__init__.py": "ad4d3e91add175d06ca3a76013e7403477937656b499fa3074662ab097601935",
+        "receiver/cura_receiver/platform/_time_process.py": "5dc1b3d0ba38b34cd9964d8bdb1fc8e8e416b6ffc56f27ef1ac71859c5f47965",
+        "receiver/cura_receiver/platform/linux_boot_identity.py": "dbb17137bc5c2de86ba80897423803b1430688d1189e3162223b10096e334959",
+        "receiver/cura_receiver/platform/linux_chrony.py": "d273534d61315d42c310c58d4916bd9578c0a3f1e39a0346776906bb2a680b14",
+        "receiver/cura_receiver/platform/linux_clocks.py": "7706cab7d73d848539d2d7b8646385d7260cb230bb0a84a231864bacd3d787bb",
+        "receiver/cura_receiver/platform/linux_ds3231.py": "8fe2df4864268279f0abfcdd645368ed9caef2e0346e664fa3d0df1ec8dc5784",
+        "receiver/cura_receiver/platform/linux_host_observations.py": "a139872bacc80f9f4e54ef32cf3ebb778d035f8275d00e2f6ce32ea0660ac30d",
+        "receiver/cura_receiver/platform/linux_kernel_clock.py": "3baa04456bc3bcc2755352f662832a98a53e8d80e6d95532d34fadc000ac318f",
+        "receiver/cura_receiver/runtime_time.py": "a22c229577d1f01026e77293ac3f6a8c3998fb14eb7c0d5b8ccf4af35725823a",
+        "receiver/cura_receiver/time_policy.py": "f31ec0aeae24e148c5622b4fe81d19f76c957a94cf1ebd5c2d47337c40d13816",
+        "receiver/native/ds3231-set.c": "87d8b9c3daa9f06bfd60168e61830f877f230f6bfcc0749bca4b7301530f846f",
+        "receiver/tests/hardware/test_runtime_time.py": "24c5f694b460aa73cd1ba0bd707236bdece79ae918d5616d57982229c9030c3a",
+        "receiver/tests/hardware/test_time_mutations.py": "d1784dab61f82d38220e691c6d8fa2a2d018973995281ac58a954a8593625c0f",
+        "receiver/tests/hardware/time_reference.py": "dc36b6047773d4c1bc175d8adde8dc5a95c7767cdc93bfd90cd852e149447618"
+      }
+    },
+    "oscillator_stop": {
+      "recorded_manifest_sha256": "feb1c939dcdb776424b67dcf889a7c56697b8e3901ade545d363a579b63a91f1",
+      "relevant_files_sha256": {
+        "receiver/cura_receiver/elapsed_duration.py": "6a799cda1ef2627ee9911d52285ca1b96b7c3fd64d927621fa412d90684b1e0d",
+        "receiver/cura_receiver/platform/__init__.py": "ad4d3e91add175d06ca3a76013e7403477937656b499fa3074662ab097601935",
+        "receiver/cura_receiver/platform/_time_process.py": "5dc1b3d0ba38b34cd9964d8bdb1fc8e8e416b6ffc56f27ef1ac71859c5f47965",
+        "receiver/cura_receiver/platform/linux_boot_identity.py": "dbb17137bc5c2de86ba80897423803b1430688d1189e3162223b10096e334959",
+        "receiver/cura_receiver/platform/linux_chrony.py": "d273534d61315d42c310c58d4916bd9578c0a3f1e39a0346776906bb2a680b14",
+        "receiver/cura_receiver/platform/linux_clocks.py": "7706cab7d73d848539d2d7b8646385d7260cb230bb0a84a231864bacd3d787bb",
+        "receiver/cura_receiver/platform/linux_ds3231.py": "8fe2df4864268279f0abfcdd645368ed9caef2e0346e664fa3d0df1ec8dc5784",
+        "receiver/cura_receiver/platform/linux_host_observations.py": "a139872bacc80f9f4e54ef32cf3ebb778d035f8275d00e2f6ce32ea0660ac30d",
+        "receiver/cura_receiver/platform/linux_kernel_clock.py": "3baa04456bc3bcc2755352f662832a98a53e8d80e6d95532d34fadc000ac318f",
+        "receiver/cura_receiver/runtime_time.py": "a22c229577d1f01026e77293ac3f6a8c3998fb14eb7c0d5b8ccf4af35725823a",
+        "receiver/cura_receiver/time_policy.py": "f31ec0aeae24e148c5622b4fe81d19f76c957a94cf1ebd5c2d47337c40d13816",
+        "receiver/native/ds3231-set.c": "87d8b9c3daa9f06bfd60168e61830f877f230f6bfcc0749bca4b7301530f846f",
+        "receiver/tests/hardware/test_ds3231_osf.py": "c78c074487d6df41ddc06b965194c9e83703737ee32a8d8091e4f8028f0eae4e",
+        "receiver/tests/hardware/test_runtime_time.py": "24c5f694b460aa73cd1ba0bd707236bdece79ae918d5616d57982229c9030c3a",
+        "receiver/tests/hardware/test_time_mutations.py": "d1784dab61f82d38220e691c6d8fa2a2d018973995281ac58a954a8593625c0f",
+        "receiver/tests/hardware/time_reference.py": "dc36b6047773d4c1bc175d8adde8dc5a95c7767cdc93bfd90cd852e149447618"
+      }
+    },
+    "controller": {
+      "recorded_manifest_sha256": "e457c8999da1abbe481743f62386f0e2717348199c8902d46e392d89e5c47aae",
+      "relevant_files_sha256": {
+        "receiver/cura_receiver/elapsed_duration.py": "6a799cda1ef2627ee9911d52285ca1b96b7c3fd64d927621fa412d90684b1e0d",
+        "receiver/cura_receiver/platform/__init__.py": "ad4d3e91add175d06ca3a76013e7403477937656b499fa3074662ab097601935",
+        "receiver/cura_receiver/platform/_time_process.py": "5dc1b3d0ba38b34cd9964d8bdb1fc8e8e416b6ffc56f27ef1ac71859c5f47965",
+        "receiver/cura_receiver/platform/linux_boot_identity.py": "dbb17137bc5c2de86ba80897423803b1430688d1189e3162223b10096e334959",
+        "receiver/cura_receiver/platform/linux_chrony.py": "d273534d61315d42c310c58d4916bd9578c0a3f1e39a0346776906bb2a680b14",
+        "receiver/cura_receiver/platform/linux_clocks.py": "7706cab7d73d848539d2d7b8646385d7260cb230bb0a84a231864bacd3d787bb",
+        "receiver/cura_receiver/platform/linux_ds3231.py": "8fe2df4864268279f0abfcdd645368ed9caef2e0346e664fa3d0df1ec8dc5784",
+        "receiver/cura_receiver/platform/linux_host_observations.py": "a139872bacc80f9f4e54ef32cf3ebb778d035f8275d00e2f6ce32ea0660ac30d",
+        "receiver/cura_receiver/platform/linux_kernel_clock.py": "3baa04456bc3bcc2755352f662832a98a53e8d80e6d95532d34fadc000ac318f",
+        "receiver/cura_receiver/runtime_time.py": "835d9a7b320db3e000461511e67c89db6cdc441b605cf2c3337a1daecd4ac386",
+        "receiver/cura_receiver/time_policy.py": "f31ec0aeae24e148c5622b4fe81d19f76c957a94cf1ebd5c2d47337c40d13816",
+        "receiver/native/ds3231-set.c": "87d8b9c3daa9f06bfd60168e61830f877f230f6bfcc0749bca4b7301530f846f",
+        "receiver/tests/hardware/test_ds3231_osf.py": "c78c074487d6df41ddc06b965194c9e83703737ee32a8d8091e4f8028f0eae4e",
+        "receiver/tests/hardware/test_runtime_time.py": "24c5f694b460aa73cd1ba0bd707236bdece79ae918d5616d57982229c9030c3a",
+        "receiver/tests/hardware/test_time_mutations.py": "c830ece313df406e83714d94686d39b04b0d6fb34a4c4584229ef13e6d0cc9dd",
+        "receiver/tests/hardware/time_reference.py": "dc36b6047773d4c1bc175d8adde8dc5a95c7767cdc93bfd90cd852e149447618"
+      }
+    }
+  },
+  "slew": {
+    "acceptance": "Within +/-3700 ppm, requested-direction magnitude >3300 ppm, interval width <200 ppm.",
+    "verification": "Original exact-Fraction verifier passed both runs before curation; all 124 samples and 122 intervals checked. Only final endpoint brackets retained; full stopping sequence cannot be replayed.",
+    "positive": {
+      "status": "PASS",
+      "offset": 120,
+      "rate_interval_ppm": [
+        "3456.572314869455391144129",
+        "3653.241060046412029107982"
+      ],
+      "sample_count": 63,
+      "interval_count": 62,
+      "final_interval": {
+        "elapsed_monotonic_us": 1245920480,
+        "rate_interval_ppm": [
+          "3456.572314869455391144129",
+          "3653.241060046412029107982"
+        ],
+        "width_ppm": "196.668745176956637963853",
+        "decision": "PASS"
+      },
+      "endpoints": [
+        {
+          "pi_before_us": 4317961673,
+          "valid": true,
+          "pi_after_us": 4318084171,
+          "reference_reply": {
+            "version": 1,
+            "utc_us": 1789383605500727,
+            "error_us": 19105,
+            "source_independent": true,
+            "tracking_csv": "B913B823,185.19.184.35,3,1789382999.408678546,-0.001048968,0.000427746,0.001029640,3.395,0.003,0.170,0.023791973,0.003519935,1039.3,Normal",
+            "laptop_before_us": 1789383605498088,
+            "laptop_after_us": 1789383605503366
+          },
+          "utc_us": 1789383605500727,
+          "error_us": 19105
+        },
+        {
+          "pi_before_us": 5563957508,
+          "valid": true,
+          "pi_after_us": 5564004651,
+          "reference_reply": {
+            "version": 1,
+            "utc_us": 1789384847045313,
+            "error_us": 18029,
+            "source_independent": true,
+            "tracking_csv": "B913B823,185.19.184.35,3,1789384027.036734537,-0.001399928,0.001506076,0.001086724,3.507,0.040,0.242,0.021309080,0.003653532,1027.3,Normal",
+            "laptop_before_us": 1789384847042993,
+            "laptop_after_us": 1789384847047633
+          },
+          "utc_us": 1789384847045313,
+          "error_us": 18029
+        }
+      ]
+    },
+    "negative": {
+      "status": "PASS",
+      "offset": -120,
+      "rate_interval_ppm": [
+        "-3605.1724909644771616795291",
+        "-3496.0425374187199017456689"
+      ],
+      "sample_count": 61,
+      "interval_count": 60,
+      "final_interval": {
+        "elapsed_monotonic_us": 1206055509,
+        "rate_interval_ppm": [
+          "-3605.1724909644771616795291",
+          "-3496.0425374187199017456689"
+        ],
+        "width_ppm": "109.1299535457572599338602",
+        "decision": "PASS"
+      },
+      "endpoints": [
+        {
+          "pi_before_us": 5593915414,
+          "valid": true,
+          "pi_after_us": 5593958493,
+          "reference_reply": {
+            "version": 1,
+            "utc_us": 1789384877104011,
+            "error_us": 18584,
+            "source_independent": true,
+            "tracking_csv": "B913B823,185.19.184.35,3,1789384027.036734537,-0.001363126,0.001506076,0.001086724,3.507,0.040,0.242,0.021309080,0.003692074,1027.3,Normal",
+            "laptop_before_us": 1789384877101138,
+            "laptop_after_us": 1789384877106884
+          },
+          "utc_us": 1789384877104011,
+          "error_us": 18584
+        },
+        {
+          "pi_before_us": 6799999827,
+          "valid": true,
+          "pi_after_us": 6800014002,
+          "reference_reply": {
+            "version": 1,
+            "utc_us": 1789386087471514,
+            "error_us": 18966,
+            "source_independent": true,
+            "tracking_csv": "B913B823,185.19.184.35,3,1789385055.938740440,-0.000648150,0.001271583,0.001106600,3.652,0.029,0.262,0.021309080,0.005870752,1029.6,Normal",
+            "laptop_before_us": 1789386087469723,
+            "laptop_after_us": 1789386087473305
+          },
+          "utc_us": 1789386087471514,
+          "error_us": 18966
+        }
+      ]
+    },
+    "restoration": {
+      "chrony_config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7",
+      "temporary_helper_paths": [],
+      "temporary_socket_paths": [],
+      "restorations": {
+        "time-bteiwo2e/restoration.json": {
+          "baseline_tracking": [
+            "520B9991",
+            "2a00:6d41:200:2::11",
+            "3",
+            "1789384851.636730697",
+            "0.000000014",
+            "4.390791893",
+            "4.390791893",
+            "5.636",
+            "686.269",
+            "1.180",
+            "0.051285423",
+            "0.052099850",
+            "0.0",
+            "Normal"
+          ],
+          "saved_rtc": {
+            "status": "Ds3231ReadStatus.OK",
+            "operation_started_at_monotonic_us": 5569284566,
+            "operation_finished_at_monotonic_us": 5569287812,
+            "rtc_utc_s": 1789384851,
+            "os_errno": null
+          },
+          "offset": -120,
+          "restored": true,
+          "restored_tracking": [
+            "5D635BFC",
+            "2603:c027:2:c801:1979::1",
+            "3",
+            "1789386093.787802060",
+            "-0.000000012",
+            "-4.359437943",
+            "4.359437943",
+            "5.636",
+            "1991.890",
+            "1.180",
+            "0.032313742",
+            "0.027872970",
+            "0.0",
+            "Normal"
+          ]
+        },
+        "time-g2mlrne9/restoration.json": {
+          "baseline_tracking": [
+            "437BF176",
+            "2603:c020:8017:3e00::123:123",
+            "3",
+            "1789383527.859737596",
+            "-0.000049179",
+            "-0.000047635",
+            "0.016298030",
+            "5.636",
+            "0.004",
+            "1.180",
+            "0.032920606",
+            "0.001058482",
+            "128.1",
+            "Normal"
+          ],
+          "saved_rtc": {
+            "status": "Ds3231ReadStatus.OK",
+            "operation_started_at_monotonic_us": 4293287677,
+            "operation_finished_at_monotonic_us": 4293291254,
+            "rtc_utc_s": 1789383579,
+            "os_errno": null
+          },
+          "offset": 120,
+          "restored": true,
+          "restored_tracking": [
+            "520B9991",
+            "2a00:6d41:200:2::11",
+            "3",
+            "1789384851.636730697",
+            "0.000000015",
+            "4.390791893",
+            "4.390791893",
+            "5.636",
+            "686.269",
+            "1.180",
+            "0.051285423",
+            "0.052055176",
+            "0.0",
+            "Normal"
+          ]
+        }
+      }
+    }
+  },
+  "oscillator_stop": {
+    "baseline": {
+      "boot_id": "577740db-60ed-46f8-ab94-042b46381c7f",
+      "kernel": "6.18.50+rpt-rpi-v8",
+      "rtc": {
+        "status": "OK",
+        "operation_started_at_monotonic_us": 11846198703,
+        "operation_finished_at_monotonic_us": 11846202876,
+        "rtc_utc_s": 1789391132,
+        "os_errno": null
+      },
+      "chrony_config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7"
+    },
+    "fault": {
+      "boot_id": "8e244439-41a6-41b3-8b50-e9e15df24c18",
+      "rtc": {
+        "status": "INVALID",
+        "operation_started_at_monotonic_us": 122479513,
+        "operation_finished_at_monotonic_us": 122483291,
+        "rtc_utc_s": null,
+        "os_errno": 22
+      },
+      "operator": {
+        "operator_response": "Done, no deviation.",
+        "baseline_sha256": "31438d560ba719a582144752c89a7bca7e9265a27f51f8c2394da71f019476c9",
+        "after_boot_id": "8e244439-41a6-41b3-8b50-e9e15df24c18",
+        "recorded_at_monotonic_ns": 119033068442,
+        "all_external_power_disconnected": true,
+        "coin_cell_removed_while_unpowered": true,
+        "coin_cell_reinstalled_before_power": true,
+        "no_rtc_write_since_fault": true
+      }
+    },
+    "recovery": {
+      "boot_id": "8e244439-41a6-41b3-8b50-e9e15df24c18",
+      "write_attempted": true,
+      "recovered": true,
+      "before_write_utc_us": 1789391500842410,
+      "after_write_utc_us": 1789391501005921,
+      "rtc": {
+        "status": "OK",
+        "operation_started_at_monotonic_us": 132380967,
+        "operation_finished_at_monotonic_us": 132384987,
+        "rtc_utc_s": 1789391501,
+        "os_errno": null
+      },
+      "read_bracket_utc_us": [
+        1789391501006290,
+        1789391501010429
+      ],
+      "chrony_config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7"
+    },
+    "coldboot": {
+      "boot_id": "180a9256-4a42-400a-84b3-08a313d32bc1",
+      "operator_response": "powered again, no deviations.",
+      "battery_retained": true,
+      "no_rtc_write_since_recovery": true,
+      "restored": true,
+      "rtc": {
+        "status": "OK",
+        "operation_started_at_monotonic_us": 105640500,
+        "operation_finished_at_monotonic_us": 105644205,
+        "rtc_utc_s": 1789394257,
+        "os_errno": null
+      },
+      "rtc_boot_lines": "[   15.724672] cura-receiver kernel: rtc-ds1307 1-0068: registered as rtc0\n[   15.725762] cura-receiver kernel: rtc-ds1307 1-0068: setting system clock to 2026-09-14T13:55:56 UTC (1789394156)",
+      "chrony_config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7"
+    },
+    "operator": {
+      "outage_start_response": "unplugged. Don't worry to time it, I'll do it. You can return when the only thing you have to to is wait for the 30m.",
+      "outage_end_response": "powered again, no deviations.",
+      "minimum_outage_seconds": 1800,
+      "timing_owner": "operator",
+      "procedure_completed_without_deviation": true,
+      "physical_disconnection_time": null,
+      "physical_reconnection_time": null,
+      "note": "The operator undertook timing and confirmed completion without deviations. Message/capture timestamps are not claimed as exact physical switching times."
+    }
+  },
+  "controller": {
+    "kind": "stock-driver RTC controller qualification",
+    "date": "2026-09-15",
+    "pytest": {
+      "passed": 4,
+      "failed": 0,
+      "errors": 0,
+      "duration_s": "21.26"
+    },
+    "kernel": "6.18.50+rpt-rpi-v8",
+    "boot_id": "52908182-dac3-4fb1-bf9b-69599ef75dfa",
+    "recovery_window_us": 3000000,
+    "read_call_budget_us": 5000000,
+    "operation_acceptance_bound_us": 3000000,
+    "write_fault_deadline_us": 500000,
+    "cases": [
+      {
+        "operation": "read",
+        "gpio": 17,
+        "passed": true,
+        "restored": true,
+        "result": {
+          "status": "IO_ERROR",
+          "operation_started_at_monotonic_us": 12409127001,
+          "operation_finished_at_monotonic_us": 12410140280,
+          "rtc_utc_s": null,
+          "os_errno": 110
+        },
+        "ioctl_samples": 150,
+        "sigkill_samples": 0,
+        "gpio_exit": 0,
+        "released_pads": [
+          {
+            "pin": 2,
+            "high": true,
+            "raw": "2: a0    -- | hi // GPIO2 = SDA1"
+          },
+          {
+            "pin": 3,
+            "high": true,
+            "raw": "3: a0    -- | hi // GPIO3 = SCL1"
+          }
+        ],
+        "recovered_pads": [
+          {
+            "pin": 2,
+            "high": true,
+            "raw": "2: a0    -- | hi // GPIO2 = SDA1"
+          },
+          {
+            "pin": 3,
+            "high": true,
+            "raw": "3: a0    -- | hi // GPIO3 = SCL1"
+          }
+        ],
+        "release_statuses": [
+          "Ds3231ReadStatus.MISSING",
+          "Ds3231ReadStatus.IO_ERROR",
+          "Ds3231ReadStatus.IO_ERROR",
+          "Ds3231ReadStatus.OK"
+        ],
+        "cleanup_write": null,
+        "recovery": {
+          "result": {
+            "status": "Ds3231ReadStatus.OK",
+            "operation_started_at_monotonic_us": 12412003596,
+            "operation_finished_at_monotonic_us": 12412008176,
+            "rtc_utc_s": 1789468790,
+            "os_errno": null
+          },
+          "operation_started_at_monotonic_us": 12410959739,
+          "operation_finished_at_monotonic_us": 12412010097,
+          "attempts": 4,
+          "first_failure": {
+            "status": "Ds3231ReadStatus.IO_ERROR",
+            "operation_started_at_monotonic_us": 12410965186,
+            "operation_finished_at_monotonic_us": 12411996349,
+            "rtc_utc_s": null,
+            "os_errno": 110
+          }
+        },
+        "verified_recovery": null,
+        "chrony_pid": 3291,
+        "chrony_start_ticks": "1041022",
+        "chrony_config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7"
+      },
+      {
+        "operation": "read",
+        "gpio": 27,
+        "passed": true,
+        "restored": true,
+        "result": {
+          "status": "INVALID",
+          "operation_started_at_monotonic_us": 12414745344,
+          "operation_finished_at_monotonic_us": 12414748366,
+          "rtc_utc_s": null,
+          "os_errno": 22
+        },
+        "ioctl_samples": 0,
+        "sigkill_samples": 0,
+        "gpio_exit": 0,
+        "released_pads": [
+          {
+            "pin": 2,
+            "high": true,
+            "raw": "2: a0    -- | hi // GPIO2 = SDA1"
+          },
+          {
+            "pin": 3,
+            "high": true,
+            "raw": "3: a0    -- | hi // GPIO3 = SCL1"
+          }
+        ],
+        "recovered_pads": [
+          {
+            "pin": 2,
+            "high": true,
+            "raw": "2: a0    -- | hi // GPIO2 = SDA1"
+          },
+          {
+            "pin": 3,
+            "high": true,
+            "raw": "3: a0    -- | hi // GPIO3 = SCL1"
+          }
+        ],
+        "release_statuses": [
+          "Ds3231ReadStatus.OK"
+        ],
+        "cleanup_write": null,
+        "recovery": {
+          "result": {
+            "status": "Ds3231ReadStatus.OK",
+            "operation_started_at_monotonic_us": 12415496230,
+            "operation_finished_at_monotonic_us": 12415498967,
+            "rtc_utc_s": 1789468793,
+            "os_errno": null
+          },
+          "operation_started_at_monotonic_us": 12415496165,
+          "operation_finished_at_monotonic_us": 12415504787,
+          "attempts": 1,
+          "first_failure": null
+        },
+        "verified_recovery": null,
+        "chrony_pid": 3291,
+        "chrony_start_ticks": "1041022",
+        "chrony_config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7"
+      },
+      {
+        "operation": "write",
+        "gpio": 17,
+        "passed": true,
+        "restored": true,
+        "result": {
+          "disposition": "OUTCOME_UNKNOWN",
+          "failure": "DEADLINE_EXCEEDED",
+          "operation_started_at_monotonic_us": 12418192892,
+          "operation_finished_at_monotonic_us": 12420262471,
+          "os_errno": null
+        },
+        "ioctl_samples": 289,
+        "sigkill_samples": 218,
+        "gpio_exit": 0,
+        "released_pads": [
+          {
+            "pin": 2,
+            "high": false,
+            "raw": "2: a0    -- | lo // GPIO2 = SDA1"
+          },
+          {
+            "pin": 3,
+            "high": true,
+            "raw": "3: a0    -- | hi // GPIO3 = SCL1"
+          }
+        ],
+        "recovered_pads": [
+          {
+            "pin": 2,
+            "high": true,
+            "raw": "2: a0    -- | hi // GPIO2 = SDA1"
+          },
+          {
+            "pin": 3,
+            "high": true,
+            "raw": "3: a0    -- | hi // GPIO3 = SCL1"
+          }
+        ],
+        "release_statuses": [
+          "Ds3231ReadStatus.IO_ERROR",
+          "Ds3231ReadStatus.IO_ERROR",
+          "Ds3231ReadStatus.OK"
+        ],
+        "cleanup_write": {
+          "exit": 32,
+          "stdout": "",
+          "stderr": ""
+        },
+        "recovery": {
+          "result": {
+            "status": "Ds3231ReadStatus.OK",
+            "operation_started_at_monotonic_us": 12422177428,
+            "operation_finished_at_monotonic_us": 12422180599,
+            "rtc_utc_s": 1789468800,
+            "os_errno": null
+          },
+          "operation_started_at_monotonic_us": 12421142002,
+          "operation_finished_at_monotonic_us": 12422181885,
+          "attempts": 3,
+          "first_failure": {
+            "status": "Ds3231ReadStatus.IO_ERROR",
+            "operation_started_at_monotonic_us": 12421142076,
+            "operation_finished_at_monotonic_us": 12422172254,
+            "rtc_utc_s": null,
+            "os_errno": 110
+          }
+        },
+        "verified_recovery": {
+          "result": {
+            "status": "Ds3231ReadStatus.OK",
+            "operation_started_at_monotonic_us": 12422199862,
+            "operation_finished_at_monotonic_us": 12422202777,
+            "rtc_utc_s": 1789468800,
+            "os_errno": null
+          },
+          "operation_started_at_monotonic_us": 12422199800,
+          "operation_finished_at_monotonic_us": 12422204135,
+          "attempts": 1,
+          "first_failure": null
+        },
+        "chrony_pid": 3291,
+        "chrony_start_ticks": "1041022",
+        "chrony_config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7",
+        "example_pending_sigkill": {
+          "pid": 4044,
+          "syscall": "29 0x3 0x4024700a 0x7ff69337c0 0x0 0x0 0x0 0x7ff6933790 0x7faa099890",
+          "syscall_after_status": "29 0x3 0x4024700a 0x7ff69337c0 0x0 0x0 0x0 0x7ff6933790 0x7faa099890",
+          "exe": "/usr/libexec/cura-receiver-time-p97y73k3/ds3231-set",
+          "stat": "4044 (ds3231-set) D 4042 3975 3975 0 -1 4194560 50 0 0 0 0 0 0 0 20 0 1 0 1241819 2334720 298 18446744073709551615 367242313728 367242316668 549597690272 0 0 256 0 0 0 1 0 0 17 0 0 0 0 0 0 367242444232 367242444888 367939158016 549597691746 549597691809 549597691809 549597691844 9\n",
+          "status": "Name:\tds3231-set\nUmask:\t0022\nState:\tD (disk sleep)\nTgid:\t4044\nNgid:\t0\nPid:\t4044\nPPid:\t4042\nTracerPid:\t0\nUid:\t1000\t1000\t1000\t1000\nGid:\t1000\t1000\t1000\t1000\nFDSize:\t64\nGroups:\t4 20 24 27 29 44 46 60 100 102 986 988 989 992 996 1000 \nNStgid:\t4044\nNSpid:\t4044\nNSpgid:\t3975\nNSsid:\t3975\nKthread:\t0\nVmPeak:\t    2280 kB\nVmSize:\t    2280 kB\nVmLck:\t       0 kB\nVmPin:\t       0 kB\nVmHWM:\t    1284 kB\nVmRSS:\t    1284 kB\nRssAnon:\t      92 kB\nRssFile:\t    1192 kB\nRssShmem:\t       0 kB\nVmData:\t     220 kB\nVmStk:\t     132 kB\nVmExe:\t       4 kB\nVmLib:\t    1816 kB\nVmPTE:\t      32 kB\nVmSwap:\t       0 kB\nCoreDumping:\t0\nTHP_enabled:\t0\nuntag_mask:\t0xffffffffffffff\nThreads:\t1\nSigQ:\t0/2687\nSigPnd:\t0000000000000100\nShdPnd:\t0000000000000100\nSigBlk:\t0000000000000000\nSigIgn:\t0000000000000000\nSigCgt:\t0000000000000000\nCapInh:\t0000000000000000\nCapPrm:\t0000000002000000\nCapEff:\t0000000002000000\nCapBnd:\t000001ffffffffff\nCapAmb:\t0000000000000000\nNoNewPrivs:\t0\nSeccomp:\t0\nSeccomp_filters:\t0\nSpeculation_Store_Bypass:\tnot vulnerable\nSpeculationIndirectBranch:\tunknown\nCpus_allowed:\tf\nCpus_allowed_list:\t0-3\nMems_allowed:\t0001\nMems_allowed_list:\t0\nvoluntary_ctxt_switches:\t1\nnonvoluntary_ctxt_switches:\t2\n",
+          "sigkill_pending": true,
+          "observed_monotonic_ns": 12418695721517
+        }
+      },
+      {
+        "operation": "write",
+        "gpio": 27,
+        "passed": true,
+        "restored": true,
+        "result": {
+          "disposition": "COMPLETED",
+          "failure": "NONE",
+          "operation_started_at_monotonic_us": 12424899920,
+          "operation_finished_at_monotonic_us": 12424904861,
+          "os_errno": null
+        },
+        "ioctl_samples": 0,
+        "sigkill_samples": 0,
+        "gpio_exit": 0,
+        "released_pads": [
+          {
+            "pin": 2,
+            "high": true,
+            "raw": "2: a0    -- | hi // GPIO2 = SDA1"
+          },
+          {
+            "pin": 3,
+            "high": true,
+            "raw": "3: a0    -- | hi // GPIO3 = SCL1"
+          }
+        ],
+        "recovered_pads": [
+          {
+            "pin": 2,
+            "high": true,
+            "raw": "2: a0    -- | hi // GPIO2 = SDA1"
+          },
+          {
+            "pin": 3,
+            "high": true,
+            "raw": "3: a0    -- | hi // GPIO3 = SCL1"
+          }
+        ],
+        "release_statuses": [
+          "Ds3231ReadStatus.OK"
+        ],
+        "cleanup_write": {
+          "exit": 32,
+          "stdout": "",
+          "stderr": ""
+        },
+        "recovery": {
+          "result": {
+            "status": "Ds3231ReadStatus.OK",
+            "operation_started_at_monotonic_us": 12425651934,
+            "operation_finished_at_monotonic_us": 12425654708,
+            "rtc_utc_s": 1789468803,
+            "os_errno": null
+          },
+          "operation_started_at_monotonic_us": 12425651874,
+          "operation_finished_at_monotonic_us": 12425660179,
+          "attempts": 1,
+          "first_failure": null
+        },
+        "verified_recovery": {
+          "result": {
+            "status": "Ds3231ReadStatus.OK",
+            "operation_started_at_monotonic_us": 12425679208,
+            "operation_finished_at_monotonic_us": 12425682142,
+            "rtc_utc_s": 1789468802,
+            "os_errno": null
+          },
+          "operation_started_at_monotonic_us": 12425679144,
+          "operation_finished_at_monotonic_us": 12425683408,
+          "attempts": 1,
+          "first_failure": null
+        },
+        "chrony_pid": 3291,
+        "chrony_start_ticks": "1041022",
+        "chrony_config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7"
+      }
+    ],
+    "postflight": {
+      "rtc": {
+        "status": "Ds3231ReadStatus.OK",
+        "operation_started_at_monotonic_us": 12508894557,
+        "operation_finished_at_monotonic_us": 12508898235,
+        "rtc_utc_s": 1789468885,
+        "os_errno": null
+      },
+      "independent_hwclock": "2026-09-15 12:41:25.235893+02:00\n",
+      "pads": [
+        {
+          "pin": 2,
+          "high": true,
+          "raw": "2: a0    -- | hi // GPIO2 = SDA1"
+        },
+        {
+          "pin": 3,
+          "high": true,
+          "raw": "3: a0    -- | hi // GPIO3 = SCL1"
+        }
+      ],
+      "gpios": [
+        {
+          "offset": 17,
+          "used": false,
+          "direction": "INPUT",
+          "bias": "UNKNOWN"
+        },
+        {
+          "offset": 27,
+          "used": false,
+          "direction": "INPUT",
+          "bias": "UNKNOWN"
+        }
+      ],
+      "chrony": {
+        "pid": 3291,
+        "start_ticks": "1041022",
+        "config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7",
+        "tracking": [
+          "A29FC87B",
+          "162.159.200.123",
+          "4",
+          "1789468862.629796331",
+          "-0.000015519",
+          "-0.000070986",
+          "0.000301931",
+          "5.867",
+          "-0.006",
+          "0.627",
+          "0.052571494",
+          "0.001425757",
+          "64.9",
+          "Normal"
+        ]
+      },
+      "rtc_permissions": [
+        384,
+        0,
+        0
+      ],
+      "stock_driver": true,
+      "helpers_removed": true
+    }
+  },
+  "nominal_restoration": {
+    "date": "2026-09-15",
+    "invasive_pytest": {
+      "passed": 3,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "duration_s": "97.797",
+      "cases": [
+        "test_network_rtc_refresh_and_helper_privilege[0]",
+        "test_forward_backward_step_component[60]",
+        "test_forward_backward_step_component[-60]"
+      ]
+    },
+    "restorations": [
+      {
+        "baseline_tracking": [
+          "A29FC801",
+          "162.159.200.1",
+          "4",
+          "1789474805.971843967",
+          "0.000000013",
+          "59.997348785",
+          "59.997348785",
+          "5.351",
+          "43.083",
+          "4.238",
+          "0.053988412",
+          "0.000912032",
+          "0.0",
+          "Normal"
+        ],
+        "saved_rtc": {
+          "status": "Ds3231ReadStatus.OK",
+          "operation_started_at_monotonic_us": 566036106,
+          "operation_finished_at_monotonic_us": 566038843,
+          "rtc_utc_s": 1789474803,
+          "os_errno": null
+        },
+        "offset": -60,
+        "restored": true,
+        "access": {
+          "device_uid": 0,
+          "device_gid": 0,
+          "device_mode": 384,
+          "restored": true,
+          "cleanup_errors": [],
+          "actual_uid": 0,
+          "actual_gid": 0,
+          "actual_mode": 384,
+          "helper_removed": true,
+          "created_link_removed": true
+        },
+        "restored_tracking": [
+          "437BF176",
+          "2603:c020:8017:3e00::123:123",
+          "3",
+          "1789474836.489734216",
+          "-0.000000014",
+          "-59.996520996",
+          "59.996520996",
+          "5.351",
+          "32.755",
+          "4.238",
+          "0.033349309",
+          "0.000387931",
+          "0.0",
+          "Normal"
+        ]
+      },
+      {
+        "baseline_tracking": [
+          "A29FC87B",
+          "162.159.200.123",
+          "4",
+          "1789474680.713453682",
+          "-0.000000000",
+          "0.000012798",
+          "0.001766368",
+          "5.351",
+          "-0.151",
+          "4.238",
+          "0.054069757",
+          "0.001444689",
+          "64.5",
+          "Normal"
+        ],
+        "saved_rtc": {
+          "status": "Ds3231ReadStatus.OK",
+          "operation_started_at_monotonic_us": 500431526,
+          "operation_finished_at_monotonic_us": 500435154,
+          "rtc_utc_s": 1789474739,
+          "os_errno": null
+        },
+        "offset": 0,
+        "restored": true,
+        "access": {
+          "device_uid": 0,
+          "device_gid": 0,
+          "device_mode": 384,
+          "restored": true,
+          "cleanup_errors": [],
+          "actual_uid": 0,
+          "actual_gid": 0,
+          "actual_mode": 384,
+          "helper_removed": true,
+          "created_link_removed": true
+        },
+        "restored_tracking": [
+          "5D2CF392",
+          "93.44.243.146",
+          "3",
+          "1789474775.207778449",
+          "0.000000011",
+          "0.003807649",
+          "0.003807649",
+          "5.351",
+          "-292.910",
+          "4.238",
+          "0.026570247",
+          "0.002015821",
+          "0.0",
+          "Normal"
+        ],
+        "restored_rtc": {
+          "status": "Ds3231ReadStatus.OK",
+          "operation_started_at_monotonic_us": 535219664,
+          "operation_finished_at_monotonic_us": 535223640,
+          "rtc_utc_s": 1789474773,
+          "os_errno": null
+        }
+      },
+      {
+        "baseline_tracking": [
+          "5D2CF392",
+          "93.44.243.146",
+          "3",
+          "1789474775.207778449",
+          "0.000000010",
+          "0.003807649",
+          "0.003807649",
+          "5.351",
+          "-292.910",
+          "4.238",
+          "0.026570247",
+          "0.002038836",
+          "0.0",
+          "Normal"
+        ],
+        "saved_rtc": {
+          "status": "Ds3231ReadStatus.OK",
+          "operation_started_at_monotonic_us": 535290142,
+          "operation_finished_at_monotonic_us": 535292854,
+          "rtc_utc_s": 1789474773,
+          "os_errno": null
+        },
+        "offset": 60,
+        "restored": true,
+        "access": {
+          "device_uid": 0,
+          "device_gid": 0,
+          "device_mode": 384,
+          "restored": true,
+          "cleanup_errors": [],
+          "actual_uid": 0,
+          "actual_gid": 0,
+          "actual_mode": 384,
+          "helper_removed": true,
+          "created_link_removed": true
+        },
+        "restored_tracking": [
+          "A29FC801",
+          "162.159.200.1",
+          "4",
+          "1789474805.971843967",
+          "0.000000014",
+          "59.997348785",
+          "59.997348785",
+          "5.351",
+          "43.083",
+          "4.238",
+          "0.053988412",
+          "0.000908162",
+          "0.0",
+          "Normal"
+        ]
+      }
+    ],
+    "postflight": {
+      "rtc": {
+        "status": "Ds3231ReadStatus.OK",
+        "operation_started_at_monotonic_us": 660640879,
+        "operation_finished_at_monotonic_us": 660644256,
+        "rtc_utc_s": 1789474898,
+        "os_errno": null
+      },
+      "independent_hwclock": "2026-09-15 14:21:38.432930+02:00\n",
+      "chrony": {
+        "pid": 2049,
+        "start_ticks": "59146",
+        "config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7",
+        "tracking": [
+          "437BF176",
+          "2603:c020:8017:3e00::123:123",
+          "3",
+          "1789474838.806074120",
+          "0.000000120",
+          "0.000133335",
+          "0.000133335",
+          "5.351",
+          "37.416",
+          "4.238",
+          "0.033475541",
+          "0.003203646",
+          "1.6",
+          "Normal"
+        ]
+      },
+      "rtc_permissions": [
+        384,
+        0,
+        0
+      ],
+      "stock_bindings": {
+        "3f804000.i2c": "/sys/bus/platform/drivers/i2c-bcm2835",
+        "3f805000.i2c": "/sys/bus/platform/drivers/i2c-bcm2835"
+      },
+      "diagnostic_loaded": false,
+      "temporary_helpers": [],
+      "temporary_sockets": [],
+      "stable_alias_exists": false,
+      "verified": true
+    },
+    "boot_inspection": {
+      "boot_id": "05188476-ddf2-42bd-b8c6-9eb9a2736402",
+      "kernel": "6.18.50+rpt-rpi-v8",
+      "rtc_driver": "/sys/bus/platform/drivers/i2c-bcm2835",
+      "diagnostic_loaded": false,
+      "chrony": {
+        "pid": 641,
+        "start_ticks": "2720",
+        "config_sha256": "3c4c980df3a2c2b6ff86fcabbda677b82a9bdcde67528092529161efc7749df7",
+        "tracking": [
+          "A29FC87B",
+          "162.159.200.123",
+          "4",
+          "1789474295.549131243",
+          "1.768387556",
+          "-0.000925415",
+          "0.000925415",
+          "5.921",
+          "66.294",
+          "0.631",
+          "0.052113116",
+          "0.003396432",
+          "1.8",
+          "Normal"
+        ]
+      },
+      "kernel_rtc": "[   14.724345] cura-receiver kernel: rtc-ds1307 1-0068: registered as rtc0\n[   14.725198] cura-receiver kernel: rtc-ds1307 1-0068: setting system clock to 2026-09-15T12:10:45 UTC (1789474245)\n[   18.379265] cura-receiver kernel: vc4-drm soc:gpu: bound 3f206000.pixelvalve (ops vc4_crtc_ops [vc4])\n[   18.384527] cura-receiver kernel: vc4-drm soc:gpu: bound 3f207000.pixelvalve (ops vc4_crtc_ops [vc4])\n[   18.385921] cura-receiver kernel: vc4-drm soc:gpu: bound 3f807000.pixelvalve (ops vc4_crtc_ops [vc4])\n[   18.404384] cura-receiver kernel: vc4-drm soc:gpu: [drm] Cannot find any crtc or sizes\n[   18.405585] cura-receiver kernel: vc4-drm soc:gpu: [drm] Cannot find any crtc or sizes\n"
+    }
+  },
+  "limits": "Historical component/physical results only. Battery outage is operator-timed; no calibrated drift, physical switching timestamps, trusted holdover or full-service acceptance. Changed sources require renewed applicability review."
+}

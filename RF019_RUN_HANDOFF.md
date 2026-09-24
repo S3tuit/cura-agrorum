@@ -5,8 +5,9 @@ before/after reading baseline. No runner remains active; C6 stopped in loader,
 Pi service stopped. The C6 still contains the accelerated image, not the900s
 bench/pilot image. No bench has started.
 
-Results: `receiver/tests/evidence/2026-09-19-pilot-runtime/RF019_QUALIFICATION.json`
-and `RF020_QUALIFICATION.json`. Compressed captures retain exact bindings.
+Historical results: [RF catalogue](tests/rf/test_suite.notes.md#rf-019).
+The [costly-run record](receiver/tests/evidence/2026-09-19-pilot-runtime/README.md)
+retains the long accepted case; fast accelerated runs and raw bundles were discarded.
 RF-031 physical scenario remains deferred NOT RUN; its disposition is complete.
 RF-023 waits for workplan D-092 group/database preparation choice before further
 implementation/device execution. Consult the owned workplan for current tasks.
@@ -17,12 +18,12 @@ implementation/device execution. Consult the owned workplan for current tasks.
 
 Run: `bd0330fc9df14e7fbb1fbaf4f8f97683`  
 Case: `RF-019.current.accepted`  
-Status: PASS, completion records checked on2026-09-19. Three natural wakes; received-current intervals896.362549s and900.244864s. Peer safely shut down; C6 stopped in loader; temporary credentials removed. Only RF-019.current.accepted is complete. Concise evidence: `receiver/tests/evidence/2026-09-19-pilot-runtime/RF019_CURRENT_ACCEPTED.json`.  
+Status: PASS, completion records checked on2026-09-19. Three natural wakes; received-current intervals896.362549s and900.244864s. Peer safely shut down; C6 stopped in loader; temporary credentials removed. Only RF-019.current.accepted is complete. Concise evidence: `receiver/tests/evidence/2026-09-19-pilot-runtime/results.json` (`rf019_current_accepted`).
 Capture directory: `/tmp/cura-production-preparation-9b1tykup/rf019-current-accepted-bd0330fc9df14e7fbb1fbaf4f8f97683`
 
 ## Authority and limits
 
-The operator explicitly requested this restart after confirming a temporary Wi-Fi outage interrupted run `53ac7f51c1604ca2adad3b501dbfefd0`. Preserve that FAIL and the earlier timing/startup failure. There is no automatic retry.
+The operator explicitly requested this restart after confirming a temporary Wi-Fi outage interrupted run `53ac7f51c1604ca2adad3b501dbfefd0`. Those attempts remain historical failures; their captures are not retained. The reset-held UART-open rule is in the RF procedure and regression tests. There is no automatic retry.
 
 Three natural wakes, nominal 900-second sleep, inclusive 855–945-second received-current interval. Peer lease: 1950 seconds. Maximum 210 C6 uplinks and four Pi replies. Allow about 35 minutes after node start for the episode and final storage capture. Leave power, USB and network available. The existing runner owns both endpoints and its cleanup; perform no competing Pi/C6 access while it runs.
 

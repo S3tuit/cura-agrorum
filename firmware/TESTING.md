@@ -11,8 +11,12 @@ distinguishes implementation, prior component evidence and pending mapping runs.
 
 ## Evidence retention
 
+Follow the repository [evidence policy](../EVIDENCE.md). Useful failure lessons
+belong in code comments, regression tests or owning documentation; archive a
+lesson only when no better home exists. Routine failed runs are discarded.
+
 Use [tests/evidence/](tests/evidence/README.md) only for destructive tests, tests
-requiring physical intervention, or runs lasting at least ten minutes. Retain
+requiring physical intervention, or runs lasting more than five minutes. Retain
 a concise result, device/build identity, essential observations and restoration
 or acceptance limits. Fast host checks, ordinary builds and easily repeated
 nominal runs need no permanent evidence archive. Do not retain full dependency

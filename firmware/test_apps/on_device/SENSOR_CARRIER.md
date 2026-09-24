@@ -16,7 +16,7 @@ The existing [sensor circuit](#common-carrier-schematic) and its
 and radio preflight/measurement procedures.
 
 The field-pilot record at
-`cura-agrorum-logbook/deployments/field-pilot-v2/README.md` identifies the
+`cura-agrorum-logbook/deployments/field-deployment-v2/README.md` identifies the
 moisture devices as low-cost capacitive probes and the enclosure device as a
 BME280, but does not freeze a moisture-probe model or BME280 breakout revision.
 Connector pin numbers in this carrier therefore define electrical functions,

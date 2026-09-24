@@ -79,6 +79,7 @@ __pycache__/
 .venv
 
 # Temporary hardware captures; curate useful results, then delete raw runs.
+/receiver/tests/hardware/raw/
 /receiver/tests/hardware/evidence/**/20??-??-??/
 /receiver/tests/hardware/evidence/**/raw/
 

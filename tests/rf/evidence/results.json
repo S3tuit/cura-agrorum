@@ -1,6 +1,9 @@
 {
+  "kind": "Historical curation extract; no new test execution",
+  "retained_because": "RF-012 requires disconnected DIO1; RF-013 requires radio removal and rail ties; both need powered-off restoration.",
+  "provenance": "Extracted from the prior tracked archive. Source hashes identify tested inputs, not current qualification; original raw captures are not retained.",
+  "date": "2026-09-18",
   "build": {
-    "external_dependency_count": 1815,
     "files": {
       "bootloader/bootloader.bin": "152e3cc975732028b96a749c8f7f495f23dcd1a171426d0ddc1439c5582f8d45",
       "compile_commands.json": "6a1c9c8ffc3a62ea722ae88f64ed1fff0ea72dc9abe361f164afd45be96e8bdb",
@@ -10,18 +13,48 @@
       "flasher_args.json": "563a4aa303211cc7f24ba376ce14e999ca3a7f5a76e227945e10d06db629a28a",
       "partition_table/partition-table.bin": "76d98d0e02b929c3dbdb1d1a433dce832f0c6f5a14a1a3923339f43ba2098676",
       "project_description.json": "c118553b30c36d064db99878c2e451d81f681788072bcdf3d60551ff0a9ee745"
+    }
+  },
+  "source": {
+    "recorded_manifest_sha256": "7cacf4ccbaf97fcb4dcea7dc100e1bd85af6a8ec9c244cfd131ccc3bca1f15af",
+    "relevant_files_sha256": {
+      "firmware/components/sx1262_radio/CMakeLists.txt": "c1a25813c2a6e3f7eb70187c9b486d4e2d4b1be3ab9fa330791439fca7a76d18",
+      "firmware/components/sx1262_radio/include/sx1262_radio.h": "a1ce2887f5091f030b1b857af74308b90dccb0ab54019314edfd8adf9f3be0d3",
+      "firmware/components/sx1262_radio/private_include/sx1262_radio_backend.h": "1314a5979e82a3e67c91b104f591694b546bf5f8e95e08a69eff413b6c926fba",
+      "firmware/components/sx1262_radio/private_include/sx1262_radio_timing.h": "c5a66b7a61ee8f7bb99fd163af50aa0975d3e73f324b17c33f420d55e818c68e",
+      "firmware/components/sx1262_radio/sx1262_radio.c": "a7428232e905e1f9fec729220a70d953b49633f15898487d5e72ae706029126c",
+      "firmware/components/sx1262_radio/sx1262_radio_backend_common.c": "4e9852e1801287a7774894044b0bf61f09191b3149f5055adbb304a3d2184ce0",
+      "firmware/components/sx1262_radio/sx1262_radio_backend_esp.c": "e8d50ad03e41d88bbf49785ab18a9bee0b4572459101ef3e0c447c642e4d61c1",
+      "firmware/components/sx1262_radio/sx1262_radio_timing.c": "d90f64d2973b8d8b149a975bb56d6034d9761ebf5b4dc612bb8077a8b2ee9bcf",
+      "firmware/components/sx1262_radio/vendor/semtech_sx126x_driver/LICENSE.txt": "ddfd54618b03c470fa3bccccb59de26582cab020b02013ae824362233f7bf877",
+      "firmware/components/sx1262_radio/vendor/semtech_sx126x_driver/README.cura.md": "5265bacc9a2edb5cea16ed17ee0cf5911cf5dc96c92badbd87ea65de7ff4210b",
+      "firmware/components/sx1262_radio/vendor/semtech_sx126x_driver/sx126x.c": "364465db57f5ebaf216934dc45676ff83a8cdee162a1d1b5b6da8cea61dfa4ca",
+      "firmware/components/sx1262_radio/vendor/semtech_sx126x_driver/sx126x.h": "798e0aa7d773992371d82f747ebe66e00c6c0ec54b3b3a0f528822828e0d063f",
+      "firmware/components/sx1262_radio/vendor/semtech_sx126x_driver/sx126x_hal.h": "b70a5de4265a0074ab3c8577a4fd55f10634e02351fabc5c16f752cccc102d2c",
+      "firmware/components/sx1262_radio/vendor/semtech_sx126x_driver/sx126x_regs.h": "dd64a28905140a9d6d21bc91c18db4fa039e24503d8534e333bf48300a3dfb28",
+      "firmware/components/sx1262_radio/vendor/semtech_sx126x_driver/sx126x_status.h": "043780bfeecdfb9d22137cbac33521aa2c40d052e3338c74ff0ff86feb176235",
+      "firmware/test_apps/radio/CMakeLists.txt": "afa2dd7dc5cceca5637c336a5255880138a0afe29b8d5e0ceca63fffba3949f4",
+      "firmware/test_apps/radio/dependencies.lock": "9fde80c3d7df5f099eed4547f8de5ae84995b835c611b8d15f77d7c2a5a39760",
+      "firmware/test_apps/radio/main/CMakeLists.txt": "46f76a2914adfa3a088578b7dae1128caef33360e3b8cc27e94aafc434435656",
+      "firmware/test_apps/radio/main/radio_app.c": "15ba7e3ca8a6419a5f344c5286d98b86fb2c8177510f118ab90188cde730345a",
+      "firmware/test_apps/radio/main/radio_command.c": "f3e1f13a492b84105214539ab807a6fdcb6da11040aeb2d715c0b4e667d86d8a",
+      "firmware/test_apps/radio/main/radio_command.h": "abd547f7952b83e61d817633e22c7eb3faf20b7beca929b2ab0b0687c82e8824",
+      "firmware/test_apps/radio/main/radio_observe.c": "baf1c420d4cd0442e8404e27bc02d0fa460ca2d8e129ec3b6adbf00a2270e790",
+      "firmware/test_apps/radio/main/radio_observe.h": "f66fed1942a7c91a45be106c162acb813e0a0170b75fc12c4bcda5a99d7d4a5a",
+      "firmware/test_apps/radio/partitions.csv": "3050db11775712352f9b679ac86023c6ffb9266cee8fb3bb17674511abb1a373",
+      "firmware/test_apps/radio/sdkconfig.defaults": "48b748740eaa4b2e0e9ffc8020d039fe4789de8fede90d82da7f935288e69b82",
+      "receiver/cura_receiver/platform/linux_radio.py": "70c67c2715d9413d9f3f4ff1f9a1bb6b677377a7a042905b63bae231c808e27a",
+      "receiver/cura_receiver/radio.py": "695c0da9ff8a3a569674470a8e874223b248243430a093d8a2ee9a981a64c291",
+      "receiver/cura_receiver/sx1262.py": "8435cedd783bae896f34f0dbbb531d84ee33b3e864fcafb566d711b19b4e91b6",
+      "receiver/test_apps/radio_peer/README.md": "6cb2757bee3a4d1033ca041a507b612c96572673ab39768293e087b78f90125f",
+      "receiver/test_apps/radio_peer/peer.py": "b6169649b7ee0dbea34db8a7b6a4a3a9e581143304b6b50795db416bde67840d",
+      "tests/rf/verify.py": "ac624909d982a80af55a9986394d66b18cd1b9b86630bd4b7f45c3318d8a900a"
     },
-    "original_build_sha256": "3d2352e0a305d8ec894a253af0fff6b4f7c7b00f9a689db4209e8e8d70ba6d81"
+    "head": "ee55b737b0bc90e2a467814ddccc688a08c8a06a"
   },
   "cases": {
     "RF-012.disconnected": {
-      "capture": {
-        "c6": "rf012-c6.json",
-        "pi": "rf012-pi.jsonl",
-        "source": "rf012-source.json"
-      },
       "date": "2026-09-18",
-      "elf": "6e8acd2deb2a2eefc53ddc7aa2d08a05cd44b478d3037df33f1873567c61cd3a",
       "fixture": {
         "antennas_checked": true,
         "c6_dut": "cc8da2fc0224",
@@ -30,8 +63,7 @@
         "c6_uart": "/dev/ttyUSB0",
         "exclusive_radios": true,
         "manual_fault_confirmed": true,
-        "operating_envelope_reference": "tests/rf/evidence/2026-09-18-envelope/README.md; DEC-003/DEP-023 approved documented hardware/configuration at configured +14 dBm",
-        "operator": "user 2026-09-18: RN5 restored MCU-side GPIO20 to GND; radio DIO1 disconnected; powered on, ready for RF-012 rerun",
+        "operating_envelope_reference": "tests/rf/OPERATING_ENVELOPE.md; DEC-003/DEP-023",
         "pi_board_id": "00000000e0027211",
         "pi_fixture": "radio_nominal",
         "pi_transmitter": "Pi 00000000e0027211 fitted Waveshare EU868 module",
@@ -42,7 +74,6 @@
         "schema": 1,
         "wiring_checked": true
       },
-      "original_path": "tests/rf/evidence/2026-09-18-rf012/restored-run",
       "original_run_sha256": "af2d409ceb702179f3808fec2807117a4547edf72e88f1fa7daf70e8a22df48c",
       "original_verification": "PASS: original archive including prerequisite applicability, JUnit, endpoint assertions and peer exit verified before curation.",
       "peer_exit": {
@@ -90,16 +121,116 @@
       ],
       "run": "c34e68d18b964f5c846a6ec372355b7f",
       "source": "7cacf4ccbaf97fcb4dcea7dc100e1bd85af6a8ec9c244cfd131ccc3bca1f15af",
-      "status": "PASS"
+      "status": "PASS",
+      "c6_observations": [
+        {
+          "boot": 54144664,
+          "continuation": 0,
+          "dut": "cc8da2fc0224",
+          "elf": "6e8acd2deb2a2eefc53ddc7aa2d08a05cd44b478d3037df33f1873567c61cd3a",
+          "kind": "boot",
+          "previous_boot": 0,
+          "previous_case": "",
+          "previous_run": "",
+          "reset": 1
+        },
+        {
+          "boot": 54144664,
+          "case": "RF-012.disconnected",
+          "kind": "begin",
+          "phase": 0,
+          "run": "c34e68d18b964f5c846a6ec372355b7f"
+        },
+        {
+          "after": 4850035,
+          "before": 2843975,
+          "deadline": 4843975,
+          "diagnostic": "01000b0800000000000000000000",
+          "done": false,
+          "error": 131078,
+          "kind": "result",
+          "operation": 16,
+          "payload": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435",
+          "rssi": 0,
+          "rx_done": 0,
+          "rx_outcome": 0,
+          "set_tx": 2865676,
+          "snr": 0,
+          "started": true,
+          "tx": true,
+          "tx_done": 0
+        },
+        {
+          "boot": 54144664,
+          "case": "RF-012.disconnected",
+          "cleanup_diagnostic": "",
+          "cleanup_error": 0,
+          "cleanup_operation": 0,
+          "failed": 0,
+          "kind": "end",
+          "phase": 0,
+          "run": "c34e68d18b964f5c846a6ec372355b7f"
+        },
+        {
+          "boot": 1734555862,
+          "continuation": 0,
+          "dut": "cc8da2fc0224",
+          "elf": "6e8acd2deb2a2eefc53ddc7aa2d08a05cd44b478d3037df33f1873567c61cd3a",
+          "kind": "boot",
+          "previous_boot": 54144664,
+          "previous_case": "RF-012.disconnected",
+          "previous_run": "c34e68d18b964f5c846a6ec372355b7f",
+          "reset": 8
+        }
+      ],
+      "pi_observations": {
+        "run": "c34e68d18b964f5c846a6ec372355b7f",
+        "boot": "344533b2-64e3-48a2-967c-0955f2ee79d0",
+        "source": "7cacf4ccbaf97fcb4dcea7dc100e1bd85af6a8ec9c244cfd131ccc3bca1f15af",
+        "failure": null,
+        "outcome": {
+          "packets": [
+            {
+              "frame": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435",
+              "rssi_dbm_x2": -74,
+              "snr_db_x4": 53,
+              "irq_status": 2,
+              "device_errors": 0,
+              "edge_timestamp_ns": 9530047107836,
+              "t1_handler_started_monotonic_us": 9530047486,
+              "t2_packet_copied_monotonic_us": 9530051064,
+              "busy": {
+                "total_us": 2288,
+                "maximum_us": 107,
+                "count": 34,
+                "timeout_count": 0,
+                "last_timeout_opcode": null
+              }
+            }
+          ],
+          "transmissions": [],
+          "observation_end": 9534074467
+        },
+        "cleanup": {
+          "state": "SHUTDOWN",
+          "packet": null,
+          "episodes": [],
+          "t6_set_rx_issued_monotonic_us": 9530068098,
+          "busy": {
+            "total_us": 15538,
+            "maximum_us": 5193,
+            "count": 136,
+            "timeout_count": 0,
+            "last_timeout_opcode": null
+          },
+          "tx": null,
+          "safe_shutdown": true
+        },
+        "attempts": 0
+      }
     },
     "RF-013.absent": {
-      "capture": {
-        "c6": "rf013-c6.json",
-        "pi": "rf013-pi.jsonl",
-        "source": "rf013-source.json"
-      },
       "date": "2026-09-18",
-      "elf": "6e8acd2deb2a2eefc53ddc7aa2d08a05cd44b478d3037df33f1873567c61cd3a",
       "fixture": {
         "antennas_checked": true,
         "c6_dut": "cc8da2fc0224",
@@ -108,8 +239,7 @@
         "c6_uart": "/dev/ttyUSB0",
         "exclusive_radios": true,
         "manual_fault_confirmed": true,
-        "operating_envelope_reference": "tests/rf/evidence/2026-09-18-envelope/README.md; DEC-003/DEP-023 approved documented hardware/configuration at configured +14 dBm",
-        "operator": "user 2026-09-18: BUSY/MISO ties were inverted; wiring corrected with power removed, C6 powered on with radio absent; GPIO19 BUSY to 3.3 V, GPIO14 MISO to GND, RN5 retained",
+        "operating_envelope_reference": "tests/rf/OPERATING_ENVELOPE.md; DEC-003/DEP-023",
         "pi_board_id": "00000000e0027211",
         "pi_fixture": "radio_nominal",
         "pi_transmitter": "Pi 00000000e0027211 fitted Waveshare EU868 module",
@@ -120,7 +250,6 @@
         "schema": 1,
         "wiring_checked": true
       },
-      "original_path": "tests/rf/evidence/2026-09-18-rf013/fixed-run",
       "original_run_sha256": "12e574a9f4588dc66e27b29d6a2649520bcf5f1207f9c9aa2067d1069ce17e3a",
       "original_verification": "PASS: original archive including prerequisite applicability, JUnit, endpoint assertions and peer exit verified before curation.",
       "peer_exit": {
@@ -166,20 +295,96 @@
       ],
       "run": "0673c31eb0a948259e1c96533aff2dfa",
       "source": "986fb9ca0fab1a66bda6baf6de272b2f7917766e3516dac19f5b7920a3ffdf32",
-      "status": "PASS"
+      "status": "PASS",
+      "c6_observations": [
+        {
+          "boot": 1976234393,
+          "continuation": 0,
+          "dut": "cc8da2fc0224",
+          "elf": "6e8acd2deb2a2eefc53ddc7aa2d08a05cd44b478d3037df33f1873567c61cd3a",
+          "kind": "boot",
+          "previous_boot": 0,
+          "previous_case": "",
+          "previous_run": "",
+          "reset": 1
+        },
+        {
+          "boot": 1976234393,
+          "case": "RF-013.absent",
+          "kind": "begin",
+          "phase": 0,
+          "run": "0673c31eb0a948259e1c96533aff2dfa"
+        },
+        {
+          "after": 2835507,
+          "before": 2813876,
+          "deadline": 4813876,
+          "diagnostic": "0000070800000000000000000000",
+          "done": false,
+          "error": 131076,
+          "kind": "result",
+          "operation": 1,
+          "payload": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435",
+          "rssi": 0,
+          "rx_done": 0,
+          "rx_outcome": 0,
+          "set_tx": 0,
+          "snr": 0,
+          "started": false,
+          "tx": true,
+          "tx_done": 0
+        },
+        {
+          "boot": 1976234393,
+          "case": "RF-013.absent",
+          "cleanup_diagnostic": "0280070800000000000000000000",
+          "cleanup_error": 131076,
+          "cleanup_operation": 18,
+          "failed": 0,
+          "kind": "end",
+          "phase": 0,
+          "run": "0673c31eb0a948259e1c96533aff2dfa"
+        },
+        {
+          "boot": 4223383739,
+          "continuation": 0,
+          "dut": "cc8da2fc0224",
+          "elf": "6e8acd2deb2a2eefc53ddc7aa2d08a05cd44b478d3037df33f1873567c61cd3a",
+          "kind": "boot",
+          "previous_boot": 1976234393,
+          "previous_case": "RF-013.absent",
+          "previous_run": "0673c31eb0a948259e1c96533aff2dfa",
+          "reset": 8
+        }
+      ],
+      "pi_observations": {
+        "run": "0673c31eb0a948259e1c96533aff2dfa",
+        "boot": "344533b2-64e3-48a2-967c-0955f2ee79d0",
+        "source": "986fb9ca0fab1a66bda6baf6de272b2f7917766e3516dac19f5b7920a3ffdf32",
+        "failure": null,
+        "outcome": {
+          "packets": [],
+          "transmissions": [],
+          "observation_end": 10495205046
+        },
+        "cleanup": {
+          "state": "SHUTDOWN",
+          "packet": null,
+          "episodes": [],
+          "t6_set_rx_issued_monotonic_us": 10490091996,
+          "busy": {
+            "total_us": 34176,
+            "maximum_us": 9717,
+            "count": 153,
+            "timeout_count": 0,
+            "last_timeout_opcode": null
+          },
+          "tx": null,
+          "safe_shutdown": true
+        },
+        "attempts": 0
+      }
     }
   },
-  "curation": "Historical results condensed from verified original archives; not a new hardware run.",
-  "limits": "Raw-component results only. Nominal prerequisite/restoration archives, routine wiring failures, host/build logs and full external compiler dependency inventory discarded after verification. Historical paths/hashes identify provenance and are not live dependencies.",
-  "schema": 1,
-  "sources": {
-    "archive": "source.tar.gz",
-    "head": "ee55b737b0bc90e2a467814ddccc688a08c8a06a",
-    "layout": "rf012/ is the complete first manifest; overlay rf013/ for the second manifest. The three changed files are documentation only.",
-    "rf013_overrides": [
-      "tests/rf/COVERAGE.md",
-      "tests/rf/README.md",
-      "tests/rf/test_suite.notes.md"
-    ]
-  }
+  "limits": "Raw radio component scope only; not full service, physical timing/power or durable airtime acceptance."
 }

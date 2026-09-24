@@ -30,24 +30,21 @@ The fixture records operator wiring/power confirmations. Later operator DC
 measurements are recorded below. IRQ delivery is functional evidence, not an independent
 pin/kernel timestamp or waveform qualification.
 
-The [curated radio report](hardware/evidence/radio/README.md) is the permanent
-record. It keeps one successful-source snapshot (235 files, 189 manifest entries),
-selected physical traces, fixture/target metadata and dependency versions.
-The initial startup and timeout-handling failures are preserved as lessons and
-host regressions; their complete session bundles have been deleted.
+The fast nominal captures are not permanently retained. The manual held-BUSY
+run taught a separate cleanup lesson: expected INITIALIZE and CLEANUP /
+BUSY_TIMEOUT returned in 277,477 µs with 809 HIGH samples and no SPI/RX/TX,
+but `safe_shutdown=false` aborted the session. A passing fault assertion does
+not establish safe shutdown. After operator-confirmed power removal/selector
+restoration, three nominal cases passed in 2.28 s; that separate boot cannot
+retroactively pass the failed run. Exact commands/numeric exits were not captured.
 
-The same source subsequently observed held BUSY: INITIALIZE and CLEANUP /
-BUSY_TIMEOUT in 277,477 us, 809 HIGH samples, no SPI/RX/TX and handle release.
-Its assertions passed, but safe shutdown remained false and the session aborted.
-After operator-confirmed power removal and nominal selector restoration, all
-three nominal cases passed in 2.28 s with safe shutdown and no SetTx. Boot IDs
-changed; power removal itself is operator-confirmed. Missing-sentinel collection
-ran zero cases and remains a setup lesson.
-
-The [offline verification](hardware/evidence/radio/README.md#verification) checks
-the retained source, outcomes and traces without Pi or temporary storage.
-Held/restored exact commands and numeric process exits were not captured;
-curation does not reconstruct them or turn the held run into a safe-teardown pass.
+Two startup/IRQ lessons remain in the backend regressions: post-reset `0x2A`
+needs fresh command confirmation; correlated `0x26`/IRQ `0x0200` must be interpreted
+with the immutable event snapshot while subsequent command checks stay strict.
+See `test_tcxo_initial_status_and_error_clear`,
+`test_post_reset_standby_confirmation_failure`, `test_immutable_timeout_observation`
+and `test_immediate_completion` in `host/test_sx1262.py`. Failed sessions and
+duplicate source/trace archives were discarded under the retention policy.
 
 The operator also reported the following multimeter readings in nominal wiring
 after boot, before pytest: RESET 2.796 V, CS 3.276 V, BUSY 0 V, DIO1 0 V,
@@ -142,8 +139,8 @@ The unavailable SN74LVC1G32 gate and its synchronized physical soft/hard
 recovery execution are also operator-deferred. Nominal non-peer cases remain
 independent of that gate. Manual held-BUSY startup and subsequent nominal
 restoration have been observed on hardware; these separate boots cannot
-satisfy the runtime recovery obligation. The held run's unconfirmed cleanup
-remains retained despite the later nominal success. Future held runs still
+satisfy the runtime recovery obligation. The held run's unconfirmed cleanup remains an explicit limitation despite
+the later nominal success. Future held runs still
 require powered-off selector restoration and a fresh nominal run.
 The source manifest includes the shared rail/selector
 schematic and operator procedure.

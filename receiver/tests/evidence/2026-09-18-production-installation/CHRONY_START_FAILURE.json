@@ -1,8 +1,0 @@
-{
-  "purpose": "Isolated reproduction of documented drop-in losing the vendor ExecStart root-launch prefix; live chrony untouched; empty configuration has no sources/listeners configured",
-  "remote_command": "sudo -S -p \"\" -u _chrony /usr/sbin/chronyd -n -f /dev/null",
-  "returncode": 1,
-  "stdout": "",
-  "stderr": "2026-09-18T20:36:38Z Fatal error : Not superuser\n",
-  "staged_current_sources": "/var/tmp/cura-pilot-20260918-vuh7p781; 89 manifest files verified"
-}

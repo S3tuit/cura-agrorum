@@ -1,19 +1,11 @@
 # SX1262 component hardware procedure
 
-These cases use the production Linux adapter, command backend and owner. They
-do not run receiver end-to-end orchestration, spend durable airtime, or submit
-`SetTx`. On 2026-09-17 all three nominal cases passed from a fresh verified
-staging directory: device/GPIO/SPI configuration, initialization/readback and
-finite RX timeout/rearm. Every teardown confirmed safe shutdown. Required
-evidence is retained in the development checkout's
-[radio archive](evidence/radio/README.md); Pi storage and `/tmp` are temporary.
-See the [coverage record](../RADIO_COVERAGE.md) for archive hashes and limits.
-Both earlier failures are summarized as lessons. A subsequent manual held-BUSY run
-observed the expected bounded fault with unconfirmed safe shutdown retained;
-after operator-confirmed power-off restoration, all three nominal cases passed
-in 2.28 s with safe teardown. The coverage record identifies these runs and
-their missing standalone command/exit records. RF-peer, gated recovery and
-instrument-dependent timing remain unrun.
+These cases use the production Linux adapter, command backend and owner.
+They do not run receiver end-to-end orchestration, spend durable airtime or
+submit `SetTx`. Historical nominal results and the held-BUSY cleanup lesson are
+in the [coverage record](../RADIO_COVERAGE.md). Fast nominal captures and failed
+sessions are not permanent evidence; use the [retention policy](../../../EVIDENCE.md).
+RF-peer, gated recovery and instrument-dependent assertions remain separate.
 
 Follow the [carrier schematic](../../hardware/TEST_CARRIER.md#proposed-sx1262-extension)
 for the Waveshare EU868 board without a Pico. The operator must confirm the
@@ -51,7 +43,7 @@ SHA-256, copy it, verify the identical SHA-256 on the Pi, and only then extract
 and run from that new directory. Retain the archive hash and exact command
 line beside the results. Do not assume any existing Pi checkout is current.
 After execution, copy captures into ignored
-`receiver/tests/hardware/evidence/radio/raw/` on the development machine and verify
+`receiver/tests/hardware/raw/radio/` on the development machine and verify
 their hashes against the Pi originals. Curate the useful result and essential
 inputs into the [permanent archive](evidence/README.md), then delete raw copies.
 A Pi path alone is not retained evidence.
@@ -165,8 +157,7 @@ After checking the run, keep its outcome, relevant fixture/target metadata,
 restoration and essential measurements; consolidate repeated metadata and
 replace resolved failed sessions with lessons. Keep production credentials out
 of captures; these tests require no receiver identity or keys.
-The [archive README](evidence/radio/README.md) describes the retained files and
-offline verification. Preserve the relationship between faults and restoration;
+The [evidence index](evidence/README.md) describes what merits retention. Preserve the relationship between faults and restoration;
 transfer needed inputs before the Pi or temporary files become unavailable.
 
 ## Explicit fixture input

@@ -155,7 +155,23 @@ Chrony start attempt, without requiring synchronization or Internet access.
 A missing directory is tolerated by the sandbox; unavailable Chrony remains an
 ordinary untrusted runtime input. No membership in the daemon's group is needed.
 Verify real tracking, reply-socket cleanup, rejection of daemon-socket removal
-and unrelated writes, and permission restoration after daemon restart.
+and unrelated writes, and permission restoration after daemon restart and
+separate stop/edit/start.
+
+The drop-in explicitly sets `RuntimeDirectoryPreserve=yes`. Verify the effective
+unit manages `chrony` as a runtime directory and preserves it on every service
+stop. This keeps the directory object mounted into an already-running receiver;
+Chrony may remove and recreate `chronyd.sock` within it. Require unchanged
+directory device/inode and successful tracking after separate stop/start from
+the same receiver PID and mount namespace. An ordinary `systemctl restart`
+alone cannot qualify this lifetime boundary.
+
+Normal daemon/client exit removes their own socket entries. A killed process
+may leave an entry behind; systemd no longer removes the directory at service
+stop. Reboot clears `/run`. Do not delete, replace or run runtime-directory
+cleanup while a receiver namespace is using it. If manual cleanup requires
+recreating the directory, stop the receiver and Chrony first, then start Chrony
+and a new receiver namespace afterward.
 
 Keep the post-start ownership/mode adjustment in one command: systemd reapplies
 RuntimeDirectory ownership/mode before each separate post-start command. Socket

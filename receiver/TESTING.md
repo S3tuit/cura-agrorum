@@ -840,7 +840,7 @@ control, RTC bootstrap, process-local communicator counters or Pi reboot.
 - **Clean-stop idempotency:** Repeat the identical request, reconcile unknown commit and reject conflicting markers or unmet database/queue preconditions.
 - **Crash semantics:** Terminate without shutdown hooks at every lifecycle phase and verify correctness comes from durable startup/state/replay rules rather than an assumed cleanup callback.
 - **Terminal initialization/recovery diagnostic:** Enter each terminal radio failure, finalize at most one best-effort fatal diagnostic when admission permits and never claim that diagnostic durability is guaranteed.
-- **Static systemd/chrony contract:** Validate packaged unit/config artifacts for required mounts, RTC-bootstrap completion ordering, no network-online dependency, restart delay/rate limit, bounded stop timeout, service identity and suspend prevention.
+- **Static systemd/chrony contract:** Validate packaged unit/config artifacts for required mounts, RTC-bootstrap completion ordering, no network-online dependency, restart delay/rate limit, bounded stop timeout, service identity and suspend prevention. Require the shipped Chrony drop-in and effective deployment audit to preserve `/run/chrony` with `RuntimeDirectoryPreserve=yes`; reject missing runtime-directory ownership or restart-only/default cleanup.
 - **No pilot-data dependency:** Verify every test configuration points at dedicated test paths and refuses an accidentally supplied production database, receiver-group file or service name.
 - **Shared installed path inputs:** Exercise runtime and storage preflight with the same complete `CURA_RECEIVER_CONFIGURATION`/`CURA_RECEIVER_DATABASE`/`SQLITE_TMPDIR` environment. Reject partial, empty, relative, traversing or overlapping paths before hardware/storage access. With `CURA_RECEIVER_TEST_ROOT`, reject paths outside the root and roots overlapping production directories, including Linux double-leading-slash aliases. Verify the real isolated SQLite preflight and unchanged policy defaults; installed unit permissions/mounts and nonsymlink target directories require separate target verification.
 - **Chrony startup privilege:** Preserve the vendor's privileged `!` launch prefix in the configuration-checking drop-in. Audit `ExecStartEx` for the exact command and `no-setuid` flag as well as actual MainPID arguments; removing the prefix under inherited `User=_chrony` must fail qualification. Confirm successful startup on the installed target; argv checks alone cannot qualify privilege.
@@ -957,7 +957,19 @@ Under the installed receiver UID and actual systemd sandbox, require successful
 real tracking, cleanup of receiver-created reply sockets, and rejection of
 unlink/rename of daemon-owned socket entries and writes outside allowed paths.
 Verify directory01770 and daemon socket0660 with Chrony ownership and receiver
-group after each daemon restart. Missing Chrony must remain compatible with
+group after each daemon restart and separate stop/edit/start. From the same
+already-running receiver UID/PID and mount namespace, require successful
+tracking before stop, unavailable tracking while stopped and successful tracking
+after start. The directory's device/inode must be unchanged in host and receiver
+views through all stages; after orderly stop the daemon socket must be gone,
+and after start a newly running daemon must expose its socket and restore the
+required permissions. Normal queries must leave no new reply-socket entries.
+Audit effective `RuntimeDirectory=chrony` and `RuntimeDirectoryPreserve=yes`;
+restart with an unchanged directory alone does not cover separate stop/start.
+Use staged current sources, isolated service/storage paths, configuration backup
+and restoration controls. A component probe in the receiver filesystem sandbox
+proves socket/mount recovery, not full receiver time-quality or RF acceptance.
+Missing Chrony must remain compatible with
 untrusted offline startup. PERM-001 in deploy/README.md defers a broader permissions
 review until after the pilot; these checks do not establish command-level isolation.
 

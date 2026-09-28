@@ -94,12 +94,14 @@ def configure_audit(monkeypatch, *, launch=LAUNCH, process=LAUNCH, precheck=PREC
         "ExecStartEx": service_command(launch).replace("ignore_errors=no", "flags=no-setuid"),
         "User": "_chrony",
         "MainPID": "123", "ActiveState": active, "Type": "forking", "Restart": "on-failure",
+        "RuntimeDirectory": "chrony", "RuntimeDirectoryPreserve": "yes",
     }
 
     def command(*argv, **kwargs):
         assert argv[0] == "systemctl"
         if argv[1] == "show":
-            output = "\n".join(name + "=" + value for name, value in values.items()) + "\n"
+            requested = [argv[i + 1] for i, value in enumerate(argv[:-1]) if value == "-p"]
+            output = "\n".join(name + "=" + values[name] for name in requested) + "\n"
         elif argv[1] == "list-unit-files":
             output = competing
         else:
@@ -140,6 +142,17 @@ def test_shipped_dropin_preserves_vendor_privileged_launch():
     dropin = Path(__file__).resolve().parents[2] / "hardware/ds3231/chrony-runtime.conf"
     launch = [line for line in dropin.read_text().splitlines() if line.startswith("ExecStart=")]
     assert launch == ["ExecStart=", "ExecStart=!" + " ".join(LAUNCH)]
+
+
+@pytest.mark.parametrize("name,value", [
+    ("RuntimeDirectory", ""), ("RuntimeDirectory", "unrelated"),
+    ("RuntimeDirectoryPreserve", "no"), ("RuntimeDirectoryPreserve", "restart"),
+])
+def test_audit_rejects_directory_lifetime_that_breaks_running_receiver(tmp_path, monkeypatch, name, value):
+    values = configure_audit(monkeypatch)
+    values[name] = value
+    with pytest.raises(AssertionError, match="mounted"):
+        fixture.test_deployment_time_writer_audit(tmp_path)
 
 
 # F-002: a safe default file cannot hide a different configured or actually running launch.
@@ -185,6 +198,8 @@ def test_reply_socket_permissions_use_one_post_start_command():
     assert '/usr/bin/chmod 01770 /run/chrony' in commands[0]
     assert '/usr/bin/chmod 0660 /run/chrony/chronyd.sock' in commands[0]
     assert 'RuntimeDirectoryMode=0700' in dropin
+    assert [line for line in dropin.splitlines() if line.startswith('RuntimeDirectoryPreserve=')] == [
+        'RuntimeDirectoryPreserve=yes']
     unit = (root / 'deploy/systemd/cura-receiver.service').read_text()
     assert 'ReadWritePaths=/var/lib/cura-agrorum -/run/chrony' in unit
     assert 'After=local-fs.target cura-rtc-bootstrap.service chrony.service' in unit

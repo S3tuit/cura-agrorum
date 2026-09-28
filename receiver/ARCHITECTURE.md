@@ -760,6 +760,16 @@ The [installation procedure](hardware/ds3231/README.md#3-configure-time-ownershi
 defines the supported launch; deployment validation checks its actual process
 arguments as well as the configuration.
 
+The Chrony unit explicitly uses `RuntimeDirectoryPreserve=yes` for
+`/run/chrony`. A running receiver's writable bind mount must keep referring to
+that same directory across both daemon restart and separate stop/edit/start.
+Chrony removes and recreates its command socket within the preserved directory;
+later receiver queries can reach the new daemon after permissions are restored.
+While Chrony is stopped, the existing unavailable-input time policy applies.
+Operators must not delete, replace or clean the runtime directory while a
+receiver namespace is using it. Reboot clears the directory and creates new
+service namespaces. The receiver does not manage this directory's lifetime.
+
 The receiver has no `CAP_SYS_TIME` and never invokes `clock_settime()`. For the
 pilot, its service account receives narrowly scoped filesystem permission to
 chronyd's local Unix command socket, normally through membership in the

@@ -897,6 +897,13 @@ that directory is owned by the Chrony daemon user with group `cura-receiver`
 and mode 01770; the sticky bit prevents the receiver from removing/replacing
 the daemon-owned socket. `chronyd.sock` retains daemon ownership, group
 `cura-receiver` and mode 0660. Reapply these permissions after every start.
+The Chrony unit must manage `/run/chrony` with `RuntimeDirectoryPreserve=yes`:
+preserve the directory object across daemon stop/start so an already-running
+receiver's bind mount can reach the recreated command socket. Normal daemon
+and client socket cleanup still applies. Entries left by killed processes may
+remain until safe explicit cleanup or reboot; preservation does not require
+keeping those sockets. Do not remove, replace or clean the directory while
+the receiver is running.
 The receiver sandbox permits writes only to its data directory and this runtime
 directory. An absent runtime directory must not itself prevent offline startup.
 This grants direct Chrony command access to the receiver identity; it is not

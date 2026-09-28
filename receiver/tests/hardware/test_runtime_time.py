@@ -357,10 +357,15 @@ def test_deployment_time_writer_audit(tmp_path):
         "systemctl", "show", "chrony.service", "-p", "ExecStart", "-p", "ExecStartPre",
         "-p", "ActiveState", "-p", "MainPID", "-p", "Type", "-p", "Restart",
         "-p", "ExecStartEx", "-p", "User",
+        "-p", "RuntimeDirectory", "-p", "RuntimeDirectoryPreserve",
     ).stdout
     properties = dict(line.split("=", 1) for line in service.splitlines() if "=" in line)
     assert properties["ActiveState"] == "active"
     assert properties["Type"] == "forking" and properties["Restart"] == "on-failure"
+    assert "chrony" in properties["RuntimeDirectory"].split(), \
+        "Chrony must manage the receiver's mounted runtime directory"
+    assert properties["RuntimeDirectoryPreserve"] == "yes", \
+        "Chrony must preserve the receiver's mounted directory across separate stop/start"
     launch = ["/usr/sbin/chronyd", "-F", "1", "-f", "/etc/chrony/chrony.conf"]
     precheck = [
         "/usr/bin/python3", "/usr/libexec/cura-agrorum/check-chrony.py",

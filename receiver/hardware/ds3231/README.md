@@ -222,9 +222,16 @@ The drop-in also provisions the pilot reply-socket permissions described there:
 one post-start command sets the sticky directory and daemon socket modes.
 A missing receiver group makes that command fail. Do not split its adjustments
 across separate commands, because systemd reapplies RuntimeDirectory settings
-before each command. Verify the effective distro unit retains `RuntimeDirectoryPreserve=restart`,
-and exercise tracking across a daemon restart from an already-running receiver
-namespace: preserving the directory inode matters for its sandbox mount.
+before each command. Verify the effective unit has `RuntimeDirectory=chrony`
+and the drop-in's explicit `RuntimeDirectoryPreserve=yes`. Exercise tracking
+across both a daemon restart and separate stop/edit/start from an already-running
+receiver namespace: its mounted directory must retain the same device/inode,
+and queries must recover without restarting that receiver.
+`RuntimeDirectoryPreserve=restart` does not preserve a separate stop.
+Daemon/client socket cleanup continues normally; killed processes may leave
+socket entries until safe cleanup or reboot. Never remove, replace or clean
+`/run/chrony` while a receiver namespace is using it. A directory recreation
+requires stopping the receiver first and starting it again afterward.
 The post-pilot permission redesign is deferred as PERM-001.
 
 `ExecStartPre` checks the expanded configuration before every manual or

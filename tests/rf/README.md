@@ -4,7 +4,8 @@ This directory is for field-pilot-v2 scenarios involving the C6 node and Pi
 receiver. The [RF catalogue](test_suite.notes.md) defines stable scenarios and
 their component or full-system scope; the [deployment inventory](../../deployment_remaining.notes.md)
 maps coverage, dependencies and proposed pilot gates. Both .notes files are
-ignored local planning documents.
+ignored local planning documents. They are not required inputs for the host
+suite or source staging; those paths also work from a fresh checkout.
 
 Laptop pytest coordinates pytest-embedded through the C6's actual UART
 connector and SSH control of a separate Pi process. The C6 Unity app and

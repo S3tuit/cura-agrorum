@@ -1,10 +1,13 @@
 """RF-020 accepts actual SQLite snapshots and rejects incomplete evidence."""
 from copy import deepcopy
+import io
 import json
 import os
 from pathlib import Path
 import sqlite3
 import struct
+import subprocess
+import tarfile
 
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 import pytest
@@ -22,15 +25,15 @@ def insert(db, table, values):
     db.execute(f"INSERT INTO {table} ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})", list(values.values()))
 
 
-def transcript(path, *, interval=12_000_000):
+def transcript(path, *, interval=12_000_000, samples=(40, 41)):
     db = sqlite3.connect(path)
     db.executescript((REPO / "receiver/db/schema.sql").read_text())
     db.execute("PRAGMA foreign_keys=ON")
     insert(db, "receiver_instances", dict(instance_ordinal=1, receiver_instance_id=INSTANCE,
         linux_boot_id=b"b" * 16, started_at_monotonic_us=1))
     deliveries = []
-    for i in range(2):
-        sample, message = 40 + i, 100 + i
+    for i, sample in enumerate(samples):
+        message = 100 + i
         body = BODY.pack(sample, 1100, 2300, 2350, 2100, 2200, 2300, 101325, 4500,
                          8 if i else 1, i, 1500 if i else 0, 300 if i else 0, i, i, 0x3ff if i else 0xfe)
         frame = struct.pack("<BB8sI", 32, 1, NODE, message)
@@ -141,6 +144,30 @@ def test_service_template_and_current_bundle():
     from inputs import source_manifest
     staged = source_manifest()["files"]
     assert all(staged.get(name) == expected for name, expected in files.items())
+
+
+@pytest.mark.parametrize('local_note', [False, True], ids=['fresh-checkout', 'local-notes'])
+def test_source_manifest_and_bundle_do_not_require_planning_notes(tmp_path, monkeypatch, local_note):
+    import inputs
+    import run_service
+    # Git's archive contains only committed files, unlike the developer's tree.
+    archive = subprocess.run(['git', 'archive', 'HEAD'], cwd=REPO, check=True, capture_output=True).stdout
+    with tarfile.open(fileobj=io.BytesIO(archive)) as source:
+        source.extractall(tmp_path, filter='data')
+    assert not (tmp_path / 'deployment_remaining.notes.md').exists()
+    if local_note:
+        (tmp_path / 'deployment_remaining.notes.md').write_text('local planning only\n')
+    # Both manifest builders read HEAD; share metadata without creating a commit.
+    git_dir = subprocess.run(['git', 'rev-parse', '--absolute-git-dir'], cwd=REPO,
+                             check=True, capture_output=True, text=True).stdout.strip()
+    (tmp_path / '.git').write_text(f'gitdir: {git_dir}\n')
+    monkeypatch.setattr(inputs, 'REPO', tmp_path)
+    monkeypatch.setattr(inputs, 'APP', tmp_path / 'firmware/test_apps/radio')
+    monkeypatch.setattr(run_service, 'REPO', tmp_path)
+    staged = inputs.source_manifest()['files']
+    files = run_service.package_files()
+    assert 'deployment_remaining.notes.md' not in staged
+    assert files and all(staged.get(name) == expected for name, expected in files.items())
 
 
 @pytest.mark.parametrize("key", ["unit_sha256", "environment_sha256", "configuration_sha256", "boot_id", "InvocationID", "MainPID", "NRestarts", "ActiveState"])

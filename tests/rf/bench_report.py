@@ -102,10 +102,12 @@ def reconcile(before, after, initial, final):
     for old, new in ((old_rows, new_rows), (old_profiles, new_profiles)):
         if any(new.get(k) != v for k, v in old.items()):
             raise ValueError('receiver observation disappeared or changed')
+    for name in ('delivery.log', 'diagnostic.log'):
+        prior = initial[name] or []
+        if (final[name] or [])[:len(prior)] != prior:
+            raise ValueError(f'{name} truncated/replaced; interval coverage unknown')
     prior_delivery = initial['delivery.log'] or []
     delivery = final['delivery.log'] or []
-    if delivery[:len(prior_delivery)] != prior_delivery:
-        raise ValueError('delivery log truncated/replaced; interval coverage unknown')
     delta = delivery[len(prior_delivery):]
     observed, bodies, durable, retained = set(), {}, set(), set()
     baseline = {r['sample_id'] for r in before['readings']}
@@ -158,7 +160,12 @@ def reconcile(before, after, initial, final):
     unfinished = [list(k) for k in starts if k not in finished]
     if unfinished:
         gaps.append('delivery start without outcome; actual attempt count unknown')
-    currents = sorted({r['cycle_sample_id'] for r in delta if r['domain'] == 1})
+    currents = {r['cycle_sample_id'] for r in delta if r['domain'] == 1}
+    prior_current = max((r['cycle_sample_id'] for r in prior_delivery if r['domain'] == 1), default=None)
+    if currents and prior_current is not None:
+        # Anchor interval continuity without importing older historical gaps.
+        currents.add(prior_current)
+    currents = sorted(currents)
     # Report ranges instead of allocating potentially huge counter gaps.
     counter_gaps = [[a + 1, b - 1] for a, b in zip(currents, currents[1:]) if b > a + 1]
     if counter_gaps:

@@ -27,7 +27,7 @@ def tree_sources():
         "receiver/INTERFACE_DIAGNOSTIC.md", "receiver/requirements-runtime.txt", "receiver/requirements-radio.txt", "receiver/requirements-test.txt", "receiver/pytest.ini",
         "receiver/hardware/ds3231/chrony-runtime.conf",
         "receiver/hardware/TEST_CARRIER.md", "receiver/tests/hardware/RADIO_TESTS.md",
-        "protocol/protocol-v2-lora/README.md", "deployment_remaining.notes.md"))
+        "protocol/protocol-v2-lora/README.md"))
     return {str(p.relative_to(REPO)): digest(p) for p in sorted(set(paths))}
 
 

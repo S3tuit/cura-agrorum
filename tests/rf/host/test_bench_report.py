@@ -16,6 +16,8 @@ from host.test_node_capture import binaries, image_from, record
 GROUP = '1122334455667788'
 EMPTY = dict(readings=[], profiles=[], instances=[])
 LOGS = {k: [] for k in ('pending.log', 'quarantine.log', 'delivery.log', 'diagnostic.log')}
+DIAGNOSTIC_40 = record(3, struct.pack('<HHHIIIHBB', 1, 6, 7, 12, 40, 73, 1, 7, 1) + bytes(7))
+DIAGNOSTIC_41 = record(3, struct.pack('<HHHIIIHBB', 1, 6, 7, 12, 41, 73, 1, 7, 1) + bytes(7))
 
 
 def metadata(path):
@@ -99,23 +101,60 @@ def test_baseline_is_excluded_but_starting_backlog_is_retained(tmp_path):
     assert result['counts']['node_attempts_recorded'] == 0
 
 
+@pytest.mark.parametrize('prior, current, expected', [
+    ([40], [45], [[41, 44]]),
+    ([1, 40], [41], []),  # Historical gaps are outside this interval.
+    ([1, 40], [], []),
+    ([40], [40, 45], [[41, 44]]),  # An episode can cross the capture boundary.
+    ([], [40, 45], [[41, 44]]),
+    ([40], [0xffffffff], [[41, 0xfffffffe]]),  # Keep large gaps as ranges.
+])
+def test_counter_gaps_include_only_the_initial_boundary_and_new_currents(prior, current, expected):
+    initial, final = deepcopy(LOGS), deepcopy(LOGS)
+    def events(samples):
+        return [dict(type=kind, cycle_sample_id=s, sample_id=s, message_id=s, domain=1,
+                     final_result=2, attempt_count=1)
+                for s in samples for kind in (4, 5)]
+    initial['delivery.log'] = events(prior)
+    final['delivery.log'] = initial['delivery.log'] + events(current)
+    if prior and current and prior[-1] == current[0]:
+        # The initial capture ends after the start; its finish is interval-local.
+        initial['delivery.log'].pop()
+        final['delivery.log'] = events(prior) + events(current[1:])
+    result = reconcile(EMPTY, EMPTY, initial, final)
+    assert result['sample_counter_gap_ranges'] == expected
+    assert any('sample counter gaps' in gap for gap in result['observation_gaps']) == bool(expected)
+    assert result['counts']['observed_samples'] == len(set(current))
+
+
 @pytest.fixture
-def captures(tmp_path, binaries):
+def captures(tmp_path, binaries, request):
+    scenario = getattr(request, 'param', {})
+    boundary = scenario.get('counter_boundary', False)
     before = tmp_path / 'before'; after = tmp_path / 'after'
     before.mkdir(); after.mkdir()
     empty_db = before / 'receiver.sqlite3'
-    with sqlite3.connect(empty_db) as db:
-        db.executescript((REPO / 'receiver/db/schema.sql').read_text())
+    if boundary:
+        transcript(empty_db, samples=(40,))
+    else:
+        with sqlite3.connect(empty_db) as db:
+            db.executescript((REPO / 'receiver/db/schema.sql').read_text())
     metadata(empty_db)
-    data = transcript(after / 'receiver.sqlite3')['logs']; metadata(after / 'receiver.sqlite3')
-    raw = b''
+    data = transcript(after / 'receiver.sqlite3', samples=(40, 45) if boundary else (40, 41))['logs']
+    metadata(after / 'receiver.sqlite3')
+    records = []
     for r in data['delivery.log']:
         identity = (r['cycle_sample_id'], r['sample_id'], r['message_id'], r['domain'])
         payload = (struct.pack('<IIIBI', *identity, 10) if r['type'] == 4 else
                    struct.pack('<IIIBBB', *identity, r['attempt_count'], r['final_result']))
-        raw += record(r['type'], payload)
-    images = [image_from(before, binaries, {'pending.log': b''}),
-              image_from(after, binaries, {'pending.log': b'', 'delivery.log': raw})]
+        records.append(record(r['type'], payload))
+    image_logs = [{'pending.log': b'',
+                   'delivery.log': b''.join(records[:2]) if boundary else b'',
+                   'diagnostic.log': scenario.get('initial_diagnostics')},
+                  {'pending.log': b'', 'delivery.log': b''.join(records),
+                   'diagnostic.log': scenario.get('final_diagnostics')}]
+    images = [image_from(root, binaries, {k: v for k, v in logs.items() if v is not None})
+              for root, logs in zip((before, after), image_logs)]
     build = tmp_path / 'build.json'
     build.write_text(json.dumps(dict(node_id=NODE.hex(), files={
         'cura_agrorum_firmware.bin': 'a' * 64, 'partition_table/partition-table.bin': 'b' * 64})))
@@ -143,6 +182,46 @@ def test_real_captures_report_without_mutating_inputs(tmp_path, captures):
     assert not result['missing_from_both']
     assert all(digest(p) == h for p, h in originals.items())
     with pytest.raises(FileExistsError): report(*captures, tmp_path / 'report.json')
+
+
+@pytest.mark.parametrize('captures', [dict(counter_boundary=True)], indirect=True)
+def test_real_captures_expose_counter_gap_across_initial_boundary(tmp_path, captures):
+    originals = {p: digest(p) for p in tmp_path.rglob('*') if p.is_file()}
+    result = report(*captures, tmp_path / 'report.json')
+    assert result['sample_counter_gap_ranges'] == [[41, 44]]
+    assert any('sample counter gaps' in gap for gap in result['observation_gaps'])
+    assert [sample['sample_id'] for sample in result['samples']] == [45]
+    assert result['counts']['observed_samples'] == result['counts']['durable_samples'] == 1
+    assert all(digest(p) == h for p, h in originals.items())
+
+
+@pytest.mark.parametrize('captures', [
+    dict(initial_diagnostics=DIAGNOSTIC_40),
+    dict(initial_diagnostics=DIAGNOSTIC_40, final_diagnostics=b''),
+    dict(initial_diagnostics=DIAGNOSTIC_40 + DIAGNOSTIC_41, final_diagnostics=DIAGNOSTIC_40),
+    dict(initial_diagnostics=DIAGNOSTIC_40, final_diagnostics=DIAGNOSTIC_41),
+    dict(initial_diagnostics=DIAGNOSTIC_40 + DIAGNOSTIC_41,
+         final_diagnostics=DIAGNOSTIC_41 + DIAGNOSTIC_40),
+], ids=['missing', 'empty', 'shortened', 'replaced', 'reordered'], indirect=True)
+def test_real_captures_reject_lost_diagnostic_history(tmp_path, captures):
+    originals = {p: digest(p) for p in tmp_path.rglob('*') if p.is_file()}
+    output = tmp_path / 'report.json'
+    with pytest.raises(ValueError, match='diagnostic.log.*truncated/replaced'):
+        report(*captures, output)
+    assert not output.exists()
+    assert all(digest(p) == h for p, h in originals.items())
+
+
+@pytest.mark.parametrize('captures, cycles', [
+    (dict(initial_diagnostics=DIAGNOSTIC_40, final_diagnostics=DIAGNOSTIC_40), [40]),
+    (dict(initial_diagnostics=DIAGNOSTIC_40, final_diagnostics=DIAGNOSTIC_40 + DIAGNOSTIC_41), [40, 41]),
+    (dict(final_diagnostics=DIAGNOSTIC_40), [40]),
+], ids=['unchanged', 'extended', 'new'], indirect=['captures'])
+def test_real_captures_preserve_valid_diagnostic_history(tmp_path, captures, cycles):
+    originals = {p: digest(p) for p in tmp_path.rglob('*') if p.is_file()}
+    result = report(*captures, tmp_path / 'report.json')
+    assert [r['cycle_sample_id'] for r in result['diagnostics']] == cycles
+    assert all(digest(p) == h for p, h in originals.items())
 
 
 @pytest.mark.parametrize('damage', ['changed_image', 'configuration', 'node_identity', 'missing_file'])

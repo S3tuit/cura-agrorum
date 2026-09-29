@@ -1,6 +1,7 @@
 """Communicator-owned complete-state authority; disk I/O stays in the worker."""
 
 from dataclasses import dataclass
+from enum import Enum, auto
 
 from .generated import receiver_enums_generated as E
 
@@ -12,14 +13,53 @@ from .persistence_control_values import (
     CommunicatorStateCommitDisposition as CD,
     CommunicatorStateLoadStatus as LS,
     CommunicatorStateCondition as Condition,
+    CommunicatorStateCommitResult,
+    CommunicatorStateLoadResult,
     require_immutable_state,
 )
+
+
+class StateCommitResolution(Enum):
+    PENDING = auto()
+    INSTALLED = auto()
+    NOT_INSTALLED = auto()
+
+
+class StateCommitReceipt:
+    """Caller-retained evidence for one request; only its owner resolves it."""
+
+    __slots__ = (
+        "_requested", "_commit_result", "_reconciliation_result", "_resolution", "__weakref__",
+    )
+
+    def __init__(self, requested):
+        self._requested = requested
+        self._commit_result = None
+        self._reconciliation_result = None
+        self._resolution = StateCommitResolution.PENDING
+
+    @property
+    def requested(self) -> CommunicatorStateV1:
+        return self._requested
+
+    @property
+    def commit_result(self) -> CommunicatorStateCommitResult | None:
+        return self._commit_result
+
+    @property
+    def reconciliation_result(self) -> CommunicatorStateLoadResult | None:
+        return self._reconciliation_result
+
+    @property
+    def resolution(self) -> StateCommitResolution:
+        return self._resolution
 
 
 @dataclass(frozen=True, slots=True)
 class PendingStateCommit:
     preceding: CommunicatorStateV1 | None
     requested: CommunicatorStateV1
+    receipt: StateCommitReceipt
     preceding_condition: Condition = Condition.NONE
     purpose: E.PersistenceControlPurpose | None = None
     bucket_expiration_utc_us: int | None = None
@@ -94,6 +134,7 @@ class CommunicatorStateOwner:
         return self._reconciliation_conflict
 
     def commit(self, requested, *, deadline_monotonic_us, purpose=None, bucket_expiration_utc_us=None):
+        """Submit a fresh request and return its caller-retained completion receipt."""
         if self._observer is not None and purpose is None:
             raise ValueError("observed state commit requires its policy purpose")
         if self._pending is not None:
@@ -107,8 +148,12 @@ class CommunicatorStateOwner:
         if requested.generation != expected or expected > (1 << 63) - 1:
             raise ValueError("complete state must use the next acknowledged generation")
         # Retain before entering the channel, including if a caller is interrupted.
-        self._pending = PendingStateCommit(self._confirmed, requested, self._condition, purpose, bucket_expiration_utc_us)
-        return self._submit_pending(deadline_monotonic_us=deadline_monotonic_us)
+        receipt = StateCommitReceipt(requested)
+        self._pending = PendingStateCommit(
+            self._confirmed, requested, receipt, self._condition, purpose, bucket_expiration_utc_us,
+        )
+        self._submit_pending(deadline_monotonic_us=deadline_monotonic_us)
+        return receipt
 
     def _submit_pending(self, *, deadline_monotonic_us):
         pending = self._pending
@@ -117,6 +162,8 @@ class CommunicatorStateOwner:
         result = self._control.commit_communicator_state(
             pending.requested, deadline_monotonic_us=deadline_monotonic_us
         )
+        if pending.receipt.commit_result is None:
+            pending.receipt._commit_result = result
         finished = self._clock.now_monotonic_us() if self._observer is not None else None
         if result.disposition in (CD.COMMITTED, CD.ALREADY_COMMITTED):
             self._resolve(pending.requested)
@@ -137,6 +184,7 @@ class CommunicatorStateOwner:
         loaded = self._control.load_communicator_state(
             deadline_monotonic_us=deadline_monotonic_us
         )
+        pending.receipt._reconciliation_result = loaded
         finished = self._clock.now_monotonic_us() if self._observer is not None else None
         self._recovery_retry_permitted = False
         if loaded.status is LS.LOADED:
@@ -171,6 +219,10 @@ class CommunicatorStateOwner:
         return self._submit_pending(deadline_monotonic_us=deadline_monotonic_us)
 
     def _resolve(self, state, condition=Condition.NONE):
+        self._pending.receipt._resolution = (
+            StateCommitResolution.INSTALLED if state is self._pending.requested
+            else StateCommitResolution.NOT_INSTALLED
+        )
         self._confirmed = state
         self._condition = condition
         self._pending = None

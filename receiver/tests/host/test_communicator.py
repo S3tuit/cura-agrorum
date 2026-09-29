@@ -754,6 +754,79 @@ def test_scheduler_rtc_refresh_reaches_durable_verification(composition, monkeyp
     assert persisted.rtc_provenance.drift_bound_ppm == 10
 
 
+# F-001: airtime may reconcile an RTC save and advance state before RTC consumes its acknowledgement.
+def test_scheduler_rtc_acknowledgement_survives_airtime_settlement(composition):
+    from cura_receiver.communicator_scheduler import CommunicatorScheduler, Work
+    from cura_receiver.generated.receiver_entities_generated import decode_communicator_state_v1
+    from cura_receiver.persistence_control_values import CommunicatorStateCommitDisposition as CD
+    from cura_receiver.ports.ds3231 import Ds3231WriteResult, Ds3231WriteDisposition, Ds3231Failure
+    from cura_receiver.runtime_time import RtcRefreshStatus
+    from cura_receiver.tx_airtime import TxCertainty
+    from tests.support.coordination.state_commit import LostStateReply
+    from tests.support.fakes.ds3231 import FakeDs3231Control
+
+    c = composition()
+    next_start = c.airtime._ledger.current_start + c.airtime._ledger.spacing
+    c.clock.advance_elapsed_us(next_start - c.clock.now_monotonic_us())
+    c.airtime.acquire_grant(deadline_monotonic_us=c.clock.now_monotonic_us() + 5_000_000)
+    c.airtime.report_tx(c.airtime.try_spend().token, TxCertainty.STARTED)
+    c.clock.advance_elapsed_us(c.airtime._grant.deadline_monotonic_us - 1_978_000
+                               - c.clock.now_monotonic_us())
+    now = c.clock.now_monotonic_us()
+    c.time.kernel.results.append(KernelClockResult(KS.OK, now, now, UTC + now - 100, 5, 0x2040))
+    c.time.sample_network(ChronyTrackingResult(CQ.OK, now, now, True, True, 0, 0, 0))
+    owner = c.airtime.owner
+    owner._control = LostStateReply(owner._control, installed=True)
+    rtc = FakeDs3231Control()
+
+    def read_rtc():
+        now = c.clock.now_monotonic_us()
+        return Ds3231ReadResult(DR.OK, now, now, (UTC + now - 100) // 1_000_000)
+
+    def write_rtc():
+        now = c.clock.now_monotonic_us()
+        return Ds3231WriteResult(Ds3231WriteDisposition.COMPLETED, Ds3231Failure.NONE, now, now)
+
+    rtc.read_results.extend([read_rtc, read_rtc])
+    rtc.write_results.append(write_rtc)
+    scheduler = CommunicatorScheduler(c.communicator, chrony=None, rtc=rtc,
+                                      health_interval_us=60_000_000)
+    assert scheduler.run_once().work is Work.AIRTIME
+    for _ in range(4):
+        turn = scheduler.run_once()
+        assert turn.work is Work.RTC and turn.update is None
+    requested = owner.pending.requested
+    assert requested.generation == 4 and requested.rtc_provenance is not None
+
+    c.clock.advance_elapsed_us(1_010_000)
+    assert scheduler.run_once().work is Work.AIRTIME
+    assert owner.pending is None and owner.state == requested
+    c.clock.advance_elapsed_us(1_010_000)
+    assert scheduler.run_once().work is Work.AIRTIME
+    assert owner.state.generation == 5
+    assert owner.state.rtc_provenance == requested.rtc_provenance
+
+    turn = scheduler.run_once()
+    assert turn.work is Work.RTC
+    assert turn.update.status is RtcRefreshStatus.VERIFIED
+    assert turn.update.commit_result.disposition is CD.OUTCOME_UNKNOWN
+    assert turn.update.reconciliation_result.state == requested
+    assert c.time.last_refresh_monotonic_us is not None
+    assert c.time.rtc_refresh_episode is None
+
+    c.clock.advance_elapsed_us(1_010_000)
+    assert scheduler.run_once().work is Work.AIRTIME
+    assert scheduler.run_once().work is not Work.RTC
+    assert [call[0] for call in rtc.calls] == ['read', 'write', 'read']
+    scheduler.stop_requested = lambda: True
+    assert scheduler.run_once().work is Work.TERMINAL
+    with sqlite3.connect(c.database) as db:
+        persisted = decode_communicator_state_v1(db.execute(
+            'SELECT state_blob FROM communicator_state').fetchone()[0])
+    assert persisted == owner.state
+    assert persisted.rtc_provenance == requested.rtc_provenance
+
+
 @pytest.mark.parametrize('invalidation', ['generation', 'source_error'])
 def test_scheduler_rtc_continuation_rechecks_source_before_write(composition, invalidation):
     from dataclasses import replace

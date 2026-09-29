@@ -5,6 +5,7 @@ from enum import Enum, auto
 
 from .producer_admission import ProducerAdmission
 from .airtime_ledger import AirtimeCorrelation
+from .communicator_state_owner import StateCommitResolution
 
 from .elapsed_duration import (
     checked_monotonic_deadline,
@@ -55,7 +56,6 @@ from .persistence_control_values import (
     CommunicatorStateCommitResult,
     CommunicatorStateLoadResult,
     require_immutable_state,
-    CommunicatorStateCommitDisposition as CD,
 )
 from .receiver_startup import ReceiverInstanceStart
 from .time_policy import (
@@ -772,33 +772,41 @@ class RuntimeTime:
         """Build fresh complete state at submission; reconciliation is another turn."""
         def submit():
             if not self._rtc_source_valid(generation, allow_health_pending=True):
-                return None, None
+                return None
             now = self.clock.now_monotonic_us()
             utc = checked_correlated_utc(self.sample.utc_us, self.sample.monotonic_us, now)
             requested = snapshot(provenance=provenance, snapshot_monotonic_us=now,
                 snapshot_utc_us=utc, previous_state=self.durable_state)
             if requested is None:
-                return None, None
+                return None
             require_immutable_state(requested)
             if (requested.rtc_provenance != provenance or requested.airtime_snapshot is None
                     or requested.airtime_snapshot.utc_us != utc):
                 raise ValueError("complete state callback violated the time handoff")
             if not self._rtc_source_valid(generation, allow_health_pending=True):
-                return None, None
-            result = self.state_owner.commit(requested,
+                return None
+            return self.state_owner.commit(requested,
                 purpose=E.PersistenceControlPurpose.RTC_PROVENANCE,
                 deadline_monotonic_us=self.deadline(self.settings.control_budget_us))
-            return requested, result
 
-        requested, result = yield _RtcAction(E.DiagnosticOperation.WRITE, submit)
+        receipt = yield _RtcAction(E.DiagnosticOperation.WRITE, submit)
+        result = None if receipt is None else receipt.commit_result
         on_commit(result, None)
-        loaded = None
-        if result is not None and result.disposition is CD.OUTCOME_UNKNOWN:
-            loaded = yield _RtcAction(E.DiagnosticOperation.READ,
-                lambda: self.state_owner.reconcile(
-                    deadline_monotonic_us=self.deadline(self.settings.control_budget_us)))
+        if receipt is not None and receipt.resolution is StateCommitResolution.PENDING:
+            def reconcile():
+                # Another policy may already have resolved this request and submitted a later one.
+                if receipt.resolution is StateCommitResolution.PENDING:
+                    self.state_owner.reconcile(
+                        deadline_monotonic_us=self.deadline(self.settings.control_budget_us))
+            yield _RtcAction(E.DiagnosticOperation.READ, reconcile)
+        loaded = None if receipt is None else receipt.reconciliation_result
         on_commit(result, loaded)
-        return requested is not None and self.state_owner.state == requested, result, loaded
+        current = self.durable_state
+        acknowledged = (
+            receipt is not None and receipt.resolution is StateCommitResolution.INSTALLED
+            and current is not None and current.rtc_provenance == provenance
+        )
+        return acknowledged, result, loaded
 
     def _recover_rtc_steps(self, rtc, on_result):
         """The recovery window includes scheduler time; never restart it per turn."""

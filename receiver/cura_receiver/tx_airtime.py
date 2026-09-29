@@ -382,11 +382,11 @@ class TxAirtimePolicy:
         except (ValueError, OverflowError):
             return AirtimeUpdate(AirtimeReason.INVALID_STATE)
         self._pending_requested = requested
-        result = self.owner.commit(
+        receipt = self.owner.commit(
             requested, deadline_monotonic_us=deadline_monotonic_us,
             purpose=E.PersistenceControlPurpose.AIRTIME_HISTORY_RECOVERY
         )
-        return self._adopt_recovery_result(result, requested)
+        return self._adopt_recovery_result(receipt.commit_result, requested)
 
     def _finish_transition(self, *, committed=None, loaded=None):
         transition = self._transition
@@ -531,7 +531,7 @@ class TxAirtimePolicy:
         self._transition = _GrantTransition(requested, ledger, grant, self._ledger,
                                              self._grant, next_reason)
         self._pending_requested = requested
-        result = self.owner.commit(requested, deadline_monotonic_us=deadline_monotonic_us,
+        receipt = self.owner.commit(requested, deadline_monotonic_us=deadline_monotonic_us,
             purpose=(E.PersistenceControlPurpose.AIRTIME_BUCKET_GRANT if grant is not None
                      else E.PersistenceControlPurpose.AIRTIME_BUCKET_SETTLEMENT))
-        return self._finish_transition(committed=result)
+        return self._finish_transition(committed=receipt.commit_result)

@@ -6,7 +6,7 @@ import sqlite3
 
 import pytest
 
-from cura_receiver.communicator_state_owner import CommunicatorStateOwner
+from cura_receiver.communicator_state_owner import CommunicatorStateOwner, StateCommitResolution as Resolution
 from cura_receiver.generated.receiver_entities_generated import (
     communicator_state_v1_parameters,
 )
@@ -51,23 +51,23 @@ def test_recovery_then_ordinary_generation_authority(running):
     owner = CommunicatorStateOwner.from_load(control=worker.control, loaded=loaded)
     assert owner.condition is C.MISSING and owner.state is None
     assert (
-        owner.commit(synthetic(), deadline_monotonic_us=0).disposition
+        owner.commit(synthetic(), deadline_monotonic_us=0).commit_result.disposition
         is CD.NOT_INSTALLED
     )
     assert owner.condition is C.MISSING and owner.pending is None
     assert (
-        owner.commit(synthetic(), deadline_monotonic_us=5_000_100).disposition
+        owner.commit(synthetic(), deadline_monotonic_us=5_000_100).commit_result.disposition
         is CD.COMMITTED
     )
     initial = owner.state
     assert owner.condition is C.NONE and initial == synthetic()
     candidate = replace(initial, generation=2, airtime_snapshot=AirtimeSnapshotV1(1, 1))
     assert (
-        owner.commit(candidate, deadline_monotonic_us=0).disposition is CD.NOT_INSTALLED
+        owner.commit(candidate, deadline_monotonic_us=0).commit_result.disposition is CD.NOT_INSTALLED
     )
     assert owner.state is initial
     assert (
-        owner.commit(candidate, deadline_monotonic_us=5_000_100).disposition
+        owner.commit(candidate, deadline_monotonic_us=5_000_100).commit_result.disposition
         is CD.COMMITTED
     )
     assert owner.state is candidate
@@ -82,10 +82,9 @@ def test_unknown_recovery_exact_reconciliation_and_retry(running, installed):
     channel = LostReply(worker.control, installed=installed)
     owner = CommunicatorStateOwner.from_load(control=channel, loaded=loaded)
     requested = synthetic()
-    assert (
-        owner.commit(requested, deadline_monotonic_us=5_000_100).disposition
-        is CD.OUTCOME_UNKNOWN
-    )
+    receipt = owner.commit(requested, deadline_monotonic_us=5_000_100)
+    assert receipt.commit_result.disposition is CD.OUTCOME_UNKNOWN
+    assert receipt.resolution is Resolution.PENDING
     pending = owner.pending
     assert pending.preceding is None and pending.requested is requested
     assert owner.state is None
@@ -114,6 +113,8 @@ def test_unknown_recovery_exact_reconciliation_and_retry(running, installed):
         assert channel.requests == [requested, requested]
         assert channel.requests[0] is channel.requests[1]
     assert owner.state is requested and owner.pending is None
+    assert receipt.resolution is Resolution.INSTALLED
+    assert receipt.commit_result.disposition is CD.OUTCOME_UNKNOWN
     with sqlite3.connect(database) as observer:
         assert observer.execute(
             "SELECT * FROM communicator_state"
@@ -126,7 +127,7 @@ def test_recovery_reconciliation_conflict_keeps_original_evidence(running):
     channel = LostReply(worker.control, installed=False)
     owner = CommunicatorStateOwner.from_load(control=channel, loaded=loaded)
     requested = synthetic()
-    owner.commit(requested, deadline_monotonic_us=5_000_100)
+    receipt = owner.commit(requested, deadline_monotonic_us=5_000_100)
     # A second caller is deliberately an invariant violation used to expose conflicting durable evidence.
     other = replace(
         requested,
@@ -141,7 +142,10 @@ def test_recovery_reconciliation_conflict_keeps_original_evidence(running):
         is CD.COMMITTED
     )
     pending = owner.pending
-    assert owner.reconcile(deadline_monotonic_us=5_000_100).state == other
+    loaded = owner.reconcile(deadline_monotonic_us=5_000_100)
+    assert loaded.state == other
+    assert receipt.resolution is Resolution.PENDING
+    assert receipt.reconciliation_result is loaded
     assert (
         owner.reconciliation_conflict
         and owner.state is None
@@ -163,6 +167,86 @@ def test_owner_requires_baseline_and_finite_next_generation(running):
     with pytest.raises(ValueError):
         owner.commit(state(generation=1 << 63), deadline_monotonic_us=5_000_100)
     assert owner.pending is None
+
+
+# Known outcomes stay bound to their request after newer commits and are read-only to callers.
+@pytest.mark.parametrize("disposition", [CD.COMMITTED, CD.ALREADY_COMMITTED, CD.NOT_INSTALLED])
+def test_receipt_preserves_known_outcome_after_later_commit(running, disposition):
+    worker, _, loaded = running
+    owner = CommunicatorStateOwner.from_load(control=worker.control, loaded=loaded)
+    owner.commit(synthetic(), deadline_monotonic_us=5_000_100)
+    requested = replace(owner.state, generation=2, airtime_snapshot=AirtimeSnapshotV1(1, 1))
+    if disposition is CD.ALREADY_COMMITTED:
+        assert worker.control.commit_communicator_state(
+            requested, deadline_monotonic_us=5_000_100).disposition is CD.COMMITTED
+    receipt = owner.commit(requested,
+        deadline_monotonic_us=0 if disposition is CD.NOT_INSTALLED else 5_000_100)
+    result = receipt.commit_result
+    expected = Resolution.NOT_INSTALLED if disposition is CD.NOT_INSTALLED else Resolution.INSTALLED
+    assert result.disposition is disposition and receipt.resolution is expected
+    assert receipt.requested is requested and receipt.reconciliation_result is None
+    assert owner.pending is None
+    with pytest.raises(AttributeError):
+        receipt.resolution = Resolution.PENDING
+    with pytest.raises(AttributeError):
+        receipt.requested = owner.state
+    following = replace(owner.state, generation=owner.state.generation + 1,
+        airtime_snapshot=AirtimeSnapshotV1(2, 1))
+    later = owner.commit(following, deadline_monotonic_us=5_000_100)
+    assert later is not receipt and later.resolution is Resolution.INSTALLED
+    assert owner.state is following
+    assert receipt.requested is requested and receipt.commit_result is result
+    assert receipt.resolution is expected and receipt.reconciliation_result is None
+
+
+# Another policy may resolve either exact outcome; later saves cannot erase its load evidence.
+@pytest.mark.parametrize("installed", [False, True])
+def test_receipt_preserves_exact_reconciliation_after_later_commit(running, installed):
+    worker, _, loaded = running
+    owner = CommunicatorStateOwner.from_load(control=worker.control, loaded=loaded)
+    owner.commit(synthetic(), deadline_monotonic_us=5_000_100)
+    channel = LostReply(worker.control, installed=installed)
+    owner._control = channel
+    requested = replace(owner.state, generation=2, airtime_snapshot=AirtimeSnapshotV1(1, 1))
+    receipt = owner.commit(requested, deadline_monotonic_us=5_000_100)
+    result = receipt.commit_result
+    assert result.disposition is CD.OUTCOME_UNKNOWN
+    assert owner.pending.receipt is receipt and receipt.resolution is Resolution.PENDING
+    channel.fail_load = True
+    failed = owner.reconcile(deadline_monotonic_us=5_000_100)
+    assert failed.status is LS.DEADLINE_EXCEEDED
+    assert receipt.reconciliation_result is failed and receipt.resolution is Resolution.PENDING
+    channel.fail_load = False
+    reconciled = owner.reconcile(deadline_monotonic_us=5_000_100)
+    expected = Resolution.INSTALLED if installed else Resolution.NOT_INSTALLED
+    assert receipt.resolution is expected and receipt.reconciliation_result is reconciled
+    following = replace(owner.state, generation=owner.state.generation + 1,
+        airtime_snapshot=AirtimeSnapshotV1(2, 1))
+    assert owner.commit(following, deadline_monotonic_us=5_000_100).resolution is Resolution.INSTALLED
+    assert owner.reconcile(deadline_monotonic_us=5_000_100) is None
+    assert receipt.resolution is expected and receipt.commit_result is result
+    assert receipt.reconciliation_result is reconciled
+
+
+# Abandoning a receipt keeps unresolved work alive; resolving it leaves no owner-held unread history.
+@pytest.mark.parametrize("installed", [False, True])
+def test_owner_retains_only_unresolved_receipt(running, installed):
+    import gc
+    import weakref
+
+    worker, _, loaded = running
+    owner = CommunicatorStateOwner.from_load(control=worker.control, loaded=loaded)
+    owner.commit(synthetic(), deadline_monotonic_us=5_000_100)
+    owner._control = LostReply(worker.control, installed=installed)
+    receipt = owner.commit(replace(owner.state, generation=2), deadline_monotonic_us=5_000_100)
+    reference = weakref.ref(receipt)
+    del receipt
+    gc.collect()
+    assert reference() is owner.pending.receipt
+    owner.reconcile(deadline_monotonic_us=5_000_100)
+    assert owner.pending is None and owner.state is not None
+    gc.collect()
+    assert reference() is None
 
 
 # One lost control reply plus exact reconciliation yields one original diagnostic root.

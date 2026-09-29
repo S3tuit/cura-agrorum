@@ -3151,6 +3151,37 @@ conflict and must not be silently adopted or used as a replacement baseline.
 The original request and preceding state remain available as evidence while
 usable state remains absent.
 
+The process-local `CommunicatorStateOwner.commit()` returns an owner-created
+`StateCommitReceipt`; the persistence control channel still returns the
+`CommunicatorStateCommitResult` defined above. The receipt exposes read-only
+`requested`, `commit_result`, `reconciliation_result` and `resolution`
+properties. `requested` is the exact immutable request; `commit_result` retains
+the original returned control result, including an unknown outcome even after
+successful reconciliation. `reconciliation_result` records the most recent
+serialized load for that request, or is absent if no load occurred.
+`StateCommitResolution` is a runtime-only enum with `PENDING`, `INSTALLED` and
+`NOT_INSTALLED` members.
+
+The owner resolves `INSTALLED` only on positive control acknowledgement or exact
+requested-byte reconciliation, and `NOT_INSTALLED` only on definite rejection or
+exact preceding-byte reconciliation. Failed/unavailable/conflicting loads keep
+the receipt pending under the existing rules. Resolution occurs before clearing
+the owner's pending request. A terminal receipt and its evidence remain fixed
+when later commits change the current state. The caller retains the receipt;
+the owner retains only the unresolved request's reference. Cancellation cannot
+discard an unresolved request, and resolved receipts need no owner registry,
+read acknowledgement or persisted representation. All access belongs to the
+single communicator thread.
+
+RTC continuations inspect their particular receipt rather than compare the
+latest complete state with an older request. They reconcile only while that
+receipt remains pending, so a queued continuation cannot accidentally reconcile
+a later unrelated request. An installed receipt establishes that its save
+succeeded; current usability, the expected RTC provenance and actual source
+checks still gate continuation and trust. Later airtime-only commits preserving
+the proof are allowed. An absent, changed or unresolved current proof must not
+authorize a write or publish verified completion.
+
 The same owner accepts a caller-prepared generation-one recovery request when
 its initial serialized load established a non-NONE state condition. It retains
 that condition and the exact request before submission. Definite failure keeps
@@ -3162,6 +3193,10 @@ through the existing idempotent atomic control transaction, after reconciliation
 again reports the original state condition. It may not submit a different
 recovery snapshot while that request is pending. The owner adds no persistence
 thread, schema, synthetic-ledger construction or no-TX waiting policy.
+`retry_pending_recovery()` returns the existing per-attempt control result and
+updates the same receipt; it never creates another request or receipt. The
+receipt retains its original result and becomes terminal only when that pending
+request is resolved.
 
 ## Receiver clean-stop control
 

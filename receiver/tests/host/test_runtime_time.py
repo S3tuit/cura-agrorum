@@ -586,7 +586,7 @@ def test_offline_direct_holdover_and_unproven_startup(rtc_runtime, proven, saved
     baseline = replace(rt.durable_state, generation=2, rtc_provenance=provenance)
     assert rt.state_owner.commit(
         baseline, deadline_monotonic_us=5_001_000
-    ).disposition is CD.COMMITTED
+    ).commit_result.disposition is CD.COMMITTED
     # Reload through durable control, as a replacement process must do.
     loaded = worker.control.load_communicator_state(deadline_monotonic_us=5_001_000)
     rt.state_owner = CommunicatorStateOwner(control=worker.control, initial_state=loaded.state)
@@ -1579,13 +1579,13 @@ def test_state_owner_tracks_complete_state_and_definite_failure(rtc_runtime):
     initial = owner.state
     requested = replace(initial, generation=2, airtime_snapshot=AirtimeSnapshotV1(UTC + 1, 1))
     rejected = owner.commit(requested, deadline_monotonic_us=0)
-    assert rejected.disposition is CD.NOT_INSTALLED
+    assert rejected.commit_result.disposition is CD.NOT_INSTALLED
     assert owner.state == initial and owner.pending is None
     for generation in (1, 3):
         with pytest.raises(ValueError, match="next acknowledged generation"):
             owner.commit(replace(requested, generation=generation), deadline_monotonic_us=5_001_000)
     committed = owner.commit(requested, deadline_monotonic_us=5_001_000)
-    assert committed.disposition is CD.COMMITTED
+    assert committed.commit_result.disposition is CD.COMMITTED
     assert rt.durable_state == requested and rt.rtc_provenance == requested.rtc_provenance
     assert owner.reconcile(deadline_monotonic_us=0) is None
     assert worker.control.load_communicator_state(deadline_monotonic_us=5_001_000).state == requested
@@ -1596,7 +1596,7 @@ def test_state_owner_tracks_complete_state_and_definite_failure(rtc_runtime):
     ).disposition is CD.COMMITTED
     assert owner.commit(
         following, deadline_monotonic_us=5_001_000
-    ).disposition is CD.ALREADY_COMMITTED
+    ).commit_result.disposition is CD.ALREADY_COMMITTED
     assert owner.state == following and owner.pending is None
 
 

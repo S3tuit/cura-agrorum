@@ -1990,6 +1990,26 @@ also coordinates caller-prepared generation-one recovery requests. Airtime
 initialization, synthetic history and the no-TX recovery wait remain airtime
 policy; a second recovery state owner is unnecessary.
 
+The coordinator creates and returns a process-local receipt for each submitted
+commit. The initiating policy retains it across scheduler turns. The receipt
+records the exact requested state, original control result, reconciliation
+evidence and a resolution of pending, installed or not installed. Any policy
+may perform the exact reconciliation; its result resolves that same receipt
+before the coordinator clears the pending request. Later acknowledged commits
+cannot change an earlier receipt's outcome. RTC completion uses its own receipt
+and still requires the expected proof in the usable current state plus fresh
+source/generation checks. A later airtime settlement preserving RTC proof must
+not turn a confirmed RTC save into a failure merely by changing the complete
+state's generation or airtime fields.
+
+The coordinator retains the receipt only while the request is unresolved;
+the caller retains any resolved receipt until its continuation finishes. There
+is no registry of unread receipts or explicit read acknowledgement. Cancellation
+drops the episode's reference without discarding the coordinator's unresolved
+request. Receipts cross no thread or persistence boundary and require no new
+lock or durable format; ordinary reference lifetime releases them when their
+last holder finishes.
+
 The persistence control channel is separate from `PersistQueue` and has stronger semantics. A private control command is never sampled, dropped, merged silently or acknowledged on submission. `commit_communicator_state()` either reports the requested generation and exact canonical bytes durably installed, reports that the preceding generation definitely remains authoritative, or returns an unknown outcome that requires a serialized state reload before TX resumes.
 
 Servicing this separate synchronous control path is not a `PersistQueue` priority class and must not reorder already published queue units.

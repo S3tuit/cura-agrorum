@@ -216,6 +216,59 @@ static bool backlog_binding_round_trips_exact_frame_across_restart(void) {
   return true;
 }
 
+static bool delivery_outcomes_survive_recovery_and_reject_unknown_values(void) {
+  node_persistence_test_reset_all();
+  diagn_context_t diag;
+  node_delivery_event_t event = {
+      .type = NODE_DELIVERY_EVENT_FINISHED,
+      .cycle_sample_id = 8U,
+      .sample_id = 7U,
+      .message_id = 9U,
+      .domain = CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK,
+      .detail.finished = {.attempt_count = 2U},
+  };
+  for (uint8_t result = 1U; result <= 8U; ++result) {
+    event.detail.finished.final_result = result;
+    TEST_ASSERT_EQ_U32(CURAG_OK,
+                       node_persistence_append_delivery_event(&event, &diag));
+  }
+  node_persistence_test_snapshot_t before;
+  TEST_ASSERT(node_persistence_test_snapshot(TEST_DELIVERY_PATH, &before));
+  TEST_ASSERT(validate_records(&before, NODE_PERSISTENCE_LOG_DELIVERY, 8U));
+  const size_t record_length = 29U;
+  TEST_ASSERT_EQ_SIZE(8U * record_length, before.length);
+  TEST_ASSERT_EQ_U32(8U, before.bytes[7U * record_length + 22U]);
+  node_persistence_test_restart();
+  /* Appending after restart forces recovery to validate the new terminal tail.
+   */
+  TEST_ASSERT_EQ_U32(CURAG_OK,
+                     node_persistence_append_delivery_event(&event, &diag));
+  node_persistence_test_snapshot_t after;
+  TEST_ASSERT(node_persistence_test_snapshot(TEST_DELIVERY_PATH, &after));
+  TEST_ASSERT(validate_records(&after, NODE_PERSISTENCE_LOG_DELIVERY, 9U));
+  TEST_ASSERT(memcmp(before.bytes, after.bytes, before.length) == 0);
+
+  const uint8_t invalid[] = {0U, 9U, UINT8_MAX};
+  for (size_t index = 0U; index < sizeof(invalid); ++index) {
+    event.detail.finished.final_result = invalid[index];
+    TEST_ASSERT_EQ_U32(CURAG_EINVALID_ARGUMENT,
+                       node_persistence_append_delivery_event(&event, &diag));
+    uint8_t record[29];
+    memcpy(record, before.bytes + 7U * record_length, sizeof(record));
+    record[22U] = invalid[index];
+    node_persistence_test_recalculate_crc(record, sizeof(record));
+    TEST_ASSERT_EQ_U32(
+        NODE_PERSISTENCE_RECORD_INVALID_PAYLOAD,
+        node_persistence_record_validate(node_persistence_backend(),
+                                         NODE_PERSISTENCE_LOG_DELIVERY, record,
+                                         sizeof(record)));
+  }
+  node_persistence_test_snapshot_t unchanged;
+  TEST_ASSERT(node_persistence_test_snapshot(TEST_DELIVERY_PATH, &unchanged));
+  TEST_ASSERT(node_persistence_test_snapshots_equal(&after, &unchanged));
+  return true;
+}
+
 static bool delivery_is_synced_before_each_successful_return(void) {
   node_persistence_test_reset_all();
   diagn_context_t diag;
@@ -359,6 +412,8 @@ static bool cleanup_diagnostic_is_valid_but_next_operation_is_not(void) {
 }
 
 static const node_persistence_test_case_t CASES[] = {
+    {"delivery_outcomes_survive_recovery_and_reject_unknown_values",
+     delivery_outcomes_survive_recovery_and_reject_unknown_values},
     {"pending_round_trip_is_newest_first_and_survives_restart",
      pending_round_trip_is_newest_first_and_survives_restart},
     {"removal_requires_exact_id_and_empty_is_not_an_error",

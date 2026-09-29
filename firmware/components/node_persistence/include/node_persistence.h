@@ -108,6 +108,7 @@ typedef uint8_t node_delivery_final_result_t;
 #define NODE_DELIVERY_RESULT_AIRTIME_BUDGET_END UINT8_C(5)
 #define NODE_DELIVERY_RESULT_RADIO_CYCLE_DEADLINE UINT8_C(6)
 #define NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR UINT8_C(7)
+#define NODE_DELIVERY_RESULT_NO_ACK_ATTEMPT_LIMIT UINT8_C(8)
 
 /*
  * One durable delivery boundary event.

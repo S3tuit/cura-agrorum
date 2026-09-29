@@ -16,8 +16,9 @@
 #define CORE_HWTEST_CURRENT_START_MS UINT32_C(5)
 #define CORE_HWTEST_ACCEPTED_DELIVERY_MS UINT16_C(104)
 #define CORE_HWTEST_ACCEPTED_AWAKE_MS UINT16_C(110)
-#define CORE_HWTEST_TWO_ATTEMPT_DELIVERY_MS UINT16_C(808)
-#define CORE_HWTEST_TWO_ATTEMPT_AWAKE_MS UINT16_C(814)
+#define CORE_HWTEST_TWO_ATTEMPT_DELIVERY_MS UINT16_C(608)
+#define CORE_HWTEST_TWO_ATTEMPT_AWAKE_MS UINT16_C(614)
+#define CORE_HWTEST_SILENT_AWAKE_MS UINT16_C(912)
 #define CORE_HWTEST_CURRENT_AND_BACKLOG_AWAKE_MS UINT16_C(216)
 
 static void assert_deep_sleep_boot(void) {
@@ -223,7 +224,7 @@ static void backlog_stage_1(void) {
 
 static void backlog_stage_2(void) {
   assert_deep_sleep_boot();
-  TEST_ASSERT_GREATER_THAN_UINT32(1U, core_hwtest_retained.transmission_count);
+  TEST_ASSERT_EQUAL_UINT32(2U, core_hwtest_retained.transmission_count);
   core_hwtest_retained.checkpoint_transmission_count =
       core_hwtest_retained.transmission_count;
   const cura_lora_v2_reading_t original = assert_transmission(
@@ -232,7 +233,7 @@ static void backlog_stage_2(void) {
   assert_pending_reading(&original, false);
   assert_unaccepted_rtc(
       0U, (uint8_t)core_hwtest_retained.checkpoint_transmission_count,
-      UINT16_C(30000));
+      CORE_HWTEST_SILENT_AWAKE_MS);
 
   const node_sensor_sample_t sensor = core_hwtest_sensor_sample(3U);
   const core_hwtest_response_t responses[] = {
@@ -276,7 +277,7 @@ static void backlog_stage_3(void) {
       started_event(0U, 0U, 0U, CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK,
                     CORE_HWTEST_CURRENT_START_MS),
       finished_event(0U, 0U, 0U, CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK,
-                     first_attempts, NODE_DELIVERY_RESULT_RADIO_CYCLE_DEADLINE),
+                     first_attempts, NODE_DELIVERY_RESULT_NO_ACK_ATTEMPT_LIMIT),
       started_event(1U, 1U, 1U, CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK,
                     CORE_HWTEST_CURRENT_START_MS),
       finished_event(1U, 1U, 1U, CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK, 1U,

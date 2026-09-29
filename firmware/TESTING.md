@@ -123,8 +123,14 @@ are tested without real waiting.
 - Silence retransmits the identical 54-byte authenticated frame. The test uses
   different `message_id` and `sample_id` values and verifies that only the
   former occupies clear-header bytes 10-13.
-- Every `TX_DONE` consumes the next scripted random value and produces the
-  expected `retry_at`.
+- Only the first `TX_DONE` per delivery consumes a scripted random value, using
+  the inclusive 100–400 ms bounds. Its continuous RX window ends at
+  `TX_DONE + 300 ms + jitter`; a second `TX_DONE` opens a fixed 300 ms window.
+- An ACK before, at or after the 300 ms checkpoint within the continuous first
+  window is accepted immediately, including an ACK processed after that
+  checkpoint. Jitter endpoints produce 400 ms and 700 ms first windows.
+- Two silent transmissions end with `NO_ACK_ATTEMPT_LIMIT`, retain the reading
+  and stop the wake's radio work. A third transmission is never admitted.
 - Multiple invalid ACKs followed by a valid ACK stay in one RX interval and do
   not restart that interval.
   The exact unchanged absolute deadline is owned by the firmware host test
@@ -146,8 +152,12 @@ are tested without real waiting.
   retry.
 - An RX local error after `TX_DONE` terminates delivery rather than being
   treated as silence.
-- An authenticated ACK whose `RX_DONE` timestamp is at or before `retry_at`
-  wins; a later ACK does not prevent retry.
+- An authenticated ACK whose `RX_DONE` timestamp is at or before the active
+  capped RX deadline wins, even when processed later. Later ACKs are ignored;
+  test both the first retry deadline and the final 300 ms deadline.
+- The radio stays armed when an invalid ACK is followed by a timely valid ACK
+  across the conceptual 300 ms checkpoint; the controller never introduces a
+  separate RX deadline there.
 
 ### Airtime and wall-clock budgets
 
@@ -169,6 +179,11 @@ are tested without real waiting.
   final silent backlog delivery ends as `AIRTIME_BUDGET_END` before retry.
 - A started TX remains charged when `TX_DONE` never arrives.
 - An attempt that cannot fit either limit is never passed to the radio.
+- A radio-cycle deadline truncating either ACK window, or coinciding with its
+  end, reports `RADIO_CYCLE_DEADLINE` on silence. A timely ACK still wins.
+- After two completed transmissions, final silence before the global deadline
+  reports `NO_ACK_ATTEMPT_LIMIT` even if a third transmission would not fit the
+  airtime budget or remaining wall-clock window.
 
 ### Current and backlog transitions
 
@@ -194,7 +209,10 @@ are tested without real waiting.
   prevent immediate reselection.
 - Empty backlog completes normally, while backlog lookup failure logs and
   stops.
-- Backlog silence retries while both shared limits allow another attempt.
+- Backlog silence permits only one retry while both shared limits allow it;
+  final silence retains that entry and stops further drainage. Accepted backlog
+  entries each begin a fresh two-attempt delivery episode without resetting the
+  shared wake budgets.
 
 ### Delivery and diagnostic events
 
@@ -211,6 +229,9 @@ are tested without real waiting.
 - Terminal failures and invalid ACK frames appear in the finish event.
 - Start-event failure does not prevent TX; finish-event failure does not alter
   the delivery result or final cleanup.
+- `NO_ACK_ATTEMPT_LIMIT = 8` round-trips through production persistence, recovery
+  and the offline node-image reader. All defined terminal outcomes remain valid;
+  zero and unknown outcomes remain invalid.
 - An ordinary diagnostic append failure never changes wake behavior and never
   triggers recursive logging.
 
@@ -546,8 +567,8 @@ test application.
   before starting another wake cycle, verify sample ID `0`, the committed NVS
   successor, empty pending storage, one delivery start/finish pair and RTC
   metrics for one accepted attempt.
-- **Unacknowledged current becomes backlog:** let cycle 0 exhaust the production
-  limits in deterministic-clock silence. After deep sleep, verify sample `0`
+- **Unacknowledged current becomes backlog:** let cycle 0 finish two silent
+  attempts with `NO_ACK_ATTEMPT_LIMIT`. After deep sleep, verify sample `0`
   remains pending and previous-current acceptance is false. In cycle 1 accept
   current sample `1` and then backlog sample `0`; verify `(1, CURRENT)` precedes
   `(0, BACKLOG)` and pending storage is empty after the following wake.
@@ -1081,7 +1102,7 @@ duplicate controller policy already covered by host fakes.
   slow test is run manually when desired and may share its stages with the RTC
   deep-sleep round-trip test.
 - **Random-range smoke:** generate several thousand values for each inclusive
-  range `[100000, 500000]`, `[0, 1]` and `[0, UINT32_MAX]`. Every result must be
+  range `[100000, 400000]`, `[0, 1]` and `[0, UINT32_MAX]`. Every result must be
   inside its requested range. This checks range and overflow behavior only; it
   makes no statistical claim about uniformity.
 

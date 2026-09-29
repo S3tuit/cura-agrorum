@@ -631,21 +631,35 @@ acknowledged.
 
 ## Pilot transmission policy
 
-The pilot sends one reading per packet. After each `TX_DONE`, the node switches
-to continuous RX and schedules:
+The pilot sends one reading per packet and permits at most two transmissions
+per current or backlog delivery episode. The first transmission starts without
+an intentional scheduling delay. After its `TX_DONE`, select one jitter and
+listen continuously until:
 
 ```text
-retry_interval = 500 ms + uniform_random(100 ms, 500 ms)
+retry_interval = 300 ms + uniform_random(100 ms, 400 ms)
 retry_at       = TX_DONE + retry_interval
 ```
 
-The interval is therefore uniformly distributed from 600 to 1,000 ms. A valid
+The interval is therefore uniformly distributed from 400 to 700 ms. It includes
+the initial 300 ms ACK wait and an additional 100–400 ms of listening. Jitter is
+drawn at the first `TX_DONE`, even when an early ACK avoids the retry, so there is
+one RX deadline and no packet-discarding boundary at 300 ms. A valid
 authenticated ACK cancels `retry_at`. Otherwise, when `retry_at` is reached, the
-node transmits the identical packet again if both global limits permit it. An
+node transmits the identical packet once more if both global limits permit it. An
 invalid ACK is logged and ignored while RX remains open. This pilot does not
 adapt the interval from measured latency. An authenticated ACK with an
 `RX_DONE` timestamp at or before `retry_at` wins the boundary; an ACK completed
 after it does not prevent the retry.
+
+After the second `TX_DONE`, the node listens for 300 ms without selecting more
+jitter. Final silence retains the reading and ends all radio work for the wake
+with `NO_ACK_ATTEMPT_LIMIT`. All RX deadlines are capped by the radio-cycle
+deadline; a timely authenticated ACK wins equality, while silence at the global
+deadline, including equality with a policy deadline, reports
+`RADIO_CYCLE_DEADLINE`. A shared limit preventing the second transmission keeps
+its existing airtime/deadline result. Final silence before the global deadline
+does not evaluate whether a third transmission could fit.
 
 Each wake's radio phase has two limits:
 
@@ -670,7 +684,9 @@ The wake sequence is:
 2. On `ACCEPTED`, remove its stored copy, if any, and start draining the backlog
    from the most recent reading.
 3. Continue sending backlog readings until it is empty or either wake limit
-   prevents another complete attempt.
+   prevents another complete attempt. Each accepted reading permits immediate
+   progress after the existing required persistence/setup work; the next reading
+   has a fresh two-attempt limit, while both wake budgets remain shared.
 4. On `RETRY_LATER`, stop all transmission for this wake. Retain the reading.
 5. On a permanent rejection, attempt to quarantine the reading for diagnosis,
    then attempt to remove its known persisted pending copy even if the
@@ -682,8 +698,9 @@ The wake sequence is:
    a rejected backlog reading permits the next backlog entry while both budgets
    allow it and removal succeeded. A removal failure leaves the pending copy in
    place and stops backlog drainage.
-6. On silence at `retry_at`, retain the reading and make another attempt if both
-   limits allow it.
+6. On silence at the first `retry_at`, retain the reading and make one more
+   attempt if both limits allow it. On silence through the final 300 ms ACK
+   window, retain the reading and stop all transmissions for the wake.
 7. At the radio-cycle deadline, or when no further attempt can fit, stop radio
    activity and finalize the diagnostic and backlog state.
 8. Flush persistent logs and state, then enter deep sleep. This final work may
@@ -754,6 +771,7 @@ final_result
 | `5` | `AIRTIME_BUDGET_END` | No terminal ACK before another attempt ceased to fit the charged-TX budget |
 | `6` | `RADIO_CYCLE_DEADLINE` | No terminal ACK before another attempt ceased to fit the 30-second radio-cycle deadline |
 | `7` | `LOCAL_RADIO_ERROR` | Local initialization, TX, IRQ or RX operation failed |
+| `8` | `NO_ACK_ATTEMPT_LIMIT` | Two completed transmissions followed by silence through the final 300 ms ACK window |
 
 The start and finish bracket the complete delivery episode, including all
 retries; they do not bracket individual attempts. `DELIVERY_STARTED` means that

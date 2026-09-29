@@ -582,7 +582,10 @@ err_curag_t node_persistence_append_delivery_event(
 
 `node_delivery_event` is a tagged caller-owned value containing exactly one of
 the `DELIVERY_STARTED` or `DELIVERY_FINISHED` schemas in
-[`ARCHITECTURE.md`](ARCHITECTURE.md).
+[`ARCHITECTURE.md`](ARCHITECTURE.md). Finished-event validation accepts exactly
+the defined terminal results 1–8, including `NO_ACK_ATTEMPT_LIMIT = 8`;
+`INVALID = 0` and unknown values are rejected. The persisted payload remains
+15 bytes.
 
 **Purpose**
 
@@ -1637,12 +1640,23 @@ uses rejection sampling or an equivalent unbiased mapping, calculates interval
 width without `u32` overflow and supports the complete `[0, UINT32_MAX]`
 interval. It cannot fail.
 
-The pilot retry calculation is:
+The pilot permits at most two transmissions per current or backlog delivery
+episode. After the first `TX_DONE`, select one jitter and use a single continuous
+RX deadline:
 
 ```text
-random_us  = uniform_u32_inclusive(context, 100000, 500000)
-retry_at   = tx_done_at_us + 500000 + random_us
+random_us  = uniform_u32_inclusive(context, 100000, 400000)
+retry_at   = tx_done_at_us + 300000 + random_us
 ```
+
+This 400–700 ms interval includes the initial 300 ms wait and the additional
+100–400 ms listening interval. An early ACK ends delivery immediately, although
+jitter has already been selected. After the second `TX_DONE`, RX ends at
+`tx_done_at_us + 300000`; no additional random value is consumed. Both deadlines
+are capped by the shared absolute radio-cycle deadline. Timely authenticated
+ACKs win equality; silence at a global deadline reports `RADIO_CYCLE_DEADLINE`.
+Final silence before the global deadline reports `NO_ACK_ATTEMPT_LIMIT` and ends
+the wake's radio work without evaluating admission for a third transmission.
 
 This source does not need cryptographic guarantees and must not be used for
 node identities, provisioning keys or any future cryptographic random value.

@@ -63,6 +63,26 @@ def test_real_image_all_required_families_and_no_mutation(tmp_path, binaries):
     assert result["logs"]["diagnostic.log"][0]["context"] == "00" * 7
 
 
+@pytest.mark.parametrize("outcome", range(1, 9))
+def test_delivery_outcomes_in_real_image(tmp_path, binaries, outcome):
+    image = image_from(tmp_path, binaries, {
+        "delivery.log": record(5, struct.pack("<IIIBBB", 51, 42, 73, 2, 2, outcome))})
+    before = image.read_bytes()
+    finish, = decode_image(image, binaries[0])["logs"]["delivery.log"]
+    assert (finish["attempt_count"], finish["final_result"]) == (2, outcome)
+    assert image.read_bytes() == before
+
+
+@pytest.mark.parametrize("outcome", [0, 9, 255])
+def test_unknown_delivery_outcomes_rejected(tmp_path, binaries, outcome):
+    image = image_from(tmp_path, binaries, {
+        "delivery.log": record(5, struct.pack("<IIIBBB", 51, 42, 73, 2, 2, outcome))})
+    before = image.read_bytes()
+    with pytest.raises(ValueError, match="record"):
+        decode_image(image, binaries[0])
+    assert image.read_bytes() == before
+
+
 def test_missing_is_distinct_from_empty(tmp_path, binaries):
     image = image_from(tmp_path, binaries, {"pending.log": b""})
     logs = decode_image(image, binaries[0])["logs"]

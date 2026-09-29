@@ -63,6 +63,7 @@ typedef struct {
   uint8_t payload[CURA_LORA_V2_READING_FRAME_SIZE];
   size_t payload_length;
   uint64_t deadline_us;
+  uint64_t called_at_us;
 } fake_node_core_captured_tx_t;
 
 typedef struct {

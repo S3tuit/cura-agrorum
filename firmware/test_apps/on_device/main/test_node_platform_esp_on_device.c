@@ -52,7 +52,7 @@ TEST_CASE("platform randomness respects inclusive ranges", "[node_platform]") {
   TEST_ASSERT_NOT_NULL(ports);
   TEST_ASSERT_NOT_NULL(ports->randomness.uniform_u32_inclusive);
 
-  assert_random_range(&ports->randomness, UINT32_C(100000), UINT32_C(500000));
+  assert_random_range(&ports->randomness, UINT32_C(100000), UINT32_C(400000));
   assert_random_range(&ports->randomness, 0U, 1U);
   assert_random_range(&ports->randomness, 0U, UINT32_MAX);
 }

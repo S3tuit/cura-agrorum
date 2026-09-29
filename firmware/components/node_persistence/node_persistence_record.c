@@ -223,7 +223,7 @@ static bool validate_delivery_finished_payload(const uint8_t *payload,
   }
   const uint8_t final_result = payload[14U];
   return final_result >= NODE_DELIVERY_RESULT_ACCEPTED &&
-         final_result <= NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR;
+         final_result <= NODE_DELIVERY_RESULT_NO_ACK_ATTEMPT_LIMIT;
 }
 
 node_persistence_record_result_t

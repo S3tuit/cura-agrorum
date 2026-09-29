@@ -1302,7 +1302,7 @@ static bool validate_delivery_event(const node_delivery_event_t *event) {
   }
   return event->detail.finished.final_result >= NODE_DELIVERY_RESULT_ACCEPTED &&
          event->detail.finished.final_result <=
-             NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR;
+             NODE_DELIVERY_RESULT_NO_ACK_ATTEMPT_LIMIT;
 }
 
 err_curag_t

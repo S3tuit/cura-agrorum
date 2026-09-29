@@ -54,13 +54,34 @@ reading. It:
 - charges the radio's modeled airtime plus a controller-owned 10% allowance
   and increments attempt metrics when `SetTx` is confirmed or its effect
   becomes uncertain after crossing SPI;
-- after `TX_DONE`, keeps single-shot RX armed and calculates
-  `retry_at = TX_DONE + 500 ms + uniform_random(100 ms, 500 ms)`;
+- after the first `TX_DONE`, selects one inclusive uniform jitter of 100–400 ms
+  and keeps single-shot RX armed until
+  `retry_at = TX_DONE + 300 ms + jitter`, a continuous 400–700 ms ACK window;
 - logs and ignores invalid ACKs without closing the RX window;
-- retransmits at `retry_at` while another complete attempt's 10%-padded
+- retransmits the identical frame once at `retry_at` if another complete
+  attempt's 10%-padded
   airtime charge and radio-reported minimum TX window fit the independent
-  eight-second charged-TX budget and 30-second radio-cycle deadline; and
-- returns a terminal ACK, exhausted-limit or local-error result.
+  eight-second charged-TX budget and 30-second radio-cycle deadline;
+- after the second `TX_DONE`, listens for 300 ms without drawing more jitter;
+  and
+- returns a terminal ACK, exhausted-limit, no-ACK attempt-limit or local-error
+  result. Final silence retains the reading and ends all radio work for the wake.
+
+The two-attempt limit is per delivery episode, not per wake. An accepted current
+or backlog reading permits immediate progress to the next backlog reading after
+the existing required persistence and radio setup, with a fresh attempt count.
+The shared wake limits never reset between readings.
+
+Jitter is selected at the first `TX_DONE`, even if an early ACK makes a retry
+unnecessary. RX uses one continuous absolute deadline rather than separate
+receive calls at the 300 ms checkpoint, so an ACK completed during the additional
+listening interval remains eligible even if task processing is delayed.
+Each receive deadline is capped by the radio-cycle deadline. An authenticated
+ACK completed at or before that capped deadline wins, including equality.
+Invalid ACKs do not restart or extend it. Silence at the radio-cycle deadline,
+including equality with a policy deadline, reports `RADIO_CYCLE_DEADLINE`.
+If the final 300 ms interval expires before that global deadline, report
+`NO_ACK_ATTEMPT_LIMIT` without checking whether a third transmission could fit.
 
 When the operation reaches that result, it appends one durable
 `DELIVERY_FINISHED` event. The events bracket the whole delivery operation,
@@ -155,6 +176,7 @@ The delivery result and its `DELIVERY_FINISHED.final_result` encoding are:
 | `5` | `AIRTIME_BUDGET_END` | No terminal ACK before another attempt ceased to fit the charged-TX budget |
 | `6` | `RADIO_CYCLE_DEADLINE` | No terminal ACK before another attempt ceased to fit the 30-second radio-cycle deadline |
 | `7` | `LOCAL_RADIO_ERROR` | Local initialization, TX, IRQ or RX operation failed |
+| `8` | `NO_ACK_ATTEMPT_LIMIT` | Two completed transmissions followed by silence through the final 300 ms ACK window |
 
 `RADIO_CYCLE_DEADLINE` does not mean the complete wake ended: final logging,
 synchronization, RTC commit and the sleep call occur afterward.
@@ -179,8 +201,9 @@ later receives a new ID and backlog domain when it is converted to backlog.
   then, when its pending append succeeded, attempt to remove its pending copy
   even if quarantine failed. Stop all radio work afterward. A rejection of the
   current firmware's frame may be systematic, so backlog is not attempted.
-- Silence: retransmit the exact frame while both limits permit. When no further
-  attempt fits, retain the reading and stop radio work.
+- Silence: retransmit the exact frame once if both shared limits permit. After
+  final silence, or when a shared limit prevents progress, retain the reading
+  and stop radio work.
 - Local codec, cryptographic or radio error: log it, retain the reading when it
   was persisted, and stop radio work.
 
@@ -199,8 +222,9 @@ same or later wakes load and transmit the persisted frame bytes verbatim.
 - `REJECTED_UNSUPPORTED` or `REJECTED_MALFORMED`: quarantine that entry, then
   attempt to remove its pending copy even if quarantine failed. Continue with
   the next one only when removal succeeds and both budgets permit.
-- Silence: retransmit the exact frame while both limits permit. When no further
-  attempt fits, retain the entry and stop drainage for the wake.
+- Silence: retransmit the exact frame once if both shared limits permit. After
+  final silence, or when a shared limit prevents progress, retain the entry and
+  stop drainage for the wake.
 - Local error: log it, retain the entry and stop drainage.
 
 If removal after acceptance or quarantine fails, the controller logs the

@@ -76,6 +76,11 @@ set(
   message_claim_failure_retains_reading_without_construction
   invalid_composition_returns_without_side_effects
   retries_reuse_identical_frame
+  ack_windows_accept_across_checkpoint
+  two_silent_attempts_stop_and_retain
+  final_ack_deadline_is_inclusive
+  radio_deadline_caps_ack_windows
+  attempt_limit_precedes_third_wall_clock_admission
   invalid_acks_share_one_receive_interval
   unknown_ack_status_reports_status_diagnostic
   radio_progress_and_rx_errors_are_accounted
@@ -93,6 +98,8 @@ set(
   airtime_budget_is_shared_across_backlog
   wall_clock_deadline_is_shared_across_backlog
   backlog_silence_retries_the_same_frame
+  two_attempt_limit_resets_for_each_backlog
+  backlog_two_silent_attempts_stop_drainage
   bound_backlog_reuses_persisted_frame_without_new_id
   backlog_binding_failure_prevents_first_transmission
   delivery_events_bracket_retries_and_failures_are_best_effort

@@ -651,8 +651,9 @@ static bool test_receive_snapshots_before_clear_and_rearms(void) {
   fake_sx1262_radio_backend_reset();
   TEST_ASSERT(initialize_with_tx());
   const uint8_t payload[] = {0x41U, 0x42U, 0x43U};
-  const uint64_t rx_at_us = future_us(UINT64_C(2000));
-  const uint64_t rx_deadline_us = future_us(UINT64_C(4000));
+  const uint64_t window_start_us = g_fake_sx1262_radio.now_us;
+  const uint64_t rx_at_us = window_start_us + UINT64_C(299999);
+  const uint64_t rx_deadline_us = window_start_us + UINT64_C(400000);
   const fake_radio_irq_event_t packet =
       rx_event(rx_at_us, payload, sizeof(payload));
   fake_sx1262_radio_backend_add_irq(&packet);
@@ -681,6 +682,20 @@ static bool test_receive_snapshots_before_clear_and_rearms(void) {
   TEST_ASSERT(packet_status < clear_irq);
   TEST_ASSERT(clear_irq < rearm);
   TEST_ASSERT_EQ_U64(2U, g_fake_sx1262_radio.calls[FAKE_RADIO_OP_START_RX]);
+  /* Treat the first opaque packet as application-invalid, then resume under
+   * the same deadline across the conceptual 300 ms checkpoint. */
+  const uint64_t next_rx_at_us = window_start_us + UINT64_C(350000);
+  const fake_radio_irq_event_t next =
+      rx_event(next_rx_at_us, payload, sizeof(payload));
+  fake_sx1262_radio_backend_add_irq(&next);
+  const size_t standby_calls = g_fake_sx1262_radio.calls[FAKE_RADIO_OP_STANDBY];
+  TEST_ASSERT_EQ_U64(
+      CURAG_OK, sx1262_radio_receive_downlink_until(rx_deadline_us, &rx, NULL));
+  TEST_ASSERT_EQ_U64(SX1262_RADIO_RX_PACKET, rx.outcome);
+  TEST_ASSERT_EQ_U64(next_rx_at_us, rx.rx_done_at_us);
+  TEST_ASSERT_EQ_U64(standby_calls,
+                     g_fake_sx1262_radio.calls[FAKE_RADIO_OP_STANDBY]);
+  TEST_ASSERT_EQ_U64(3U, g_fake_sx1262_radio.calls[FAKE_RADIO_OP_START_RX]);
   return true;
 }
 

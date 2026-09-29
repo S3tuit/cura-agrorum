@@ -28,7 +28,7 @@ void node_core_test_after_rtc_take(const node_rtc_record_t *retained,
 #define NODE_CORE_EFFECTIVE_DEEP_SLEEP_DURATION_US                             \
   NODE_CORE_TEST_DEEP_SLEEP_DURATION_US
 #elif defined(CONFIG_NODE_DEEP_SLEEP_SECONDS)
-#define NODE_CORE_EFFECTIVE_DEEP_SLEEP_DURATION_US \
+#define NODE_CORE_EFFECTIVE_DEEP_SLEEP_DURATION_US                             \
   (UINT64_C(1000000) * CONFIG_NODE_DEEP_SLEEP_SECONDS)
 #else
 #define NODE_CORE_EFFECTIVE_DEEP_SLEEP_DURATION_US                             \
@@ -530,15 +530,17 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
       }
     }
 
-    uint64_t retry_at_us = 0U;
+    uint64_t ack_deadline_us = 0U;
     if (tx_result.tx_done) {
-      const uint32_t jitter_us =
-          cycle->platform->randomness.uniform_u32_inclusive(
-              cycle->platform->randomness.context,
-              NODE_CORE_RETRY_JITTER_MIN_US, NODE_CORE_RETRY_JITTER_MAX_US);
-      retry_at_us = saturating_add_u64(
-          saturating_add_u64(tx_result.tx_done_at_us, NODE_CORE_ACK_WAIT_US),
-          jitter_us);
+      ack_deadline_us =
+          saturating_add_u64(tx_result.tx_done_at_us, NODE_CORE_ACK_WAIT_US);
+      if (attempt_count < NODE_CORE_DELIVERY_ATTEMPT_LIMIT) {
+        const uint32_t jitter_us =
+            cycle->platform->randomness.uniform_u32_inclusive(
+                cycle->platform->randomness.context,
+                NODE_CORE_RETRY_JITTER_MIN_US, NODE_CORE_RETRY_JITTER_MAX_US);
+        ack_deadline_us = saturating_add_u64(ack_deadline_us, jitter_us);
+      }
     }
     if (tx_error != CURAG_OK) {
       append_diagnostic(cycle, tx_error, &diagnostic);
@@ -556,9 +558,9 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
       final_result = NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR;
       break;
     }
-    const uint64_t receive_deadline_us = retry_at_us < cycle->radio_deadline_us
-                                             ? retry_at_us
-                                             : cycle->radio_deadline_us;
+    const uint64_t receive_deadline_us =
+        ack_deadline_us < cycle->radio_deadline_us ? ack_deadline_us
+                                                   : cycle->radio_deadline_us;
 
     bool receive_complete = false;
     while (!receive_complete) {
@@ -570,8 +572,10 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
         final_result = NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR;
         receive_complete = true;
       } else if (rx_result.outcome == SX1262_RADIO_RX_DEADLINE) {
-        if (cycle->radio_deadline_us <= retry_at_us) {
+        if (cycle->radio_deadline_us <= ack_deadline_us) {
           final_result = NODE_DELIVERY_RESULT_RADIO_CYCLE_DEADLINE;
+        } else if (attempt_count >= NODE_CORE_DELIVERY_ATTEMPT_LIMIT) {
+          final_result = NODE_DELIVERY_RESULT_NO_ACK_ATTEMPT_LIMIT;
         }
         receive_complete = true;
       } else if (rx_result.outcome == SX1262_RADIO_RX_PACKET) {

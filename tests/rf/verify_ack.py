@@ -13,7 +13,7 @@ def verify_ack_case(case, node_id, key, packets, decoded):
     seed_count = 2 if scope == "backlog" else 1
     target_cycle = seed_count
     statuses = {"accepted": 1, "retry_later": 2, "unsupported": 3,
-                "malformed": 4, "invalid_auth": 1, "wrong_message": 6, "domain_status": 6}
+                "malformed": 4, "invalid_auth": 1, "wrong_message": 8, "domain_status": 8}
     if (not case.startswith("RF-019.") or scope not in ("current", "backlog") or action not in statuses or
             (scope == "backlog" and action not in ("accepted", "retry_later", "unsupported", "malformed"))):
         raise ValueError("unknown RF-019 assertion set")
@@ -73,9 +73,9 @@ def verify_ack_case(case, node_id, key, packets, decoded):
             outcome = statuses[action]
         else:
             outcome = 1
-        if outcome == 6:
-            if counts[m] < 2:
-                raise ValueError("missing retry after invalid ACK and silence")
+        if outcome == 8:  # NO_ACK_ATTEMPT_LIMIT
+            if counts[m] != 2:
+                raise ValueError("invalid ACK and silence did not end after exactly two attempts")
         elif counts[m] != 1:
             raise ValueError("terminal ACK did not complete first attempt")
         expected[m] = outcome

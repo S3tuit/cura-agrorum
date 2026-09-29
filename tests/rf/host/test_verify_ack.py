@@ -44,6 +44,77 @@ def test_real_packets_require_matching_node_storage():
     assert result["host_deadline_assertion"] == "separate prerequisite"
 
 
+def invalid_ack_transcript(action, *, attempts=2, result=8):
+    packets, deliveries, pending = [], [], []
+    # Setup RETRY_LATER; invalid ACK then silence; observation RETRY_LATER.
+    for index, previous_attempts in enumerate((0, 1, attempts)):
+        sample, message = 40 + index, 100 + index
+        body = struct.pack("<IHHHhhhIHBBHHBBH", sample, 10, 0, 0, 0, 0, 0, 0, 0,
+                           1 if index == 0 else 8, previous_attempts,
+                           1000 if index else 0, 0, previous_attempts, 0,
+                           257 if index else 0)
+        header = struct.pack("<BB8sI", 32, 1, NODE, message)
+        nonce = struct.pack("<8sIB", NODE, message, 1)
+        frame = header + AESCCM(KEY, tag_length=8).encrypt(nonce, body, header)
+        count = attempts if index == 1 else 1
+        for attempt in range(count):
+            packets.append(dict(frame=frame.hex(),
+                                at=1_000_000 + index * 11_000_000 + attempt * 500_000))
+        identity = dict(cycle_sample_id=sample, sample_id=sample,
+                        message_id=message, domain=1)
+        deliveries.extend([dict(type=4, **identity, start_offset_ms=10),
+                           dict(type=5, **identity, final_result=result if index == 1 else 2,
+                                attempt_count=count)])
+        pending.append(dict(type=1, sample_id=sample, reading_body=body.hex()))
+    diagnostic = dict(type=3, error_domain=4,
+                      error_code={"wrong_message": 10, "domain_status": 13}[action],
+                      cycle_sample_id=41, message_id=101)
+    return packets, dict(logs={"pending.log": pending, "quarantine.log": None,
+                              "diagnostic.log": [diagnostic], "delivery.log": deliveries})
+
+
+@pytest.mark.parametrize("action", ["wrong_message", "domain_status"])
+def test_invalid_ack_then_silence_requires_two_attempt_no_ack_result(action):
+    packets, dump = invalid_ack_transcript(action)
+    result = verify_ack_case("RF-019.current." + action, NODE, KEY, packets, dump)
+    assert result["status"] == "PASS"
+    assert result["packets"] == 4
+    assert result["wakes"] == 3
+
+
+@pytest.mark.parametrize("action", ["wrong_message", "domain_status"])
+@pytest.mark.parametrize("attempts,result", [(1, 8), (3, 8), (2, 6), (3, 6)])
+def test_invalid_ack_silence_rejects_wrong_outcome_or_attempt_count(action, attempts, result):
+    packets, dump = invalid_ack_transcript(action, attempts=attempts, result=result)
+    with pytest.raises(ValueError):
+        verify_ack_case("RF-019.current." + action, NODE, KEY, packets, dump)
+
+
+@pytest.mark.parametrize("action", ["wrong_message", "domain_status"])
+@pytest.mark.parametrize("damage", ["wrong_count", "removed_pending", "missing_diagnostic",
+                                     "wrong_diagnostic", "wrong_metrics"])
+def test_invalid_ack_silence_requires_matching_retained_state_and_metrics(action, damage):
+    packets, dump = invalid_ack_transcript(action)
+    logs = dump["logs"]
+    if damage == "wrong_count":
+        logs["delivery.log"][3]["attempt_count"] = 1
+    elif damage == "removed_pending":
+        logs["pending.log"].pop(1)
+    elif damage == "missing_diagnostic":
+        logs["diagnostic.log"] = []
+    elif damage == "wrong_diagnostic":
+        logs["diagnostic.log"][0]["error_code"] = 7
+    else:
+        body = reading(42, 1, 0, 257, 8)
+        header = bytes.fromhex(packets[-1]["frame"])[:14]
+        nonce = struct.pack("<8sIB", NODE, 102, 1)
+        frame = header + AESCCM(KEY, tag_length=8).encrypt(nonce, body, header)
+        packets[-1]["frame"] = frame.hex()
+        logs["pending.log"][-1]["reading_body"] = body.hex()
+    with pytest.raises(ValueError):
+        verify_ack_case("RF-019.current." + action, NODE, KEY, packets, dump)
+
+
 @pytest.mark.parametrize("damage", [None, "wrong_ack", "missing_spi", "extra_tx"])
 def test_downlinks_match_actual_spi_and_selected_status(damage):
     packets, _ = accepted_transcript()

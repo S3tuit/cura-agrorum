@@ -10,6 +10,7 @@ from cura_receiver.generated import receiver_enums_generated as E
 from cura_receiver.ports.ds3231 import Ds3231ReadResult, Ds3231ReadStatus
 from cura_receiver.radio import Radio
 from cura_receiver.sx1262 import Sx1262
+from cura_receiver.stop_intent import StopIntent
 from cura_receiver.receiver_startup import ReceiverInstanceStart
 from cura_protocol_v2_lora.receiver_group import ReceiverGroupState
 from tests.support.builders.persistence import INSTANCE
@@ -27,21 +28,24 @@ def test_authentication_keys_match_public_protocol_vector():
     assert authentication_keys(configuration) == {node: bytes.fromhex('c0f9a1a0f386692e01028082be92330e')}
 
 
-def make_application(tmp_path, *, reuse_storage=False, instance_id=INSTANCE):
+def make_application(tmp_path, *, reuse_storage=False, instance_id=INSTANCE, clock=None, radio_wait=None):
     database, config, boot = ((tmp_path / "worker.db", tmp_path / "test-group.json", tmp_path / "boot-id")
         if reuse_storage else prepare_worker_files(tmp_path))
-    clock = FakeOsClock(monotonic_us=100)
+    clock = clock if clock is not None else FakeOsClock(monotonic_us=100)
+    started = clock.now_monotonic_us()
     settings = replace(ApplicationSettings(), database_path=database, configuration_path=config,
         sqlite_temporary_directory=tmp_path / 'sqlite-temp', minimum_free_bytes=0)
-    instance = ReceiverInstanceStart(instance_id, 100)
+    instance = ReceiverInstanceStart(instance_id, started)
     worker = CheckedPersistenceWorker(instance=instance, database_path=database,
         configuration_path=config, boot_id_path=boot, clock=clock)
     io = PhysicalPort(clock)
-    radio = Radio(Sx1262(io, clock, Wait(clock)))
+    stop = StopIntent(clock, settings.shutdown_budget_us)
+    radio = Radio(Sx1262(io, clock, radio_wait if radio_wait is not None else Wait(clock)),
+        stop_requested=stop.is_requested)
     rtc = FakeDs3231Control()
-    rtc.read_results.append(Ds3231ReadResult(Ds3231ReadStatus.MISSING, 100, 100))
+    rtc.read_results.append(Ds3231ReadResult(Ds3231ReadStatus.MISSING, started, started))
     app = ReceiverApplication(instance=instance, settings=settings, worker=worker, clock=clock,
-        kernel=FakeKernelClock(), rtc=rtc, chrony=FakeChronyControl(), radio=radio)
+        kernel=FakeKernelClock(), rtc=rtc, chrony=FakeChronyControl(), radio=radio, stop_intent=stop)
     return app, io, database, config
 
 

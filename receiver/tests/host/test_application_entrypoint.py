@@ -1,7 +1,7 @@
 """CLI inputs must reach the real adapter boundary in its contracted type."""
 
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, MagicMock
 
 import pytest
 
@@ -42,11 +42,19 @@ def test_valid_cli_passes_exact_digest_bytes_through_successful_composition(monk
     application.start.return_value = SimpleNamespace(ready=True)
     application.run.return_value = 0
     application.shutdown.return_value = SimpleNamespace(failure=None)
-    application.stop_event.is_set.return_value = True
     monkeypatch.setattr(entry, 'ReceiverApplication', Mock(return_value=application))
-    monkeypatch.setattr(entry.signal, 'signal', Mock())
+    stop = Mock()
+    stop.is_requested.return_value = True
+    monkeypatch.setattr(entry, 'StopIntent', Mock(return_value=stop))
+    waiter = MagicMock()
+    monkeypatch.setattr(entry, 'LinuxSignalWait', Mock(return_value=waiter))
     assert entry.main() == 0
     rtc.assert_called_once_with(clock, kernel_operation_bound_us=3000000,
                                 helper_sha256=digest, receiver_gid=entry.os.getegid())
     application.shutdown.assert_called_once_with(clean_requested=True)
+    application.run.assert_called_once_with(wait=waiter.__enter__.return_value)
+    entry.LinuxSignalWait.assert_called_once_with(clock, stop)
+    assert entry.ReceiverApplication.call_args.kwargs['stop_intent'] is stop
+    assert entry.Radio.call_args.kwargs['stop_requested'] == stop.is_requested
+    waiter.__exit__.assert_called_once_with(None, None, None)
     assert entry.os.environ['SQLITE_TMPDIR'] == '/var/lib/cura-agrorum/tmp'

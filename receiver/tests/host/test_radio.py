@@ -9,6 +9,7 @@ from cura_receiver.generated.receiver_enums_generated import AckTxResult
 from cura_receiver.radio import Radio, State
 from cura_receiver.radio_diagnostics import Reason, Severity
 from cura_receiver.sx1262 import Sx1262
+from cura_receiver.stop_intent import StopIntent
 from tests.support.fakes.os_clock import FakeOsClock
 from tests.support.fakes.radio_io import PhysicalPort, Wait
 
@@ -787,6 +788,28 @@ def test_shutdown_during_transmit_command(owner, opcode):
     assert result.tx.ack_tx_result is (AckTxResult.TX_UNCONFIRMED if opcode == 0x8C else AckTxResult.UNKNOWN_INTERRUPTED)
     assert result.tx.facts.profile_uncertain is (opcode == 0x8C)
     assert (result.tx.t4_set_tx_attempted_monotonic_us is None) is (opcode == 0x8C)
+
+
+@pytest.mark.parametrize('opcode', [None, 0x8C, 0x83])
+def test_application_intent_suppresses_tx_at_existing_boundaries(opcode):
+    clock = FakeOsClock(monotonic_us=10000)
+    stop = StopIntent(clock, 10_000_000)
+    io = PhysicalPort(clock)
+    radio = Radio(Sx1262(io, clock, Wait(clock)), stop_requested=stop.is_requested)
+    radio, io, _ = received((radio, io, clock))
+    radio.prepare_ack(b'ACK')
+    if opcode is None:
+        stop.request()
+    else:
+        io.after_transfer = lambda command: stop.request() if command[0] == opcode else None
+    result = radio.start_ack(RadioTxAuthorization(1000000))
+    assert result.state is State.SHUTDOWN and result.safe_shutdown
+    expected = (AckTxResult.SET_TX_FAILED if opcode is None else
+                AckTxResult.TX_UNCONFIRMED if opcode == 0x8C else AckTxResult.UNKNOWN_INTERRUPTED)
+    assert result.tx.ack_tx_result is expected
+    assert result.tx.facts.profile_uncertain is (opcode == 0x8C)
+    assert (result.tx.t4_set_tx_attempted_monotonic_us is None) is (opcode != 0x83)
+    assert sum(command[0] == 0x83 for command in io.commands) == int(opcode == 0x83)
 
 
 # Unexpected implementation exceptions propagate to CORE without fabricated RADIO status.

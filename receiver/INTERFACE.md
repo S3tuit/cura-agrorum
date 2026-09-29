@@ -1191,6 +1191,15 @@ attempted. This result also applies to failed-startup cleanup. It never changes
 terminal calls cannot perform device I/O. Failed-startup cleanup uses only
 the remaining 2 s startup bound, without an additional reset/retry budget.
 
+`Radio(backend, *, stop_requested=...)` accepts a read-only application stop
+predicate, defaulting to false for independent component users. The owning thread
+checks it at the same operation/physical-primitive boundaries as the independent
+thread-safe `request_shutdown()` flag. The predicate must perform no blocking
+operation or cleanup. Signal callbacks record the application intent only;
+`request_shutdown()` remains an ordinary-thread API. Stop never cancels an
+already submitted physical primitive or changes actual TX outcome evidence.
+Safe-state cleanup is allowed to finish after intent, within its existing bound.
+
 `RadioLifecycleFailure` is immutable, with optional `primary_failure: RadioFailure`
 and `release_failures: tuple[RadioFailure, ...]`. The primary records an acquisition
 failure; the ordered tuple records SPI close followed by GPIO release failures,

@@ -162,10 +162,12 @@ class Communicator:
             t4_set_tx_attempted_monotonic_us=None, t5_tx_done_monotonic_us=None,
             t6_set_rx_issued_monotonic_us=self._result.t6_set_rx_issued_monotonic_us,
         )
+        # Terminal facts are complete; construction must not strand a reservation.
+        prepared_entity = ProfileOnlyUnitV1(profile)
         reserve = self.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
         entity = None
         if reserve.status is E.AdmissionResult.RESERVED:
-            entity = ProfileOnlyUnitV1(profile)
+            entity = prepared_entity
             reserve.reservation.publish(entity)
         return ProtocolIngressFinalizationV1(
             ProtocolIngressAdmissionV1(E.PersistQueueEntityKind.PROFILE_ONLY, reserve.status), entity)

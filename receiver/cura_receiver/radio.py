@@ -32,7 +32,7 @@ def _operation(*states):
             self._claim()
             if self.state in _TERMINAL:
                 raise RuntimeError("terminal radio cannot operate")
-            if self._stop.is_set():
+            if self._stop_requested():
                 return self.shutdown()
             if self.state not in states:
                 return self._invalid(Error.INVALID_STATE)
@@ -92,7 +92,7 @@ class RadioResult:
 
 
 class Radio:
-    def __init__(self, backend):
+    def __init__(self, backend, *, stop_requested=lambda: False):
         self.backend = backend
         self.clock = backend.clock
         self._state = State.INITIALIZING
@@ -111,6 +111,7 @@ class Radio:
         self._completed = ()
         self._restoring_set_rx = False
         self._stop = threading.Event()
+        self._application_stop_requested = stop_requested
         self._cleaning = False
         self._safe_shutdown = None
         self._installing_tx = False
@@ -479,8 +480,11 @@ class Radio:
         """May be called from another thread: record intent, perform no hardware I/O."""
         self._stop.set()
 
+    def _stop_requested(self):
+        return self._application_stop_requested() or self._stop.is_set()
+
     def _checkpoint(self):
-        if self._stop.is_set() and not self._cleaning:
+        if not self._cleaning and self._stop_requested():
             raise _ShutdownRequested()
 
     def _invalid(self, code):

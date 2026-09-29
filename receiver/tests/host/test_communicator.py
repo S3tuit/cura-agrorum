@@ -231,6 +231,94 @@ def test_failed_receive_profile_queue_full(composition):
     assert not any(command[0] == 0x83 for command in c.io.commands)
 
 
+# F-004: complete failed-event construction must precede admission, including allocation failure.
+@pytest.mark.parametrize("fault", ["crc", "header", "clear_irq"])
+@pytest.mark.parametrize("error_type", [MemoryError, RuntimeError])
+def test_failed_receive_construction_failure_cannot_strand_reservation(composition, monkeypatch, fault, error_type):
+    from cura_receiver import communicator as module
+    from cura_receiver.ports.radio import RadioBackendError, RadioFailure, Error, Stage
+
+    c = composition(isolated_queue=True)
+    c.queue.claim_batch(max_entities=1).acknowledge_durable(completed_entities=1)
+    c.io.buffer[:] = REVIEWED_CURRENT_FRAME
+    c.io.irq = {"crc": 0x42, "header": 0x22}.get(fault, 2)
+    c.io.status = 0x24
+    c.io.edges.append(Dio1Edge(c.clock.now_monotonic_us() * 1000, 1))
+    if fault == "clear_irq":
+        def fail_once(command):
+            del c.io.hooks[0x02]
+            raise RadioBackendError(RadioFailure(Error.IO, Stage.CLEAR_IRQ, os_errno=5))
+        c.io.hooks[0x02] = fail_once
+    error = error_type("injected failed-receive entity construction failure")
+    attempts = []
+
+    def fail_construction(profile):
+        attempts.append(profile)
+        raise error
+
+    monkeypatch.setattr(module, "ProfileOnlyUnitV1", fail_construction)
+    with pytest.raises(CommunicatorFailure) as caught:
+        c.communicator.receive_once(deadline_monotonic_us=c.clock.now_monotonic_us() + 500_000)
+
+    assert caught.value.original is error
+    assert caught.value.cleanup_error is None
+    assert caught.value.result.radio_result.state is E.RadioState.SHUTDOWN
+    assert caught.value.result.finalization is None
+    assert len(attempts) == 1
+    assert attempts[0].processing_result is E.ProcessingResult.RADIO_ERROR
+    assert attempts[0].ack_selected is E.AckSelection.NONE
+    assert not attempts[0].header_authenticated
+    assert c.communicator.ingress.active_occurrence is None
+    assert c.communicator._failed_receive is None
+    assert c.communicator.queue.counts[0] == (0, 0, 0)
+    assert c.communicator.queue.counts[1] == (0, 0, 0)
+    assert not any(command[0] == 0x83 for command in c.io.commands)
+    c.queue.close()
+    snapshot = c.queue.snapshot()
+    assert snapshot.reserved_entities == snapshot.published_entities == 0
+    assert snapshot.closed_and_drained
+
+
+# F-004: failed-event construction retains the existing CORE allocation policy and queue drain.
+@pytest.mark.parametrize("error_type", [MemoryError, RuntimeError])
+def test_failed_receive_construction_failure_preserves_core_policy_and_drain(composition, monkeypatch, error_type):
+    from cura_receiver import communicator as module
+
+    c = composition(isolated_queue=True)
+    c.queue.claim_batch(max_entities=1).acknowledge_durable(completed_entities=1)
+    runtime = runtime_dispatch(c)
+    c.io.irq, c.io.status = 0x42, 0x24
+    c.io.edges.append(Dio1Edge(c.clock.now_monotonic_us() * 1000, 1))
+    error = error_type("injected failed-receive entity construction failure")
+
+    def fail_construction(profile):
+        raise error
+
+    monkeypatch.setattr(module, "ProfileOnlyUnitV1", fail_construction)
+    assert runtime.step() is None
+    assert runtime.terminal and runtime.failure.original is error
+    assert runtime.failure.queue_sound
+    assert c.communicator.queue.counts[1] == (0, 0, 0)
+    assert c.radio.state is E.RadioState.SHUTDOWN
+    c.queue.close()
+    batch = c.queue.claim_batch(max_entities=1)
+    if error_type is MemoryError:
+        assert runtime.failure.diagnostic_result is None
+        assert runtime.telemetry.diagnostic_sequence == 0
+        assert c.communicator.queue.counts[3] == (0, 0, 0)
+        assert batch is None
+    else:
+        assert runtime.failure.diagnostic_result is E.AdmissionResult.RESERVED
+        assert runtime.telemetry.diagnostic_sequence == 1
+        assert c.communicator.queue.counts[3] == (1, 0, 0)
+        assert len(batch.entries) == 1
+        diagnostic = batch.entries[0].entity
+        assert diagnostic.error_domain is E.DiagnosticErrorDomain.CORE
+        assert diagnostic.error_code == E.CoreDiagnosticErrorCode.UNEXPECTED_EXCEPTION.value
+        batch.acknowledge_durable(completed_entities=1)
+    assert c.queue.snapshot().closed_and_drained
+
+
 # When radio and health are ready together the complete exchange wins.
 def test_scheduler_radio_precedes_health(composition):
     from cura_receiver.communicator_scheduler import CommunicatorScheduler, Work

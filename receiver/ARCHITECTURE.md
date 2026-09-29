@@ -951,7 +951,26 @@ Exact unit names, paths, retry counts and timeouts are deployment configuration,
 
 Graceful shutdown is a bounded best-effort optimization for an orderly Pi reboot or power-off, `systemctl stop`, and the stop phase of `systemctl restart`. It is not used for correctness and cannot run after `SIGKILL`, process crash or sudden power loss.
 
-On the supervisor's termination signal:
+The signal callback records only application stop intent and the first request's
+absolute monotonic deadline. It takes no synchronization lock, calls no radio or
+persistence method, and performs no cleanup. Repeated or nested signals cannot
+extend that deadline. The application, scheduler and radio checkpoints read the
+same intent; an already submitted bounded physical/control primitive may finish,
+but another ordinary action or TX must not start after stop is observed.
+
+The Linux main-thread wait adapter owns a nonblocking pipe and
+`signal.set_wakeup_fd`. Descriptor readiness is only a notification hint; stop
+intent is authoritative. It waits against the scheduler's absolute deadline,
+drains notifications and rechecks intent after early wakes or interrupted waits.
+A signal between the predicate check and the wait therefore remains observable,
+including when the notification pipe is already full. The adapter installs the
+SIGTERM/SIGINT handlers for startup, running and shutdown, then restores the
+previous handlers and wakeup descriptor before closing its own descriptors.
+Partial installation failure also restores acquired process state and resources.
+Shutdown work remains on the existing communicator/persistence owners; this
+introduces no additional thread or polling interval.
+
+On the supervisor's termination signal, the owners perform:
 
 ```text
 stop admitting new radio events and suppress new TX
@@ -1088,7 +1107,10 @@ results have no diagnostic identity or queue reservation; the caller can use
 `radio_diagnostic` after allocating its own identity/sequence.
 
 `request_shutdown` only sets a thread-safe intent flag. The owner checks it
-between physical primitives; `shutdown` confirms safe standby and detaches
+between physical primitives, together with the injected read-only application
+stop predicate. Signal handlers use the application intent rather than calling
+the thread-safe API, whose synchronization is unsuitable inside a handler.
+`shutdown` confirms safe standby and detaches
 resources on that owner. An idle receive wait is clipped to one ordinary
 operation bound so the owner can revisit shutdown intent. Unexpected Python
 exceptions propagate for CORE handling; they are not radio status values.

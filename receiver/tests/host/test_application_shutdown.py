@@ -277,8 +277,8 @@ def test_application_stop_during_rtc_read_cancels_before_write(tmp_path):
         app.rtc.read_results.append(read)
         turn = app.runtime.step()
         assert turn.work.name == "RTC", turn
-        assert app.stop_event.is_set()
-        assert app.run() == 0
+        assert app.stop_intent.is_requested()
+        assert app.run(wait=None) == 0
         assert c.time.rtc_refresh_episode is not None
         deadline = app.stop_deadline
         result = app.shutdown(clean_requested=True, wait=wait_for_worker(app))

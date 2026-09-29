@@ -3,7 +3,6 @@
 import argparse
 import os
 import re
-import signal
 
 from .application import ReceiverApplication
 from .application_environment import settings_from_environment
@@ -13,9 +12,11 @@ from .platform.linux_clocks import LinuxOsClock
 from .platform.linux_ds3231 import LinuxDs3231Control
 from .platform.linux_kernel_clock import LinuxKernelClock
 from .platform.linux_radio import LinuxRadioIo
+from .platform.linux_signal_wait import LinuxSignalWait
 from .radio import Radio
 from .receiver_startup import create_receiver_instance
 from .sx1262 import Sx1262
+from .stop_intent import StopIntent
 
 
 def helper_digest(value):
@@ -43,29 +44,30 @@ def main():
     worker = PersistenceWorker(instance=instance, database_path=settings.database_path,
         configuration_path=settings.configuration_path, expected_owner_uid=os.geteuid(), clock=clock,
         policy=settings.airtime_policy, minimum_free_bytes=settings.minimum_free_bytes)
-    radio = Radio(Sx1262(LinuxRadioIo(clock), clock, clock, settings.radio))
+    stop = StopIntent(clock, settings.shutdown_budget_us)
+    radio = Radio(Sx1262(LinuxRadioIo(clock), clock, clock, settings.radio),
+        stop_requested=stop.is_requested)
     app = ReceiverApplication(instance=instance, settings=settings, worker=worker, clock=clock,
-        kernel=LinuxKernelClock(clock), rtc=rtc, chrony=chrony, radio=radio)
-    for number in (signal.SIGTERM, signal.SIGINT):
-        signal.signal(number, lambda *_: app.request_stop())
+        kernel=LinuxKernelClock(clock), rtc=rtc, chrony=chrony, radio=radio, stop_intent=stop)
     result = 1
-    try:
-        startup = app.start()
-        if startup.ready:
-            result = app.run()
-        else:
-            print('receiver startup:', startup.failure, flush=True)
-    except Exception:
-        # Fixed bounded service evidence never includes configuration/key objects.
-        print('receiver application failed', flush=True)
-        if app.runtime is not None:
-            import sys
-            app.runtime._terminate(sys.exception())
-    finally:
-        stopped = app.shutdown(clean_requested=result == 0 and app.stop_event.is_set())
-        if stopped.failure is not None:
-            print('receiver shutdown:', stopped.failure, flush=True)
-            result = 1
+    with LinuxSignalWait(clock, stop) as wait:
+        try:
+            startup = app.start()
+            if startup.ready:
+                result = app.run(wait=wait)
+            else:
+                print('receiver startup:', startup.failure, flush=True)
+        except Exception:
+            # Fixed bounded service evidence never includes configuration/key objects.
+            print('receiver application failed', flush=True)
+            if app.runtime is not None:
+                import sys
+                app.runtime._terminate(sys.exception())
+        finally:
+            stopped = app.shutdown(clean_requested=result == 0 and stop.is_requested())
+            if stopped.failure is not None:
+                print('receiver shutdown:', stopped.failure, flush=True)
+                result = 1
     return result
 
 

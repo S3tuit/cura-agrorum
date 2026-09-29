@@ -15,7 +15,11 @@ The process reports ready, waits for a matching GO command, and owns a finite
 45-second episode. UART/SSH never schedule a packet response: Pi-local RX_DONE
 and its own monotonic clock establish the response targets. The last possible
 SetTx is bounded before the lease end, including watchdog margin. EOF, STOP or
-signals inhibit later operations. Completion retains actual SPI/IRQ samples,
+signals inhibit later operations. The physical SetTx admission guard checks
+that session's cancellation intent before counting/submitting a transmission,
+including cancellation during raw burst buffer/profile preparation. Standby,
+IRQ cleanup and handle release remain permitted after cancellation.
+Completion retains actual SPI/IRQ samples,
 TX certainty, profiles and shutdown/handle-release results. A lost connection
 or failed cleanup requires explicit restoration; killing SSH proves no safe
 radio state by itself.

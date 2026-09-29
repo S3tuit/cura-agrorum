@@ -93,6 +93,7 @@ class TraceIo(LinuxRadioIo):
         self.clock, self.maximum_tx = clock, maximum_tx
         self.attempts = 0
         self.transmit_deadline = None
+        self.stop_requested = lambda: False
         self.trace = []
 
     def capture(self, operation, call, **fields):
@@ -112,6 +113,7 @@ class TraceIo(LinuxRadioIo):
 
     def transfer(self, data, *, deadline_monotonic_us):
         if data[0] == 0x83:
+            require(not self.stop_requested(), "peer cancelled before SetTx")
             require(self.transmit_deadline is not None and self.clock.now_monotonic_us() <= self.transmit_deadline,
                     "peer is not armed or its emission deadline has expired")
             require(self.attempts < self.maximum_tx, "episode TX ceiling exceeded before SetTx")
@@ -269,6 +271,7 @@ def run_session(args, fixture, seal, maximum_tx, executor, *, lease_seconds=45, 
         backend = Sx1262(io, clock, clock, RadioConfiguration())
         radio = None if (args.case == "RF-006.invalid" if raw is None else raw) else Radio(backend)
         stop = threading.Event()
+        io.stop_requested = stop.is_set
         identity = dict(run=args.run, case=args.case, pid=os.getpid(),
                         boot=Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
                         source=seal, layer="Sx1262/LinuxRadioIo" if radio is None else "Radio/Sx1262/LinuxRadioIo")

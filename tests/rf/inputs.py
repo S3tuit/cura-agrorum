@@ -32,7 +32,7 @@ def tree_sources():
 
 
 def firmware_sources(build, app=APP):
-    """Hash the actual compiler dependencies, including IDF and fetched headers."""
+    """Hash actual compiler and CMake inputs, including IDF/fetched dependencies."""
     result = subprocess.run(["ninja", "-C", str(build), "-t", "deps"], check=True,
                             capture_output=True, text=True)
     files = set()
@@ -53,6 +53,26 @@ def firmware_sources(build, app=APP):
     main = "main/radio_app.c" if app == APP else "main/app_main.c"
     if app / main not in files or len(files) < 100:
         raise ValueError("missing actual build dependency records")
+    # Compiler depfiles omit component definitions and included CMake scripts.
+    # Query the configured regeneration edge without running/reconfiguring it.
+    result = subprocess.run(["ninja", "-C", str(build), "-t", "query", "build.ninja"],
+                            check=True, capture_output=True, text=True)
+    lines = result.stdout.splitlines()
+    if len(lines) < 3 or lines[1] != "  input: RERUN_CMAKE":
+        raise ValueError("missing actual CMake regeneration records")
+    cmake_inputs = set()
+    for line in lines[2:]:
+        if not line.startswith("    "):
+            break
+        name = line[4:].removeprefix("| ").removeprefix("|| ")
+        path = Path(name)
+        path = path if path.is_absolute() else build / path
+        if not path.is_file():
+            raise ValueError(f"missing CMake regeneration input: {path}")
+        cmake_inputs.add(path.resolve())
+    if not cmake_inputs:
+        raise ValueError("missing actual CMake regeneration records")
+    files.update(cmake_inputs)
     return {str(p): digest(p) for p in sorted(files)}
 
 

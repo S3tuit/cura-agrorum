@@ -25,38 +25,108 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def verify_pi_profiles(trace, downlinks):
-    """Decode recorded commands against the protocol and reviewed SX1262 vectors.
+# Literal required command parameters, independent of the production driver.
+_PI_PROFILE_COMMANDS = {
+    0x8a: b"\x01",                       # LoRa
+    0x86: b"\x36\x41\x99\x9a",          # 868.1 MHz
+    0x8b: b"\x07\x04\x01\x00",          # SF7/BW125/CR4/5, LDRO off
+    0x8c: b"\x00\x08\x00\xff\x01\x00",  # RX: preamble/header/length/CRC/IQ
+    0x8e: b"\x0e\x02",                   # +14 dBm, 40 us ramp
+    0x93: b"\x20",                       # STDBY_RC fallback
+    0x9f: b"\x00",                       # RX timer continues at preamble
+    0xa0: b"\x00",                       # No symbol-count timeout
+    0x08: b"\x02\x63\x02\x63\x00\x00\x00\x00",  # IRQ/DIO1 mask
+}
 
-    Literal profile vectors match receiver/tests/host/test_sx1262.py's reviewed
-    oracle, not imports from the driver. This proves command sequencing, not RF
-    electrical timing or a register's physical retention after the run.
+
+class _PiProfileReplay:
+    """Known profile values and fresh installation coverage, not a chip emulator."""
+
+    def __init__(self):
+        self.reset_asserted = False
+        self.invalidate()
+
+    def invalidate(self):
+        self.commands, self.registers = {}, {}
+        self.fresh_commands, self.fresh_registers = set(), set()
+
+    def reset(self, event):
+        require("result" in event and "error" not in event and type(event.get("asserted")) is bool,
+                "failed or invalid Pi reset primitive")
+        self.reset_asserted = event["asserted"]
+        self.invalidate()
+
+    def apply(self, command):
+        require(command and not self.reset_asserted, "empty Pi command or SPI during reset")
+        opcode, parameters = command[0], command[1:]
+        if opcode == 0x0d:
+            require(len(parameters) >= 3, "malformed Pi register write")
+            address = int.from_bytes(parameters[:2], "big")
+            values = parameters[2:]
+            require(address + len(values) <= 0x10000, "Pi register write exceeds address space")
+            for offset, value in enumerate(values):
+                self.registers[address + offset] = value
+                self.fresh_registers.add(address + offset)
+        elif opcode in _PI_PROFILE_COMMANDS:
+            require(len(parameters) == len(_PI_PROFILE_COMMANDS[opcode]), "malformed Pi profile command")
+            if opcode == 0x8a and self.commands.get(opcode) != parameters:
+                self.invalidate()
+            if opcode in (0x8b, 0x8c):
+                require(self.commands.get(0x8a) == b"\x01", "Pi LoRa parameters before packet type")
+                # Each associated parameter command needs its workaround reapplied.
+                address = 0x0889 if opcode == 0x8b else 0x0736
+                self.registers.pop(address, None)
+                self.fresh_registers.discard(address)
+            self.commands[opcode] = parameters
+            self.fresh_commands.add(opcode)
+        elif opcode not in (0x02, 0x07, 0x0e, 0x12, 0x13, 0x14, 0x17, 0x1d, 0x1e,
+                            0x80, 0x82, 0x83, 0xc0):
+            # Sleep and unmodeled commands cannot preserve known profile state.
+            # Initialization's module-specific commands precede a full install.
+            self.invalidate()
+
+    def verify(self, transmit, length):
+        expected = dict(_PI_PROFILE_COMMANDS)
+        expected[0x8c] = b"\x00\x08\x00" + bytes((length, 1, int(transmit)))
+        for opcode, parameters in expected.items():
+            require(opcode in self.fresh_commands and self.commands.get(opcode) == parameters,
+                    f"incomplete or wrong Pi profile command 0x{opcode:02x}")
+        # Workaround checks preserve unrelated bits; sync/gain bytes are exact.
+        registers = {0x0740: (0x14, 0xff), 0x0741: (0x24, 0xff), 0x08ac: (0x96, 0xff),
+                     0x0889: (4, 4), 0x0736: (0 if transmit else 4, 4)}
+        for address, (value, mask) in registers.items():
+            require(address in self.fresh_registers and self.registers.get(address, -1) & mask == value,
+                    f"incomplete or wrong Pi profile register 0x{address:04x}")
+        self.fresh_commands.clear()
+        self.fresh_registers.clear()
+
+
+def verify_pi_profiles(trace, downlinks):
+    """Replay effective required profile state at each recorded SetRx/SetTx.
+
+    Literal oracles match the protocol and reviewed Semtech vectors, without
+    importing the driver. This checks configuration evidence and freshness,
+    not RF electrical timing, output power or physical register retention.
     """
     spi = [v for v in trace if v["operation"] == "spi"]
     require(spi and all("result" in v and "error" not in v for v in spi), "failed Pi SPI primitive")
-    segment, tx_index, rx_count = [], 0, 0
-    for event in spi:
-        command = event["tx"]
-        if command == "8a01":
-            segment = []
-        segment.append(command)
-        if not command.startswith(("82", "83")):
+    state, tx_index, rx_count = _PiProfileReplay(), 0, 0
+    for event in trace:
+        if event["operation"] == "reset":
+            state.reset(event)
+        if event["operation"] != "spi":
             continue
-        transmit = command.startswith("83")
+        command = bytes.fromhex(event["tx"])
+        state.apply(command)
+        if command[0] not in (0x82, 0x83):
+            continue
+        transmit = command[0] == 0x83
         length = len(downlinks[tx_index]) // 2 if transmit and tx_index < len(downlinks) else 255
-        expected = ["8a01", "863641999a", "8b07040100",
-                    f"8c000800{length:02x}01{int(transmit):02x}", "8e0e02", "9320", "9f00", "a000",
-                    "080263026300000000", "0d07401424", "0d08ac96"]
-        positions = [segment.index(value) if value in segment else -1 for value in expected]
-        require(-1 not in positions and positions == sorted(positions), "incomplete or wrong Pi direction profile")
-        for prefix, bit in (("0d0889", 4), ("0d0736", 0 if transmit else 4)):
-            writes = [v for v in segment if v.startswith(prefix)]
-            require(len(writes) == 1 and len(writes[0]) == 8 and int(writes[0][6:], 16) & 4 == bit,
-                    "wrong Pi modulation/IQ register workaround")
-        require(command == ("83001900" if transmit else "82000000"), "wrong Pi watchdog/RX mode")
+        state.verify(transmit, length)
+        require(command == (b"\x83\x00\x19\x00" if transmit else b"\x82\x00\x00\x00"),
+                "wrong Pi watchdog/RX mode")
         tx_index += int(transmit)
         rx_count += int(not transmit)
-        segment = []  # A later operation needs its own complete profile.
     require(tx_index == len(downlinks) and rx_count > 0, "missing Pi profile operations")
     operations = [v["tx"] for v in spi if v["tx"].startswith(("82", "83"))]
     require(operations[-1] == "82000000", "Pi did not restore receive after final TX")

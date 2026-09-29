@@ -68,8 +68,11 @@ and bounded cleanup. The operator handles admission and pacing. Keep the manual
 sheet across cases, resets and reruns.
 
 1. Build in the configured ESP-IDF environment with `make test-rf-build`, then
-   run `make test-rf-host`. The seal hashes actual compiler dependencies, ELF,
-   configuration and flash files. Rebuild/reseal when those inputs change.
+   run `make test-rf-host`. The seal hashes actual compiler dependencies and
+   configured CMake regeneration inputs (including component definitions and
+   included scripts), ELF, configuration and flash files. Changed or missing
+   inputs fail before device access. Rebuild/reseal when those inputs change;
+   seals made before CMake-input coverage also require rebuilding/resealing.
 2. Copy [fixture.example.json](fixture.example.json) to a run input outside the
    source tree. Confirm each actual device/fixture field; the example's false
    fields intentionally cannot authorize hardware. Use nominal C6, nominal Pi
@@ -336,10 +339,20 @@ historical-prerequisite review bundles. Check a completed component capture with
 ```
 
 The same independent assertions run during execution: packet bytes, outcomes,
-endpoint-local timestamps, direction-profile commands, cleanup and handle
+endpoint-local timestamps, effective direction profiles, cleanup and handle
 release. A failed Python/peer/cleanup result cannot be replaced by a passing
 Unity subcase. First failure stops the batch. Missing prerequisites, zero
 selection, unexpected events/reset and missing completion cannot pass.
+
+The Pi profile verifier independently replays the last-written command
+parameters and register bytes before every `SetRx`/`SetTx`. Later conflicting
+writes, including writes that overlap only part of a register range, fail.
+Each operation requires a fresh complete profile; reset, sleep, packet-type
+changes and unmodeled commands invalidate known configuration. Required
+parameter/workaround dependencies still apply, while independent field order,
+split register writes and corrected final values are accepted. This verifies
+recorded configuration evidence; physical output power and RF timing retain
+their separate qualification requirements.
 
 Promote only destructive tests, tests requiring physical actions, or runs longer
 than five minutes into [evidence/](evidence/README.md), following the repository

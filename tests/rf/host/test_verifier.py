@@ -94,3 +94,153 @@ def test_raw_profile_and_cleanup_corruption_cannot_hide_behind_reported_rx_state
         else: trace.pop(index)
     with pytest.raises(ValueError):
         verify_pi_profiles(trace, [B])
+
+
+def before_mode(trace, transmit):
+    prefix = "83" if transmit else "82"
+    return next(i for i in range(len(trace)-1, -1, -1)
+                if trace[i].get("tx", "").startswith(prefix))
+
+
+def spi(command):
+    return dict(operation="spi", tx=command, result="a222")
+
+
+# Each later write changes the effective profile despite the earlier correct one.
+@pytest.mark.parametrize("transmit", [False, True], ids=["rx", "tx"])
+@pytest.mark.parametrize("overwrite", [
+    "8a00", "863641999b", "8b08040100", "8e1602", "8e0e04", "9300", "9f01", "a001",
+    "080001000100000000", "0d07405678", "0d074134", "0d073f001434", "0d08ac94",
+    "0d088900", "0d08880000", "packet_iq", "packet_length", "iq_workaround",
+])
+def test_later_profile_overwrite_is_rejected(transmit, overwrite):
+    trace = complete_trace()
+    if overwrite == "packet_iq":
+        overwrite = f"8c000800{23 if transmit else 255:02x}01{int(not transmit):02x}"
+    elif overwrite == "packet_length":
+        overwrite = f"8c00080001{1:02x}{int(transmit):02x}"
+    elif overwrite == "iq_workaround":
+        overwrite = "0d07350404" if transmit else "0d07350400"
+    trace.insert(before_mode(trace, transmit), spi(overwrite))
+    with pytest.raises(ValueError):
+        verify_pi_profiles(trace, [B])
+
+
+def test_later_power_overwrite_fails_the_complete_case():
+    events, peer = record()
+    peer["trace"].insert(before_mode(peer["trace"], True), spi("8e1602"))
+    with pytest.raises(ValueError):
+        check(events, peer)
+
+
+# Retained values from an earlier RX/TX profile cannot fill a missing fresh write.
+@pytest.mark.parametrize("prefix", ["8a", "86", "8b", "8c", "8e", "93", "9f", "a0", "080263",
+                                  "0d0740", "0d08ac", "0d0889", "0d0736"])
+def test_every_receive_operation_requires_a_fresh_complete_profile(prefix):
+    trace = complete_trace()
+    index = next(i for i in range(len(trace)-1, -1, -1)
+                 if trace[i].get("tx", "").startswith(prefix))
+    trace.pop(index)
+    with pytest.raises(ValueError):
+        verify_pi_profiles(trace, [B])
+
+
+@pytest.mark.parametrize("transmit", [False, True], ids=["rx", "tx"])
+@pytest.mark.parametrize("interrupt", ["reset", "sleep", "packet_type", "unknown_command"])
+def test_invalidated_profile_cannot_be_reused(transmit, interrupt):
+    trace = complete_trace()
+    events = {
+        "reset": [dict(operation="reset", asserted=True, result=None),
+                  dict(operation="reset", asserted=False, result=None)],
+        "sleep": [spi("8400")],
+        "packet_type": [spi("8a00"), spi("8a01")],
+        "unknown_command": [spi("ffff")],
+    }[interrupt]
+    index = before_mode(trace, transmit)
+    trace[index:index] = events
+    with pytest.raises(ValueError):
+        verify_pi_profiles(trace, [B])
+
+
+@pytest.mark.parametrize("fault", ["asserted", "failed", "unrecorded", "malformed"])
+def test_reset_must_succeed_and_be_released(fault):
+    trace = complete_trace()
+    reset = dict(operation="reset", asserted=fault == "asserted", result=None)
+    if fault == "failed": reset["error"] = "OSError"
+    elif fault == "unrecorded": reset.pop("result")
+    elif fault == "malformed": reset["asserted"] = "false"
+    trace.insert(0, reset)
+    with pytest.raises(ValueError):
+        verify_pi_profiles(trace, [B])
+
+
+@pytest.mark.parametrize("command", ["8e0e", "8e0e0200", "8b070401", "0d0740", "0d07", "0dffff1424"])
+def test_malformed_profile_write_is_rejected(command):
+    trace = complete_trace()
+    trace.insert(before_mode(trace, True), spi(command))
+    with pytest.raises(ValueError):
+        verify_pi_profiles(trace, [B])
+
+
+@pytest.mark.parametrize("transmit", [False, True], ids=["rx", "tx"])
+def test_byte_addressed_sync_writes_can_be_split(transmit):
+    trace = complete_trace()
+    end = before_mode(trace, transmit)
+    index = next(i for i in range(end-1, -1, -1) if trace[i].get("tx") == "0d07401424")
+    trace[index:index+1] = [spi("0d074124"), spi("0d074014")]
+    verify_pi_profiles(trace, [B])
+
+
+@pytest.mark.parametrize("transmit", [False, True], ids=["rx", "tx"])
+def test_restored_register_and_command_values_are_accepted(transmit):
+    trace = complete_trace()
+    correct_iq = "0d0736a0" if transmit else "0d0736a4"
+    trace[before_mode(trace, transmit):before_mode(trace, transmit)] = [
+        spi("8e1602"), spi("8e0e02"), spi("0d074134"), spi("0d074124"),
+        spi("0d088900"), spi("0d088984"), spi(correct_iq), spi(correct_iq),
+    ]
+    verify_pi_profiles(trace, [B])
+
+
+@pytest.mark.parametrize("parameters,workaround", [("8b07040100", "0d088904"),
+                                                    ("8c000800170101", "0d073600")])
+def test_dependent_workaround_must_follow_latest_parameters(parameters, workaround):
+    trace = complete_trace()
+    index = before_mode(trace, True)
+    trace.insert(index, spi(parameters))
+    with pytest.raises(ValueError):
+        verify_pi_profiles(trace, [B])
+    trace.insert(index + 1, spi(workaround))
+    verify_pi_profiles(trace, [B])
+
+
+def test_register_read_cannot_hide_an_overwritten_sync_byte():
+    trace = complete_trace()
+    index = before_mode(trace, True)
+    trace[index:index] = [spi("0d074134"), dict(operation="spi", tx="1d0740000000", result="002200001424")]
+    with pytest.raises(ValueError):
+        verify_pi_profiles(trace, [B])
+
+
+def test_independent_profile_fields_can_be_reordered():
+    trace = []
+    for transmit, length in ((False, 255), (True, 23), (False, 255)):
+        profile = profile_trace(transmit, length)
+        # Packet type precedes LoRa parameters; dependent workarounds follow them.
+        trace.extend(profile[:2] + list(reversed(profile[2:10])) + profile[10:])
+    trace.extend(complete_trace()[-6:])
+    verify_pi_profiles(trace, [B])
+
+
+@pytest.mark.parametrize("interrupt", ["reset", "sleep", "packet_type"])
+def test_complete_reinstallation_after_invalidation_is_accepted(interrupt):
+    trace = complete_trace()
+    events = {
+        "reset": [dict(operation="reset", asserted=True, result=None),
+                  dict(operation="reset", asserted=False, result=None)],
+        "sleep": [spi("8400")],
+        "packet_type": [spi("8a00")],
+    }[interrupt]
+    index = before_mode(trace, True)
+    trace[index:index] = events + profile_trace(True, 23)[:-1]
+    verify_pi_profiles(trace, [B])

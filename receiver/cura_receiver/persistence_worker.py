@@ -113,7 +113,7 @@ class PersistenceWorker(Thread):
         self._mailbox = deque()
         self._channel_closed = False
         self.control = PersistenceControlChannel(self)
-        self._control_bypass_used = False
+        self._bypassed_persistence_action = None
         self._startup_completed = Event()
         self._startup = None
         self._stop_deadline = None
@@ -231,7 +231,7 @@ class PersistenceWorker(Thread):
             )
             self._startup_completed.set()
 
-    def _work_due(self, now, snapshot):
+    def _work_due(self, now, snapshot, *, preferred_action=None):
         ordinary = self._ordinary
         if ordinary is None or snapshot.admission_snapshot.state in (
             State.UNAVAILABLE_CORRUPT,
@@ -256,6 +256,10 @@ class PersistenceWorker(Thread):
             # Recovery admission is closed, so retained FIFO work is finite.
             # Resolve it before the episode's required checkpoint.
             return "ordinary"
+        if preferred_action == "ordinary" and ordinary_due:
+            return "ordinary"
+        if preferred_action == "checkpoint" and checkpoint_due:
+            return "checkpoint"
         if checkpoint_due and (
             not ordinary_due or self._last_persistence_action == "ordinary"
         ):
@@ -304,10 +308,18 @@ class PersistenceWorker(Thread):
 
     def _select_dispatch(self, now, snapshot):
         """Called under the same short lock as mailbox insertion, with no I/O."""
-        action = self._work_due(now, snapshot)
-        if self._mailbox and (action is None or not self._control_bypass_used):
+        action = self._work_due(
+            now, snapshot, preferred_action=self._bypassed_persistence_action
+        )
+        # Preserve the selected kind across a control turn, but never bypass
+        # eligibility or recovery gates when that turn changes storage state.
+        if action != self._bypassed_persistence_action:
+            self._bypassed_persistence_action = None
+        if self._mailbox and (
+            action is None or self._bypassed_persistence_action is None
+        ):
             command = self._mailbox.popleft()
-            self._control_bypass_used = action is not None
+            self._bypassed_persistence_action = action
             if self._channel_closed:
                 command.finish(control_failure(command.request.kind, "CHANNEL_CLOSED"))
                 return "completed_control", None
@@ -319,8 +331,7 @@ class PersistenceWorker(Thread):
                 )
                 return "completed_control", None
             return "control", command
-        if action is not None:
-            self._control_bypass_used = False
+        self._bypassed_persistence_action = None
         return action, None
 
     def _dispatch_control(self, command):

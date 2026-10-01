@@ -236,7 +236,10 @@ def test_precommit_rollback_does_not_arm_maintenance(create):
 
 
 # A single real caller continuously resubmits controls while ordinary FIFO remains nonempty.
-def test_due_checkpoint_gets_turn_under_ordinary_and_control_load(create, worker_files):
+@pytest.mark.parametrize("cross_during_control", [False, True])
+def test_due_checkpoint_gets_turn_under_ordinary_and_control_load(
+    create, worker_files, cross_during_control
+):
     release_idle, submitted = Event(), Queue()
 
     class Scheduled(ManualWorker):
@@ -247,6 +250,10 @@ def test_due_checkpoint_gets_turn_under_ordinary_and_control_load(create, worker
 
         def _dispatch_control(self, command):
             assert not self._database.connection.in_transaction
+            # F-001: after the first ordinary turn, a control bypasses another
+            # selected ordinary turn one microsecond before maintenance is due.
+            if cross_during_control and sum(kind == "control" for kind, _ in self.trace) == 1:
+                self._clock.advance_elapsed_us(1)
             super()._dispatch_control(command)
             if sum(kind == "control" for kind, _ in self.trace) < 4:
                 submitted.get(timeout=5)  # next request is queued at this boundary
@@ -274,14 +281,19 @@ def test_due_checkpoint_gets_turn_under_ordinary_and_control_load(create, worker
     threads = start_checked_threads([("continuous-control-caller", caller)])
     try:
         submitted.get(timeout=5)
-        owner._clock.advance_elapsed_us(5_000_000)
+        owner._clock.advance_elapsed_us(5_000_000 - int(cross_during_control))
         release_idle.set()
         join_checked_threads(threads)
         owner.wait()
-        assert [kind for kind, _ in owner.trace[:7]] == [
-            "control", "ordinary", "control", "checkpoint", "control", "ordinary", "control"
-        ]
-        assert owner.trace[3] == ("checkpoint", 7)
+        expected = (
+            ["control", "ordinary", "control", "ordinary", "control", "checkpoint", "control"]
+            if cross_during_control else
+            ["control", "ordinary", "control", "checkpoint", "control", "ordinary", "control"]
+        )
+        assert [kind for kind, _ in owner.trace[:7]] == expected
+        assert owner.trace[5 if cross_during_control else 3] == (
+            "checkpoint", 6 if cross_during_control else 7
+        )
         assert owner._recovery.counters.wal_checkpoint_attempts == 1
         assert owner._checkpoint.deadline_monotonic_us == 10_000_100
         with sqlite3.connect(worker_files[0]) as db:

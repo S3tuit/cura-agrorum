@@ -12,6 +12,7 @@ from .communicator_state_persistence import (
     CommunicatorStatePolicy,
     classify_communicator_state_rows,
 )
+from .checkpoint_maintenance import CheckpointMaintenance
 from .generated.receiver_enums_generated import PersistenceAdmissionState as State
 from .ordinary_persistence import OrdinaryPersistence
 from .persist_queue import PersistQueue, PersistenceAdmissionSnapshot
@@ -39,6 +40,7 @@ from .receiver_startup import (
 )
 from .sqlite_database import DatabaseFailure, StorageUnavailable
 from .sqlite_repository import SqliteRepository
+from .sqlite_transactions import ObservedSqliteTransactions, SqliteTransactions
 from .persistence_failures import classify_global_failure
 
 
@@ -69,7 +71,7 @@ class PersistenceWorker(Thread):
         flush_interval_us: int = 5_000_000,
         wake_threshold_entities: int = 64,
         batch_limit_entities: int = 64,
-        checkpoint_threshold_bytes: int = 4_194_304,
+        checkpoint_interval_us: int = 5_000_000,
     ):
         super().__init__(name="receiver-persistence", daemon=True)
         if type(instance) is not ReceiverInstanceStart:
@@ -84,10 +86,10 @@ class PersistenceWorker(Thread):
         for value in (wake_threshold_entities, batch_limit_entities):
             if type(value) is not int or not 1 <= value <= 500:
                 raise ValueError("worker entity thresholds must be in 1..500")
-        for value in (flush_interval_us, checkpoint_threshold_bytes):
+        for value in (flush_interval_us, checkpoint_interval_us):
             if type(value) is not int or value < 1:
                 raise ValueError(
-                    "worker interval and checkpoint threshold must be positive"
+                    "worker flush and checkpoint intervals must be positive"
                 )
         self._instance = instance
         self._database_path = database_path
@@ -97,7 +99,13 @@ class PersistenceWorker(Thread):
         self._clock = clock if clock is not None else LinuxOsClock()
         self._policy = policy if policy is not None else CommunicatorStatePolicy()
         self._minimum_free_bytes = minimum_free_bytes
-        self._transactions = transactions
+        self._checkpoint = CheckpointMaintenance(
+            clock=self._clock, interval_us=checkpoint_interval_us
+        )
+        self._transactions = ObservedSqliteTransactions(
+            transactions if transactions is not None else SqliteTransactions(),
+            self._checkpoint,
+        )
         self._host_observations = host_observations
         self._wake = Event()
         self.queue = PersistQueue(wake_event=self._wake)
@@ -116,10 +124,8 @@ class PersistenceWorker(Thread):
         self._flush_interval = flush_interval_us
         self._wake_threshold = wake_threshold_entities
         self._batch_limit = batch_limit_entities
-        self._checkpoint_threshold = checkpoint_threshold_bytes
         self._flush_deadline = 0
-        self._checkpoint_deadline = 0
-        self._checkpoint_size = 0
+        self._last_persistence_action = None
         self._draining = False
 
     @property
@@ -183,6 +189,9 @@ class PersistenceWorker(Thread):
         state_load = None
         if started.database is not None:
             self._database = started.database
+            # Startup commits outside the ordinary/control helper. Its durable
+            # lifecycle row and inherited WAL both have unknown coverage here.
+            self._checkpoint.mark_possible_work()
             try:
                 self._ordinary = OrdinaryPersistence(
                     self._database,
@@ -190,6 +199,7 @@ class PersistenceWorker(Thread):
                     instance=self._instance,
                     clock=self._clock,
                     transactions=self._transactions,
+                    checkpoint_maintenance=self._checkpoint,
                     host_observations=self._host_observations,
                     minimum_free_bytes=self._minimum_free_bytes,
                 )
@@ -221,22 +231,7 @@ class PersistenceWorker(Thread):
             )
             self._startup_completed.set()
 
-    def _wal_bytes(self):
-        if self._database is None:
-            return 0
-        try:
-            return (
-                self._database.path.with_name(self._database.path.name + "-wal")
-                .stat()
-                .st_size
-            )
-        except FileNotFoundError:
-            return 0
-        except OSError:
-            # Let the concrete checkpoint operation classify inaccessible storage.
-            return self._checkpoint_threshold
-
-    def _work_due(self, now, snapshot, wal_bytes):
+    def _work_due(self, now, snapshot):
         ordinary = self._ordinary
         if ordinary is None or snapshot.admission_snapshot.state in (
             State.UNAVAILABLE_CORRUPT,
@@ -246,29 +241,32 @@ class PersistenceWorker(Thread):
         retry = ordinary.retry_deadline_monotonic_us
         if retry is not None and now < retry:
             return None
-        if snapshot.published_entities and (
+        ordinary_due = snapshot.published_entities and (
             retry is not None
             or self._draining
             or snapshot.closed
             or self._stop_deadline is not None
             or snapshot.published_entities >= self._wake_threshold
             or now >= self._flush_deadline
-        ):
+        )
+        checkpoint_due = not ordinary.pending_entities and (
+            ordinary.checkpoint_pending or self._checkpoint.due(now)
+        )
+        if retry is not None and ordinary_due:
+            # Recovery admission is closed, so retained FIFO work is finite.
+            # Resolve it before the episode's required checkpoint.
             return "ordinary"
-        if not ordinary.pending_entities and (
-            ordinary.checkpoint_pending
-            or (
-                wal_bytes >= self._checkpoint_threshold
-                and (
-                    now >= self._checkpoint_deadline
-                    or wal_bytes > self._checkpoint_size
-                )
-            )
+        if checkpoint_due and (
+            not ordinary_due or self._last_persistence_action == "ordinary"
         ):
+            return "checkpoint"
+        if ordinary_due:
+            return "ordinary"
+        if checkpoint_due:
             return "checkpoint"
         return None
 
-    def _next_deadline(self, now, snapshot, wal_bytes):
+    def _next_deadline(self, now, snapshot):
         deadlines = []
         if self._stop_deadline is not None:
             deadlines.append(self._stop_deadline)
@@ -283,8 +281,8 @@ class PersistenceWorker(Thread):
             else:
                 if snapshot.published_entities:
                     deadlines.append(self._flush_deadline)
-                if wal_bytes >= self._checkpoint_threshold:
-                    deadlines.append(self._checkpoint_deadline)
+                if self._checkpoint.pending and not ordinary.pending_entities:
+                    deadlines.append(self._checkpoint.deadline_monotonic_us)
         return min(deadlines) if deadlines else None
 
     def _wait_for_work(self, timeout_seconds):
@@ -292,6 +290,7 @@ class PersistenceWorker(Thread):
         self._wake.wait(timeout_seconds)
 
     def _dispatch_work(self, action):
+        self._last_persistence_action = action
         if action == "ordinary":
             self._draining = True
             self._ordinary.attempt(max_entities=self._batch_limit)
@@ -302,14 +301,10 @@ class PersistenceWorker(Thread):
                 )
         elif action == "checkpoint":
             self._ordinary.checkpoint()
-            self._checkpoint_size = self._wal_bytes()
-            self._checkpoint_deadline = (
-                self._clock.now_monotonic_us() + self._flush_interval
-            )
 
-    def _select_dispatch(self, now, snapshot, wal_bytes):
+    def _select_dispatch(self, now, snapshot):
         """Called under the same short lock as mailbox insertion, with no I/O."""
-        action = self._work_due(now, snapshot, wal_bytes)
+        action = self._work_due(now, snapshot)
         if self._mailbox and (action is None or not self._control_bypass_used):
             command = self._mailbox.popleft()
             self._control_bypass_used = action is not None
@@ -382,9 +377,6 @@ class PersistenceWorker(Thread):
             self._initialize()
             self._flush_deadline = self._clock.now_monotonic_us() + self._flush_interval
             while True:
-                wal_bytes = (
-                    self._wal_bytes()
-                )  # Never hold the scheduler lock over filesystem I/O.
                 self._wake.clear()
                 with self._scheduler_lock:
                     now = self._clock.now_monotonic_us()
@@ -400,8 +392,8 @@ class PersistenceWorker(Thread):
                             )
                             if retry is None or now >= retry:
                                 break
-                    action, command = self._select_dispatch(now, snapshot, wal_bytes)
-                    deadline = self._next_deadline(now, snapshot, wal_bytes)
+                    action, command = self._select_dispatch(now, snapshot)
+                    deadline = self._next_deadline(now, snapshot)
                 if action == "control":
                     self._dispatch_control(command)
                 elif action == "completed_control":
@@ -424,6 +416,10 @@ class PersistenceWorker(Thread):
                 try:
                     if (
                         self._ordinary is not None
+                        and (
+                            self._checkpoint.pending
+                            or self._ordinary.checkpoint_pending
+                        )
                         and self._stop_deadline is not None
                         and self._clock.now_monotonic_us() < self._stop_deadline
                     ):

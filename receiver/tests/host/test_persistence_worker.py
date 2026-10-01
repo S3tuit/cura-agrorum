@@ -232,7 +232,7 @@ def test_flush_deadline_and_unrelated_wake(worker_files):
     worker.start()
     try:
         assert worker.wait_started(deadline_monotonic_us=5_000_100)
-        assert waits.get(timeout=5) is None
+        assert waits.get(timeout=5) == 5.0
         worker.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
             ProfileOnlyUnitV1(_profile())
         )
@@ -292,7 +292,7 @@ def test_worker_reuses_retry_deadline(worker_files):
     worker.start()
     try:
         assert worker.wait_started(deadline_monotonic_us=5_000_100)
-        assert waits.get(timeout=5) is None
+        assert waits.get(timeout=5) == 5.0
         worker.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
             ProfileOnlyUnitV1(_profile())
         )
@@ -304,7 +304,7 @@ def test_worker_reuses_retry_deadline(worker_files):
         assert attempts == [100]
         clock.advance_elapsed_us(deadline - clock.now_monotonic_us())
         worker._wake.set()
-        assert waits.get(timeout=5) is None
+        assert waits.get(timeout=5) == (5_000_100 - deadline) / 1_000_000
         assert attempts == [100, deadline]
         assert worker.queue.snapshot().admission_snapshot.state is State.AVAILABLE
         assert worker.queue.snapshot().published_entities == 0
@@ -355,7 +355,7 @@ def test_count_threshold_and_batch_limit(worker_files):
     worker.start()
     try:
         assert worker.wait_started(deadline_monotonic_us=5_000_100)
-        assert waits.get(timeout=5) is None
+        assert waits.get(timeout=5) == 5.0
         for sequence in (1, 2):
             worker.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
                 ProfileOnlyUnitV1(_profile(sequence=sequence))
@@ -365,8 +365,9 @@ def test_count_threshold_and_batch_limit(worker_files):
             ProfileOnlyUnitV1(_profile(sequence=3))
         )
         release.set()
-        while waits.get(timeout=5) is not None:
-            pass  # Drain any earlier named undersized-wait observation.
+        waits.get(timeout=5)
+        while worker.queue.snapshot().published_entities:
+            waits.get(timeout=5)  # Drain any earlier undersized-wait observation.
         assert batch_sizes == [1, 1, 1]
         assert worker.queue.snapshot().published_entities == 0
     finally:
@@ -404,11 +405,14 @@ def test_worker_empty_checkpoint_recovery_through_cap(worker_files):
         boot_id_path=boot,
         clock=clock,
         transactions=Checkpoints(),
-        checkpoint_threshold_bytes=1,
+        checkpoint_interval_us=1,
     )
     worker.start()
     try:
         assert worker.wait_started(deadline_monotonic_us=5_000_100)
+        assert waits.get(timeout=5) == 0.000001
+        clock.advance_elapsed_us(1)
+        worker._wake.set()
         for index in range(8):
             expected = minimum_wait_monotonic_us(min(250_000 * 2**index, 5_000_000))
             assert waits.get(timeout=5) == expected / 1_000_000
@@ -421,7 +425,7 @@ def test_worker_empty_checkpoint_recovery_through_cap(worker_files):
             assert len(attempts) == index + 1
             clock.advance_elapsed_us(expected)
             worker._wake.set()
-        assert waits.get(timeout=5) == 5.0
+        assert waits.get(timeout=5) is None
         assert len(attempts) == 9
         assert not worker._ordinary.checkpoint_pending
         assert worker.queue.snapshot().admission_snapshot.state is State.AVAILABLE

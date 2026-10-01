@@ -1985,6 +1985,9 @@ including retries and isolation attempts. `batch_entities_committed` advances
 only for queue units whose ordinary SQLite effects committed; quarantined units
 advance the quarantine counters instead. Checkpoint counters cover explicit
 receiver-initiated checkpoints, not SQLite's internal page writes.
+`wal_checkpoint_successes` counts valid non-error attempts, including partial
+progress; it is not a completion count. These cumulative meanings do not change
+for historical rows, and no new persisted completion counter is introduced.
 
 These host observations are optional and become SQL `NULL` when unavailable:
 
@@ -2571,21 +2574,49 @@ bounded attempt reaches its safe boundary and the control command then runs
 before any retry or later batch. The scheduler lock is not held during SQLite
 or filesystem I/O.
 
-At most one control command may bypass an already-due ordinary attempt at a
-scheduler boundary. After that command completes, one due ordinary attempt is
-given a dispatch turn before a later control command; when no ordinary attempt
-is due, control work may continue. This bounded alternation preserves control
-priority without allowing sequential submissions from the communicator to
-starve FIFO persistence, and it prevents continuous ordinary work from starving
-a pending control command.
+At most one control command may precede a selected due ordinary/checkpoint
+attempt at a scheduler boundary. After that command completes, the selected
+kind of persistence work receives a turn before a later control command, if
+still eligible. Healthy due ordinary and eligible checkpoint work alternate
+when both are ready; a pending checkpoint therefore cannot wait indefinitely
+for an ordinary queue to become empty. Retained unresolved ordinary/quarantine
+effects take precedence over recovery checkpoints. When neither persistence
+kind is due, controls may continue. This three-way ordering prevents continuous
+submissions of any one eligible kind from starving another; it does not bound
+kernel-I/O duration or interrupt an open transaction.
 
 The concrete persistence worker's configurable scheduling defaults are a
 5,000,000-microsecond monotonic flush interval, a 64-entity wake threshold,
-a 64-entity batch limit and a 4,194,304-byte WAL checkpoint threshold. A
-successful checkpoint of an unchanged, still-large WAL is reconsidered after
-the flush interval; observed WAL-file growth can trigger earlier work. This
-prevents a reader-limited checkpoint or retained file allocation from creating
-a tight loop. Pending recovery instead follows its existing retry deadline.
+a 64-entity batch limit and an independent `checkpoint_interval_us` of
+5,000,000 microseconds. The former WAL-byte threshold parameter is removed.
+Allocated WAL size and growth do not arm maintenance or provide wake deadlines.
+
+The owner-thread maintenance component tracks pending possible commits and an
+optional deadline. One shared observed transaction boundary marks work before
+entering COMMIT for ordinary, quarantine, state and clean-stop writes, including
+unknown outcomes. The first mark arms a deadline one checkpoint interval later;
+additional writes preserve it. Reads, queue publication and rollback before
+COMMIT are not marks. Successful startup seeds inherited WAL and its separate
+lifecycle transaction conservatively; connection reopen seeds unknown coverage.
+
+Explicit PASSIVE results require exactly three integer values. A busy status
+of zero and `0 <= checkpointed <= total` establish a valid non-error result.
+Equal frame counts, including zero, clear maintenance and its deadline.
+Partial counts retain maintenance and schedule a retry one checkpoint interval
+after the attempt finishes. Nonzero busy status follows contention recovery;
+malformed, negative/sentinel or inconsistent non-busy counts fail closed under
+the existing storage-failure policy. Routine partial maintenance leaves healthy
+admission open. A valid partial result may also satisfy a recovery checkpoint
+requirement after required validation and pending effects resolve, while
+maintenance retains its separate timed obligation.
+
+Active recovery uses its retry deadline instead of an expired maintenance
+deadline. Successful reads or unrelated controls do not erase either
+obligation. No maintenance/recovery obligation means no checkpoint-specific
+wakeup. Shutdown permits one final pending checkpoint at a safe boundary
+within the stop budget; it need not wait for the normal maintenance deadline.
+The attempt cannot invalidate an already durable marker or extend the budget,
+and FULL-mode commit durability never depends on that attempt being possible.
 
 ### Control-command deadlines and cancellation
 

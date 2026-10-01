@@ -175,8 +175,8 @@ def test_target_control_latency(tmp_path, phase):
         evidence(tmp_path, phase=phase, control_latency_us=samples, trace=trace)
 
 
-# WAL threshold dispatch uses real target SQLite; a blocked checkpoint leaves publication and control submission independent.
-def test_target_threshold_checkpoint_stall(tmp_path):
+# Commit-driven timer dispatch uses real target SQLite; a blocked checkpoint leaves publication and control submission independent.
+def test_target_timer_checkpoint_stall(tmp_path):
     arrived, release, submitted, drained = Event(), Event(), Event(), Event()
     trace, wal_sizes, checkpoint_us = [], [], []
 
@@ -197,7 +197,9 @@ def test_target_threshold_checkpoint_stall(tmp_path):
         def _dispatch_work(self, action):
             trace.append(action)
             if action == "checkpoint":
-                wal_sizes.append(self._wal_bytes())
+                wal_sizes.append(
+                    self._database.path.with_name(self._database.path.name + "-wal").stat().st_size
+                )
             super()._dispatch_work(action)
             if self.queue.snapshot().published_entities == 0:
                 drained.set()
@@ -212,7 +214,7 @@ def test_target_threshold_checkpoint_stall(tmp_path):
         transactions=Backend(),
         wake_threshold_entities=1,
         batch_limit_entities=8,
-        checkpoint_threshold_bytes=32768,
+        checkpoint_interval_us=1_000_000,
     )
     original_wait = owner.control._wait_for_completion
 
@@ -248,7 +250,7 @@ def test_target_threshold_checkpoint_stall(tmp_path):
         join_checked_threads(threads, timeout_seconds=10)
         assert drained.wait(10)
         assert trace[0] == "control"
-        assert wal_sizes[0] >= 32768
+        assert wal_sizes[0] > 0
         assert owner.queue.snapshot().published_entities == 0
         with sqlite3.connect(path) as db:
             assert db.execute("SELECT count(*) FROM message_profiles").fetchone() == (
@@ -351,7 +353,7 @@ def test_target_worker_mixed_race_soak(tmp_path):
             wake_threshold_entities=4,
             batch_limit_entities=8,
             flush_interval_us=100_000,
-            checkpoint_threshold_bytes=131072,
+            checkpoint_interval_us=5_000_000,
         )
         end = time.monotonic() + 30
         generation = 0

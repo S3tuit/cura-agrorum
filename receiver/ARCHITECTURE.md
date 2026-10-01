@@ -1806,7 +1806,43 @@ ordinary-persistence connection with another path. Reopen may recover the same
 file after transient failure. Replacing its file requires the offline
 maintenance/startup boundary below.
 
-WAL checkpointing uses a configurable page or byte threshold and records checkpoint duration and result. Checkpoint work must not make the persistence thread ignore queue growth or state-commit requests indefinitely. A bounded checkpoint is also attempted during controlled shutdown before the database connection closes.
+WAL checkpoint maintenance is driven by possible committed work, with an
+independent configurable monotonic interval initially set to five seconds.
+Allocated WAL size and file growth do not determine eligibility or wakeups.
+WAL size remains a health observation. Explicit `PASSIVE` checkpoints execute
+only on the persistence thread at safe transaction boundaries.
+
+That thread owns a maintenance component with a pending-work flag and optional
+deadline. A shared transaction boundary marks possible work immediately before
+invoking COMMIT for ordinary entities, quarantine, communicator state and
+clean-stop markers, including commits whose outcome becomes unknown. The first
+mark after complete coverage arms `now + checkpoint_interval`; later marks
+preserve that deadline. Reads, queue publication and transactions rolled back
+before entering COMMIT do not arm maintenance. Startup conservatively seeds
+coverage for inherited WAL and its separate receiver-instance transaction;
+reopening a validated connection also seeds unknown coverage. This tracking
+does not acknowledge durability or replace exact commit reconciliation.
+
+A valid PASSIVE result has three integer values, a zero busy status and
+nonnegative counts with `checkpointed <= total`. Equal counts, including zero,
+establish complete coverage and disarm maintenance. Smaller checkpointed
+counts are partial: retain pending work and retry one interval after the
+attempt finishes, even without new writes. Busy status, unusable results and
+operation errors follow the existing closed storage-failure classifier;
+negative sentinel counts never establish completion. Recovery obligations and
+their retry deadline take precedence over maintenance timing, so an expired
+maintenance deadline cannot create a busy loop during recovery.
+
+Healthy due ordinary and eligible checkpoint work alternate dispatch turns
+when both remain ready. At most one control command may precede each selected
+due ordinary/checkpoint turn; no open transaction is interrupted. Resolve
+retained ordinary/quarantine effects before a recovery checkpoint. These rules
+bound dispatch turns rather than kernel-I/O duration. With no maintenance or
+recovery obligation, there is no checkpoint wake deadline. Controlled shutdown
+permits a final pending checkpoint at a safe boundary within its existing
+budget, including work from a clean-stop marker. A partial or failed final
+checkpoint cannot undo an already durable marker, and normal commit durability
+does not depend on a final checkpoint being possible.
 
 Implementation benchmarking must compare `synchronous=FULL` with `synchronous=NORMAL` on the deployed Pi and storage medium using realistic entity mixes, batch sizes and checkpoint behavior. Record at least transaction throughput, commit-latency percentiles, queue growth, WAL growth and checkpoint stalls. `FULL` remains the pilot deployment setting regardless of benchmark results; changing it requires an explicit architecture decision accepting weaker power-loss durability.
 
@@ -1920,6 +1956,11 @@ backoff. A successful `PASSIVE` checkpoint may report incomplete progress
 because of readers; this is a bounded checkpoint result, not data loss or
 permission to discard the remaining WAL. Corrupt or incompatible checkpoint
 results still require operator recovery.
+
+The storage-recovery checkpoint requirement is distinct from maintenance
+coverage. A valid non-error partial result may satisfy recovery after its other
+requirements succeed, while maintenance remains pending for a timed retry.
+A routine reader-limited partial checkpoint does not close healthy admission.
 
 Ordinary transactions, control commands and checkpoints share one persistence
 recovery component on the persistence thread. It owns admission transitions,

@@ -144,6 +144,7 @@ class OrdinaryPersistence:
         instance: ReceiverInstanceStart,
         clock: MonotonicClock,
         transactions: SqliteTransactions | None = None,
+        checkpoint_maintenance=None,
         host_observations: HostObservationSource | None = None,
         minimum_free_bytes: int = 0,
         monotonic_rate_bound_ppm: int = MONOTONIC_ELAPSED_RATE_BOUND_PPM,
@@ -207,6 +208,7 @@ class OrdinaryPersistence:
             instance=instance,
             clock=clock,
             transactions=self._transactions,
+            checkpoint_maintenance=checkpoint_maintenance,
             minimum_free_bytes=minimum_free_bytes,
             monotonic_rate_bound_ppm=monotonic_rate_bound_ppm,
         )

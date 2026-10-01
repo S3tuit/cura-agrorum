@@ -6,6 +6,7 @@ or take more than five minutes. Follow the repository [retention policy](../../.
 | Topic | Retained result |
 |---|---|
 | [Persistence](persistence_worker/README.md) | Three destructive storage faults and restoration |
+| [Checkpoint scheduling](checkpoint_scheduling/README.md) | Paired baseline/new Pi storage comparison lasting more than six minutes |
 | [Runtime time](runtime_time/README.md) | Long slew measurements, physical oscillator/battery sequence, intrusive controller/clock fixtures |
 | [TX airtime](tx_airtime/README.md) | Persistent-state reconstruction across two real Pi reboots |
 

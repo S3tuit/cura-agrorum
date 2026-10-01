@@ -113,7 +113,7 @@ def test_shutdown_outstanding_reservation(worker_files, resolution):
     owner = worker(worker_files, Observed)
     start(owner)
     try:
-        assert waits.get(timeout=5) is None
+        assert waits.get(timeout=5) == 5.0
         reservation = owner.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation
         owner.request_stop(deadline_monotonic_us=1_000_100)
         assert waits.get(timeout=5) == 1.0
@@ -170,7 +170,7 @@ def test_unknown_marker_then_checkpoint_recovery(worker_files, committed):
             and result.failure_kind is F.DATABASE_ERROR
         )
         # Queue closure may itself have produced an idle observation before submission.
-        while waits.get(timeout=5) is None:
+        while waits.get(timeout=5) != 0.250925:
             pass
         owner.request_stop(deadline_monotonic_us=1_000_100)
         assert waits.get(timeout=5) == 0.250925
@@ -297,7 +297,7 @@ def test_stop_unknown_ordinary_work(worker_files, phase):
     )
     start(owner)
     try:
-        assert waits.get(timeout=5) is None
+        assert waits.get(timeout=5) == 5.0
         owner.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
             ProfileOnlyUnitV1(_profile())
         )

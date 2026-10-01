@@ -50,7 +50,7 @@ def owner(worker_files):
         workers.append(worker)
         worker.start()
         assert worker.wait_started(deadline_monotonic_us=5_000_100)
-        assert worker.waits.get(timeout=5) is None
+        assert worker.waits.get(timeout=5) == 5.0
         return worker
 
     yield create

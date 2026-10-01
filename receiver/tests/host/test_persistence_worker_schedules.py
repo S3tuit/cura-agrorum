@@ -159,13 +159,13 @@ def test_generated_worker_schedules(tmp_path, worker_file_factory):
             transactions=backend,
             wake_threshold_entities=1,
             batch_limit_entities=3,
-            checkpoint_threshold_bytes=1 << 40,
+            checkpoint_interval_us=1 << 40,
         )
         model = Model()
         owner.start()
         try:
             assert owner.wait_started(deadline_monotonic_us=5_000_100)
-            assert waits.get(timeout=5) is None
+            assert waits.get(timeout=5) == (1 << 40) / 1_000_000
             for index, action in enumerate(actions):
                 backend.mode = action
                 woke = True

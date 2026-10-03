@@ -19,6 +19,22 @@ offline initializer verifies the schema fingerprint and creates a fresh
 database for the supplied group. Archive incompatible epochs; never silently
 migrate, reinitialize or manufacture group credentials at service startup.
 
+Run the service and any manual receiver invocation through
+`python -m cura_receiver`. This entry point enforces one receiver process in
+their shared Linux network namespace before any state load or hardware access.
+A second launch exits immediately with `RECEIVER_ALREADY_RUNNING`, including
+with another database or isolated test root. Stop the existing receiver before
+a manual test; then start a fresh process to load the latest durable history.
+
+The process guard uses the fixed abstract UNIX socket `\0cura-agrorum.receiver`.
+There is no lock file to remove after a crash. The kernel releases it on actual
+process exit, and exec'd helpers do not retain it. Service and manual launches
+must share the same network namespace, which need not be the host namespace.
+Competing receivers in different namespaces are outside the supported scope.
+This cooperative guard does not stop unrelated tools from opening the radio,
+so component hardware testing still requires the existing exclusive-access
+procedure.
+
 When creating the database, explicitly choose its initial airtime policy through
 `initialize_database(database_path, group_id, known_empty_airtime=...)`:
 

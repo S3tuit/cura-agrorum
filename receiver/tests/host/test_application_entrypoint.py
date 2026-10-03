@@ -30,8 +30,13 @@ def test_valid_cli_passes_exact_digest_bytes_through_successful_composition(monk
     monkeypatch.setattr('sys.argv', ['receiver', '--rtc-helper-sha256', digest.hex(),
                                    '--rtc-kernel-bound-us', '3000000'])
     monkeypatch.setattr(entry.os, 'environ', {})
+    claimed = Mock()
+    monkeypatch.setattr(entry, 'claim_receiver_process', claimed)
     clock = SimpleNamespace(now_monotonic_us=lambda: 0)
-    monkeypatch.setattr(entry, 'LinuxOsClock', lambda: clock)
+    def runtime_clock():
+        claimed.assert_called_once_with()
+        return clock
+    monkeypatch.setattr(entry, 'LinuxOsClock', runtime_clock)
     monkeypatch.setattr(entry, 'create_receiver_instance', Mock(return_value=object()))
     rtc = Mock(return_value=object())
     monkeypatch.setattr(entry, 'LinuxDs3231Control', rtc)
@@ -58,3 +63,26 @@ def test_valid_cli_passes_exact_digest_bytes_through_successful_composition(monk
     assert entry.Radio.call_args.kwargs['stop_requested'] == stop.is_requested
     waiter.__exit__.assert_called_once_with(None, None, None)
     assert entry.os.environ['SQLITE_TMPDIR'] == '/var/lib/cura-agrorum/tmp'
+
+
+@pytest.mark.parametrize('error,message', [
+    (entry.ReceiverAlreadyRunning(), 'RECEIVER_ALREADY_RUNNING'),
+    (OSError(24, 'descriptor limit'), 'PROCESS_OWNERSHIP_FAILED'),
+])
+def test_ownership_failure_exits_before_any_runtime_construction(monkeypatch, capsys, error, message):
+    monkeypatch.setattr('sys.argv', ['receiver', '--rtc-helper-sha256', '0' * 64,
+                                   '--rtc-kernel-bound-us', '3000000'])
+    monkeypatch.setattr(entry.os, 'environ', {})
+    monkeypatch.setattr(entry, 'claim_receiver_process', Mock(side_effect=error))
+    constructors = []
+    for name in ('LinuxOsClock', 'create_receiver_instance', 'LinuxDs3231Control',
+                 'LinuxChronyControl', 'PersistenceWorker', 'LinuxRadioIo', 'Radio',
+                 'Sx1262', 'LinuxKernelClock', 'ReceiverApplication', 'LinuxSignalWait'):
+        constructor = Mock(side_effect=AssertionError('runtime constructed without ownership'))
+        monkeypatch.setattr(entry, name, constructor)
+        constructors.append(constructor)
+    assert entry.main() == 1
+    for constructor in constructors:
+        constructor.assert_not_called()
+    assert capsys.readouterr().out == f'receiver startup: {message}\n'
+    assert entry.os.environ == {}

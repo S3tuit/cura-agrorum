@@ -2697,6 +2697,35 @@ bounded `DiagnosticV1` only when its error domain and context schema are
 defined in [`INTERFACE_DIAGNOSTIC.md`](INTERFACE_DIAGNOSTIC.md); diagnostic
 admission remains best effort and never controls recovery.
 
+### Receiver process ownership
+
+After pure CLI/environment validation, `python -m cura_receiver` calls
+`claim_receiver_process()` before constructing the runtime clock, instance,
+worker, application or platform adapters. The Linux implementation atomically
+binds the abstract `AF_UNIX` / `SOCK_DGRAM` address
+`b'\0cura-agrorum.receiver'`. Its identity has no configuration, database-path,
+UID or test-root component. Service and manual receiver launches must share the
+same Linux network namespace; it need not be the host namespace.
+
+Contention, including a second claim in the same process, raises
+`ReceiverAlreadyRunning`. The entry point reports
+`receiver startup: RECEIVER_ALREADY_RUNNING` and exits with status 1. Other
+socket-acquisition `OSError`s report `receiver startup: PROCESS_OWNERSHIP_FAILED`
+and also exit with status 1. Neither path loads configuration/state, inserts a
+lifecycle row, starts the worker or accesses a device. These are service startup
+messages, with no persistence diagnostic attempted before ownership exists.
+
+Successful acquisition retains a detached close-on-exec descriptor for the
+entire OS process lifetime. There is no early-release API, pathname, PID-file
+cleanup, waiting contender or stale-owner takeover. Startup exceptions, a normal
+return from `main()`, and exhausted shutdown budgets do not release ownership.
+OS process exit, including SIGKILL, closes the descriptor; exec'd helpers do not
+inherit it. A replacement must then start normally and load current durable
+state. Component APIs are not production launchers; production always uses the
+guarded entry point. Storage preflight does not start a receiver and does not
+acquire this guard. Competing receivers in different network namespaces and
+uncooperative hardware tools are outside this ownership contract.
+
 ### Receiver configuration loading
 
 Installed entry points share these startup environment inputs:

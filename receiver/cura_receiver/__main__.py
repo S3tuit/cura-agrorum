@@ -11,6 +11,7 @@ from .platform.linux_chrony import LinuxChronyControl
 from .platform.linux_clocks import LinuxOsClock
 from .platform.linux_ds3231 import LinuxDs3231Control
 from .platform.linux_kernel_clock import LinuxKernelClock
+from .platform.linux_process_ownership import claim_receiver_process, ReceiverAlreadyRunning
 from .platform.linux_radio import LinuxRadioIo
 from .platform.linux_signal_wait import LinuxSignalWait
 from .radio import Radio
@@ -34,6 +35,14 @@ def main():
         settings = settings_from_environment(os.environ)
     except ValueError:
         parser.error('invalid receiver deployment paths')
+    try:
+        claim_receiver_process()
+    except ReceiverAlreadyRunning:
+        print('receiver startup: RECEIVER_ALREADY_RUNNING', flush=True)
+        return 1
+    except OSError:
+        print('receiver startup: PROCESS_OWNERSHIP_FAILED', flush=True)
+        return 1
     os.environ['SQLITE_TMPDIR'] = str(settings.sqlite_temporary_directory)
     clock = LinuxOsClock()
     instance = create_receiver_instance(clock)

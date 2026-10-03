@@ -76,6 +76,34 @@ These ownership rules should remain strict:
 
 These rules avoid locks around radio state and prevent SQLite latency from delaying ACK generation.
 
+### Receiver process ownership
+
+Exactly one production receiver process may run in the shared Linux network
+namespace at a time. The installed `python -m cura_receiver` entry point acquires
+a process-lifetime ownership guard before constructing the persistence worker
+or platform adapters, and therefore before any configuration/state load,
+lifecycle insertion or device access. A manual launch and the service contend
+for the same guard even when their database paths or test roots differ. A
+contender fails immediately without loading stale state or touching hardware;
+starting later requires a new process and a fresh state load.
+
+The Linux guard binds one fixed abstract UNIX socket. It needs no filesystem
+lock or durable metadata. The close-on-exec descriptor remains open until OS
+process termination, including after a failed startup or a bounded shutdown
+that leaves a daemon persistence worker alive. Process death releases ownership
+automatically; helpers cannot retain it across exec. All supported receiver
+launches use this entry point and share the same network namespace, which need
+not be the host namespace. Competing receivers in different namespaces and tools
+that access hardware without this guard are outside the agreed scope.
+
+This boundary applies to commissioning and ordinary recovery alike. The
+two-second allowance for unpersisted transmissions assumes one live airtime
+owner. GPIO exclusivity alone begins too late: another process could already
+have loaded state before acquiring those lines. Persistence still serializes
+transactions and reconciles exact bytes; the process guard prevents overlapping
+receiver instances from confusing those confirmations without changing the
+durable format.
+
 ## Receiver configuration
 
 Installed runtime and storage preflight share one startup path configuration.

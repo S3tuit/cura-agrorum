@@ -717,6 +717,17 @@ clock-correlation tests.
   require rejection. Test rollback, lost replies, exact replay, mismatched
   token/state reconciliation, subprocess termination around commit and receipt,
   repeated restarts and post-TX restart; no restart grants commissioning twice.
+- **Receiver process ownership:** Use real competing processes through the
+  production entry point. A contender must fail before platform construction,
+  worker start, lifecycle insertion or state load, even with another database,
+  path alias or test root. Hold ownership before startup, during operation and
+  shutdown, after startup failure, and after bounded shutdown returns with a
+  live daemon worker. Verify normal exit and SIGKILL release it and exec'd
+  helpers cannot retain it. After a crash with unsaved ACK charges, both an
+  initially commissioned database and ordinary persisted history must undergo
+  fresh conservative recovery; the replacement cannot adopt a stale empty
+  ledger. Cover acquisition errors without access to storage/hardware. These
+  host process tests do not establish Pi/RF or physical power-loss behavior.
 - **Recovery coverage:** Check minimum elapsed credit, full-array max replacement,
   ties, valid empty versus missing/corrupt/untrusted fallback, repeated restarts,
   immutable startup snapshots and failed/lost confirmation.

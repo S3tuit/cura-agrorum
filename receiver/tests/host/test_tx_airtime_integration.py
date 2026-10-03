@@ -43,7 +43,7 @@ def test_budget_suppression_preserves_real_ingress_acceptance(airtime_component)
     policy, worker, _, clock, _ = airtime_component()
     assert policy.recover(deadline_monotonic_us=5_000_100).reason is R.STATE_READY
     assert (
-        policy.acquire_grant(deadline_monotonic_us=5_000_100).reason
+        policy.maintain(deadline_monotonic_us=5_000_100).reason
         is R.BUDGET_EXHAUSTED
     )
     ingress = ProtocolIngress(
@@ -72,7 +72,7 @@ def test_budget_suppression_preserves_real_ingress_acceptance(airtime_component)
     assert entity.profile.ack_tx_result is AckTxResult.SUPPRESSED_AIRTIME_BUDGET
 
 
-# The RTC writer uses the airtime component's complete snapshot without losing or reopening its grant.
+# The RTC writer uses the airtime component's complete snapshot without losing coverage or reopening a saved group.
 @pytest.mark.parametrize("lost_reply", [False, True])
 def test_runtime_rtc_commit_preserves_airtime_owner_and_allowance(
     airtime_component, lost_reply
@@ -98,7 +98,7 @@ def test_runtime_rtc_commit_preserves_airtime_owner_and_allowance(
     policy.update_time(
         runtime.airtime_correlation(), rtc_health=runtime.state.rtc_health
     )
-    assert policy.acquire_grant(deadline_monotonic_us=5_000_100).reason is R.ALLOWED
+    assert policy.maintain(deadline_monotonic_us=5_000_100).reason is R.STATE_READY
     policy.report_tx(policy.try_spend().token, TxCertainty.UNCERTAIN)
     before = policy.state
     if lost_reply:
@@ -109,21 +109,22 @@ def test_runtime_rtc_commit_preserves_airtime_owner_and_allowance(
     rtc = FakeDs3231Control()
     rtc.read_results.extend([Ds3231ReadResult(DR.OK, 100, 100, 1_800_000_000)] * 2)
     rtc.write_results.append(Ds3231WriteResult(DW.COMPLETED, DF.NONE, 100, 100))
-    result = runtime.refresh_rtc(rtc, policy.snapshot)
+    result = runtime.refresh_rtc(rtc, policy.snapshot, snapshot_receipt=policy.snapshot_receipt)
     if lost_reply:
         assert result.status is RtcRefreshStatus.PERSISTENCE_FAILED
         assert policy.available_charge_us == 0 and runtime.rtc_provenance is None
         channel.fail_load = False
-        assert policy.reconcile(deadline_monotonic_us=5_000_100).reason is R.ALLOWED
+        assert policy.reconcile(deadline_monotonic_us=5_000_100).reason is R.STATE_READY
     else:
         assert result.status is RtcRefreshStatus.VERIFIED
     assert runtime.state_owner is policy.owner
-    assert policy.state.generation == 3 and policy.state.buckets == before.buckets
+    assert policy.state.generation == before.generation + 1
+    assert policy.used_since_save_us == 0 and not policy.group_outstanding
     assert runtime.rtc_provenance is policy.state.rtc_provenance
     assert runtime.rtc_provenance is not None
-    assert policy.available_charge_us == 7_932_134
+    assert policy.available_charge_us == 2_000_000
     assert [call[0] for call in rtc.calls] == ["read", "write", "read"]
     clock.advance_elapsed_us(60_000_000)
     assert runtime.airtime_correlation() is None
     policy.update_time(runtime.airtime_correlation(), rtc_health=RH.PRESENT)
-    assert policy.available_charge_us == 0
+    assert policy.available_charge_us == 2_000_000

@@ -238,7 +238,7 @@ class Communicator:
                 self._record(self.radio.rearm())
             else:
                 self.airtime.update_time(self.time.airtime_correlation(), rtc_health=self.time.state.rtc_health)
-                # Grant lookup is in memory; no acquisition/settlement here.
+                # Admission is in memory; persistence follows RX rearm.
                 if self.airtime.available_charge_us == 0:
                     self._fallback = E.AckTxResult.SUPPRESSED_AIRTIME_BUDGET
                     self._record(self.radio.rearm())
@@ -253,9 +253,8 @@ class Communicator:
                         else:
                             self._spend = spend
                             self._record(self.radio.start_ack(RadioTxAuthorization(
-                                spend.grant_deadline_monotonic_us,
+                                spend.submission_deadline_monotonic_us,
                                 self.occurrence_sequence,
-                                spend.bucket_expiration_utc_us,
                             )))
                             if self.radio.state is E.RadioState.TX_ACTIVE:
                                 self._record(self.radio.finish_ack())

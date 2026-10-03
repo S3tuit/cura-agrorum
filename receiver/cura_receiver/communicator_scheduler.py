@@ -48,7 +48,7 @@ class CommunicatorScheduler:
         self.initial_health_pending = initial_health_pending
         self.stop_requested, self.shutdown_deadline = stop_requested, shutdown_deadline
         now = self.clock.now_monotonic_us()
-        self.next_health = self.next_airtime = self.boundary_retry = now
+        self.next_health = self.next_airtime = self.boundary_retry = self.airtime_retry = now
         self.failure_location = (E.CorePhase.IDLE, E.CoreFailureStage.INVOKE_ADAPTER, E.DiagnosticOperation.RECEIVE)
         self.last_exchange = None
 
@@ -81,6 +81,16 @@ class CommunicatorScheduler:
         self.last_exchange = result
         return result
 
+    def _maintain_airtime(self, exchange):
+        c, t = self.communicator, self.time
+        self.failure_location = (E.CorePhase.AIRTIME_STATE, E.CoreFailureStage.COMMIT_STATE, E.DiagnosticOperation.WRITE)
+        c.airtime.update_time(t.airtime_correlation(), rtc_health=t.state.rtc_health)
+        update = c.airtime.maintain(deadline_monotonic_us=t.deadline(t.settings.control_budget_us))
+        self.next_airtime = self._later(t.settings.retry_initial_us)
+        self.airtime_retry = (self.next_airtime if c.airtime.maintenance_required else
+                              self.clock.now_monotonic_us())
+        return ScheduledTurn(Work.AIRTIME, exchange, update)
+
     def run_once(self):
         self.last_exchange = None
         c, t = self.communicator, self.time
@@ -97,6 +107,11 @@ class CommunicatorScheduler:
             return ScheduledTurn(Work.TERMINAL, exchange, t.cancel_rtc_refresh())
         if c.radio.state in _TERMINAL:
             return ScheduledTurn(Work.TERMINAL, exchange)
+        now = self.clock.now_monotonic_us()
+        if ((not self.initial_health_pending or c.airtime.save_required)
+                and c.radio.state is E.RadioState.RX_SINGLE and not t.ordinary_admission_blocked
+                and c.airtime.maintenance_required and now >= self.airtime_retry):
+            return self._maintain_airtime(exchange)
         if (c.occurrence_sequence != previous_sequence or exchange.finalization is not None
                 or exchange.radio_episodes or c.radio.state not in _RECEIVING):
             return ScheduledTurn(Work.RADIO, exchange)
@@ -118,11 +133,7 @@ class CommunicatorScheduler:
         if t.step_state is ChronyStepState.STEP_COMMAND_PENDING or now >= t.next_tracking_start():
             return ScheduledTurn(Work.TIME, exchange, self._poll_time())
         if now >= self.next_airtime:
-            self.failure_location = (E.CorePhase.AIRTIME_STATE, E.CoreFailureStage.COMMIT_STATE, E.DiagnosticOperation.WRITE)
-            c.airtime.update_time(t.airtime_correlation(), rtc_health=t.state.rtc_health)
-            update = c.airtime.acquire_grant(deadline_monotonic_us=t.deadline(t.settings.control_budget_us))
-            self.next_airtime = self._later(t.settings.retry_initial_us)
-            return ScheduledTurn(Work.AIRTIME, exchange, update)
+            return self._maintain_airtime(exchange)
         rtc_active = t.rtc_refresh_episode is not None
         rtc_due = None if rtc_active else self._rtc_start_due()
         if rtc_active or (rtc_due is not None and now >= rtc_due):
@@ -132,6 +143,7 @@ class CommunicatorScheduler:
                 self.failure_location = (E.CorePhase.PERIODIC_TIME, E.CoreFailureStage.INVOKE_ADAPTER,
                     t.rtc_refresh_episode.operation or E.DiagnosticOperation.SYNC)
             update = (t.advance_rtc_refresh(self.rtc, c.airtime.snapshot,
+                        snapshot_receipt=c.airtime.snapshot_receipt,
                         stop_requested=self.stop_requested(), shutdown_deadline=self.shutdown_deadline())
                       if t.rtc_refresh_episode is not None or t.state.quality is E.SystemTimeQuality.NETWORK_SYNCED
                       else t.observe_rtc(self.rtc))

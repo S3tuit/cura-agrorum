@@ -11,7 +11,7 @@ from .communicator_state_persistence import (
     classify_communicator_state_rows,
     validate_communicator_state,
 )
-from .generated.receiver_entities_generated import communicator_state_v1_parameters
+from .generated.receiver_entities_generated import communicator_state_v2_parameters
 from .generated.receiver_enums_generated import (
     DATABASE_SCHEMA_VERSION,
     DiagnosticOperation as Op,
@@ -234,13 +234,13 @@ class PersistenceControlOperations:
     def _validate_recovery(self, state, condition):
         if state.generation != 1:
             return False
-        charges = tuple(bucket.charged_airtime_us for bucket in state.buckets)
+        lifetimes = tuple(entry.remaining_us for entry in state.entries)
         if condition in (Condition.UNSUPPORTED_VERSION, Condition.POLICY_MISMATCH):
             # The continuous no-TX wait is a caller invariant, independent of UTC.
-            return not any(charges)
-        q, r = divmod(state.tx_airtime_budget_us, state.bucket_charge_limit_us)
-        newest = ((r,) if r else ()) + (state.bucket_charge_limit_us,) * q
-        return charges == (0,) * (len(charges) - len(newest)) + newest
+            return not any(lifetimes)
+        # Missing/corrupt history reserves the full window. The communicator's
+        # monotonic-to-physical conversion may conservatively extend this duration.
+        return all(d >= state.rolling_window_us + 250_000 for d in lifetimes)
 
     def _archive(self, raw, command):
         observed_at = self.clock.now_monotonic_us()
@@ -324,7 +324,7 @@ class PersistenceControlOperations:
             command.check(self.database.connection)
             self.database.connection.execute(
                 "INSERT INTO communicator_state VALUES (?, ?, ?, ?, ?)",
-                communicator_state_v1_parameters(state),
+                communicator_state_v2_parameters(state),
             )
             command.before_commit(self.database.connection)
             commit_may_have_run = True

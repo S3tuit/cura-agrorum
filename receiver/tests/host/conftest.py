@@ -62,7 +62,7 @@ def airtime_component(tmp_path):
     from cura_receiver.airtime_ledger import AirtimeCorrelation
     from cura_receiver.communicator_state_owner import CommunicatorStateOwner
     from cura_receiver.generated.receiver_entities_generated import (
-        communicator_state_v1_parameters,
+        communicator_state_v2_parameters,
     )
     from cura_receiver.generated.receiver_enums_generated import (
         RtcHealth as RH,
@@ -85,7 +85,7 @@ def airtime_component(tmp_path):
                 condition = C.NONE
                 connection.execute(
                     "INSERT INTO communicator_state VALUES (?,?,?,?,?)",
-                    communicator_state_v1_parameters(initial_state),
+                    communicator_state_v2_parameters(initial_state),
                 )
             elif condition is C.CORRUPT:
                 connection.executemany(
@@ -95,13 +95,13 @@ def airtime_component(tmp_path):
             elif condition is C.UNSUPPORTED_VERSION:
                 connection.execute(
                     "INSERT INTO communicator_state VALUES (?,?,?,?,?)",
-                    (1, 2, 1, b"\x02\x00", hashlib.sha256(b"\x02\x00").digest()),
+                    (1, 1, 1, b"\x01\x00", hashlib.sha256(b"\x01\x00").digest()),
                 )
             elif condition is C.POLICY_MISMATCH:
                 connection.execute(
                     "INSERT INTO communicator_state VALUES (?,?,?,?,?)",
-                    communicator_state_v1_parameters(
-                        state(tx_airtime_budget_us=35_000_000)
+                    communicator_state_v2_parameters(
+                        state(rolling_window_us=3_500_000_000)
                     ),
                 )
         clock = FakeOsClock(monotonic_us=100)

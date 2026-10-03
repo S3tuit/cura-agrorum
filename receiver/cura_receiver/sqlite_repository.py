@@ -54,7 +54,7 @@ REQUIRED_TABLE_PROJECTIONS = (
     (rows.READING_MESSAGE_ROW_V1_TABLE, rows.READING_MESSAGE_ROW_V1_COLUMNS),
     (rows.QUARANTINED_ENTITY_ROW_V1_TABLE, rows.QUARANTINED_ENTITY_ROW_V1_COLUMNS),
     ("receiver_instances", RECEIVER_INSTANCE_COLUMNS),
-    (rows.COMMUNICATOR_STATE_V1_TABLE, ("rowid", *rows.COMMUNICATOR_STATE_V1_COLUMNS)),
+    (rows.COMMUNICATOR_STATE_V2_TABLE, ("rowid", *rows.COMMUNICATOR_STATE_V2_COLUMNS)),
     ("quarantined_communicator_states", QUARANTINED_COMMUNICATOR_STATE_COLUMNS),
 )
 _BOOLEAN_COLUMNS = frozenset(
@@ -262,7 +262,7 @@ class SqliteRepository:
 
     def read_communicator_state_rows(self) -> tuple[CommunicatorStateRow, ...]:
         """Inspect every row without decoding rejected TEXT, even invalid UTF-8."""
-        columns = rows.COMMUNICATOR_STATE_V1_COLUMNS
+        columns = rows.COMMUNICATOR_STATE_V2_COLUMNS
         classes = ", ".join(f"typeof({column})" for column in columns)
         values = ", ".join(
             f"CASE WHEN typeof({column}) = '{expected}' THEN {column} END"
@@ -271,7 +271,7 @@ class SqliteRepository:
             )
         )
         cursor = self._connection.execute(
-            f"SELECT rowid, {classes}, {values} FROM {rows.COMMUNICATOR_STATE_V1_TABLE} ORDER BY rowid"
+            f"SELECT rowid, {classes}, {values} FROM {rows.COMMUNICATOR_STATE_V2_TABLE} ORDER BY rowid"
         )
         return tuple(
             CommunicatorStateRow(row[0], tuple(row[1:6]), tuple(row[6:]))

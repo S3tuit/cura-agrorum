@@ -66,6 +66,7 @@ class ReceiverPersistenceControlContextV1:
             raise ValueError('clean-stop purpose mismatch')
         if command is E.PersistenceControlCommand.COMMIT_COMMUNICATOR_STATE and self.purpose not in (
                 E.PersistenceControlPurpose.AIRTIME_BUCKET_GRANT, E.PersistenceControlPurpose.AIRTIME_BUCKET_SETTLEMENT,
+                E.PersistenceControlPurpose.AIRTIME_USAGE_SAVE,
                 E.PersistenceControlPurpose.RTC_PROVENANCE, E.PersistenceControlPurpose.AIRTIME_HISTORY_RECOVERY):
             raise ValueError('state mutation purpose mismatch')
         if self.protocol_rejection_code is not None:

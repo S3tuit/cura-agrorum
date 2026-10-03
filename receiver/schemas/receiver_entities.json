@@ -155,13 +155,13 @@
   ],
   "encodings": [
     {
-      "name": "COMMUNICATOR_STATE_ENCODING_V1",
+      "name": "COMMUNICATOR_STATE_ENCODING_V2",
       "endianness": "little",
       "fields": [
         {
           "name": "state_format_version",
           "type": "u16",
-          "constant": 1
+          "constant": 2
         },
         {
           "name": "encoded_length",
@@ -212,11 +212,7 @@
           "type": "u64"
         },
         {
-          "name": "bucket_width_us",
-          "type": "u64"
-        },
-        {
-          "name": "bucket_charge_limit_us",
+          "name": "entry_charge_us",
           "type": "u64"
         },
         {
@@ -229,10 +225,10 @@
           }
         },
         {
-          "name": "bucket_count",
+          "name": "entry_count",
           "type": "u16",
           "derived": {
-            "length": "buckets"
+            "length": "entries"
           }
         },
         {
@@ -246,9 +242,9 @@
           "constant": 0
         },
         {
-          "name": "buckets",
-          "type": "array:TX_AIRTIME_BUCKET_V1",
-          "length": 62
+          "name": "entries",
+          "type": "array:AIRTIME_ENTRY_V2",
+          "length": 18
         }
       ],
       "structs": [
@@ -284,11 +280,11 @@
           ]
         },
         {
-          "name": "TX_AIRTIME_BUCKET_V1",
-          "python_name": "TxAirtimeBucketV1",
+          "name": "AIRTIME_ENTRY_V2",
+          "python_name": "AirtimeEntryV2",
           "fields": [
             {
-              "name": "charged_airtime_us",
+              "name": "remaining_us",
               "type": "u64"
             }
           ]
@@ -994,8 +990,8 @@
       }
     },
     {
-      "name": "COMMUNICATOR_STATE_V1",
-      "python_name": "CommunicatorStateV1",
+      "name": "COMMUNICATOR_STATE_V2",
+      "python_name": "CommunicatorStateV2",
       "persistence": {
         "mode": "canonical_blob",
         "table": "communicator_state",
@@ -1013,7 +1009,7 @@
         {
           "name": "state_format_version",
           "type": "u16",
-          "constant": 1
+          "constant": 2
         },
         {
           "name": "generation",
@@ -1023,7 +1019,7 @@
         {
           "name": "state_blob",
           "type": "blob",
-          "encoding": "COMMUNICATOR_STATE_ENCODING_V1"
+          "encoding": "COMMUNICATOR_STATE_ENCODING_V2"
         },
         {
           "name": "state_sha256",

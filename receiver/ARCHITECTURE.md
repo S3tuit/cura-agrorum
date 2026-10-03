@@ -150,7 +150,7 @@ contracts are defined in [`INTERFACE.md`](INTERFACE.md).
 
 ## Durable communicator state
 
-The receiver keeps one authoritative `CommunicatorStateV1` value in the
+The receiver keeps one authoritative `CommunicatorStateV2` value in the
 singleton SQLite `communicator_state` table. It is distinct from asynchronous
 measurement and telemetry records but shares the receiver database and its
 WAL/`FULL` durability policy. It contains the state needed to remain
@@ -190,8 +190,8 @@ RTC provenance  = UNTRUSTED
 It must not be interpreted as an empty airtime ledger or as proof that the RTC
 is correct. Even without trusted UTC, missing or corrupt state is replaced
 by a generation-one ledger that conservatively places the complete active
-airtime budget in the most recent possible minute buckets. That synthetic
-ledger must commit before a bucket grant or TX is permitted. When the singleton
+airtime budget in all 18 entries through a full conservative window from recovery.
+That fallback ledger must commit before ordinary airtime admission can resume. When the singleton
 relation is corrupt but SQLite itself is healthy, the replacement transaction
 first preserves every observed invalid row in
 `quarantined_communicator_states`; preservation and replacement commit
@@ -213,14 +213,11 @@ decoded using a known layout. For a supported version, every canonical and
 structural invariant is validated before policy comparison, so structural
 failure is `CORRUPT` rather than `POLICY_MISMATCH`.
 
-For the 36-second budget and eight-second bucket limit, missing or corrupt state
-is synthesized as five chronological bucket charges of
-`[4, 8, 8, 8, 8]` seconds. The newest possible interval starts at the monotonic recovery snapshot,
-conservatively covering the unknown preceding phase; older positions are one
-physical bucket width apart for reconstruction. No trusted UTC is required. The same checked construction generalizes to an oldest remainder
-of `budget mod bucket limit` followed by `floor(budget / bucket limit)` full
-buckets. This supplies automatic conservative recovery without pretending that
-a missing row means a new installation.
+For the 36-second budget, missing/corrupt history and unusable recovery time
+reserve 18 entries of 2 seconds each through `startup + wait(W + T)`. This
+requires no trusted UTC and introduces no invented earlier traffic schedule.
+A valid empty saved state with eligible time is distinct: startup adds only one
+historical recovery entry for possible usage since the last confirmed snapshot.
 
 The communicator is the sole logical owner of the live state, while the persistence thread is the sole physical writer. The commit protocol is:
 
@@ -608,8 +605,8 @@ physical elapsed microseconds. Every
 safety-sensitive physical duration is converted centrally using the
 configured conservative monotonic elapsed-rate bound. Minimum waits, including
 rolling-airtime retention and retry backoff, are lengthened; maximum lifetimes,
-including radio/time-service deadlines and the remaining life of an active
-airtime bucket grant, are shortened. Profiling and periodic-observation intervals are
+including radio/time-service deadlines and airtime submission windows, are
+shortened. Profiling and periodic-observation intervals are
 observational and need no such conversion unless their individual contract
 says otherwise. The exact conversion and pilot defaults are normative in
 [`INTERFACE.md`](INTERFACE.md#elapsed-duration-policy).
@@ -647,11 +644,11 @@ The kernel-recorded DIO1 `RX_DONE` edge is therefore the only reception-time
 input carried by `MessageProfilingV1`. Occurrence quality and RTC health are
 not copied into each profile; they remain represented by the clock-observation
 timeline and periodic receiver health. The same model applies to diagnostics
-and receiver lifecycle events during analysis. Durable airtime state contains positional charges and optional snapshot UTC
+and receiver lifecycle events during analysis. Durable airtime state contains remaining entry lifetimes and optional snapshot UTC
 with its error bound. The communicator derives that optional anchor from its
 live trusted correlation; it does not read `CLOCK_REALTIME` for the state entity.
 
-An explicit realtime step cannot jump a monotonic deadline or bucket. Bounded
+An explicit realtime step cannot jump a monotonic deadline or entry. Bounded
 slew can change how quickly monotonic time advances relative to physical time,
 so the conservative duration conversions prevent it from expiring a minimum
 wait early or extending a maximum lifetime too long. When UTC is untrusted,
@@ -703,7 +700,7 @@ receiver service starts
   -> probe RTC and local time-synchronization status
   -> establish NETWORK_SYNCED, RTC_HOLDOVER or UNTRUSTED
   -> publish the initial ClockObservationV1 before later ordinary queue work
-  -> reconcile durable airtime state and obtain a durable bucket grant when possible
+  -> prepare conservative airtime recovery, initially blocking TX
   -> initialize the SX1262
   -> enter RX_SINGLE
 ```
@@ -715,7 +712,7 @@ unavailable or not writable, the receiver must not enter radio operation. A
 missing or corrupt `communicator_state` row in an otherwise usable compatible
 database instead retains the fail-conservative behavior: ordinary RX and
 application admission may proceed while TX remains suppressed until a valid
-state generation and bucket grant are durably established. An incompatible
+recovery state is confirmed and an entry has spendable capacity. An incompatible
 database schema prevents ordinary persistence admission and therefore prevents
 accepted ACK outcomes.
 
@@ -929,7 +926,7 @@ ordinary correlation boundary, so its first same-instance trusted observation
 may backfill only to that start and never into the preceding process. It never
 trusts an unfinished operation merely because the Linux boot did not change.
 
-The supervisor restarts crashes, uncaught-failure exits and terminal initialization or recovery failures with a nonzero restart delay and rate limiting so a permanent hardware fault cannot create a tight restart loop. A restarted process follows the normal receiver-instance and durable-airtime-bucket rules. Controlled service stop uses a bounded graceful-shutdown interval, but correctness never depends on a clean-stop marker or shutdown-time RTC write.
+The supervisor restarts crashes, uncaught-failure exits and terminal initialization or recovery failures with a nonzero restart delay and rate limiting so a permanent hardware fault cannot create a tight restart loop. A restarted process follows the normal receiver-instance and durable-airtime recovery rules. Controlled service stop uses a bounded graceful-shutdown interval, but correctness never depends on a clean-stop marker or shutdown-time RTC write.
 
 For systemd, the unit-level contract is:
 
@@ -976,8 +973,8 @@ On the supervisor's termination signal, the owners perform:
 stop admitting new radio events and suppress new TX
   -> finish or conservatively terminate the active radio operation
   -> place the SX1262 in the configured safe shutdown state
-  -> settle the current process's active bucket grant when persistence permits;
-     otherwise leave its complete durable precharge in the bucket
+  -> save the current process's uncovered airtime usage when persistence permits;
+     otherwise retain the last durable snapshot; startup covers at most one entry of missing use
   -> let the persistence thread drain published FIFO units until
      the internal shutdown deadline
   -> if the queue drained and airtime-state handling reached a known outcome,
@@ -1032,7 +1029,7 @@ kernel monotonic DIO1 timestamps. The radio owner calls its backend on one
 thread. An operation reports command certainty separately from an error;
 expected OS failures preserve errno, while unexpected implementation exceptions
 remain CORE failures. Neither backend nor state machine admits queue entities
-or acquires/settles an airtime grant.
+or owns airtime admission/persistence.
 
 The configured shutdown state is confirmed `STDBY_RC`, with IRQ routing
 disabled and pending IRQs accounted for before resource release. If direct
@@ -1146,8 +1143,8 @@ If ACK TX-profile installation definitely fails before `SetTx` can take effect, 
 
 The communicator consumes tentative allowance before the first TX-profile
 command so a profile-uncertainty path already has a charge to retain. The radio
-component reports command and completion facts; it owns neither grant
-acquisition nor refund/settlement policy. A definite pre-`SetTx` failure with no
+component reports command and completion facts; the communicator owns
+airtime reservation, refund and persistence policy. A definite pre-`SetTx` failure with no
 uncertain preceding TX-profile command permits refund and records
 `SET_TX_FAILED`, with T4 absent if `SetTx` was never attempted. Uncertain
 TX-profile/`SetTx` effects or a missing terminal IRQ record `TX_UNCONFIRMED`
@@ -1246,7 +1243,7 @@ RX_SINGLE
   -> authenticate and validate
   -> decide accepted/rejected/retry-later
   -> prepare ACK
-  -> require acknowledged spendable airtime bucket grant
+  -> require confirmed recovery and available current-group or empty-entry capacity
   -> suppress ACK + confirmed UPLINK_RX_PROFILE + SetRx -> RX_SINGLE
   or
   -> write ACK frame + install ACK_TX_PROFILE with inverted IQ
@@ -1279,7 +1276,7 @@ The communicator thread owns:
 - ordinary `PersistQueue`-admission gating from the current read-only `PersistenceAdmissionState`;
 - bounded runtime DS3231 access through the fixed `Ds3231Control` adapter;
 - live time-quality, RTC-health and clock-correlation state;
-- live rolling-airtime buckets and the current process's active bucket grant;
+- live airtime entry deadlines, current group and unsaved-usage counter;
 - immutable communicator-state snapshot creation and generation tracking;
 - timing measurements;
 - periodic immutable `ReceiverHealthRequest` creation;
@@ -1296,7 +1293,7 @@ It must not:
 - perform unbounded logging;
 - block on ordinary `PersistQueue` persistence.
 
-It may wait for acknowledgement of a high-priority `commit_communicator_state()` call outside the packet-to-ACK critical path. The next bucket should be precharged proactively at the safe boundary. If a packet requires an ACK while no acknowledged bucket allowance is usable, the communicator suppresses that ACK rather than waiting for a state commit.
+It may wait for acknowledgement of a high-priority `commit_communicator_state()` call outside the packet-to-ACK critical path. After RX rearm, a required threshold save must run before another ACK can bypass its barrier. If no entry is spendable or a save remains unresolved, suppress the ACK while preserving ordinary reading admission.
 
 The persistent-filesystem prohibition does not include bounded access to local
 device APIs or fixed local IPC/helper adapters. In particular, the communicator
@@ -1415,7 +1412,7 @@ The communicator is the sole logical owner of receiver TX-airtime admission. Und
 
 A scheduling or blocking-I/O stall after the last deadline check can let
 `SetTx` reach the radio late. The adapter reports an uncertain result and keeps
-the original bucket charge, but that charge can expire less than a full rolling
+the original entry reservation, but that charge can expire less than a full rolling
 window after the actual transmission. A host timeout does not prevent late
 physical execution. This is a hypothetical fault path, not an observed Pi/RF
 failure. The operator explicitly deferred its repair on 2026-09-20; it does not
@@ -1425,69 +1422,54 @@ full-window recovery wait is introduced for this limitation. Revisit physical
 completion/quiet accounting before claiming rolling-window enforcement under
 arbitrarily delayed SPI execution.
 
-The live ledger uses a monotonic grid, a 62-slot circular array and a cached
-charged total. Each persisted slot contains only `charged_airtime_us`. Slots
-are consecutive, oldest first; zeros remain present and slot 61 is the interval
-containing the snapshot. A snapshot stores optional trusted UTC and its error
-bound, together with the snapshot's time quality. It stores neither individual
-expiration timestamps nor per-bucket remaining durations.
+The live ledger contains 18 independent expiration deadlines. Each live entry
+reserves 2,000,000 us of charged airtime; its array position has no time meaning.
+Only a current-process unfinished group is spendable. Before its first TX,
+reserve an empty entry; before every TX, charge usage and extend that entry to
+at least `now + wait(W + T)`, with W = 3,600 seconds, T = 250 ms and the supported
+3,700-ppm rate bound. Clear expired entries before admission. Expiration never
+clears the counter of usage absent from the last confirmed covering save.
 
-UTC is optional recovery evidence. With no trusted historical/current pair,
-recovery credits zero elapsed time. With both, it credits only the nonnegative
-UTC difference after subtracting both error bounds. Recovery treats the
-snapshot instant as the start of its newest interval, losing at most one
-interval's phase conservatively. The exact reconstruction, capacity and clock
-rate conversions are defined in `INTERFACE.md`.
+After RX is rearmed, require a save when unsaved usage plus the longest receiver
+packet charge is greater than or equal to 2 seconds. The 67,866-us ACK therefore
+requires a save after 29 charges, before charge 30. A pending required save blocks
+another ACK; continuous RX cannot starve it. Pace failed/reconciliation retries
+so ordinary packet admission and RX have opportunities between blocking calls.
+The shared owner retains the two-second caller deadline; timeout is neither
+cancellation nor confirmation. Confirm exactly the immutable snapshot/generation.
+Definite failure retains usage and the barrier; unknown outcomes block TX until
+exact reconciliation. SQLite WAL/FULL durable completion remains the authority.
 
-Each charged live bucket has a fixed monotonic retention deadline assigned on
-reconstruction or opening. Aging removes a charge only at its own deadline.
-Copies, top-ups, settlement and snapshots preserve those deadlines. UTC trust,
-offset or generation changes do not reconstruct the live ledger or revoke an
-otherwise valid monotonic grant. A long idle interval can clear a fully expired
-ring in bounded work. Admission uses the cached total and direct bucket lookup;
-it does not scan all slots or write a countdown on every ACK.
+Any confirmed save reducing unsaved usage, including a partially covering RTC
+save, also closes the current group. Preserve its deadline and retain uncovered
+usage; duplicate receipts cannot credit usage twice. Subsequent TX needs a new
+empty entry. RTC recognition stays bound to its own exact receipt across later
+complete-state generations. Definite non-start may refund unsaved usage; closed
+or recovered entries never become spendable through a refund. Uncertain or
+unreported TX remains charged.
 
-#### Durable airtime bucket grants
+`CommunicatorStateV2` stores 18 remaining physical lifetimes and at most one
+optional airtime UTC/error reference. All durations share one monotonic snapshot
+instant and UTC correlation. Convert deadlines conservatively as specified in
+`INTERFACE.md`; snapshotting does not change live deadlines. UTC steps and loss
+of live trust do not rebase the monotonic ledger.
 
-Pilot policy remains a 3,600-second rolling window, 36-second total charged
-budget, 60-second bucket width and 8-second bucket charge limit. The old
-120-second UTC uncertainty guard is removed: recovery accounts for the two
-explicit UTC error bounds. Retention still includes a complete bucket's phase,
-clock-rate margins and the normal 250-ms TX completion envelope, subject to the
-explicitly deferred late-SPI limitation above.
+Recovery subtracts only proved minimum physical elapsed time from a usable
+snapshot, then reserves one historical 2-second entry for possible unsaved use.
+If full, extend an earliest deadline with `max(old, startup + hold)`; this does
+not authorize spending a historical entry. Freeze the recovery snapshot at the
+same startup correlation and enable TX only after its exact commit is confirmed.
+Missing/corrupt history or ineligible time installs all 18 entries through
+`startup + hold`, suppressing ACKs for a complete conservative window. Incompatible
+format/policy retains the established full no-TX wait and atomic archive/replace.
+A freshly initialized database is required for this release; predecessor layouts
+are not implicitly migrated or reinterpreted.
 
-Grid intervals use the minimum-wait conversion of the bucket width; grant
-lifetimes use its maximum-lifetime conversion from the same interval start.
-The resulting short interval before the next bucket is not spendable. A grant
-cannot restart its lifetime when its commit is acknowledged or it is topped
-up. Every loaded charge, including a crashed process's unused reservation, is
-historical possible use and cannot be spent by the replacement process.
-
-For the current interval, new allowance is the lesser of its remaining
-8-second headroom and the remaining global budget. A complete next-generation
-snapshot precharges that increment before it becomes spendable. Tentative ACK
-consumption precedes the first TX-profile command; confirmed/uncertain or
-unreported transmission stays charged. Only definite non-start with no prior
-profile uncertainty returns allowance. Settlement preserves loaded charges and
-replaces the current process's provisional increment with its possible use;
-it can precharge the next current interval in the same commit.
-
-Missing/corrupt history installs the synthetic worst-case charge pattern
-`[4, 8, 8, 8, 8]` seconds in the newest five positions (older positions zero),
-even without trusted time. An unsupported version or different policy still
-requires the established complete no-TX recovery wait before replacement by an
-empty ledger. No predecessor-layout migration is supported in this predeployment
-V1 revision. Unknown commits suppress TX until exact generation/blob
-reconciliation; an unrecognized state change cannot silently grant allowance.
-
-The airtime policy remains a component of the shared communicator state owner.
-RTC provenance commits carry a fresh complete airtime snapshot, preserving
-outstanding precharges and live deadlines. State commits occur at recovery,
-grant, settlement and shared-state transitions, not periodically to persist
-elapsed time. Valid receive/store operation is independent of ACK allowance and
-UTC trust; timestamp quality remains independently truthful. The old optional
-UTC bucket-expiration diagnostic is absent because this design has no such
-bucket identity.
+This intentional over-accounting can suppress ACKs after repeated short restarts,
+small groups closed by RTC saves, or repeated conservative save/load conversions.
+Valid reading acceptance remains independent of ACK availability. Idle expiration
+alone causes no persistence write. Controlled shutdown uses the same save rules;
+every startup still adds recovery uncertainty, without a clean-stop exemption.
 
 ### Invalid and rejected packets
 
@@ -1553,7 +1535,7 @@ Decode sample_id only at the protocol's reading-body validation step
   |
   v
 For a response-eligible outcome, use the selected deterministic ACK
-Check acknowledged airtime bucket grant
+Check airtime capacity and save barrier
   |
   +--> unavailable/exhausted
   |       -> suppress ACK
@@ -1633,7 +1615,7 @@ that best-effort diagnostic never changes radio-state or airtime safety.
 The concrete shared values, enum assignments, optional-field rules and typed
 entity contracts are defined by [`INTERFACE.md`](INTERFACE.md).
 
-A `PersistQueue` capacity reservation is volatile, process-local queue accounting. It is unrelated to the durable receiver TX-airtime bucket precharge described above.
+A `PersistQueue` capacity reservation is volatile, process-local queue accounting. It is unrelated to the receiver TX-airtime entry reservation described above.
 
 Pilot production capacity:
 
@@ -2039,7 +2021,7 @@ may perform the exact reconciliation; its result resolves that same receipt
 before the coordinator clears the pending request. Later acknowledged commits
 cannot change an earlier receipt's outcome. RTC completion uses its own receipt
 and still requires the expected proof in the usable current state plus fresh
-source/generation checks. A later airtime settlement preserving RTC proof must
+source/generation checks. A later airtime usage save preserving RTC proof must
 not turn a confirmed RTC save into a failure merely by changing the complete
 state's generation or airtime fields.
 
@@ -2424,7 +2406,7 @@ boundary and therefore never calls chrony is not a command attempt.
 The RTC verification counters distinguish a possibly successful device write
 from one that established usable provenance under a still-valid episode
 `clock_state_generation`. These are process-local operational observations,
-not correctness state in `CommunicatorStateV1`.
+not correctness state in `CommunicatorStateV2`.
 
 The request sequence and communicator sampling time are the communicator heartbeat: they prove that the communicator event loop reached the periodic health task. No separate high-frequency heartbeat is required. `health_sequence` advances before every reservation attempt, so a gap in persisted sequence values exposes a missed or failed sample. The `RECEIVER_HEALTH_REQUEST` failure cells distinguish known queue-full and persistence-unavailable losses once a later request succeeds. A successfully admitted request includes its own `RESERVED` attempt because the communicator updates the matrix before constructing and publishing the immutable request.
 
@@ -2525,7 +2507,7 @@ The other closed catalogues and their scenario policies are:
 
 Those policies deliberately exclude ordinary loss/restoration of time trust,
 RTC `MISSING`/`INVALID`, queue admission results, airtime suppression or
-bucket-grant expiration, normal protocol outcomes, duplicate/conflict
+airtime-entry expiration, normal protocol outcomes, duplicate/conflict
 classification, poisoned-unit isolation and a confirmed TX-timeout IRQ that
 restores RX normally. Their existing profile, clock-observation, health,
 admission-state, communicator-state or quarantine records remain authoritative.
@@ -2589,7 +2571,7 @@ Examples:
   - preserve a corrupt singleton in the same atomic transaction as its synthetic generation-one replacement;
   - for unsupported-version or policy-mismatch state, suppress TX for the complete conservative active-policy rolling-window wait, then atomically archive the exact old singleton and install an empty generation-one ledger;
   - continue RX and application-queue admission;
-  - suppress TX until a valid state and acknowledged bucket grant are available.
+  - suppress TX until recovery is confirmed and an entry has spendable capacity.
 
 - RTC missing or invalid:
   - update current `rtc_health`;
@@ -2755,7 +2737,7 @@ depends on a finalizer running.
 - `communicator_state` has at most one generation-bearing row; generation zero is conservative runtime state and is never stored.
 - Missing, corrupt or unsupported state never becomes an empty airtime ledger or trusted RTC provenance.
 - Current `system_time_quality` and `rtc_health` are observed again on every
-  receiver startup. The last-observed copies in `CommunicatorStateV1` are
+  receiver startup. The last-observed copies in `CommunicatorStateV2` are
   diagnostic only; immutable `ClockObservationV1` rows remain authoritative
   provenance for UTC values derived during analysis.
 - Receiver event entities carry Linux monotonic time, never directly sampled
@@ -2772,11 +2754,11 @@ depends on a finalizer running.
   elapsed-rate conversions, so bounded slew cannot expire a minimum retention
   early or extend a maximum lifetime too long; a realtime step does not jump
   the clock.
-- All unexpired bucket charges, including every process's unused precharge, must fit the configured continuous-window budget before a bucket increment is committed.
-- No TX occurs without an acknowledged, unspent bucket increment owned by the current receiver instance.
-- Every bucket charge loaded from an earlier receiver instance is fully charged, unspendable and retained until conservative expiration.
+- At most 18 live entries reserve 2 seconds each. A current group never consumes more than one entry charge between covering saves.
+- No TX precedes confirmed startup recovery or bypasses a required/unknown save. Reserve and extend an entry before radio execution.
+- Every loaded or closed entry remains historical and unspendable until conservative expiration.
 - A started or uncertain `SetTx` consumes allowance. Only a definite pre-`SetTx` failure permits reclamation.
-- A pending or unknown bucket-settlement outcome suppresses TX.
+- A required usage save or unknown complete-state commit suppresses TX.
 - Airtime suppression never reverses acceptance of an admitted occurrence.
 - The earliest anchor-eligible accepted current-reading occurrence becomes the
   immutable direct timestamp anchor only when analysis can derive its
@@ -3028,13 +3010,13 @@ At minimum, add tests or simulations for:
 - chrony-step and RTC-write outcome arrays increment exactly once per returned
   adapter result, derive their attempt totals by summation, and distinguish RTC
   read-back verification from post-write trust invalidation;
-- rolling-window bucket boundaries, long idle intervals and cached-total reconstruction;
-- current-bucket increment opening, spending, exact settlement and unused reclamation without reducing a loaded baseline;
+- entry expiration boundaries, long idle intervals and retained unsaved counters;
+- current-group reservation, spending, exact covering saves and definite refunds without reopening historical entries;
 - definite pre-`SetTx` failure versus started or uncertain `SetTx` charging;
-- crash before and after bucket-increment commit;
-- repeated crashes accumulate conservative bucket charges;
-- expired old bucket charges and inability to obtain a new bucket increment;
-- persistence failure or unknown settlement outcome suppresses TX without undoing acceptance;
+- crash before and after recovery and usage-save commits;
+- repeated crashes accumulate conservative recovery entries;
+- expired entries and inability to open a group when all entries are occupied;
+- required-save failure or unknown commit outcome suppresses TX without undoing acceptance;
 - untrusted time causes analysis to return no UTC until a later eligible
   same-instance observation permits backward correlation, except across a step
   gap;

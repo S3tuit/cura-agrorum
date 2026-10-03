@@ -50,7 +50,7 @@ def composition(airtime_component):
         runtime.sample_network(ChronyTrackingResult(CQ.OK, now, now, True, True, 0, 0, 0))
         airtime.update_time(runtime.airtime_correlation(), rtc_health=runtime.state.rtc_health)
         if grant:
-            airtime.acquire_grant(deadline_monotonic_us=now + 5_000_000)
+            airtime.maintain(deadline_monotonic_us=now + 5_000_000)
         ingress = ProtocolIngress(queue=producer, monotonic_clock=clock, auth_node_keys={REVIEWED_NODE_ID: REVIEWED_NODE_KEY})
         communicator = Communicator(instance_id=INSTANCE, clock=clock, radio=radio, ingress=ingress, runtime_time=runtime, airtime=airtime, queue=producer)
         return SimpleNamespace(communicator=communicator, radio=radio, io=io, clock=clock, queue=queue, time=runtime, airtime=airtime, worker=worker, database=database)
@@ -697,7 +697,7 @@ def test_incremental_rtc_yields_to_packet_before_next_action(composition):
 @pytest.mark.parametrize('tick_us', [0, 1, 100])
 def test_scheduler_rtc_refresh_reaches_durable_verification(composition, monkeypatch, tick_us):
     from cura_receiver.communicator_scheduler import CommunicatorScheduler, Work
-    from cura_receiver.generated.receiver_entities_generated import decode_communicator_state_v1
+    from cura_receiver.generated.receiver_entities_generated import decode_communicator_state_v2
     from cura_receiver.ports.ds3231 import Ds3231WriteResult, Ds3231WriteDisposition, Ds3231Failure
     from cura_receiver.runtime_time import RtcRefreshStatus
     from tests.support.fakes.ds3231 import FakeDs3231Control
@@ -748,7 +748,7 @@ def test_scheduler_rtc_refresh_reaches_durable_verification(composition, monkeyp
     assert c.airtime.owner.state.generation == initial_generation + 1
     with sqlite3.connect(c.database) as db:
         blob = db.execute('SELECT state_blob FROM communicator_state').fetchone()[0]
-    persisted = decode_communicator_state_v1(blob)
+    persisted = decode_communicator_state_v2(blob)
     assert persisted == c.airtime.owner.state
     assert persisted.rtc_provenance.verified_by_receiver_instance_id == INSTANCE
     assert persisted.rtc_provenance.drift_bound_ppm == 10
@@ -757,7 +757,7 @@ def test_scheduler_rtc_refresh_reaches_durable_verification(composition, monkeyp
 # F-001: airtime may reconcile an RTC save and advance state before RTC consumes its acknowledgement.
 def test_scheduler_rtc_acknowledgement_survives_airtime_settlement(composition):
     from cura_receiver.communicator_scheduler import CommunicatorScheduler, Work
-    from cura_receiver.generated.receiver_entities_generated import decode_communicator_state_v1
+    from cura_receiver.generated.receiver_entities_generated import decode_communicator_state_v2
     from cura_receiver.persistence_control_values import CommunicatorStateCommitDisposition as CD
     from cura_receiver.ports.ds3231 import Ds3231WriteResult, Ds3231WriteDisposition, Ds3231Failure
     from cura_receiver.runtime_time import RtcRefreshStatus
@@ -766,12 +766,7 @@ def test_scheduler_rtc_acknowledgement_survives_airtime_settlement(composition):
     from tests.support.fakes.ds3231 import FakeDs3231Control
 
     c = composition()
-    next_start = c.airtime._ledger.current_start + c.airtime._ledger.spacing
-    c.clock.advance_elapsed_us(next_start - c.clock.now_monotonic_us())
-    c.airtime.acquire_grant(deadline_monotonic_us=c.clock.now_monotonic_us() + 5_000_000)
     c.airtime.report_tx(c.airtime.try_spend().token, TxCertainty.STARTED)
-    c.clock.advance_elapsed_us(c.airtime._grant.deadline_monotonic_us - 1_978_000
-                               - c.clock.now_monotonic_us())
     now = c.clock.now_monotonic_us()
     c.time.kernel.results.append(KernelClockResult(KS.OK, now, now, UTC + now - 100, 5, 0x2040))
     c.time.sample_network(ChronyTrackingResult(CQ.OK, now, now, True, True, 0, 0, 0))
@@ -796,14 +791,15 @@ def test_scheduler_rtc_acknowledgement_survives_airtime_settlement(composition):
         turn = scheduler.run_once()
         assert turn.work is Work.RTC and turn.update is None
     requested = owner.pending.requested
-    assert requested.generation == 4 and requested.rtc_provenance is not None
+    assert requested.generation == 3 and requested.rtc_provenance is not None
 
     c.clock.advance_elapsed_us(1_010_000)
     assert scheduler.run_once().work is Work.AIRTIME
     assert owner.pending is None and owner.state == requested
-    c.clock.advance_elapsed_us(1_010_000)
+    for _ in range(29):
+        c.airtime.report_tx(c.airtime.try_spend().token, TxCertainty.STARTED)
     assert scheduler.run_once().work is Work.AIRTIME
-    assert owner.state.generation == 5
+    assert owner.state.generation == requested.generation + 1
     assert owner.state.rtc_provenance == requested.rtc_provenance
 
     turn = scheduler.run_once()
@@ -821,7 +817,7 @@ def test_scheduler_rtc_acknowledgement_survives_airtime_settlement(composition):
     scheduler.stop_requested = lambda: True
     assert scheduler.run_once().work is Work.TERMINAL
     with sqlite3.connect(c.database) as db:
-        persisted = decode_communicator_state_v1(db.execute(
+        persisted = decode_communicator_state_v2(db.execute(
             'SELECT state_blob FROM communicator_state').fetchone()[0])
     assert persisted == owner.state
     assert persisted.rtc_provenance == requested.rtc_provenance
@@ -954,3 +950,42 @@ def test_unpublishable_accepted_occurrence_does_not_start_diagnostic_reservation
     assert c.queue.snapshot().reserved_entities == 1
     assert sum(c.communicator.queue.counts[E.PersistQueueEntityKind.DIAGNOSTIC.value-1]) == 0
     assert c.radio.state is E.RadioState.SHUTDOWN
+
+
+@pytest.mark.parametrize('initial_health_pending', [False, True])
+@pytest.mark.parametrize('first_save_fails', [False, True])
+def test_required_save_runs_after_rx_rearm_under_continuous_packets(composition, monkeypatch, first_save_fails, initial_health_pending):
+    from cura_receiver.communicator_scheduler import CommunicatorScheduler, Work
+    c = composition()
+    for _ in range(28):
+        assert deliver(c).finalization.published_entity.profile.ack_tx_result is E.AckTxResult.TX_DONE
+    scheduler = CommunicatorScheduler(c.communicator, chrony=None, rtc=None,
+                                      health_interval_us=60_000_000)
+    scheduler.next_airtime = scheduler.next_health = c.clock.now_monotonic_us()+10_000_000
+    scheduler.initial_health_pending = initial_health_pending
+    # There is a complete packet on every receive call: the old early return
+    # would starve maintenance indefinitely.
+    monkeypatch.setattr(scheduler, '_receive', lambda deadline: deliver(c))
+    commit = c.airtime.owner._control.commit_communicator_state
+    calls = []
+    def save(value, **kwargs):
+        assert c.radio.state is E.RadioState.RX_SINGLE
+        assert c.communicator.ingress.active_occurrence is None
+        calls.append(value)
+        if first_save_fails and len(calls) == 1:
+            kwargs['deadline_monotonic_us'] = 0
+        return commit(value, **kwargs)
+    monkeypatch.setattr(c.airtime.owner._control, 'commit_communicator_state', save)
+    turn = scheduler.run_once()  # 29th ACK, then the required save
+    assert turn.work is Work.AIRTIME and len(calls) == 1
+    assert turn.exchange.finalization.published_entity.profile.ack_tx_result is E.AckTxResult.TX_DONE
+    if first_save_fails:
+        turn = scheduler.run_once()
+        assert len(calls) == 1  # paced retry; RX and packet admission still run
+        assert turn.exchange.finalization.published_entity.candidate is not None
+        assert turn.exchange.finalization.published_entity.profile.ack_tx_result is E.AckTxResult.SUPPRESSED_AIRTIME_BUDGET
+        c.clock.advance_elapsed_us(1_100_000)
+        assert scheduler.run_once().work is Work.AIRTIME
+        assert len(calls) == 2
+    assert c.airtime.used_since_save_us == 0
+    assert scheduler.run_once().exchange.finalization.published_entity.profile.ack_tx_result is E.AckTxResult.TX_DONE

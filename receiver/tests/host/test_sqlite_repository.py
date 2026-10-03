@@ -465,7 +465,7 @@ def test_state_projection_does_not_coerce_text_to_blob(database):
     from tests.support.builders.persistence_control import state
 
     connection, repository, _ = database
-    parameters = row.communicator_state_v1_parameters(state())
+    parameters = row.communicator_state_v2_parameters(state())
     connection.execute(
         "INSERT INTO communicator_state VALUES (?, ?, ?, CAST(? AS TEXT), ?)",
         parameters,

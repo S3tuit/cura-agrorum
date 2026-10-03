@@ -56,7 +56,7 @@ def shutdown_application(app, *, clean_requested, wait=None):
                 runtime._pending.extend((runtime.telemetry.radio, item) for item in result.episodes)
             runtime.flush_diagnostics()
             if remaining():
-                c.airtime.settle(deadline_monotonic_us=app._deadline(c.time.settings.control_budget_us), precharge=False)
+                c.airtime.save(deadline_monotonic_us=app._deadline(c.time.settings.control_budget_us))
                 while c.airtime.owner.pending is not None and remaining() and worker.is_alive():
                     pause()
                     if remaining():

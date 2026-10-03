@@ -8,7 +8,7 @@ import pytest
 
 from cura_receiver.communicator_state_owner import CommunicatorStateOwner, StateCommitResolution as Resolution
 from cura_receiver.generated.receiver_entities_generated import (
-    communicator_state_v1_parameters,
+    communicator_state_v2_parameters,
 )
 from cura_receiver.persistence_control_values import (
     CommunicatorStateCommitDisposition as CD,
@@ -118,7 +118,7 @@ def test_unknown_recovery_exact_reconciliation_and_retry(running, installed):
     with sqlite3.connect(database) as observer:
         assert observer.execute(
             "SELECT * FROM communicator_state"
-        ).fetchone() == communicator_state_v1_parameters(requested)
+        ).fetchone() == communicator_state_v2_parameters(requested)
 
 
 # Unexpected generation-one bytes remain a conflict even when the generation matches the requested one.

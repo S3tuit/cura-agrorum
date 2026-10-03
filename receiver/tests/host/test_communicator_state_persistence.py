@@ -12,9 +12,9 @@ from cura_receiver.communicator_state_persistence import (
 from cura_receiver.generated.receiver_entities_generated import (
     RtcProvenanceV1,
     AirtimeSnapshotV1,
-    TxAirtimeBucketV1,
-    communicator_state_v1_parameters,
-    encode_communicator_state_v1,
+    AirtimeEntryV2,
+    communicator_state_v2_parameters,
+    encode_communicator_state_v2,
 )
 from cura_receiver.generated.receiver_enums_generated import RtcHealth, SystemTimeQuality as Q
 from cura_receiver.persistence_control_values import (
@@ -45,7 +45,7 @@ def classify(connection, raw_rows):
 def test_valid_state_and_missing_state(setup):
     _, connection, *_ = setup
     value = state()
-    result = classify(connection, (communicator_state_v1_parameters(value),))
+    result = classify(connection, (communicator_state_v2_parameters(value),))
     assert result.status is Status.LOADED and result.state == value
     with pytest.raises(FrozenInstanceError):
         result.state.generation = 2
@@ -79,7 +79,7 @@ def test_valid_state_and_missing_state(setup):
 )
 def test_raw_envelope_corruption(setup, column, value):
     _, connection, *_ = setup
-    row = list(communicator_state_v1_parameters(state()))
+    row = list(communicator_state_v2_parameters(state()))
     row[column] = value
     assert classify(connection, (tuple(row),)).state_condition is Condition.CORRUPT
     assert connection.execute("PRAGMA integrity_check").fetchall() == [("ok",)]
@@ -88,18 +88,18 @@ def test_raw_envelope_corruption(setup, column, value):
 # The classifier inspects the entire raw relation, including duplicate singleton identities.
 def test_multiple_rows_are_corrupt(setup):
     _, connection, *_ = setup
-    row = communicator_state_v1_parameters(state())
+    row = communicator_state_v2_parameters(state())
     assert classify(connection, (row, row)).state_condition is Condition.CORRUPT
 
 
-# Digest corruption wins over unknown version; valid unknown versions are never decoded as V1.
+# Digest corruption wins over unknown version; valid unknown versions are never decoded as V2.
 @pytest.mark.parametrize(
     "version,blob,digest,expected",
     [
         (
-            2,
-            b"\x02\x00",
-            hashlib.sha256(b"\x02\x00").digest(),
+            1,
+            b"\x01\x00",
+            hashlib.sha256(b"\x01\x00").digest(),
             Condition.UNSUPPORTED_VERSION,
         ),
         (2, b"\x02\x00", bytes(32), Condition.CORRUPT),
@@ -124,21 +124,21 @@ def test_version_precedence(setup, version, blob, digest, expected):
         (14, "<H", 4),
         (16, "<B", 255),
         (18, "<H", 1),
-        (116, "<H", 61),
-        (118, "<H", 1),
-        (120, "<Q", 1),
+        (108, "<H", 17),
+        (110, "<H", 1),
+        (112, "<Q", 1),
     ],
 )
 def test_supported_structure_precedes_policy(setup, offset, fmt, value):
     _, connection, *_ = setup
     blob = bytearray(
-        encode_communicator_state_v1(state(tx_airtime_budget_us=35_000_000))
+        encode_communicator_state_v2(state(rolling_window_us=3_500_000_000))
     )
     struct.pack_into(fmt, blob, offset, value)
     blob = bytes(blob)
     assert (
         classify(
-            connection, ((1, 1, 1, blob, hashlib.sha256(blob).digest()),)
+            connection, ((1, 2, 1, blob, hashlib.sha256(blob).digest()),)
         ).state_condition
         is Condition.CORRUPT
     )
@@ -149,22 +149,22 @@ def test_pure_policy_mismatch(setup):
     _, connection, *_ = setup
     result = classify(
         connection,
-        (communicator_state_v1_parameters(state(tx_airtime_budget_us=35_000_000)),),
+        (communicator_state_v2_parameters(state(rolling_window_us=3_500_000_000)),),
     )
     assert result.state_condition is Condition.POLICY_MISMATCH and result.state is None
 
 
-# Positional slots preserve zeros and enforce per-bucket and total charge limits.
+# Entries preserve empty slots and may hold lifetimes longer than one hour.
 @pytest.mark.parametrize("charges, expected", [
     ((0, 1, 0, 2, 0), Condition.NONE),
-    ((8_000_001,), Condition.CORRUPT),
-    ((8_000_000,) * 5, Condition.CORRUPT),
+    (((1 << 64) - 1,), Condition.NONE),
+    ((8_000_000,) * 5, Condition.NONE),
 ])
 def test_ledger_semantics(setup, charges, expected):
     _, connection, *_ = setup
-    value = state(buckets=(TxAirtimeBucketV1(0),) * (62 - len(charges)) +
-                  tuple(TxAirtimeBucketV1(n) for n in charges))
-    assert classify(connection, (communicator_state_v1_parameters(value),)).state_condition is expected
+    value = state(entries=(AirtimeEntryV2(0),) * (18 - len(charges)) +
+                  tuple(AirtimeEntryV2(n) for n in charges))
+    assert classify(connection, (communicator_state_v2_parameters(value),)).state_condition is expected
 
 
 @pytest.mark.parametrize("quality, snapshot, expected", [
@@ -178,21 +178,20 @@ def test_ledger_semantics(setup, charges, expected):
 def test_snapshot_time_semantics(setup, quality, snapshot, expected):
     _, connection, *_ = setup
     value = state(last_observed_system_time_quality=quality, airtime_snapshot=snapshot)
-    assert classify(connection, (communicator_state_v1_parameters(value),)).state_condition is expected
+    assert classify(connection, (communicator_state_v2_parameters(value),)).state_condition is expected
 
 
 # Policy sizing must accommodate both the unexpired span and synthetic worst-case ledger.
 @pytest.mark.parametrize(
     "changes",
     [
-        {"bucket_width_us": 0},
-        {"bucket_charge_limit_us": 0},
+        {"rolling_window_us": 0},
+        {"entry_charge_us": 0},
         {"tx_airtime_budget_us": 1},
-        {"rolling_window_us": 3_660_000_001},
-        {"bucket_charge_limit_us": 1},
+        {"entry_charge_us": 1},
         {"rolling_window_us": 1 << 64},
         {"receiver_utc_error_budget_us": 40_000_001},
-        {"rolling_window_us": 1, "bucket_charge_limit_us": 1_000_000},
+        {"rolling_window_us": 1, "entry_charge_us": 1_000_000},
     ],
 )
 def test_invalid_deployment_policy(changes):
@@ -218,7 +217,7 @@ def test_provenance_semantics(setup, changes, expected):
     )
     result = classify(
         connection,
-        (communicator_state_v1_parameters(state(rtc_provenance=provenance)),),
+        (communicator_state_v2_parameters(state(rtc_provenance=provenance)),),
     )
     assert result.state_condition is expected
 
@@ -231,8 +230,8 @@ def test_provenance_semantics(setup, changes, expected):
         {"generation": 1 << 63},
         {"last_observed_system_time_quality": RtcHealth.PRESENT},
         {"last_observed_system_time_quality": 1},
-        {"buckets": []},
-        {"buckets": (TxAirtimeBucketV1(True),) * 62},
+        {"entries": []},
+        {"entries": (AirtimeEntryV2(True),) * 18},
     ],
 )
 def test_request_types_rejected_before_encoding(setup, changes):
@@ -243,11 +242,11 @@ def test_request_types_rejected_before_encoding(setup, changes):
         )
 
 
-# The normal TX tail makes 62 slots necessary; one extra microsecond exceeds capacity.
+# Capacity is fixed and does not impose a minute-grid maximum on the window.
 def test_exact_policy_capacity_and_fixed_historical_error_bound():
-    assert CommunicatorStatePolicy(rolling_window_us=3_659_750_000)
+    assert CommunicatorStatePolicy(rolling_window_us=3_659_750_001)
     with pytest.raises(ValueError):
-        CommunicatorStatePolicy(rolling_window_us=3_659_750_001)
+        CommunicatorStatePolicy(tx_airtime_budget_us=36_000_001)
     assert CommunicatorStatePolicy(receiver_utc_error_budget_us=1)
 
 
@@ -257,23 +256,22 @@ def test_exact_policy_capacity_and_fixed_historical_error_bound():
     [
         {
             "tx_airtime_budget_us": (1 << 64) - 1,
-            "bucket_charge_limit_us": 1 << 63,
-            "buckets": (
-                TxAirtimeBucketV1(1 << 63),
-                TxAirtimeBucketV1(1 << 63),
+            "entry_charge_us": 1 << 63,
+            "entries": (
+                AirtimeEntryV2(1 << 63),
+                AirtimeEntryV2(1 << 63),
             )
-            + (TxAirtimeBucketV1(0),) * 60,
+            + (AirtimeEntryV2(0),) * 16,
         },
         {"rolling_window_us": (1 << 64) - 1},
-        {"bucket_width_us": (1 << 64) - 1},
-        {"rolling_window_us": 1, "bucket_charge_limit_us": 1_000_000},
+        {"rolling_window_us": 1, "entry_charge_us": 1_000_000},
     ],
 )
 def test_supported_arithmetic_precedes_policy(setup, changes):
     _, connection, *_ = setup
     value = state(**changes)
     assert (
-        classify(connection, (communicator_state_v1_parameters(value),)).state_condition
+        classify(connection, (communicator_state_v2_parameters(value),)).state_condition
         is Condition.CORRUPT
     )
 
@@ -281,5 +279,5 @@ def test_supported_arithmetic_precedes_policy(setup, changes):
 # Truncated current-format content remains corruption even with an updated digest.
 def test_truncated_current_layout_is_corrupt(setup):
     _, connection, *_ = setup
-    blob = encode_communicator_state_v1(state())[:-8]
-    assert classify(connection, ((1, 1, 1, blob, hashlib.sha256(blob).digest()),)).state_condition is Condition.CORRUPT
+    blob = encode_communicator_state_v2(state())[:-8]
+    assert classify(connection, ((1, 2, 1, blob, hashlib.sha256(blob).digest()),)).state_condition is Condition.CORRUPT

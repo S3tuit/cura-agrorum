@@ -12,7 +12,7 @@ from cura_receiver.persistence_control_values import (
     CommunicatorStateCondition,
 )
 from cura_receiver.generated.receiver_entities_generated import (
-    communicator_state_v1_parameters,
+    communicator_state_v2_parameters,
 )
 from cura_receiver.receiver_startup import ReceiverInstanceStart
 from tests.support.builders.persistence import INSTANCE
@@ -128,7 +128,7 @@ def test_worker_recovers_invalid_text_state(worker_files, column):
     with sqlite3.connect(database) as db:
         db.execute(
             "INSERT INTO communicator_state VALUES (?, ?, ?, ?, ?)",
-            communicator_state_v1_parameters(state()),
+            communicator_state_v2_parameters(state()),
         )
         db.execute(f"UPDATE communicator_state SET {column} = CAST(X'80' AS TEXT)")
     worker = CheckedPersistenceWorker(

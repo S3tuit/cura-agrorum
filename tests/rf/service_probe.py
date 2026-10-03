@@ -159,7 +159,7 @@ def database_observation(database):
         airtime = dict(status=loaded.status.name, condition=loaded.state_condition.name,
                        total_charged_us=None, budget_us=None)
         if loaded.state is not None:
-            airtime.update(total_charged_us=sum(b.charged_airtime_us for b in loaded.state.buckets),
+            airtime.update(total_charged_us=sum(b.remaining_us > 0 for b in loaded.state.entries)*loaded.state.entry_charge_us,
                            budget_us=loaded.state.tx_airtime_budget_us)
         generations = db.execute("SELECT generation FROM communicator_state").fetchall()
         generation = generations[0][0] if len(generations) == 1 else (0 if not generations else None)

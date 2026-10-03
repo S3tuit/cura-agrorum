@@ -23,79 +23,35 @@ from tests.hardware.airtime_component import component, record
 pytestmark = pytest.mark.hardware
 
 
-# A late-in-bucket grant freezes at its shortened original boundary on the actual Pi clock.
-def test_target_shortened_grant_lifetime(tmp_path):
+# An existing short-lived reservation expires on the actual Pi clock.
+def test_target_historical_entry_expiration(tmp_path):
     samples = []
-    with component(tmp_path, seed_remaining_us=2_000_000) as (
-        airtime,
-        clock,
-        runtime,
-        _,
-        seeded,
-    ):
-        correlation = runtime.airtime_correlation()
-        seeded_mono, seeded_utc, snapshot_utc = seeded
+    with component(tmp_path, seed_remaining_us=2_000_000) as (airtime, clock, runtime, _, seeded):
         before = clock.now_monotonic_us()
-        assert (
-            airtime.acquire_grant(deadline_monotonic_us=before + 5_000_000).reason
-            is R.ALLOWED
-        )
+        assert airtime.recover(deadline_monotonic_us=before+5_000_000).reason is R.STATE_READY
+        deadline = airtime._ledger.deadlines[0]
         acknowledged = clock.now_monotonic_us()
-        spend = airtime.try_spend()
-        assert spend.reason is R.ALLOWED
-        airtime.report_tx(spend.token, TxCertainty.NOT_STARTED)
-        deadline = spend.grant_deadline_monotonic_us
-        try:
-            assert spend.bucket_expiration_utc_us is None
-            # Independently account for both snapshot approximation and aged source error.
-            sample = correlation.sample
-            def expected(captured):
-                age = captured - sample.monotonic_us
-                growth = (age * 3700 + 996299) // 996300
-                utc = sample.utc_us + age
-                elapsed = max(0, utc - snapshot_utc - sample.error_bound_us - growth)
-                phase = elapsed % 60_000_000
-                phase_wait = (phase * 10037 + 9999) // 10000
-                return captured - phase_wait + 59_778_000
-            bounds = (expected(before), expected(acknowledged))
-            assert min(bounds) - 1 <= deadline <= max(bounds) + 1
-            assert acknowledged < deadline < seeded_mono + 60_000_000
-            while clock.now_monotonic_us() <= deadline + 500_000:
-                start = clock.now_monotonic_us()
-                result = airtime.try_spend()
-                finish = clock.now_monotonic_us()
-                samples.append([start, finish, result.reason.name])
-                if result.reason is R.GRANT_EXPIRED:
-                    assert finish >= deadline
-                    break
-                assert result.reason is R.ALLOWED and start < deadline
-                airtime.report_tx(result.token, TxCertainty.NOT_STARTED)
-                time.sleep(0.001)
-            assert samples[-1][2] == "GRANT_EXPIRED"
-            assert samples[-1][1] <= deadline + 500_000
-            assert 0 <= deadline - samples[-2][0] <= 50_000
-            assert airtime.available_charge_us == 0
-        finally:
-            record(
-                tmp_path,
-                "grant-lifetime",
-                {
-                    "seeded_monotonic_us": seeded_mono,
-                    "seeded_utc_us": seeded_utc,
-                    "snapshot_utc_us": snapshot_utc,
-                    "before_commit_us": before,
-                    "acknowledged_us": acknowledged,
-                    "grant_deadline_us": deadline,
-                    "early_tolerance_us": 0,
-                    "late_tolerance_us": 500_000,
-                    "last_allowed_tolerance_us": 50_000,
-                    "samples": samples,
-                },
-            )
+        assert acknowledged < deadline <= acknowledged+2_007_400
+        while clock.now_monotonic_us() <= deadline+500_000:
+            start = clock.now_monotonic_us()
+            total = airtime.total_used
+            finish = clock.now_monotonic_us()
+            samples.append([start, finish, total])
+            if total == 2_000_000:
+                assert finish >= deadline
+                break
+            assert total == 4_000_000 and start < deadline
+            time.sleep(.001)
+        assert samples[-1][2] == 2_000_000
+        assert samples[-1][1] <= deadline+500_000
+        assert 0 <= deadline-samples[-2][0] <= 50_000
+        record(tmp_path, 'historical-entry-expiration', dict(
+            seeded=seeded, deadline=deadline, acknowledged=acknowledged,
+            early_tolerance_us=0, late_tolerance_us=500_000, samples=samples))
 
 
 def restart_phase(root, phase):
-    with component(root, seed_remaining_us=20_000_000 if phase == "seed" else None) as (
+    with component(root, seed_remaining_us=3_600_000_000 if phase == "seed" else None) as (
         airtime,
         clock,
         runtime,
@@ -111,21 +67,20 @@ def restart_phase(root, phase):
         )
         baseline = airtime.total_used
         generation = airtime.state.generation
-        assert airtime.try_spend().reason is R.GRANT_REQUIRED
+        assert airtime._ledger.current_entry is None
         assert (
-            airtime.acquire_grant(
+            airtime.maintain(
                 deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000
             ).reason
             is R.ALLOWED
         )
-        assert airtime.state.generation == generation + 1
-        assert airtime.available_charge_us == 8_000_000 - baseline
+        assert airtime.state.generation == generation
+        assert airtime.available_charge_us == 2_000_000
         if phase == "seed":
             spent = airtime.try_spend()
             airtime.report_tx(spent.token, TxCertainty.UNCERTAIN)
             assert (
-                airtime.settle(
-                    precharge=False,
+                airtime.save(
                     deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000,
                 ).reason
                 is R.STATE_READY
@@ -137,7 +92,7 @@ def restart_phase(root, phase):
             correlation=asdict(runtime.airtime_correlation()),
             loaded_baseline_us=baseline,
             generation=airtime.state.generation,
-            buckets=[asdict(b) for b in airtime.state.buckets],
+            entries=[asdict(b) for b in airtime.state.entries],
         )
         record(root, phase, result)
         return result
@@ -169,10 +124,10 @@ def test_target_process_restart_airtime_baseline(tmp_path):
     assert first["boot"] == second["boot"] == read_linux_boot_id().hex()
     assert first["instance"] != second["instance"]
     assert first["generation"] == 3 and second["generation"] == 4
-    assert second["loaded_baseline_us"] == 1_067_866
-    assert first["buckets"][-1]["charged_airtime_us"] == 1_067_866
-    assert second["buckets"][-1]["charged_airtime_us"] == 8_000_000
-    assert all(b["charged_airtime_us"] == 0 for b in second["buckets"][:-1])
+    assert first["loaded_baseline_us"] == 4_000_000
+    assert second["loaded_baseline_us"] == 8_000_000
+    assert sum(e["remaining_us"] > 0 for e in first["entries"]) == 3
+    assert sum(e["remaining_us"] > 0 for e in second["entries"]) == 4
     assert (
         second["correlation"]["sample"]["monotonic_us"]
         >= second["started_at_monotonic_us"]

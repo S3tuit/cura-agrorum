@@ -768,7 +768,7 @@ class RuntimeTime:
             return max(self.next_rtc_attempt_monotonic_us, due - lead)
         return self.next_rtc_attempt_monotonic_us
 
-    def _commit_rtc_state(self, provenance, snapshot, generation, on_commit):
+    def _commit_rtc_state(self, provenance, snapshot, generation, on_commit, snapshot_receipt):
         """Build fresh complete state at submission; reconciliation is another turn."""
         def submit():
             if not self._rtc_source_valid(generation, allow_health_pending=True):
@@ -784,10 +784,15 @@ class RuntimeTime:
                     or requested.airtime_snapshot.utc_us != utc):
                 raise ValueError("complete state callback violated the time handoff")
             if not self._rtc_source_valid(generation, allow_health_pending=True):
+                if snapshot_receipt is not None:
+                    snapshot_receipt(None)
                 return None
-            return self.state_owner.commit(requested,
+            receipt = self.state_owner.commit(requested,
                 purpose=E.PersistenceControlPurpose.RTC_PROVENANCE,
                 deadline_monotonic_us=self.deadline(self.settings.control_budget_us))
+            if snapshot_receipt is not None:
+                snapshot_receipt(receipt)
+            return receipt
 
         receipt = yield _RtcAction(E.DiagnosticOperation.WRITE, submit)
         result = None if receipt is None else receipt.commit_result
@@ -842,11 +847,11 @@ class RuntimeTime:
         on_result(recovery)
         return recovery
 
-    def advance_rtc_refresh(self, rtc, snapshot, *, stop_requested=False, shutdown_deadline=None):
+    def advance_rtc_refresh(self, rtc, snapshot, *, snapshot_receipt=None, stop_requested=False, shutdown_deadline=None):
         if self.rtc_refresh_episode is None:
             if stop_requested or (shutdown_deadline is not None and self.clock.now_monotonic_us() >= shutdown_deadline):
                 return RtcRefreshResult(RtcRefreshStatus.SHUTDOWN_CANCELLED)
-            self.rtc_refresh_episode = RtcRefreshEpisode(self._refresh_rtc_steps(rtc, snapshot))
+            self.rtc_refresh_episode = RtcRefreshEpisode(self._refresh_rtc_steps(rtc, snapshot, snapshot_receipt))
         episode = self.rtc_refresh_episode
         result = (episode.cancel() if stop_requested or (shutdown_deadline is not None
             and self.clock.now_monotonic_us() >= shutdown_deadline) else episode.advance())
@@ -890,14 +895,14 @@ class RuntimeTime:
             is not None
         )
 
-    def refresh_rtc(self, rtc, snapshot):
+    def refresh_rtc(self, rtc, snapshot, *, snapshot_receipt=None):
         """Synchronous component harness; the application advances one step per turn."""
         result = None
         while result is None:
-            result = self.advance_rtc_refresh(rtc, snapshot)
+            result = self.advance_rtc_refresh(rtc, snapshot, snapshot_receipt=snapshot_receipt)
         return result
 
-    def _refresh_rtc_steps(self, rtc, snapshot):
+    def _refresh_rtc_steps(self, rtc, snapshot, snapshot_receipt):
         """One retained invalidate/write/read-back/provenance episode."""
         before = self.state
         generation = before.generation
@@ -1028,7 +1033,7 @@ class RuntimeTime:
                 return finish(RtcRefreshStatus.TRUST_INVALIDATED)
             if self.durable_state.rtc_provenance is not None:
                 acknowledged, commit, reconciliation = yield from self._commit_rtc_state(
-                    None, snapshot, generation, record_commit
+                    None, snapshot, generation, record_commit, snapshot_receipt
                 )
                 if not acknowledged:
                     if not self._rtc_source_valid(
@@ -1183,7 +1188,7 @@ class RuntimeTime:
             if provenance is None:
                 return finish(RtcRefreshStatus.TRUST_INVALIDATED)
             acknowledged, commit, reconciliation = yield from self._commit_rtc_state(
-                provenance, snapshot, generation, record_commit
+                provenance, snapshot, generation, record_commit, snapshot_receipt
             )
             if not acknowledged:
                 if not self._rtc_source_valid(generation, allow_health_pending=True):

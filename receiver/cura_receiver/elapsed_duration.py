@@ -150,3 +150,13 @@ def exclusive_trust_distance_us(
         return None
     last = checked_duration_product(budget - error - 1, _PPM - rate) // rate
     return checked_monotonic_deadline(last, 1)
+
+
+def maximum_physical_duration_us(
+    observed_elapsed_us: int,
+    *,
+    rate_bound_ppm: int = MONOTONIC_ELAPSED_RATE_BOUND_PPM,
+) -> int:
+    """Upper bound physical duration represented by a monotonic interval."""
+    return _ceiling(checked_duration_product(observed_elapsed_us, _PPM),
+                    _PPM - _rate(rate_bound_ppm))

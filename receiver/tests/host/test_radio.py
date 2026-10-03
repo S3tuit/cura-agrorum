@@ -552,7 +552,7 @@ def test_external_airtime_settlement(airtime_component, uncertain):
     from tests.support.builders.persistence_control import state
 
     policy, _, _, clock, _ = airtime_component(initial_state=state())
-    assert policy.acquire_grant(deadline_monotonic_us=5000100).reason is AirtimeReason.ALLOWED
+    assert policy.maintain(deadline_monotonic_us=5000100).reason is AirtimeReason.STATE_READY
     io = PhysicalPort(clock)
     radio = Radio(Sx1262(io, clock, Wait(clock)))
     radio.initialize()
@@ -571,8 +571,10 @@ def test_external_airtime_settlement(airtime_component, uncertain):
     facts = result.tx.facts
     certainty = TxCertainty.UNCERTAIN if facts.profile_uncertain or facts.set_tx_outcome is Outcome.UNCERTAIN else TxCertainty.NOT_STARTED
     policy.report_tx(spend.token, certainty)
-    assert policy.settle(precharge=False, deadline_monotonic_us=clock.now_monotonic_us() + 5000000).reason is AirtimeReason.STATE_READY
-    assert sum(bucket.charged_airtime_us for bucket in policy.state.buckets) == (67866 if uncertain else 0)
+    assert policy.save( deadline_monotonic_us=clock.now_monotonic_us() + 5000000).reason is AirtimeReason.STATE_READY
+    assert policy.used_since_save_us == 0
+    assert policy.total_used == 4_000_000  # definite non-start may retain its empty reservation
+    assert policy.group_outstanding is (not uncertain)
 
 
 def needs_recovery(owner):

@@ -1,4 +1,4 @@
-"""Actual process termination at the airtime/SQLite write-ahead boundaries."""
+"""Actual process termination at the airtime/SQLite recovery and usage-save boundaries."""
 
 import json
 import os
@@ -16,7 +16,7 @@ import pytest
 from cura_receiver.airtime_ledger import AirtimeCorrelation
 from cura_receiver.communicator_state_owner import CommunicatorStateOwner
 from cura_receiver.generated.receiver_entities_generated import (
-    communicator_state_v1_parameters,
+    communicator_state_v2_parameters,
 )
 from cura_receiver.generated.receiver_enums_generated import (
     RtcHealth,
@@ -31,13 +31,13 @@ from tests.support.coordination.persistence_worker import CheckedPersistenceWork
 from tests.support.fakes.os_clock import FakeOsClock
 
 BOUNDARIES = (
-    "grant_before_commit",
-    "grant_after_commit",
-    "grant_acknowledged",
+    "recovery_before_commit",
+    "recovery_after_commit",
+    "recovery_acknowledged",
     "tentative_spend",
     "definite_reclaim",
-    "settlement_before_commit",
-    "settlement_after_commit",
+    "save_before_commit",
+    "save_after_commit",
 )
 
 
@@ -90,21 +90,21 @@ def child(root, boundary, elapsed):
     policy, worker, clock = component(root, elapsed, transactions=transactions)
     try:
         assert policy.available_charge_us == 0
-        transactions.phase = "grant"
-        result = policy.acquire_grant(deadline_monotonic_us=elapsed + 5_000_100)
-        if boundary == "grant_denied":
-            assert result.reason is R.BUDGET_EXHAUSTED
-            arrive("grant_denied")
-        assert result.reason is R.ALLOWED
-        arrive("grant_acknowledged")
+        transactions.phase = "recovery"
+        result = policy.maintain(deadline_monotonic_us=elapsed + 5_000_100)
+        if boundary == "recovery_denied":
+            assert policy.available_charge_us == 0
+            arrive("recovery_denied")
+        assert result.reason is R.STATE_READY
+        arrive("recovery_acknowledged")
         token = policy.try_spend().token
         assert token is not None
         arrive("tentative_spend")
         if boundary == "definite_reclaim":
             policy.report_tx(token, TxCertainty.NOT_STARTED)
             arrive("definite_reclaim")
-        transactions.phase = "settlement"
-        policy.settle(precharge=False, deadline_monotonic_us=elapsed + 5_000_100)
+        transactions.phase = "save"
+        policy.save( deadline_monotonic_us=elapsed + 5_000_100)
         raise RuntimeError("selected child boundary was not reached")
     finally:
         worker.finish_test()
@@ -168,7 +168,7 @@ def seed(path):
     with sqlite3.connect(path) as connection:
         connection.execute(
             "INSERT INTO communicator_state VALUES (?,?,?,?,?)",
-            communicator_state_v1_parameters(state()),
+            communicator_state_v2_parameters(state()),
         )
 
 
@@ -186,24 +186,13 @@ def test_airtime_process_kill_at_durable_boundaries(worker_files, boundary):
         assert (
             replacement.recover(deadline_monotonic_us=5_000_101).reason is R.STATE_READY
         )
-        expected = (
-            0
-            if boundary == "grant_before_commit"
-            else (67_866 if boundary == "settlement_after_commit" else 8_000_000)
-        )
+        expected = (2_000_000 if boundary == "recovery_before_commit" else
+                    6_000_000 if boundary == "save_after_commit" else 4_000_000)
         assert replacement.total_used == expected
-        assert replacement.state.generation == (
-            1
-            if boundary == "grant_before_commit"
-            else (3 if boundary == "settlement_after_commit" else 2)
-        )
-        result = replacement.acquire_grant(deadline_monotonic_us=5_000_101)
-        assert result.reason is (
-            R.BUDGET_EXHAUSTED if expected == 8_000_000 else R.ALLOWED
-        )
-        assert replacement.available_charge_us == (
-            0 if expected == 8_000_000 else 8_000_000 - expected
-        )
+        assert replacement.state.generation == (2 if boundary == "recovery_before_commit" else
+                                                4 if boundary == "save_after_commit" else 3)
+        assert replacement.maintain(deadline_monotonic_us=5_000_101).reason is R.ALLOWED
+        assert replacement.available_charge_us == 2_000_000
         with sqlite3.connect(database) as connection:
             instances = connection.execute(
                 "SELECT receiver_instance_id, linux_boot_id FROM receiver_instances ORDER BY instance_ordinal"
@@ -216,34 +205,19 @@ def test_airtime_process_kill_at_durable_boundaries(worker_files, boundary):
         worker.finish_test()
 
 
-# Consecutive real child failures accumulate old grants, retain their minute identities and stop at 36 seconds.
+# Every confirmed no-TX recovery consumes an entry until the full array blocks ACK.
 def test_repeated_airtime_process_crashes_accumulate_conservatively(worker_files):
     database, _, _ = worker_files
     root = database.parent
     seed(database)
-    for episode in range(5):
-        kill_at(
-            root,
-            "grant_after_commit",
-            elapsed=episode * 61_000_000,
-            episode=str(episode),
-        )
-    kill_at(root, "grant_denied", elapsed=5 * 61_000_000, episode="denied")
-    replacement, worker, clock = component(root, 5 * 61_000_000 + 1)
+    for episode in range(18):
+        kill_at(root, "recovery_acknowledged", elapsed=episode*10_000_000, episode=str(episode))
+    replacement, worker, clock = component(root, 180_000_000)
     try:
-        assert (
-            replacement.recover(
-                deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000
-            ).reason
-            is R.STATE_READY
-        )
-        assert (
-            replacement.total_used == 36_000_000
-            and replacement.available_charge_us == 0
-        )
-        assert [b.charged_airtime_us for b in replacement.state.buckets
-                if b.charged_airtime_us] == [8_000_000] * 4 + [4_000_000]
-        assert replacement.state.generation == 6
+        assert replacement.recover(deadline_monotonic_us=185_000_100).reason is R.STATE_READY
+        assert replacement.total_used == 36_000_000
+        assert replacement.available_charge_us == 0
+        assert replacement.state.generation == 20
     finally:
         worker.finish_test()
 

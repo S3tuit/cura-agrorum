@@ -6,7 +6,7 @@ import pytest
 
 from cura_receiver.communicator_state_persistence import CommunicatorStatePolicy
 from cura_receiver.generated.receiver_entities_generated import (
-    communicator_state_v1_parameters,
+    communicator_state_v2_parameters,
 )
 from cura_receiver.persistence_control_execution import (
     ControlCommand,
@@ -131,7 +131,7 @@ def test_corrupt_relation_archive(controls):
 @pytest.mark.parametrize("invalid_text", [b"\x80", b"\x00\xff", b"\xed\xa0\x80"])
 def test_invalid_text_archive_preserves_exact_values(controls, column, invalid_text):
     operations, connection, _, command = controls
-    original = communicator_state_v1_parameters(state())
+    original = communicator_state_v2_parameters(state())
     connection.execute(
         "INSERT INTO communicator_state VALUES (?, ?, ?, ?, ?)", original
     )
@@ -276,11 +276,11 @@ def test_archive_and_install_are_atomic(controls):
 )
 def test_guarded_state_replacement(controls, condition):
     operations, connection, _, command = controls
-    blob = b"\x02\x00"
+    blob = b"\x01\x00"
     row = (
-        (1, 2, 1, blob, hashlib.sha256(blob).digest())
+        (1, 1, 1, blob, hashlib.sha256(blob).digest())
         if condition is Condition.UNSUPPORTED_VERSION
-        else communicator_state_v1_parameters(state(tx_airtime_budget_us=35_000_000))
+        else communicator_state_v2_parameters(state(rolling_window_us=3_500_000_000))
     )
     connection.execute("INSERT INTO communicator_state VALUES (?, ?, ?, ?, ?)", row)
     rejected = operations.commit_state(synthetic(), command())
@@ -477,7 +477,7 @@ def test_clean_stop_generation_conditions(controls, raw_condition):
 
     operations, connection, _, command = controls
     if raw_condition in ("valid", "mismatch"):
-        row = communicator_state_v1_parameters(
+        row = communicator_state_v2_parameters(
             state(
                 generation=4,
                 tx_airtime_budget_us=(
@@ -486,8 +486,8 @@ def test_clean_stop_generation_conditions(controls, raw_condition):
             )
         )
     elif raw_condition == "unsupported":
-        blob = b"\x02\x00"
-        row = (1, 2, 1, blob, hashlib.sha256(blob).digest())
+        blob = b"\x01\x00"
+        row = (1, 1, 1, blob, hashlib.sha256(blob).digest())
     else:
         row = (None, None, None, None, None)
     connection.execute("INSERT INTO communicator_state VALUES (?, ?, ?, ?, ?)", row)

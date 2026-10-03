@@ -6,9 +6,9 @@ import hashlib
 from dataclasses import dataclass
 
 from .generated.receiver_entities_generated import (
-    CommunicatorStateV1,
-    decode_communicator_state_v1,
-    encode_communicator_state_v1,
+    CommunicatorStateV2,
+    decode_communicator_state_v2,
+    encode_communicator_state_v2,
 )
 from .generated.receiver_enums_generated import DiagnosticOperation as Operation, SystemTimeQuality
 from .persistence_control_values import (
@@ -26,14 +26,13 @@ from .sqlite_repository import (
 _I64_MIN = -(1 << 63)
 _I64_MAX = (1 << 63) - 1
 _U64_MAX = (1 << 64) - 1
-COMMUNICATOR_STATE_BUCKET_CAPACITY = 62
+COMMUNICATOR_STATE_ENTRY_CAPACITY = 18
 AIRTIME_TX_COMPLETION_US = 250_000
 AIRTIME_UTC_ERROR_CEILING_US = 40_000_000
 _POLICY_FIELDS = (
     "rolling_window_us",
     "tx_airtime_budget_us",
-    "bucket_width_us",
-    "bucket_charge_limit_us",
+    "entry_charge_us",
 )
 
 
@@ -46,19 +45,12 @@ def _integer(value: int, low: int = 0, high: int = _U64_MAX) -> int:
 def _policy_shape(value) -> None:
     for name in _POLICY_FIELDS:
         _integer(getattr(value, name))
-    window, budget, width, limit = (
-        getattr(value, name) for name in _POLICY_FIELDS
-    )
-    if window == 0 or width == 0 or not 0 < limit <= budget:
+    window, budget, charge = (getattr(value, name) for name in _POLICY_FIELDS)
+    if window == 0 or charge == 0:
         raise ValueError("invalid state policy durations or charge bounds")
-    span = _integer(window + AIRTIME_TX_COMPLETION_US)
-    grid_count = span // width + bool(span % width) + 1
-    synthetic_count = budget // limit + bool(budget % limit)
-    if max(grid_count, synthetic_count) > COMMUNICATOR_STATE_BUCKET_CAPACITY:
-        raise ValueError("state policy exceeds fixed ledger capacity")
-    oldest_offset = _integer((synthetic_count - 1) * width)
-    if oldest_offset >= _integer(span + width):
-        raise ValueError("synthetic recovery would contain expired buckets")
+    _integer(window + AIRTIME_TX_COMPLETION_US)
+    if _integer(COMMUNICATOR_STATE_ENTRY_CAPACITY * charge) != budget:
+        raise ValueError("budget must equal exactly 18 entry charges")
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,8 +59,7 @@ class CommunicatorStatePolicy:
 
     rolling_window_us: int = 3_600_000_000
     tx_airtime_budget_us: int = 36_000_000
-    bucket_width_us: int = 60_000_000
-    bucket_charge_limit_us: int = 8_000_000
+    entry_charge_us: int = 2_000_000
     receiver_utc_error_budget_us: int = 40_000_000
 
     def __post_init__(self) -> None:
@@ -77,7 +68,7 @@ class CommunicatorStatePolicy:
 
 
 def validate_communicator_state(
-    state: CommunicatorStateV1,
+    state: CommunicatorStateV2,
     repository: SqliteRepository,
     policy: CommunicatorStatePolicy,
     *,
@@ -122,16 +113,12 @@ def validate_communicator_state(
             policy.receiver_utc_error_budget_us - 1,
         )
         _integer(provenance.drift_bound_ppm, 1, 999_999)
-    if len(state.buckets) != COMMUNICATOR_STATE_BUCKET_CAPACITY:
-        raise ValueError("ledger must contain exactly 62 chronological slots")
-    total = 0
-    for bucket in state.buckets:
-        charge = _integer(bucket.charged_airtime_us, 0, state.bucket_charge_limit_us)
-        total = _integer(total + charge)
-    if total > state.tx_airtime_budget_us:
-        raise ValueError("ledger exceeds global airtime budget")
+    if len(state.entries) != COMMUNICATOR_STATE_ENTRY_CAPACITY:
+        raise ValueError("ledger must contain exactly 18 expiration entries")
+    for entry in state.entries:
+        _integer(entry.remaining_us)
     # Generated grammar owns exact lengths, representation ranges and reserved bytes.
-    blob = encode_communicator_state_v1(state)
+    blob = encode_communicator_state_v2(state)
     if compare_policy and any(
         getattr(state, name) != getattr(policy, name) for name in _POLICY_FIELDS
     ):
@@ -180,10 +167,10 @@ def classify_communicator_state_rows(
         or int.from_bytes(blob[:2], "little") != version
     ):
         return unavailable(Condition.CORRUPT)
-    if version != 1:
+    if version != 2:
         return unavailable(Condition.UNSUPPORTED_VERSION)
     try:
-        state = decode_communicator_state_v1(blob)
+        state = decode_communicator_state_v2(blob)
         if state.generation != generation:
             return unavailable(Condition.CORRUPT)
         encoded = validate_communicator_state(

@@ -13,7 +13,7 @@ from cura_receiver.elapsed_duration import minimum_wait_monotonic_us
 from cura_receiver.generated import receiver_enums_generated as E
 from cura_receiver.persistence_control_values import CommunicatorStateLoadStatus
 from cura_receiver.sqlite_repository import SqliteRepository
-from cura_receiver.tx_airtime import recovery_state
+from cura_receiver.generated.receiver_entities_generated import CommunicatorStateV2, AirtimeEntryV2
 
 
 def validate_silence(receipt, *, board_id, boot_id, now_monotonic_us):
@@ -47,15 +47,19 @@ def create_zero_airtime_database(destination, group_id, receipt, *, board_id, bo
     if not result.cleanup_complete:
         raise RuntimeError('database initialization cleanup incomplete; preserve candidate')
     policy = ApplicationSettings().airtime_policy
-    state = recovery_state(policy, snapshot=None, quality=E.SystemTimeQuality.UNTRUSTED,
-                           rtc_health=E.RtcHealth.MISSING, synthetic=False)
+    state = CommunicatorStateV2(generation=1,
+        last_observed_system_time_quality=E.SystemTimeQuality.UNTRUSTED,
+        last_observed_rtc_health=E.RtcHealth.MISSING, rtc_provenance=None,
+        rolling_window_us=policy.rolling_window_us, tx_airtime_budget_us=policy.tx_airtime_budget_us,
+        entry_charge_us=policy.entry_charge_us, airtime_snapshot=None,
+        entries=(AirtimeEntryV2(0),)*18)
     with sqlite3.connect(path) as db:
         db.execute('PRAGMA synchronous=FULL')
         db.execute('PRAGMA foreign_keys=ON')
         db.execute('BEGIN IMMEDIATE')
         repository = SqliteRepository(db)
         blob = validate_communicator_state(state, repository, policy)
-        db.execute('INSERT INTO communicator_state VALUES (1,1,1,?,?)',
+        db.execute('INSERT INTO communicator_state VALUES (1,2,1,?,?)',
                    (blob, hashlib.sha256(blob).digest()))
         loaded = classify_communicator_state_rows(repository.read_communicator_state_rows(), repository, policy)
         if loaded.status is not CommunicatorStateLoadStatus.LOADED or loaded.state != state:
@@ -66,4 +70,4 @@ def create_zero_airtime_database(destination, group_id, receipt, *, board_id, bo
                 group_id=group_id.hex(), generation=1, charged_airtime_us=0,
                 rtc_provenance=None, silence=receipt, required_silence_us=wait,
                 prepared_at_monotonic_us=now_monotonic_us,
-                scope='offline test candidate; not installed; no live grant or clock trust asserted')
+                scope='offline empty candidate; V2 startup still requires full-window fallback without eligible saved UTC; no clock trust asserted')

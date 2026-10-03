@@ -111,21 +111,20 @@ def open_schema() -> sqlite3.Connection:
 def communicator_state(
     *,
     rtc_provenance: generated_entities.RtcProvenanceV1 | None = None,
-) -> generated_entities.CommunicatorStateV1:
-    empty_bucket = generated_entities.TxAirtimeBucketV1(
-        charged_airtime_us=0,
+) -> generated_entities.CommunicatorStateV2:
+    empty_bucket = generated_entities.AirtimeEntryV2(
+        remaining_us=0,
     )
-    return generated_entities.CommunicatorStateV1(
+    return generated_entities.CommunicatorStateV2(
         generation=1,
         last_observed_system_time_quality=generated.SystemTimeQuality.UNTRUSTED,
         last_observed_rtc_health=generated.RtcHealth.PRESENT,
         rtc_provenance=rtc_provenance,
         rolling_window_us=3_600_000_000,
         tx_airtime_budget_us=36_000_000,
-        bucket_width_us=60_000_000,
-        bucket_charge_limit_us=8_000_000,
+        entry_charge_us=2_000_000,
         airtime_snapshot=None,
-        buckets=(empty_bucket,) * 62,
+        entries=(empty_bucket,) * 18,
     )
 
 
@@ -1082,17 +1081,17 @@ def test_communicator_state_canonical_blob_round_trip_and_binding() -> None:
         drift_bound_ppm=20,
     )
     state = communicator_state(rtc_provenance=provenance)
-    blob = generated_entities.encode_communicator_state_v1(state)
-    assert len(blob) == 624
-    assert generated_entities.decode_communicator_state_v1(blob) == state
+    blob = generated_entities.encode_communicator_state_v2(state)
+    assert len(blob) == 264
+    assert generated_entities.decode_communicator_state_v2(blob) == state
 
-    parameters = generated_entities.communicator_state_v1_parameters(state)
-    assert parameters[:3] == (1, 1, 1)
+    parameters = generated_entities.communicator_state_v2_parameters(state)
+    assert parameters[:3] == (1, 2, 1)
     assert parameters[3] == blob
     assert parameters[4] == hashlib.sha256(blob).digest()
 
     connection = open_schema()
-    columns = generated_entities.COMMUNICATOR_STATE_V1_COLUMNS
+    columns = generated_entities.COMMUNICATOR_STATE_V2_COLUMNS
     connection.execute(
         f"INSERT INTO communicator_state ({', '.join(columns)}) VALUES "
         f"({', '.join('?' for _ in columns)})",
@@ -1106,27 +1105,27 @@ def test_communicator_state_canonical_blob_round_trip_and_binding() -> None:
 # Rejects noncanonical communicator-state structure at the binary boundary.
 def test_communicator_state_codec_enforces_only_canonical_structure() -> None:
     state = communicator_state()
-    blob = generated_entities.encode_communicator_state_v1(state)
+    blob = generated_entities.encode_communicator_state_v2(state)
 
-    with pytest.raises(ValueError, match="buckets.*length 62"):
-        generated_entities.encode_communicator_state_v1(
-            replace(state, buckets=state.buckets[:-1])
+    with pytest.raises(ValueError, match="entries.*length 18"):
+        generated_entities.encode_communicator_state_v2(
+            replace(state, entries=state.entries[:-1])
         )
 
     wrong_bucket_count = bytearray(blob)
-    struct.pack_into("<H", wrong_bucket_count, 116, 61)
+    struct.pack_into("<H", wrong_bucket_count, 108, 17)
     with pytest.raises(ValueError, match="invalid fixed length"):
-        generated_entities.decode_communicator_state_v1(bytes(wrong_bucket_count))
+        generated_entities.decode_communicator_state_v2(bytes(wrong_bucket_count))
 
     noncanonical_absence = bytearray(blob)
     noncanonical_absence[20] = 1
     with pytest.raises(ValueError, match="absent representation is not zero"):
-        generated_entities.decode_communicator_state_v1(bytes(noncanonical_absence))
+        generated_entities.decode_communicator_state_v2(bytes(noncanonical_absence))
 
     reserved_presence_bit = bytearray(blob)
     struct.pack_into("<H", reserved_presence_bit, 14, 4)
     with pytest.raises(ValueError, match="reserved bits set"):
-        generated_entities.decode_communicator_state_v1(bytes(reserved_presence_bit))
+        generated_entities.decode_communicator_state_v2(bytes(reserved_presence_bit))
 
 
 # Raw application-state defects survive actual startup integrity without SQL coercion.
@@ -1182,7 +1181,7 @@ def test_raw_envelope_manifest_rejects_incompatible_storage(tmp_path, change):
     state = next(
         entity
         for entity in manifest["entities"]
-        if entity["name"] == "COMMUNICATOR_STATE_V1"
+        if entity["name"] == "COMMUNICATOR_STATE_V2"
     )
     if change == "false":
         state["persistence"]["raw_envelope"] = False

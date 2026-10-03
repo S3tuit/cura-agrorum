@@ -9,7 +9,7 @@ import sqlite3
 import pytest
 
 from cura_receiver.generated.receiver_entities_generated import (
-    encode_communicator_state_v1,
+    encode_communicator_state_v2,
 )
 from cura_receiver.platform.linux_boot_identity import read_linux_boot_id
 from cura_receiver.tx_airtime import AirtimeReason as R
@@ -47,29 +47,32 @@ def test_target_reboot_reconstruction(request):
     with component(
         session,
         trusted=trusted,
-        seed_remaining_us=20_000_000 if phase == "prepare" else None,
+        seed_remaining_us=3_600_000_000 if phase == "prepare" else None,
     ) as (airtime, clock, runtime, instance, _):
         if phase == "prepare":
             assert (
-                airtime.acquire_grant(
+                airtime.maintain(
                     deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000
                 ).reason
-                is R.ALLOWED
+                is R.STATE_READY
             )
-            assert airtime.total_used == 8_000_000
+            assert airtime.total_used == 4_000_000
         else:
             assert airtime.available_charge_us == 0
             assert (
-                hashlib.sha256(encode_communicator_state_v1(airtime.state)).hexdigest()
+                hashlib.sha256(encode_communicator_state_v2(airtime.state)).hexdigest()
                 == before["state_sha256"]
             )
             assert instance.receiver_instance_id.hex() != before["instance"]
-            assert airtime.try_spend().reason is R.GRANT_REQUIRED
+            assert airtime.try_spend().reason is R.STATE_UNAVAILABLE
             result = airtime.recover(
                 deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000
             )
             assert result.reason is R.STATE_READY
-            assert airtime.total_used == 8_000_000
+            if trusted:
+                assert 2_000_000 <= airtime.total_used <= 6_000_000
+            else:
+                assert airtime.total_used == 36_000_000
             if trusted:
                 correlation = runtime.airtime_correlation()
                 assert (
@@ -80,12 +83,12 @@ def test_target_reboot_reconstruction(request):
             else:
                 assert runtime.airtime_correlation() is None
                 assert (
-                    airtime.acquire_grant(
+                    airtime.maintain(
                         deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000
                     ).reason
                     is R.BUDGET_EXHAUSTED
                 )
-                assert airtime.state.generation == before["generation"]
+                assert airtime.state.generation == before["generation"] + 1
         correlation = runtime.airtime_correlation()
         record(
             session,
@@ -99,10 +102,10 @@ def test_target_reboot_reconstruction(request):
                 "total_used": airtime.total_used,
                 "allowance": airtime.available_charge_us,
                 "state_sha256": hashlib.sha256(
-                    encode_communicator_state_v1(airtime.state)
+                    encode_communicator_state_v2(airtime.state)
                 ).hexdigest(),
-                "buckets": [
-                    asdict(b) for b in airtime.state.buckets
+                "entries": [
+                    asdict(b) for b in airtime.state.entries
                 ],
                 "mode": mode,
             },

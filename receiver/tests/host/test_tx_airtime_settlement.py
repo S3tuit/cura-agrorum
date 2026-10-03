@@ -1,206 +1,125 @@
-"""Tentative charge, certainty, settlement and correlation changes."""
-
+"""Exact covering receipts close groups; failures cannot create fresh allowance."""
 from dataclasses import replace
-
 import pytest
-
-from cura_receiver.airtime_ledger import AirtimeCorrelation
-from cura_receiver.communicator_state_owner import CommunicatorStateOwner
-from cura_receiver.generated.receiver_entities_generated import (
-    TxAirtimeBucketV1 as Bucket,
-)
-from cura_receiver.generated.receiver_enums_generated import (
-    RtcHealth as RH,
-    SystemTimeQuality as Q,
-)
-from cura_receiver.time_observations import TrustedTimeSample
-from cura_receiver.tx_airtime import AirtimeReason as R, TxCertainty as C
+from cura_receiver.tx_airtime import AirtimeReason as R, TxCertainty
+from cura_receiver.generated.receiver_enums_generated import PersistenceControlPurpose as Purpose
 from tests.support.builders.persistence_control import state
 from tests.support.coordination.state_commit import LostStateReply
 
 
-def acquired(airtime_component, baseline=0):
-    original = (
-        state()
-        if not baseline
-        else state(buckets=(Bucket(0),) * 61 + (Bucket(baseline),))
-    )
-    policy, worker, path, clock, _ = airtime_component(initial_state=original)
-    assert policy.acquire_grant(deadline_monotonic_us=5_000_100).reason is R.ALLOWED
-    return policy, worker, path, clock
+def ready(component):
+    policy, worker, database, clock, loaded = component(initial_state=state())
+    assert policy.recover(deadline_monotonic_us=5_000_000).reason is R.STATE_READY
+    return policy, worker, clock
 
 
-def settle(policy, clock, *, precharge=False, deadline=None):
-    return policy.settle(
-        precharge=precharge,
-        deadline_monotonic_us=(
-            clock.now_monotonic_us() + 5_000_000 if deadline is None else deadline
-        ),
-    )
+def spend(policy, count):
+    for _ in range(count):
+        result = policy.try_spend()
+        assert result.reason is R.ALLOWED
+        policy.report_tx(result.token, TxCertainty.STARTED)
 
 
-# Only definite non-start reclaims a tentative spend; loaded baseline is unchanged in every outcome.
-@pytest.mark.parametrize("certainty", [C.NOT_STARTED, C.STARTED, C.UNCERTAIN, None])
-@pytest.mark.parametrize("baseline", [0, 3_000_000])
-def test_certainty_and_exact_settlement(airtime_component, certainty, baseline):
-    policy, _, _, clock = acquired(airtime_component, baseline)
-    token = policy.try_spend().token
-    assert token is not None
-    assert policy.available_charge_us == 8_000_000 - baseline - 67_866
-    assert (
-        policy.total_used == 8_000_000
-    )  # The durable ceiling remains charged until settlement.
-    if certainty is not None:
-        policy.report_tx(token, certainty)
-    expected = baseline + (0 if certainty is C.NOT_STARTED else 67_866)
-    assert settle(policy, clock).reason is R.STATE_READY
-    assert policy.total_used == expected and policy.available_charge_us == 0
-    assert policy.state.generation == 3
-    assert sum(b.charged_airtime_us for b in policy.state.buckets) == expected
-    assert policy.state.buckets[-1] == (
-        Bucket(expected) if expected else Bucket(0)
-    )
+def test_threshold_28_29_30_and_group_closure(airtime_component):
+    policy, _, clock = ready(airtime_component)
+    spend(policy, 28)
+    assert not policy.save_required
+    spend(policy, 1)
+    assert policy.used_since_save_us == 1_968_114 and policy.save_required
+    assert policy.try_spend().reason is R.SAVE_REQUIRED
+    old = policy._ledger.current_entry
+    deadline = policy._ledger.deadlines[old]
+    assert policy.save(deadline_monotonic_us=5_000_000).reason is R.STATE_READY
+    assert policy.used_since_save_us == 0 and not policy.group_outstanding
+    assert policy._ledger.deadlines[old] == deadline
+    spend(policy, 1)
+    assert policy._ledger.current_entry != old
 
 
-# At a bucket edge one atomic generation keeps exact possible use and precharges the next minute.
-def test_atomic_settlement_and_next_bucket_grant(airtime_component):
-    policy, _, _, clock = acquired(airtime_component, 3_000_000)
-    policy.report_tx(policy.try_spend().token, C.STARTED)
-    policy.report_tx(policy.try_spend().token, C.UNCERTAIN)
-    policy.try_spend()  # No terminal outcome is also a possible transmission.
-    clock.advance_elapsed_us(60_222_000)
-    assert policy.try_spend().reason is R.GRANT_EXPIRED
-    assert settle(policy, clock, precharge=True).reason is R.ALLOWED
-    assert policy.state.buckets[-2:] == (
-        Bucket(3_203_598),
-        Bucket(8_000_000),
-    )
-    assert policy.total_used == 11_203_598 and policy.available_charge_us == 8_000_000
-    assert policy.state.generation == 3
+def test_failed_save_preserves_counter_and_barrier(airtime_component):
+    policy, _, _ = ready(airtime_component)
+    spend(policy, 29)
+    assert policy.save(deadline_monotonic_us=0).reason is R.PERSISTENCE_FAILED
+    assert policy.used_since_save_us == 1_968_114
+    assert policy.try_spend().reason is R.SAVE_REQUIRED
+    assert policy.save(deadline_monotonic_us=5_000_000).reason is R.STATE_READY
 
 
-# Foreign, duplicate and settled tokens cannot manufacture allowance or change frozen canonical bytes.
-def test_spend_token_ownership_and_late_certainty(airtime_component):
-    policy, _, _, clock = acquired(airtime_component)
-    other, _, _, _ = acquired(airtime_component)
-    token = policy.try_spend().token
-    with pytest.raises(ValueError):
-        other.report_tx(token, C.NOT_STARTED)
-    policy.report_tx(token, C.NOT_STARTED)
-    assert policy.available_charge_us == 8_000_000
-    with pytest.raises(ValueError):
-        policy.report_tx(token, C.NOT_STARTED)
-    token = policy.try_spend().token
-    assert settle(policy, clock).reason is R.STATE_READY
-    with pytest.raises(ValueError):
-        policy.report_tx(token, C.NOT_STARTED)
-    assert policy.total_used == 67_866 and policy.available_charge_us == 0
-
-
-# Definite settlement failure retains the full authoritative precharge; resumption uses the original deadline.
-@pytest.mark.parametrize("expired", [False, True])
-def test_definite_settlement_failure_resumption(airtime_component, expired):
-    policy, _, _, clock = acquired(airtime_component)
-    policy.report_tx(policy.try_spend().token, C.STARTED)
-    original = policy.state
-    if expired:
-        clock.advance_elapsed_us(60_222_000)
-    assert (
-        settle(policy, clock, precharge=True, deadline=0).reason is R.PERSISTENCE_FAILED
-    )
-    assert policy.state is original and policy.total_used == 8_000_000
-    assert policy.available_charge_us == (0 if expired else 7_932_134)
-
-
-# Unknown settlement blocks TX until exact old/new bytes resolve which generation is authoritative.
-@pytest.mark.parametrize("installed", [False, True])
-@pytest.mark.parametrize("precharge", [False, True])
-def test_unknown_settlement_exact_resolution(airtime_component, installed, precharge):
-    policy, worker, _, clock = acquired(airtime_component)
-    policy.report_tx(policy.try_spend().token, C.UNCERTAIN)
-    original = policy.state
+@pytest.mark.parametrize('installed', [False, True])
+def test_unknown_save_blocks_tx_until_exact_receipt(airtime_component, installed):
+    policy, worker, clock = ready(airtime_component)
+    spend(policy, 29)
     channel = LostStateReply(worker.control, installed=installed)
-    policy.owner = CommunicatorStateOwner(control=channel, initial_state=original)
-    assert settle(policy, clock, precharge=precharge).reason is R.PERSISTENCE_PENDING
-    assert policy.available_charge_us == 0 and policy.try_spend().token is None
-    pending = policy.owner.pending
+    policy.owner._control = channel
+    assert policy.save(deadline_monotonic_us=5_000_000).reason is R.PERSISTENCE_PENDING
+    frozen = policy.owner.pending.requested
+    assert policy.try_spend().reason is R.PERSISTENCE_PENDING
     channel.fail_load = True
-    assert (
-        policy.reconcile(deadline_monotonic_us=5_000_100).reason
-        is R.PERSISTENCE_PENDING
-    )
-    assert policy.owner.pending is pending
+    assert policy.maintain(deadline_monotonic_us=5_000_000).reason is R.PERSISTENCE_PENDING
+    assert policy.owner.pending.requested is frozen
     channel.fail_load = False
-    result = policy.reconcile(deadline_monotonic_us=5_000_100)
-    assert result.reason is (
-        R.STATE_READY if installed and not precharge else R.ALLOWED
-    )
-    assert policy.state.generation == (3 if installed else 2)
-    assert policy.total_used == (67_866 if installed and not precharge else 8_000_000)
-    assert policy.available_charge_us == (
-        0 if installed and not precharge else 7_932_134
-    )
+    update = policy.maintain(deadline_monotonic_us=5_000_000)
+    assert update.reason is (R.STATE_READY if installed else R.PERSISTENCE_FAILED)
+    assert policy.used_since_save_us == (0 if installed else 1_968_114)
+    assert policy.save_required is (not installed)
 
 
-# F-001: reconciliation adopts the candidate's original per-bucket deadlines or the exact preceding ones.
-@pytest.mark.parametrize("installed", [False, True])
-def test_unknown_next_bucket_preserves_prepared_deadlines(airtime_component, installed):
-    policy, worker, _, clock = acquired(airtime_component)
-    policy.report_tx(policy.try_spend().token, C.STARTED)
-    clock.advance_elapsed_us(60_222_000)
-    policy.owner = CommunicatorStateOwner(
-        control=LostStateReply(worker.control, installed=installed),
-        initial_state=policy.state,
-    )
-    assert settle(policy, clock, precharge=True).reason is R.PERSISTENCE_PENDING
-    clock.advance_elapsed_us(10_000_000)
-    policy.reconcile(deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000)
-    assert policy._ledger.retention_deadline(100) == 3_673_793_025
-    if installed:
-        assert policy._ledger.retention_deadline(60_222_100) == 3_734_015_025
-        assert policy.try_spend().grant_deadline_monotonic_us == 120_000_100
-    else:
-        assert policy._ledger.current_start == 100
-        assert policy._ledger.snapshot_buckets()[-1] == Bucket(8_000_000)
-        assert policy.try_spend().reason is R.GRANT_EXPIRED
+@pytest.mark.parametrize('partial', [False, True])
+def test_rtc_receipt_closes_full_or_partial_usage_exactly_once(airtime_component, partial):
+    policy, _, clock = ready(airtime_component)
+    # Inject a larger allowed accounting group to check the normative 0.8/1.2-s
+    # receipt example independently of today's fixed-size ACK packet.
+    policy._ledger.reserve(800_000, clock.now_monotonic_us())
+    old = policy._ledger.current_entry
+    requested = policy.snapshot(provenance=None, snapshot_monotonic_us=100,
+                                snapshot_utc_us=0, previous_state=policy.state)
+    if partial:
+        # Extra uncovered usage before submission; no TX occurs during commit.
+        policy._ledger.reserve(400_000, 100)
+    receipt = policy.owner.commit(requested, deadline_monotonic_us=5_000_000,
+                                  purpose=Purpose.RTC_PROVENANCE)
+    policy.snapshot_receipt(receipt)
+    assert policy.used_since_save_us == (400_000 if partial else 0)
+    assert policy._ledger.current_entry is None
+    saved_deadline = policy._ledger.deadlines[old]
+    policy.snapshot_receipt(receipt)
+    assert policy.used_since_save_us == (400_000 if partial else 0)
+    spend(policy, 1)
+    assert policy._ledger.current_entry != old
+    assert policy._ledger.deadlines[old] == saved_deadline
 
 
-# UTC loss and offset changes cannot revoke or extend a valid monotonic grant.
-@pytest.mark.parametrize("offset_change", [None, -30_000_000, 30_000_000])
-def test_time_changes_preserve_grant_and_retention(airtime_component, offset_change):
-    policy, _, _, clock = acquired(airtime_component)
-    policy.try_spend()
-    original = policy.state
-    retention = policy._ledger.retention_deadline(100)
-    clock.advance_elapsed_us(10_000_000)
-    correlation = None if offset_change is None else AirtimeCorrelation(
-        TrustedTimeSample(clock.now_monotonic_us(), 10_000_000 + offset_change,
-                          31_000_000, Q.RTC_HOLDOVER, 2), 2, 20_000_100)
-    policy.update_time(correlation, rtc_health=RH.MISSING)
-    assert policy.available_charge_us == 7_932_134
-    assert policy.recover(deadline_monotonic_us=20_000_100).reason is R.STATE_READY
-    assert policy.acquire_grant(deadline_monotonic_us=20_000_100).reason is R.ALLOWED
-    assert policy.state is original
-    assert policy._ledger.retention_deadline(100) == retention
-    assert settle(policy, clock, precharge=True).reason is R.ALLOWED
-    assert policy.state.buckets[-1] == Bucket(8_000_000)
-    assert policy.available_charge_us == 7_932_134
-    assert policy._ledger.retention_deadline(100) == retention
-    if offset_change is None:
-        assert policy.state.airtime_snapshot is None
-        assert policy.state.last_observed_system_time_quality is Q.UNTRUSTED
+def test_abandoned_rtc_snapshot_does_not_credit_or_permanently_block(airtime_component):
+    policy, _, _ = ready(airtime_component)
+    spend(policy, 1)
+    policy.snapshot(provenance=None, snapshot_monotonic_us=100,
+                    snapshot_utc_us=0, previous_state=policy.state)
+    assert policy.available_charge_us == 0
+    policy.snapshot_receipt(None)
+    assert policy.used_since_save_us == 67_866
+    spend(policy, 1)
 
 
-# Exhaustion never creates another spend; an exact same-bucket settlement cannot reopen already used airtime.
-def test_exhausted_allowance_stays_exhausted(airtime_component):
-    policy, _, _, clock = acquired(airtime_component)
-    for _ in range(117):
-        policy.report_tx(policy.try_spend().token, C.STARTED)
-    assert policy.try_spend().reason is R.BUDGET_EXHAUSTED
-    assert settle(policy, clock, precharge=True).reason is R.BUDGET_EXHAUSTED
-    assert policy.total_used == 7_940_322 and policy.available_charge_us == 0
-    assert policy.state.buckets[-1] == Bucket(7_940_322)
-    assert (
-        policy.acquire_grant(deadline_monotonic_us=5_000_100).reason
-        is R.BUDGET_EXHAUSTED
-    )
+def test_foreign_receipt_rejected(airtime_component):
+    policy, _, _ = ready(airtime_component)
+    from cura_receiver.communicator_state_owner import StateCommitReceipt
+    requested = policy.snapshot(provenance=None, snapshot_monotonic_us=100,
+                                snapshot_utc_us=0, previous_state=policy.state)
+    with pytest.raises(ValueError):
+        policy.snapshot_receipt(StateCommitReceipt(replace(requested)))
+
+
+def test_full_rtc_save_closes_zero_usage_group_left_by_refund(airtime_component):
+    policy, _, _ = ready(airtime_component)
+    result = policy.try_spend()
+    policy.report_tx(result.token, TxCertainty.NOT_STARTED)
+    assert policy.used_since_save_us == 0 and policy.group_outstanding
+    old = policy._ledger.current_entry
+    requested = policy.snapshot(provenance=None, snapshot_monotonic_us=100,
+                                snapshot_utc_us=0, previous_state=policy.state)
+    receipt = policy.owner.commit(requested, deadline_monotonic_us=5_000_000,
+                                  purpose=Purpose.RTC_PROVENANCE)
+    policy.snapshot_receipt(receipt)
+    assert not policy.group_outstanding
+    spend(policy, 1)
+    assert policy._ledger.current_entry != old

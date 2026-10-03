@@ -462,7 +462,7 @@ recovery, shared storage recovery, and persistence-owned shutdown. Target
 cases measure control latency and checkpoint stalls, run a seeded mixed-work
 soak with CPU/fsync load, and kill/restart the real worker at named boundaries.
 The bounded test caller does not implement the production communicator. Full
-service signals, radio safe-state/airtime settlement, live time policy and
+service signals, radio safe-state/airtime saving, live time policy and
 physical power interruption remain with their owning components/fixtures.
 See the [worker evidence](tests/hardware/evidence/persistence_worker/README.md)
 for source identity, timing limits, costly-test results and failure lessons.
@@ -697,7 +697,7 @@ arithmetic failure for TIME diagnostics without duplicating the equations.
 - **Pilot RTC read recovery:** Exercise transport failures followed by success, INVALID without retry, expiry before entry, the exact three-second boundary and a last in-flight read returning late. Keep successful UTC brackets separate from total recovery duration and preserve the first diagnostic trigger. Prove that failed pre-write recovery preserves prior durable provenance and issues no write, while a successful preflight rechecks source/generation and derives fresh UTC before exactly one write. Unknown writes still require read-back and never trigger a blind write retry. Explicit operator recovery owns invalid-RTC initialization.
 - **RTC refresh ordering:** Exercise derive, write, read-back, generation recheck and durable provenance commit, with failures/crashes after every step and no usable provenance before acknowledged commit.
 - **RTC scheduler continuation:** `test_communicator.py::test_scheduler_rtc_refresh_reaches_durable_verification` drives the production scheduler/runtime through write/readback and acknowledged provenance in real SQLite. A frozen-clock control and clocks advancing by 1 or 100 microseconds on every read must all complete within a bounded number of turns. Before the continuation-readiness repair, both advancing cases stopped after the pre-write read while the control passed; the same cases now all pass. Companion tests preserve radio/stop interleaving, source/generation rejection before writing and future start/retry deadlines. This host evidence does not establish physical RTC writes or installed-service offline holdover on the Pi.
-- **Commit receipts across scheduler turns:** `test_communicator.py::test_scheduler_rtc_acknowledgement_survives_airtime_settlement` loses a successfully installed RTC verification reply, lets higher-priority airtime work reconcile it and settle a grant in a later generation, and then resumes RTC completion. Require VERIFIED, recorded refresh time, the original unknown result and exact reconciliation evidence, no redundant RTC write/retry, and preserved SQLite provenance after stop. Owner/RTC episode tests separately cover receipt stability for installed/not-installed outcomes, failed/conflicting loads, recovery retries, cancellation and garbage collection, and invalidation across a later snapshot. Successful receipt resolution still requires usable current expected proof and actual source validity; changed/absent proof, an unrelated pending request, expiry or a changed generation must prevent acknowledgement.
+- **Commit receipts across scheduler turns:** `test_communicator.py::test_scheduler_rtc_acknowledgement_survives_airtime_settlement` loses a successfully installed RTC verification reply, lets higher-priority airtime work reconcile it and save a new airtime group in a later generation, and then resumes RTC completion. Require VERIFIED, recorded refresh time, the original unknown result and exact reconciliation evidence, no redundant RTC write/retry, and preserved SQLite provenance after stop. Owner/RTC episode tests separately cover receipt stability for installed/not-installed outcomes, failed/conflicting loads, recovery retries, cancellation and garbage collection, and invalidation across a later snapshot. Successful receipt resolution still requires usable current expected proof and actual source validity; changed/absent proof, an unrelated pending request, expiry or a changed generation must prevent acknowledgement.
 - **Unresolved complete-state commits:** Lose an invalidation or verification reply after real persistence, fail repeated serialized loads, and prove no new state mutation or RTC write occurs. Resolve exact requested and preceding states separately; reject different canonical contents even at the requested generation. Inspect actual durable absent provenance before a resumed write and recheck source validity after reconciliation.
 - **RTC source threshold:** Require the stricter five-second source-error bound both at refresh start and before commit, independently of the broader network-trust threshold.
 - **Clock-step state machine:** Cover boundary publication failure, command rejection, confirmed submission, unknown command outcome, stable-time polling, deadline and bounded retry without blind resubmission after an unknown result.
@@ -735,6 +735,10 @@ arithmetic failure for TIME diagnostics without duplicating the equations.
 
 ## Receiver TX-airtime policy
 
+Test coverage, reproduction commands and availability scenarios are described in
+[Airtime recovery coverage](tests/AIRTIME_RECOVERY_COVERAGE.md). Earlier
+qualification counts below retain their historical source scope.
+
 Two historical defects have lasting regression value: one global retention
 deadline delayed an ACK by 3,793 s in the steady-time host scenario, motivating
 per-bucket deadlines; separate UTC/monotonic reads could add 30 s under
@@ -744,25 +748,27 @@ need no evidence archive.
 
 ### Host tests
 
-- **Bucket boundary aging:** Exercise exact start/end, partially overlapping oldest bucket, complete expiration and long-idle bulk reset while retaining a bucket until its full interval is conservatively outside the rolling window.
-- **Per-bucket retention:** Give each newly charged bucket a fixed deadline from its monotonic interval start; preserve it through copies, snapshots, top-ups, settlement and pending-state reconciliation. Cover positional zero slots, an empty current slot, 62-slot wrap/capacity and the final 250-ms oldest-slot overlap, without early removal or admission scans.
-- **Sustained airtime availability:** Reproduce review F-001 through the production policy, shared owner and real SQLite for at least eight virtual hours, with one ACK request per minute, one-second retries and continuously fresh unchanged-offset time. Under the default policy and healthy persistence, bound each deferral to one second and every successful-ACK gap to 61 seconds while independently checking the continuous-window charge limit. Include a reviewed late-created-bucket example and preservation across failed/unknown commits; model agreement alone is insufficient.
-- **Cached-total reconstruction:** Load valid and inconsistent ledgers, recompute `total_used`, reject checked overflow or mismatch and prove ACK admission updates totals without scanning the full ring.
-- **Grid continuation:** Reconstruct chronological positions using zero elapsed credit without trusted time, or a conservative UTC difference after both errors. Preserve a partial recovered phase so top-ups cannot obtain a fresh whole-interval grant against a shorter fixed retention. Loaded charge remains unspendable.
-- **Grant headroom:** Check bucket and global headroom equality/one-unit boundaries and require a durable current-process increment before any allowance becomes spendable. A named scheduling barrier between time sampling and grant preparation must not pair old UTC with a later monotonic origin or extend the original deadline.
-- **Spend and settlement:** Tentatively spend an ACK charge, settle exact used airtime, reclaim only definitely unused allowance and atomically precharge a later bucket when budget permits.
-- **SetTx certainty charging:** Parameterize definite pre-SetTx failure, confirmed start, uncertain command and missing terminal outcome; reclaim only the first and retain every possible transmission.
-- **Crash before and after grant commit:** Prove a pre-commit crash enables no TX and a post-commit crash leaves the complete increment charged and unspendable to the replacement process.
-- **Repeated crashes:** Generate consecutive process failures and show conservative precharges accumulate without exceeding bucket/global budget or reopening spent allowance.
-- **Settlement failures:** Cover definite commit failure and unknown outcome, retaining the preceding authoritative generation and suppressing TX until exact reconciliation.
-- **Time-trust loss:** Remove UTC trust or change offset/generation while a monotonic grant is valid; keep allowance, original grant deadline and retention unchanged, with no extra state write. Snapshot quality remains truthful.
-- **Bounded UTC reconstruction:** Cover opposite recording/restart errors approaching 40 seconds and subtract both explicit bounds from elapsed credit. Generate physical-clock extremes and independently check full-window retention under the supported normal TX envelope. Cover near-end snapshots and repeated unknown-time restarts without extending live deadlines; no fixed UTC guard or UTC-expiration snapshot deferral remains. Arbitrarily delayed physical SPI execution is the explicitly deferred limitation, not a proved test outcome.
-- **Missing/corrupt history:** Start from generation zero, with and without trusted UTC, synthesize `[4, 8, 8, 8, 8]` seconds in the newest five slots for pilot defaults and forbid TX until the checked generation-one state commits.
-- **Unsupported/policy mismatch wait:** Start the complete conservative rolling-window wait only after TX is known disabled, restart the wait on process restart and permit empty-ledger replacement only after the full wait; UTC is optional.
-- **Budget exhaustion semantics:** Accept and publish an otherwise valid reading when no ACK allowance exists, record airtime suppression and never change acceptance to retry-later.
-- **Reference-model properties:** Generate bucket charges, grants, spends, time advances, trust changes, settlements and crashes and compare every decision with an independent continuous-window model.
+- **Entry accounting:** Cover all occupancies, pre-TX reservation/extension,
+  current versus historical entries, expiration without counter reset, exact
+  28/29/30 ACK and equality boundaries, variable charges and definite refunds.
+- **Recovery coverage:** Check minimum elapsed credit, full-array max replacement,
+  ties, valid empty versus missing/corrupt/untrusted fallback, repeated restarts,
+  immutable startup snapshots and failed/lost confirmation.
+- **Persistence and RTC:** Exercise real SQLite durability receipts, partial/full
+  coverage closure, duplicate receipts, later generations, required-save barriers,
+  continuous packet arrivals and retry opportunities for ordinary admission.
+- **Clock and encoding:** Test one correlated reference, rate changes, UTC steps,
+  bounded error, checked arithmetic, rounding and growing round-trip lifetimes;
+  reject malformed/foreign formats and preserve incompatible-state recovery.
+- **Independent reference:** Keep independent models and their mutation controls in
+  tracked tests, with no imports of ignored proposal files. Replay the lost-save
+  restart regression requests against production and independently check physical
+  rolling airtime and recovered coverage at state changes and expiration edges.
+- **Availability:** Measure sparse/saturated traffic, RTC partial saves, repeated
+  10-second restarts, idle periods and persistence pauses separately from safety.
+  Ordinary accepted readings remain admissible when ACK allowance is exhausted.
 
-Current-layout host qualification (2026-09-20): 3443 receiver host tests and
+Historical positional-layout host qualification (2026-09-20): 3443 receiver host tests and
 349 RF-tooling host tests pass. This includes real SQLite, controlled child
 SIGKILL and virtual-time model/availability coverage. Hardware fixtures were
 updated and collected only; target/reboot/RF and bench qualification remain
@@ -771,11 +777,11 @@ original source/layout scope.
 
 ### Hardware tests
 
-- **Target monotonic grant lifetime:** Commit a test grant on the Pi, measure its shortened monotonic lifetime and prove it freezes at the logical bucket boundary rather than one arbitrary minute after commit.
-- **Process-restart baseline:** Restart the isolated receiver process within one Linux boot and verify loaded charge is unspendable, a new increment is durably required and no persisted monotonic timestamp is reused.
-- **Pi-reboot reconstruction:** Reboot with trusted RTC/network time and credit only bounded elapsed UTC; repeat without trusted time and reconstruct with zero credit. Both retain loaded charges without spending them. A full loaded current bucket suppresses TX until a later interval/headroom allows a new durable increment; lack of UTC alone is not a TX gate.
-- **Real-radio charge result:** With the component RF fixture, exercise one definite pre-SetTx failure and one confirmed/uncertain attempted transmission and verify durable settlement follows command certainty, not whether the peer observed the packet.
-- **Continuous-window observation:** Run a slow, legally bounded sequence spanning bucket edges and confirm no set of attempted ACK transmissions exceeds the configured 36 seconds in any continuous 3,600-second observation period.
+- **Target monotonic retention:** Reconstruct a short historical entry on the Pi and observe that it expires at its own conservatively converted deadline, independently of the startup recovery entry.
+- **Process-restart baseline:** Restart the isolated receiver process within one Linux boot and verify loaded entries are unspendable, the recovery snapshot is durably required and no persisted monotonic timestamp is reused.
+- **Pi-reboot reconstruction:** Reboot with eligible saved/current time and credit only minimum bounded elapsed UTC; repeat without trusted time and require all 18 entries through the full fallback window. Loaded and recovery entries remain unspendable.
+- **Real-radio charge result:** With the component RF fixture, exercise one definite pre-SetTx failure and one confirmed/uncertain attempted transmission and verify unsaved usage/refunds and group saving follow command certainty, not whether the peer observed the packet.
+- **Continuous-window observation:** Run a slow, legally bounded sequence spanning entry expiration edges and confirm no set of attempted ACK transmissions exceeds the configured 36 seconds in any continuous 3,600-second observation period.
 
 The first three target families are airtime/time/persistence component tests and
 arrive with the durable airtime implementation. The final two require the
@@ -783,9 +789,9 @@ production SX1262 component and RF fixture; policy-only or injected certainty
 results cannot satisfy them. They remain required at that component stage.
 
 The implemented target cases are `tests/hardware/test_tx_airtime.py` and
-`tests/hardware/test_tx_airtime_reboot.py`. The first measures a grant selected
-with two seconds left in its logical minute. Its observations permit no early
-expiration, at most 500 ms late detection and a final allowed sample within
+`tests/hardware/test_tx_airtime_reboot.py`. The first reconstructs an existing-history entry with a two-second remaining
+physical lifetime. Its observations permit no early
+expiration, at most 500 ms late detection and a final live-entry sample within
 50 ms of the deadline; raw samples are retained. Both use the actual Linux
 clocks, time adapters, state owner and SQLite worker. A reviewed existing-history
 row establishes the fixture; missing-state recovery remains conservative.
@@ -840,10 +846,10 @@ control, RTC bootstrap, process-local communicator counters or Pi reboot.
 - **Storage prerequisite:** Simulate missing, read-only and unusable required storage and require no radio operation; distinguish this from an otherwise usable database with missing communicator state, where RX may continue but TX fails closed.
 - **Instance identities:** Generate a new receiver instance for clean restart, crash restart and Pi-reboot simulation, preserve or change Linux boot identity as appropriate and reset every process-local sequence.
 - **Initial clock observation:** Require exactly one initial observation after current time/RTC state is established and before later ordinary queue work, including an explicit untrusted observation when no trusted source exists.
-- **Controlled clean stop:** Exercise radio safe-state, grant settlement, bounded queue drain, exact clean-stop commit, checkpoint and close ordering and mark clean only when all stated preconditions hold.
+- **Controlled clean stop:** Exercise radio safe-state, airtime saving, bounded queue drain, exact clean-stop commit, checkpoint and close ordering and mark clean only when all stated preconditions hold.
 - **Signal stop intent and wakeup:** Deliver actual SIGTERM before the application wait, between its predicate check and kernel poll, during a blocking poll and while the radio's Event condition lock is held. Use named barriers, the real application/scheduler/radio/worker and temporary SQLite; timeouts detect deadlocks only. Require safe cleanup, no new TX, durable clean-stop evidence and the unchanged first ten-second deadline after an actual second signal during cleanup. Verify nested request re-entry cannot extend or split the retained time/deadline pair.
 - **Linux signal wait ownership:** Verify nonblocking notification hints, stop with a full pipe, early wakes/EINTR against the original absolute wait bound, and stop before waiting. Cover pipe/wakeup/handler setup failures and foreign-thread rejection. Restore previous SIGTERM/SIGINT handlers and the process-global wakeup descriptor before descriptor close/reuse, on normal and exceptional owner exit; notification alone cannot request stop.
-- **Failed controlled stop:** Fail queue drain, airtime settlement, marker commit, checkpoint and database close independently and verify which failures forbid the marker and which occur after its already durable meaning.
+- **Failed controlled stop:** Fail queue drain, airtime saving, marker commit, checkpoint and database close independently and verify which failures forbid the marker and which occur after its already durable meaning.
 - **Clean-stop idempotency:** Repeat the identical request, reconcile unknown commit and reject conflicting markers or unmet database/queue preconditions.
 - **Crash semantics:** Terminate without shutdown hooks at every lifecycle phase and verify correctness comes from durable startup/state/replay rules rather than an assumed cleanup callback.
 - **Terminal initialization/recovery diagnostic:** Enter each terminal radio failure, finalize at most one best-effort fatal diagnostic when admission permits and never claim that diagnostic durability is guaranteed.

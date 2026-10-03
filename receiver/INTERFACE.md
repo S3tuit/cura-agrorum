@@ -106,7 +106,7 @@ generation advanced by another scheduled task. This single generation
 therefore protects both observation sampling and the longer RTC
 write/read-back/provenance episode without another runtime trust-snapshot
 identity. It is runtime observation provenance, not the durable
-`StateGeneration` used by `CommunicatorStateV1`.
+`StateGeneration` used by `CommunicatorStateV2`.
 
 `(receiver_instance_id, occurrence_sequence)` identifies one physical radio
 delivery independently of protocol identity. Retransmissions with the same
@@ -182,7 +182,7 @@ the uncertainty-policy change does not establish that missing proof.
 including rolling-airtime retention, incompatible-history aging and minimum retry
 backoff. `maximum_lifetime_monotonic_us()` is used when acting too late is
 unsafe, including radio/time-service operation deadlines and the remaining
-physical lifetime of an active airtime bucket grant. The caller constructs an absolute monotonic
+physical airtime submission window. The caller constructs an absolute monotonic
 deadline by checked addition of the applicable converted duration to a current
 boot monotonic sample. Profiling, health and periodic clock-observation
 intervals are observational and use their nominal monotonic duration unless
@@ -205,8 +205,7 @@ network_rtc_refresh_period_us = 10_800_000_000
 rtc_holdover_observation_period_cap_us = 3_600_000_000
 rolling_window_us = 3_600_000_000
 tx_airtime_budget_us = 36_000_000
-bucket_width_us = 60_000_000
-bucket_charge_limit_us = 8_000_000
+entry_charge_us = 2_000_000
 ```
 
 `time_sampling_margin_us` is one fixed pilot constant shared by network-clock
@@ -504,7 +503,7 @@ complete state and any unresolved commit. Runtime time receives that owner;
 it has no independent durable-state or RTC-provenance cache. Its complete-state
 snapshot callback belongs to its caller: for requested provenance and a supplied
 trusted snapshot UTC/monotonic instant, the caller returns an immutable next-generation
-`CommunicatorStateV1`, or no snapshot when its state owner is unavailable. The
+`CommunicatorStateV2`, or no snapshot when its state owner is unavailable. The
 component checks requested provenance and exact snapshot UTC before submission;
 the owner enforces the next generation. Neither initializes, recovers or ages
 airtime history.
@@ -1104,7 +1103,7 @@ retry_not_before_monotonic_us: u64
 
 The timestamp fields are present only in the states that use them. This state
 is rebuilt after process restart and is never added to
-`CommunicatorStateV1`.
+`CommunicatorStateV2`.
 
 ### Radio backend configuration
 
@@ -1133,7 +1132,7 @@ the standard SX1262 PA configuration with protocol output power +14 dBm and
 is normal, not a radio deadline diagnostic. A terminal DIO1 edge at the
 inclusive host TX deadline is timely; a later edge is not. T0/T5 come only
 from kernel edge timestamps, never a userspace reconstruction. The caller's
-airtime-grant deadline also bounds SetTx submission.
+airtime submission deadline reserves the packet charge inside the 250-ms envelope.
 
 The [late SPI transmission limitation](ARCHITECTURE.md#deferred-limitation-late-spi-transmission)
 is explicitly deferred: deadline checks do not cancel delayed physical command
@@ -2530,7 +2529,7 @@ load_communicator_state(
 ) -> CommunicatorStateLoadResult
 
 commit_communicator_state(
-    state: CommunicatorStateV1,
+    state: CommunicatorStateV2,
     *, deadline_monotonic_us: MonotonicUs,
 ) -> CommunicatorStateCommitResult
 
@@ -2773,11 +2772,11 @@ configuration rejections. `protocol_rejection` is present only for
 available. Successful configuration results omit the secret-bearing snapshot
 from their representation; no failure result retains it.
 
-## `CommunicatorStateV1`
+## `CommunicatorStateV2`
 
 ### Logical role and SQLite envelope
 
-`CommunicatorStateV1` is the immutable canonical value returned by a successful
+`CommunicatorStateV2` is the immutable canonical value returned by a successful
 state load and accepted by `commit_communicator_state()`. The communicator owns
 clock and airtime policy; persistence validates and durably stores the exact
 value without editing it.
@@ -2812,27 +2811,27 @@ archival; the projection is not an evidence serialization.
 
 Every normal state write validates a complete canonical request and installs
 exactly one row: integer `singleton_id = 1`, integer supported
-`state_format_version = 1`, integer `generation` in `1..INT64_MAX`, BLOB
+`state_format_version = 2`, integer `generation` in `1..INT64_MAX`, BLOB
 `state_blob` and its 32-byte BLOB `state_sha256`. An invalid existing relation
 may be replaced only through atomic archival/recovery. No valid row represents
 generation zero. Generation zero is conservative runtime state and is never
 intentionally inserted. `state_sha256` covers the complete `state_blob`.
 The version and generation encoded inside the blob must equal the SQL columns.
 
-Generation defines the raw storage shape and the existing canonical V1
+Generation defines the raw storage shape and the canonical V2
 entities, codecs and binders. Classification, semantic validation and recovery
-remain handwritten. This predeployment V1 revision has 62 charge-only slots and a 624-byte encoding.
-All producers and consumers use this layout; no old-layout compatibility or
-migration is supported.
+remain handwritten. The V2 encoding has 18 remaining-lifetime entries and is 264 bytes.
+This release requires a freshly initialized database with its new generated
+fingerprint. No predecessor-state migration is supported.
 
 The communicator never mutates a loaded value. It creates a complete new
 snapshot, normally with `dataclasses.replace`, and advances generation exactly
 once.
 
-### Canonical V1 encoding
+### Canonical V2 encoding
 
 All values use the common canonical little-endian rules. The fixed header is
-128 bytes:
+120 bytes:
 
 ```text
 state_format_version: u16
@@ -2853,28 +2852,26 @@ reserved_1: u32
 
 rolling_window_us: u64
 tx_airtime_budget_us: u64
-bucket_width_us: u64
-bucket_charge_limit_us: u64
+entry_charge_us: u64
 
 airtime_snapshot_utc_us: i64
 airtime_snapshot_error_bound_us: u64
-bucket_count: u16
+entry_count: u16
 reserved_2: u16
 reserved_3: u64
 ```
 
-The generated logical Python `CommunicatorStateV1` exposes
+The generated logical Python `CommunicatorStateV2` exposes
 `rtc_provenance: RtcProvenanceV1 | None`, not `validity_mask` or the
 representation-only version, length and count fields. `RtcProvenanceV1` groups
 the five non-reserved RTC-provenance values shown in the header.
-`CommunicatorStateV1.airtime_snapshot` is an optional `AirtimeSnapshotV1`
+`CommunicatorStateV2.airtime_snapshot` is an optional `AirtimeSnapshotV1`
 containing `utc_us` and `error_bound_us`.
-`CommunicatorStateV1.buckets` is a tuple of exactly 62
-`TxAirtimeBucketV1` values. Durable airtime allowance exists only as bucket
-charge; there is no second collection. The canonical-BLOB codec consumes and derives the version, encoded
-length, mask, fixed count and reserved zeros so the binary
-representation remains deterministic; the mask is not a separate relational
-column.
+`CommunicatorStateV2.entries` is a tuple of exactly 18 `AirtimeEntryV2` values,
+each containing one `remaining_us: u64`. Every nonzero entry reserves the implicit
+`entry_charge_us`; there is no persisted current entry or usage counter. The
+codec derives version 2, encoded length, presence mask, fixed count and reserved
+zeros. The presence mask is not a relational column.
 
 Validity bit 0 selects the RTC-provenance block; bit 1 selects the airtime
 snapshot UTC/error pair. Bits 2 through 15 are reserved and zero. Absent snapshot
@@ -2907,106 +2904,81 @@ receiver UTC budget. No load reconstructs that value from changed runtime
 defaults; the persisted uncertainty and drift bound govern the provenance for
 its complete lifetime.
 
-#### Positional airtime snapshot and monotonic reconstruction
+#### Fixed-charge airtime snapshots and recovery
 
-Each of the 62 consecutive chronological slots contains one `u64`
-`charged_airtime_us`; zero slots are not packed away. The final slot is the
-interval containing the snapshot, even if empty. The header is 128 bytes and
-the complete length is `128 + 62 * 8 = 624` bytes. Each charge is at most
-`bucket_charge_limit_us`, their checked sum at most `tx_airtime_budget_us`.
-There is no bucket UTC expiration, countdown or second reservation list.
-The four stored airtime policy values must match the active policy exactly.
+The policy is `rolling_window_us = 3_600_000_000`,
+`tx_airtime_budget_us = 36_000_000`, `entry_charge_us = 2_000_000` for the pilot.
+Checked policy validation requires positive window/charge and exactly 18 entry
+charges per budget. The maximum unsaved usage equals one entry charge.
+The format defines the normal completion envelope `T = 250_000 us`.
+The 120-byte header plus 18 u64 lifetimes is 264 bytes. Zero means empty;
+array order carries no chronological meaning. All three policy fields must match
+the active policy exactly. Validate every lifetime before elapsed-time pruning.
 
-The optional snapshot UTC is the actual snapshot instant, derived from a live
-trusted correlation; its error includes growth to that instant. It is not a
-claim about when the original newest bucket began. Time quality and RTC health
-remain observations, never restored as present-instance trust.
-
-Define physical durations `W = rolling_window_us`, `X = bucket_width_us`, and
-`T = 250_000` microseconds for the normal TX completion envelope. The deferred
-late-SPI limitation applies; T is not a hard cancellation bound on stalled I/O.
-Let `wait(D) = minimum_wait_monotonic_us(D)` and
-`life(D) = maximum_lifetime_monotonic_us(D)` at the supported elapsed-rate bound.
-The live grid spacing is `S = wait(X)`. A grant in an interval starting at M
-ends exclusively at `M + life(X)`; the next interval starts at `M + S`.
-At 3700 ppm these are 59.778 and 60.222 seconds after M. The intervening 444 ms
-is conservatively unavailable for new TX. A new bucket's retention deadline is
-`M + wait(W + X + T)`. Snapshot/copy/charge edits never restart a live deadline.
-
-For a load at monotonic N, compute credited elapsed physical time E:
+For P = 1,000,000 and supported bound R = 3,700:
 
 ```text
-if both snapshot and current UTC are trusted:
-    E = max(0, current_utc - snapshot_utc - snapshot_error - current_error)
-else:
-    E = 0
+wait(D) = ceil(D * (P + R) / P)
+hold = wait(W + T) = 3_613_570_925 us
+saved_remaining = ceil(max(0, deadline_mono - snapshot_mono) * P / (P - R))
 ```
 
-UTC subtraction and all duration arithmetic are checked. Current error includes
-elapsed-clock growth to N. If correlation evidence is no longer valid, use zero
-credit; never block ordinary airtime recovery merely because UTC is unavailable.
-For a stored slot d intervals before the newest (`d = 61 - slot_index`):
+Use checked integer arithmetic. Durations can exceed W + T after conservative
+round trips; an upper bound of one nominal hour would reject valid history.
+All entries share a single snapshot monotonic instant and at most one UTC/error
+reference, derived from one correlation. No second UTC sample is taken for
+entries or the recovery replacement. UTC changes do not age live deadlines.
+
+Startup accepts saved/current time only with eligible NETWORK_SYNCED or
+RTC_HOLDOVER evidence and valid error bounds. At the correlated startup pair
+(m_b, U_b), calculate:
 
 ```text
-remaining = W + X + T - d * X - E
-if remaining <= 0: remove its charge
-else: retention_deadline = N + wait(remaining)
+error = saved_error + current_error
+elapsed_min = max(0, U_b - U_s - error)
+elapsed_max = U_b - U_s + error
+remaining = max(0, saved_remaining - elapsed_min)
+deadline = 0 if remaining == 0 else m_b + wait(remaining)
 ```
 
-A minimum-wait grid interval lasts at least X physically. Each bucket's grant
-can authorize TX at most X after that interval's start; T covers normal
-completion. Assuming the snapshot was the newest start therefore overestimates
-its remaining lifetime, and explicit UTC error subtraction cannot credit time
-that has not demonstrably elapsed.
+An impossible negative elapsed_max, invalid arithmetic/evidence, missing/corrupt
+history or ineligible time requires the full-budget fallback: all 18 deadlines
+are m_b + hold. Otherwise insert one historical recovery entry at m_b + hold,
+or replace an earliest deadline by max(old, m_b + hold) when full. Recovered
+entries are unspendable; set current_entry to none and unsaved usage to zero.
+Freeze and commit this complete snapshot using the same m_b/U_b correlation.
+Delayed acknowledgement never shifts these deadlines. No TX precedes confirmed
+recovery persistence. Unsupported-version/policy mismatch instead retains the
+established continuous no-TX wait from confirmed transmitter disablement, followed
+by archive-and-replace with a current-format empty generation-one state; this
+physical-silence proof covers old uncertainty independently of UTC.
 
-Split E into `k, phase = divmod(E, X)`. Shift retained stored charges k positions
-older, filling new positions with zero. Reconstruct the current interval start
-as `N - wait(phase)`, which may be a negative process-local virtual origin near
-boot. Only actual future deadlines/clock readings use unsigned monotonic values.
-This phase prevents a top-up from obtaining a fresh whole-interval grant while
-keeping a shorter recovered retention deadline. Opening further intervals uses
-S; retain each reconstructed deadline exactly, including its credited phase.
-No predecessor-boot monotonic value is reused. Repeated snapshots/restarts may
-lose phase precision conservatively; they cannot erase a possible charge early.
+Before each TX, clear expired entries without reducing unsaved usage, allocate
+an empty entry if no current group exists, require the charge to fit within one
+entry's remaining unsaved allowance, and charge/extend before radio start. A full
+array with an existing current entry can spend its remaining allowance; a full
+array without one suppresses ACK. After RX rearm, a lookahead sum greater than
+or equal to one entry charge requires a save before the next TX. At the pilot
+charge this happens after 29 ACKs (1,968,114 us), before ACK 30.
 
-Required capacity is `ceil((W + X + T) / X) = 62` at pilot values. A slot 61
-intervals old may still retain the final 250 ms; slot 62 is fully expired.
-Clock margins apply to grid spacing and retention consistently, so 62 slots
-also cover their monotonic overlap. Policy validation checks this bound and
-that the synthetic worst-case ledger fits, with positive initial lifetimes.
-All ring indices and deadline sums are checked; long idle periods can bulk-clear
-expired history. Loading/snapshot/copy may scan 62 slots; ACK admission reads the
-cached total and current charge and ages only elapsed head entries.
+A confirmed save reducing usage closes the current group, including partial RTC
+coverage. Preserve the closed deadline and uncovered counter remainder; accept
+coverage only once from the exact receipt. No counter reset follows failure or
+an unresolved outcome. A definite non-start can refund only still-unsaved usage;
+uncertainty remains charged and no refund reopens a historical entry. The
+communicator shares one complete-state owner with RuntimeTime; an RTC receipt
+remains recognizable across later generations. Blocking calls use a two-second
+caller deadline and cannot be interpreted as cancelled disk operations.
 
-To obtain a grant, precharge the lesser of bucket and global headroom in one
-complete next-generation commit. Only its acknowledged increment is spendable.
-Keep the baseline, increment, unspent amount, generation, process-local interval
-identity and original monotonic grant deadline in memory. At settlement keep
-the loaded baseline plus actual/possible use, optionally precharging the current
-interval in the same commit. Loaded charges are never spendable reservations.
-An opaque spend token accepts one certainty result; only definite non-start
-reclaims its charge. An absent result or uncertainty stays charged; a settled
-token cannot reopen an old grant. Late submission remains forbidden even when
-a caller holds a token. UTC changes do not revoke a valid monotonic grant.
-
-Missing/corrupt state requires an acknowledged generation-one synthetic ledger:
-`q, r = divmod(B, Y)`, with the newest positions containing an oldest remainder r
-when nonzero, followed by q full Y charges; all older positions are zero.
-For pilot values this is `[4, 8, 8, 8, 8]` seconds in the newest five slots.
-It is constructible with UNTRUSTED time and no snapshot UTC. Unsupported version
-or policy mismatch retains the existing full no-TX wait, followed by atomic
-archive-and-replace with a generation-one all-zero positional ledger.
-
-`RuntimeTime.airtime_correlation()` supplies optional recovery/snapshot evidence.
-`update_time()` updates that evidence and RTC health without rebasing history.
-`recover()` establishes history; `acquire_grant()` obtains allowance;
-`try_spend()` charges the 67,866-us pilot ACK; `report_tx()` reports certainty;
-`settle(precharge=...)` records possible use; and `reconcile()` resolves exact
-unknown commits. `snapshot()` prepares RuntimeTime's complete-state update,
-preserving outstanding precharges and fixed deadlines through acknowledgement
-or reconciliation. No writes occur merely for countdown/valid-grant housekeeping.
-Unknown commits and unrecognized external state changes suppress allowance.
-The legacy optional UTC-expiration diagnostic is absent for monotonic grants.
+`recover()` establishes startup state; `maintain()` services recovery, required
+saves and reconciliation; `try_spend()` charges an ACK; `report_tx()` reports its
+certainty; `save()` closes covered use after confirmation; `snapshot()` prepares
+an RTC complete-state update; the RTC submitter calls `snapshot_receipt(receipt)`
+immediately after submission, or `snapshot_receipt(None)` if it abandons the
+prepared value before submission. No writes occur solely because entries expire.
+Required saves cannot be starved by continuous packet arrival, and paced retries
+must allow ordinary packet admission between waits. Shutdown does not exempt the
+next startup from recovery. The deferred late-SPI limitation remains explicit.
 
 ### State-row conditions and loading
 
@@ -3039,7 +3011,7 @@ applicable outcome is final:
    including encoded length, SQL/blob generation equality, reserved fields,
    ranges, ordering, lifecycle references, checked arithmetic and all other
    structural invariants. Any failure is `CORRUPT`.
-5. Only a structurally valid supported value is compared with the active five
+5. Only a structurally valid supported value is compared with the active three
    airtime-policy parameters. Any difference is `POLICY_MISMATCH`; otherwise the
    condition is `NONE` and the state is `LOADED`.
 
@@ -3070,7 +3042,7 @@ state_condition: CommunicatorStateCondition
 sqlite_primary_code: i32 or absent
 sqlite_extended_code: i32 or absent
 os_errno: int or absent
-state: CommunicatorStateV1 or absent
+state: CommunicatorStateV2 or absent
 ```
 
 `state` is present if and only if status is `LOADED`. Loading is read-only and
@@ -3079,8 +3051,8 @@ after an unknown commit observes that commit's terminal database state or
 reaches its own deadline.
 
 Every non-`NONE` condition produces conservative generation-zero runtime state
-and suppresses TX. `MISSING` and `CORRUPT` become usable only after the exact synthetic
-worst-case generation-one ledger defined above is durably installed; trusted
+and suppresses TX. `MISSING` and `CORRUPT` become usable only after the full-window
+generation-one ledger defined above is durably installed; trusted
 UTC is not required. A corrupt relation is preserved in the same atomic
 replacement transaction.
 
@@ -3140,8 +3112,8 @@ Generation handling is deterministic:
 - requested generation is older: `NOT_INSTALLED + STALE_GENERATION`; and
 - requested generation skips ahead: `NOT_INSTALLED + GENERATION_GAP`.
 
-A missing baseline accepts only the exact valid synthetic generation-one value
-derived from the request's trusted snapshot and the active policy. A corrupt
+A missing baseline accepts only a valid generation-one full-budget fallback: all
+18 remaining lifetimes cover at least W + T. Snapshot UTC is optional. A corrupt
 baseline accepts that same form of generation one only in one SQLite
 transaction that:
 
@@ -3276,7 +3248,7 @@ The communicator calls `commit_receiver_clean_stop()` only after:
 - new radio admission and TX have stopped;
 - the radio reached its safe shutdown state;
 - `PersistQueue` is closed and drained;
-- airtime settlement has a known outcome; and
+- the final airtime save has a known outcome; and
 - the supplied communicator-state generation is confirmed authoritative.
 
 Persistence verifies the current receiver-instance row, the closed-and-drained
@@ -3521,10 +3493,10 @@ remain handwritten. Normal queue handoff has no entity codec or builder. These
 types may reuse generated logical values and enums, but they do not extend this
 relational generator into a general policy or queue-layout engine.
 
-`CommunicatorStateV1`, `RtcProvenanceV1` and `TxAirtimeBucketV1` are generated
+`CommunicatorStateV2`, `RtcProvenanceV1` and `AirtimeEntryV2` are generated
 from the named communicator-state
 encoding. The generated encoder derives the format version, encoded length,
-validity mask, fixed bucket count and reserved zeros. Its decoder performs only
+validity mask, fixed entry count and reserved zeros. Its decoder performs only
 the mechanical checks needed to recover one canonical value: exact constants,
 lengths and fixed array shapes, known enum values, reserved bits and bytes,
 presence-controlled zero representations, and absence of trailing bytes. The
@@ -3790,7 +3762,7 @@ never deleted. `receiver_instance_id` remains the public identity referenced by
 other tables.
 
 `receiver_instances` is the sole persisted source of `linux_boot_id`. Queue
-entities, `CommunicatorStateV1` and every other database row store only the
+entities, `CommunicatorStateV2` and every other database row store only the
 applicable `receiver_instance_id`; foreign keys or explicit state validation
 must ensure that identifier resolves to this table. Analysis views expose a
 boot ID only by joining through this immutable mapping. `linux_boot_id` is not
@@ -4010,7 +3982,7 @@ from an observed BLOB, and archive and replacement roll back together on a
 definite pre-commit failure.
 
 This table is used only when SQLite itself is structurally healthy but
-`CommunicatorStateV1` validation fails. SQLite corruption preserves the entire
+`CommunicatorStateV2` validation fails. SQLite corruption preserves the entire
 database, WAL and shared-memory set under the database-corruption policy
 instead. Unsupported-version and policy-mismatch rows are not automatically
 moved.

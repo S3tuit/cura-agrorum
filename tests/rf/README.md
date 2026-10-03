@@ -269,9 +269,13 @@ separate from the RF runner and never automatically retried:
    The helper checks the stopped service, board/boot binding and elapsed interval.
    The operator attestation covers other transmitters; the helper cannot infer
    their absence. It creates only a new candidate using the production schema,
-   zero-bucket constructor, encoder, validator and classifier. State generation
+   V2 empty-entry encoding, validator and classifier. State generation
    is one, historical charge zero, RTC provenance absent and recorded time quality
-   UNTRUSTED; neither current clock trust nor a spendable grant is fabricated.
+   UNTRUSTED; no clock trust or spendable allowance is fabricated. Under V2 this
+   untrusted snapshot still triggers the full-window fallback at startup. The
+   helper therefore does not bypass the initial ACK hold. Readiness remains
+   conservative until an eligible later saved snapshot shows headroom; stored
+   lifetimes are not treated as current live allowance.
    Retain stdout as the preparation receipt. Existing destinations are rejected.
 4. While still stopped and exclusively controlled, explicitly install the
    candidate through the existing offline database replacement procedure, retaining

@@ -29,7 +29,7 @@ def test_zero_history_passes_production_validation_without_trusting_clock_or_rtc
         repo = SqliteRepository(db)
         loaded = classify_communicator_state_rows(repo.read_communicator_state_rows(), repo, SETTINGS.airtime_policy)
         assert loaded.status.name == 'LOADED'
-        assert not any(b.charged_airtime_us for b in loaded.state.buckets)
+        assert not any(b.remaining_us for b in loaded.state.entries)
         assert loaded.state.rtc_provenance is None
         assert loaded.state.last_observed_system_time_quality.name == 'UNTRUSTED'
         assert db.execute('select count(*) from receiver_instances').fetchone() == (0,)
@@ -119,3 +119,20 @@ def test_shared_waiter_cannot_pass_bad_preparation(tmp_path, monkeypatch, failur
         service.wait_for_prerequisites(timeout_seconds=1)
     if failure == 'untrusted':
         assert 'fresh_NETWORK_SYNCED_observation_required' in (tmp_path/'service-prerequisites.json').read_text()
+
+
+def test_untrusted_empty_fixture_does_not_bypass_v2_recovery_hold(tmp_path):
+    from cura_receiver.communicator_state_owner import CommunicatorStateOwner
+    from cura_receiver.tx_airtime import TxAirtimePolicy
+    from tests.support.fakes.os_clock import FakeOsClock
+    path = tmp_path / ('prepared-' + 'd'*32 + '.sqlite3')
+    create(path)
+    with sqlite3.connect(path) as db:
+        loaded = classify_communicator_state_rows(SqliteRepository(db).read_communicator_state_rows(),
+                                                  SqliteRepository(db), SETTINGS.airtime_policy)
+    # Examine the production recovery calculation without fabricating live time.
+    owner = CommunicatorStateOwner.from_load(control=None, loaded=loaded)
+    policy = TxAirtimePolicy(state_owner=owner, clock=FakeOsClock(monotonic_us=100))
+    ledger = policy._recover_ledger(loaded.state, None, 100)
+    assert ledger.total_used == 36_000_000
+    assert ledger.available_charge_us == 0

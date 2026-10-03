@@ -43,7 +43,7 @@ class ReceiverCoreFailureContextV1:
         for value, kind in ((self.phase, E.CorePhase), (self.stage, E.CoreFailureStage)):
             if type(value) is not kind or value.value == 0:
                 raise ValueError('invalid core phase/stage')
-        integer(self.flags, 0, 255)
+        integer(self.flags, 0, 511)
         integer(self.operation_duration_us)
         if bool(self.flags & 1) != (self.related_entity_kind is not None):
             raise ValueError('entity flag does not match context')
@@ -142,7 +142,7 @@ class CoreFault(RuntimeError):
 def exception_episode(error, *, phase, stage, operation, started, finished, safe_radio=False,
                       related_occurrence_sequence=None, profile_published=False,
                       related_entity_kind=None, occurrence_accepted=False, ack_selected=False,
-                      tx_may_have_started=False, airtime_grant_outstanding=False,
+                      tx_may_have_started=False, airtime_group_outstanding=False,
                       communicator_state_generation=None, airtime_bucket_expiration_utc_us=None):
     """None means no sound diagnostic allocation/admission is possible."""
     from .persist_queue import PersistQueueInterfaceError
@@ -150,7 +150,7 @@ def exception_episode(error, *, phase, stage, operation, started, finished, safe
     if isinstance(error, MemoryError):
         return None
     flags = (128 if safe_radio else 0) | (32 if profile_published else 0)
-    flags |= (1 if related_entity_kind is not None else 0) | (2 if airtime_grant_outstanding else 0)
+    flags |= (1 if related_entity_kind is not None else 0) | (256 if airtime_group_outstanding else 0)
     flags |= (4 if occurrence_accepted else 0) | (8 if ack_selected else 0) | (16 if tx_may_have_started else 0)
     detail_kind = detail_code = None
     if isinstance(error, PersistQueueInterfaceError):

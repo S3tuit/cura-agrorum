@@ -74,6 +74,7 @@ def test_scheduler_first_tracking_poll_with_advancing_clock(monkeypatch):
     communicator = SimpleNamespace(
         time=rt, clock=clock, occurrence_sequence=0,
         radio=SimpleNamespace(state=E.RadioState.RX_SINGLE),
+        airtime=SimpleNamespace(maintenance_required=False),
         receive_once=lambda **_: SimpleNamespace(finalization=None, radio_episodes=()),
     )
     scheduler = CommunicatorScheduler(communicator, chrony=chrony, rtc=None,
@@ -1525,11 +1526,11 @@ def test_state_owner_rejects_conflicting_loaded_contents(rtc_runtime, newer):
     pending = rt.state_owner.pending
     requested = pending.requested
     different_bucket = replace(
-        requested.buckets[-1], charged_airtime_us=requested.buckets[-1].charged_airtime_us - 1
+        requested.entries[-1], remaining_us=requested.entries[-1].remaining_us - 1
     )
     conflict = replace(
         requested, generation=requested.generation + int(newer),
-        buckets=requested.buckets[:-1] + (different_bucket,),
+        entries=requested.entries[:-1] + (different_bucket,),
     )
     assert worker.control.commit_communicator_state(
         conflict, deadline_monotonic_us=5_001_000

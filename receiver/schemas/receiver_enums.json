@@ -557,7 +557,8 @@
         {"name": "RTC_PROVENANCE", "value": 5},
         {"name": "AIRTIME_HISTORY_RECOVERY", "value": 6},
         {"name": "CLEAN_STOP", "value": 7},
-        {"name": "RECONCILIATION", "value": 8}
+        {"name": "RECONCILIATION", "value": 8},
+        {"name": "AIRTIME_USAGE_SAVE", "value": 9}
       ]
     },
     {

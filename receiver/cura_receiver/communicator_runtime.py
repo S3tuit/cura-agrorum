@@ -135,7 +135,7 @@ class CommunicatorRuntime:
                     ack_selected=profile is not None and profile.ack_selected is not E.AckSelection.NONE,
                     tx_may_have_started=tx is not None and tx.t4_set_tx_attempted_monotonic_us is not None
                         and tx.facts.set_tx_outcome is not Outcome.DEFINITELY_NOT_APPLIED,
-                    airtime_grant_outstanding=c.airtime.grant_outstanding,
+                    airtime_group_outstanding=c.airtime.group_outstanding,
                     communicator_state_generation=None if state is None else state.generation,
                     profile_published=exchange is not None and exchange.finalization is not None
                         and exchange.finalization.published_entity is not None)

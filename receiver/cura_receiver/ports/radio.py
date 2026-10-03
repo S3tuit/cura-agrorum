@@ -147,7 +147,7 @@ class RadioTxAuthorization:
     """Caller-owned allowance has been consumed before TX-profile installation.
 
     This is a submission deadline and diagnostic correlation, not a grant or
-    proof of durable admission. The caller owns grant validation/settlement.
+    proof of durable admission. The caller owns airtime reservation and saving.
     """
 
     submission_deadline_monotonic_us: int

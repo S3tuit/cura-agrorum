@@ -581,7 +581,7 @@ of time trust into a diagnostic.
 
 The authoritative time history remains `ClockObservationV1`; current state and
 aggregate command results remain in `ReceiverHealthV1`; and durable RTC
-provenance remains in `CommunicatorStateV1`. A time diagnostic explains why an
+provenance remains in `CommunicatorStateV2`. A time diagnostic explains why an
 exceptional operation failed. It neither creates another UTC anchor nor
 substitutes for any of those records.
 
@@ -976,6 +976,10 @@ made a state-changing or reconciliation request:
 | `6` | `AIRTIME_HISTORY_RECOVERY` |
 | `7` | `CLEAN_STOP` |
 | `8` | `RECONCILIATION` |
+| `9` | `AIRTIME_USAGE_SAVE` |
+
+`AIRTIME_BUCKET_GRANT` and `AIRTIME_BUCKET_SETTLEMENT` retain their historical
+numeric identities; V2 emits `AIRTIME_USAGE_SAVE` for usage snapshots.
 
 `STARTUP_CONFIGURATION` is required for configuration load and
 `STARTUP_STATE` for the initial state load. Later state loads use
@@ -1120,8 +1124,8 @@ follow the control result even when diagnostic admission is unavailable.
 |---|---|
 | Receiver configuration is rejected | Emit one `READ + CONFIGURATION_REJECTED + FATAL`, preserve the stable protocol rejection code when supplied and do not start normal radio operation |
 | Linux boot identity is noncanonical | Emit one `READ + HOST_IDENTITY_REJECTED + FATAL` and do not start normal radio operation |
-| Communicator-state row is missing | Adopt conservative generation zero and emit one startup `READ + STATE_MISSING + WARN`; after trusted UTC is available, commit the exact synthetic worst-case generation-one ledger before TX |
-| Communicator-state row is corrupt | Emit one `READ + STATE_CORRUPT + ERROR`, use conservative runtime state, suppress TX, then atomically preserve the rejected rows and install the exact synthetic worst-case generation-one ledger before TX |
+| Communicator-state row is missing | Adopt conservative generation zero and emit one startup `READ + STATE_MISSING + WARN`; commit the full-budget/full-window generation-one fallback before TX, even without trusted UTC |
+| Communicator-state row is corrupt | Emit one `READ + STATE_CORRUPT + ERROR`, use conservative runtime state, suppress TX, then atomically preserve the rejected rows and install the full-budget/full-window generation-one fallback before TX |
 | State version is unsupported or policy mismatches | Emit one corresponding `READ + ERROR`, suppress TX for the complete conservative active-policy rolling-window wait, then archive the exact old singleton and atomically install an empty current-policy generation-one ledger; restart restarts the wait |
 | Configuration filesystem or host-ID read fails | Emit `READ + IO`; it is `FATAL` when startup cannot establish receiver identity/configuration |
 | State load/commit or clean-stop SQLite operation fails | Emit the applicable `DATABASE`; preserve exact SQLite and errno fields, apply admission/recovery policy and retain any unresolved command serialization |
@@ -1150,8 +1154,8 @@ At minimum, test:
   SQLite/errno/correlation zeroing;
 - missing, corrupt, unsupported-version and policy-mismatch state producing
   their distinct severity and recovery decisions;
-- exact synthetic worst-case bucket construction for missing/corrupt state,
-  including the pilot `[4, 8, 8, 8, 8]` second ledger;
+- full-budget/full-window entry construction for missing/corrupt state,
+  including the pilot 18-entry ledger with an implicit 2-second charge per entry;
 - complete conservative rolling-window suppression for unsupported-version and
   policy-mismatch state, including restart of the wait after process restart;
 - combined state defects mapping from the primary ordered condition, including
@@ -1377,15 +1381,17 @@ Flag bits are:
 | `5` | `PROFILE_PUBLISHED` |
 | `6` | `QUEUE_KNOWN_SOUND` |
 | `7` | `SAFE_RADIO_STATE_CONFIRMED` |
-| `8`-`15` | Reserved; zero |
+| `8` | `AIRTIME_GROUP_OUTSTANDING` |
+| `9`-`15` | Reserved; zero |
 
 When `ENTITY_KIND_VALID` is clear, `related_entity_kind` is zero; when set, it
 must be a defined `PersistQueueEntityKind`. When validity bit 0 is clear,
 `detail_kind` and `detail_code` are zero. When set, both are nonzero and the
 code belongs to the selected detail kind. All other absent fields are zero.
-For monotonic airtime grants, `airtime_bucket_expiration_utc_us` is absent.
-`AIRTIME_GRANT_OUTSTANDING` independently records process-local ownership,
-including an expired or frozen grant awaiting settlement.
+For V2 airtime accounting, `airtime_bucket_expiration_utc_us` is absent.
+`AIRTIME_GRANT_OUTSTANDING` retains its historical meaning and is not emitted
+by V2. `AIRTIME_GROUP_OUTSTANDING` records a current unfinished airtime group;
+its bit is distinct from the retired grant flag.
 
 `operation_duration_us` is mandatory checked elapsed time from the first
 observed failure to finalization and may be zero for adjacent monotonic reads.

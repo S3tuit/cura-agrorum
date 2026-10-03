@@ -6,8 +6,8 @@ from enum import Enum, auto
 from .generated import receiver_enums_generated as E
 
 from .generated.receiver_entities_generated import (
-    CommunicatorStateV1,
-    encode_communicator_state_v1,
+    CommunicatorStateV2,
+    encode_communicator_state_v2,
 )
 from .persistence_control_values import (
     CommunicatorStateCommitDisposition as CD,
@@ -39,7 +39,7 @@ class StateCommitReceipt:
         self._resolution = StateCommitResolution.PENDING
 
     @property
-    def requested(self) -> CommunicatorStateV1:
+    def requested(self) -> CommunicatorStateV2:
         return self._requested
 
     @property
@@ -57,8 +57,8 @@ class StateCommitReceipt:
 
 @dataclass(frozen=True, slots=True)
 class PendingStateCommit:
-    preceding: CommunicatorStateV1 | None
-    requested: CommunicatorStateV1
+    preceding: CommunicatorStateV2 | None
+    requested: CommunicatorStateV2
     receipt: StateCommitReceipt
     preceding_condition: Condition = Condition.NONE
     purpose: E.PersistenceControlPurpose | None = None
@@ -188,9 +188,9 @@ class CommunicatorStateOwner:
         finished = self._clock.now_monotonic_us() if self._observer is not None else None
         self._recovery_retry_permitted = False
         if loaded.status is LS.LOADED:
-            actual = encode_communicator_state_v1(loaded.state)
+            actual = encode_communicator_state_v2(loaded.state)
             for expected in (self._pending.requested, self._pending.preceding):
-                if expected is not None and actual == encode_communicator_state_v1(
+                if expected is not None and actual == encode_communicator_state_v2(
                     expected
                 ):
                     self._resolve(expected)

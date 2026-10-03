@@ -12,9 +12,9 @@ import sys
 from cura_receiver.producer_admission import ProducerAdmission
 from cura_receiver.communicator_state_owner import CommunicatorStateOwner
 from cura_receiver.generated.receiver_entities_generated import (
-    TxAirtimeBucketV1 as Bucket,
+    AirtimeEntryV2 as Bucket,
     AirtimeSnapshotV1,
-    communicator_state_v1_parameters,
+    communicator_state_v2_parameters,
 )
 from cura_receiver.platform.linux_boot_identity import read_linux_boot_id
 from cura_receiver.platform.linux_chrony import LinuxChronyControl
@@ -109,16 +109,16 @@ def component(root, *, trusted=True, seed_remaining_us=None):
         if seed_remaining_us is not None:
             now = clock.now_monotonic_us()
             utc = correlation.sample.utc_us + now - correlation.sample.monotonic_us
-            snapshot_utc = utc - (60_000_000 - seed_remaining_us)
+            snapshot_utc = utc
             initial = state(
                 airtime_snapshot=AirtimeSnapshotV1(snapshot_utc, 0),
-                buckets=(Bucket(0),) * 61 + (Bucket(1_000_000),),
+                entries=(Bucket(seed_remaining_us),) + (Bucket(0),) * 17,
             )
             # A reviewed existing-history input, not an exemption from missing-state recovery.
             with sqlite3.connect(root / "worker.db") as database:
                 database.execute(
                     "INSERT INTO communicator_state VALUES (?,?,?,?,?)",
-                    communicator_state_v1_parameters(initial),
+                    communicator_state_v2_parameters(initial),
                 )
             seeded = now, utc, snapshot_utc
         state_load = worker.control.load_communicator_state(

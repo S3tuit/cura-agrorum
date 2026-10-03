@@ -40,7 +40,7 @@ made one attempt: retry-later, accepted current, accepted backlog, retry-later.
 Final storage retained sample66 pending, with no diagnostics/quarantine. The
 peer shut down safely, the C6 was verified in its loader, and temporary peer
 credentials were removed. This is one RF-019 case, not installed-service,
-independent sensor-conversion, complete ACK-matrix or 24-hour bench acceptance.
+independent sensor-conversion, complete ACK-matrix or deployment acceptance.
 
 The fast accelerated ACK matrix and RF-020 runs are recorded as historical
 outcomes in the [RF catalogue](../../../../tests/rf/test_suite.notes.md#rf-019);

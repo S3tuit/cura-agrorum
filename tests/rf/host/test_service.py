@@ -147,16 +147,20 @@ def test_service_template_and_current_bundle():
 
 
 @pytest.mark.parametrize('local_note', [False, True], ids=['fresh-checkout', 'local-notes'])
-def test_source_manifest_and_bundle_do_not_require_planning_notes(tmp_path, monkeypatch, local_note):
+def test_source_manifest_and_bundle_ignore_planning_notes_and_rf_markdown(tmp_path, monkeypatch, local_note):
     import inputs
     import run_service
     # Git's archive contains only committed files, unlike the developer's tree.
     archive = subprocess.run(['git', 'archive', 'HEAD'], cwd=REPO, check=True, capture_output=True).stdout
     with tarfile.open(fileobj=io.BytesIO(archive)) as source:
         source.extractall(tmp_path, filter='data')
+    # Use a synthetic guide so this fixture does not depend on committed names.
+    guide = tmp_path / 'tests/rf/host/capture-guide.md'
+    guide.write_text('capture instructions\n')
     assert not (tmp_path / 'deployment_remaining.notes.md').exists()
     if local_note:
         (tmp_path / 'deployment_remaining.notes.md').write_text('local planning only\n')
+        (tmp_path / 'tests/rf/host/session.notes.md').write_text('local RF planning only\n')
     # Both manifest builders read HEAD; share metadata without creating a commit.
     git_dir = subprocess.run(['git', 'rev-parse', '--absolute-git-dir'], cwd=REPO,
                              check=True, capture_output=True, text=True).stdout.strip()
@@ -167,7 +171,26 @@ def test_source_manifest_and_bundle_do_not_require_planning_notes(tmp_path, monk
     staged = inputs.source_manifest()['files']
     files = run_service.package_files()
     assert 'deployment_remaining.notes.md' not in staged
+    assert not any(name.startswith('tests/rf/') and name.endswith('.md') for name in staged)
     assert files and all(staged.get(name) == expected for name, expected in files.items())
+
+    # Adding, editing or removing RF documentation must not change staged inputs.
+    (tmp_path / 'tests/rf/host/new-guide.md').write_text('new capture instructions\n')
+    (tmp_path / 'tests/rf/README.md').write_text('updated RF instructions\n')
+    guide.unlink()
+    assert inputs.source_manifest()['files'] == staged
+
+    # Executable changes and contracts outside tests/rf remain source-bound.
+    for name in ('tests/rf/run.py', 'receiver/tests/support/README.md',
+                 'receiver/ARCHITECTURE.md', 'firmware/ARCHITECTURE.md',
+                 'protocol/protocol-v2-lora/README.md'):
+        path = tmp_path / name
+        path.write_text(path.read_text() + '\n# changed input\n')
+        changed = inputs.source_manifest()['files']
+        assert changed.keys() == staged.keys()
+        assert changed[name] != staged[name]
+        assert {key for key in staged if staged[key] != changed[key]} == {name}
+        staged = changed
 
 
 @pytest.mark.parametrize("key", ["unit_sha256", "environment_sha256", "configuration_sha256", "boot_id", "InvocationID", "MainPID", "NRestarts", "ActiveState"])

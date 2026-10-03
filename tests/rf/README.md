@@ -1,11 +1,13 @@
 # Joint RF verification
 
-This directory is for field-pilot-v2 scenarios involving the C6 node and Pi
-receiver. The [RF catalogue](test_suite.notes.md) defines stable scenarios and
-their component or full-system scope; the [deployment inventory](../../deployment_remaining.notes.md)
-maps coverage, dependencies and proposed pilot gates. Both .notes files are
-ignored local planning documents. They are not required inputs for the host
-suite or source staging; those paths also work from a fresh checkout.
+This directory verifies radio interactions between the ESP32-C6 node and
+Raspberry Pi receiver. It covers component-radio behavior, production-node ACK
+handling and installed receiver-service integration, independently of any
+particular deployment.
+
+The [RF catalogue](test_suite.notes.md) tracks scenario IDs, component/full-system
+scope and remaining obligations. It is an ignored local planning document;
+the host suite and source staging also work from a fresh checkout without it.
 
 Laptop pytest coordinates pytest-embedded through the C6's actual UART
 connector and SSH control of a separate Pi process. The C6 Unity app and
@@ -33,14 +35,25 @@ storage, bounded local scheduling and airtime accounting at both transmitters.
 SSH coordinates readiness; independent endpoint clocks are not synchronized.
 Keep helpers local until a second real use justifies sharing.
 
-For the first test phase, the operator owns per-transmitter airtime accounting,
+For controlled RF tests, the operator owns per-transmitter airtime accounting,
 admission and pacing using retained manual records. The harness declares
 bounded episodes, waits for operator readiness and records attempts; automated
 airtime ledgers and cross-run scheduling are not prerequisites. An additional
 receiver is a cross-check, not a fresh-allowance test based on silence.
-DEC-002 accepts the current firmware wake-budget/sleep heuristic for this pilot
-and defers DEP-007 plus RF-029's firmware-ledger assertions. The receiver's
-durable airtime policy remains unchanged.
+These controlled tests do not qualify the deferred RF-029 firmware-ledger
+assertions. The receiver's durable airtime policy remains unchanged.
+
+## Host checks
+
+Prepare the repository [Python test environment](../../receiver/README.md#python-setup),
+then run `make test-rf-host` from the repository root. These tests exercise the
+runners, verifiers and capture analysis without device access. Offline
+LittleFS decoding also needs a host C compiler and the fetched firmware managed
+component described under [capture and retention](#capture-and-retention).
+
+Source staging excludes Markdown under `tests/rf/`, including local planning
+notes. Executable inputs, fixtures and the selected contracts elsewhere in the
+repository remain in the source manifest.
 
 ## Run a selected component case
 
@@ -50,8 +63,7 @@ JP_RTC_SCL_FAULT/JP_RTC_SDA_FAULT. These removed fault/reference branches remain
 disconnected; all other nominal schematic requirements apply. See
 [firmware sequencing and sensor scope](../../firmware/TESTING.md#pilot-production-fixture-and-configuration-sequencing)
 and [installed Pi qualification](../../receiver/TESTING.md#pilot-production-fixture-and-installed-qualification).
-Final sensor selection and placement are not new pilot gates; technical
-configuration and selected nominal assertions remain required. Independent
+Use the declared sensor configuration and selected nominal assertions. Independent
 same-acquisition sensor-to-packet checks belong to the existing sensor-carrier
 integration tests; applicable passing evidence is a separate RF-020 prerequisite.
 RF-020 checks authenticated frames, received sensor flags/ranges, ACK handling,
@@ -167,8 +179,8 @@ cases use two setup wakes, the target wake and a metrics-observation wake.
 RF functional runs use the production code configured for10-second deep sleep
 and the agreed UART sleep-entry marker. Setup/target/metrics wake counts remain
 unchanged; received-current intervals allow9.5..45.5s including unchanged awake
-work. Reserve50s per wake plus10s. Production900-second cadence is bench/pilot
-coverage; the completed historical long RF case is not a routine prerequisite.
+work. Reserve50s per wake plus10s. Production900-second cadence requires
+separate validation; a historical long RF case is not a routine prerequisite.
 The final current receives RETRY_LATER to preserve remaining records.
 
 The episode declaration reports the full lease and per-transmitter maxima.
@@ -314,6 +326,10 @@ or failed cleanup cannot pass. Host tests do not establish physical RF-020 PASS.
 
 ## Capture and retention
 
+For before/after receiver and node snapshots, use the
+[state analysis guide](STATE_ANALYSIS.md). It describes
+capture preparation, report commands and the limits of the observed counts.
+
 Production-node cases capture the full LittleFS storage image only after the
 complete observation sequence, as specified in
 [firmware testing](../../firmware/TESTING.md#offline-production-node-evidence-capture).
@@ -381,8 +397,8 @@ dispositions, consequences and revisit conditions; RF-004 requires negative-IQ
 assertions at both endpoints. RF-019 awaits production-node provisioning and
 controlled authenticated outcomes. RF-020..030 depend on the real service and
 catalogue gates; RF-029 retains its firmware-ledger and Pi physical-uncertainty
-deferrals. RF-030 bench and field remain separate. RF-010 uses a short component
-sleep; production900-second cadence belongs to the bench/pilot. The
+deferrals. RF-010 uses a short component sleep; production900-second cadence
+and endurance require separate validation. The
 [operating-envelope decision](OPERATING_ENVELOPE.md) does not turn deferred
 physical RF-018 measurements into PASS.
 
@@ -402,7 +418,7 @@ RF functional tests use an isolated build/configuration with
 `CONFIG_NODE_DEEP_SLEEP_SECONDS=10` and `CONFIG_NODE_RF_SLEEP_OBSERVATION=y`.
 Seal it with `production_node.py --seal-build` and pass its directory to the
 runner. The default production build remains900s with observation disabled.
-No900-second RF prerequisite is required; cadence is validated in the bench/pilot.
+No900-second RF prerequisite is required; production cadence needs separate validation.
 
 Each completed cycle emits `RF_NODE_SLEEP duration_us=10000000` after finalization
 and successful timer setup. By operator agreement tests count this as sleep entry.
@@ -415,5 +431,5 @@ The bound is50s per wake plus10s, with9.5..45.5s received-current intervals for
 unchanged awake/retry work. Missing/extra evidence fails; no automatic retry.
 
 Per-case packet ceilings remain unchanged; shorter tests do not grant additional
-airtime. Retain operator admission and preceding activity. Bench/pilot endurance,
+airtime. Retain operator admission and preceding activity. Endurance,
 900-second cadence and real rolling-window observation remain separate long tasks.

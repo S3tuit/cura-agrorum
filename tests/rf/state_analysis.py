@@ -1,4 +1,4 @@
-"""Local-only bench capture sealing and sample reconciliation; never a soak verdict."""
+"""Offline node/receiver state comparison and sample reconciliation."""
 from __future__ import annotations
 
 import argparse
@@ -190,7 +190,7 @@ def reconcile(before, after, initial, final):
                              node_outcomes=[dict(cycle_sample_id=r['cycle_sample_id'], domain=r['domain'],
                                                  final_result=r['final_result']) for r in outcomes]))
     return dict(
-        scope='observed samples only; not an automatic bench acceptance verdict',
+        scope='observed samples only; not an automatic acceptance verdict',
         counts=dict(observed_samples=len(scope), durable_samples=len(scope & durable),
                     retained_samples=len(scope & retained), retained_only_samples=len(scope & retained - durable),
                     node_attempts_recorded=sum(r['attempt_count'] for r in finished.values()),
@@ -217,7 +217,7 @@ def reconcile(before, after, initial, final):
 
 
 def report(before_path, after_path, output):
-    with tempfile.TemporaryDirectory(prefix='cura-bench-reader-') as directory:
+    with tempfile.TemporaryDirectory(prefix='cura-state-analysis-') as directory:
         reader = Path(directory) / 'reader'
         sources = build_reader(reader)
         bm, before, initial = load_capture(before_path, reader)

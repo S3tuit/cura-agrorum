@@ -2,7 +2,7 @@
 
 Evidence tells our future selves that a hard-to-run test was actually run.
 Keep it only for destructive tests, tests requiring physical actions, or tests
-taking **more than five minutes**. Hardware access alone does not qualify a
+taking **more than ten minutes**. Hardware access alone does not qualify a
 quick, automatically repeatable test. Rerun easy tests when their result matters.
 
 Keep one short report per topic and, only when necessary, one supporting result

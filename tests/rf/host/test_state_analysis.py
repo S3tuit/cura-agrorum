@@ -1,4 +1,4 @@
-"""Real SQLite/LittleFS captures and incomplete-observation bench accounting."""
+"""Real SQLite/LittleFS state analysis and incomplete-observation accounting."""
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -7,7 +7,7 @@ import struct
 
 import pytest
 
-from bench_report import (seal_capture, report, read_database, reconcile,
+from state_analysis import (seal_capture, report, read_database, reconcile,
                           DATABASE_SCHEMA_VERSION, DATABASE_SCHEMA_FINGERPRINT, SQLITE_APPLICATION_ID)
 from evidence import REPO, digest
 from host.test_service import transcript, NODE

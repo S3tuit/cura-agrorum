@@ -1,66 +1,52 @@
 # Cura Agrorum
 
-Cura Agrorum is a low-cost field-monitoring project for collecting soil and
-enclosure measurements from a remote sensor node. The current design uses an
-ESP32-C6 node and a Raspberry Pi receiver connected over authenticated EU868
-LoRa.
+Cura Agrorum collects soil and enclosure measurements using an ESP32-C6 sensor
+node and a Raspberry Pi receiver connected over authenticated EU868 LoRa.
+This repository owns the production firmware, receiver, wire protocol and their
+test procedures. Retained test results follow [EVIDENCE.md](EVIDENCE.md).
 
-This repository owns the production firmware, receiver, and wire protocol, together with their test procedures and Git-tracked validation
-evidence. Component test results and reviewed raw captures stay next to the
-corresponding tests so their instructions and outcomes can be found together.
-Experiments and their firmware, acquisition tools, datasets,
-analysis, findings, reference material, and deployment records live in the
-separate
-[`cura-agrorum-logbook`](https://github.com/S3tuit/cura-agrorum-logbook)
-repository. A local checkout of that repository is expected at
-`../cura-agrorum-logbook` so contributors and agents can inspect the evidence
-behind production decisions.
-
-## Current goal
-
-The project is working toward the one-week pilot described in the logbook's
-[`field-pilot-v2`](https://github.com/S3tuit/cura-agrorum-logbook/blob/main/deployments/field-deployment-v2/README.md)
-record. The pilot will use development hardware to:
-
-- collect sensor readings using practical available placement; planned depths
-  are optional for this LoRa-protocol pilot;
-- validate LoRa reliability, retries, RSSI and SNR in the intended field;
-- verify receiver timestamping and durable local retention on the Pi; and
-- measure operating-state energy to guide the battery, radio, antenna,
-  enclosure and custom-PCB design.
-
-This pilot has no Internet access. Readings stay on the Pi; no remote server,
-uploader or automatic forwarding is required.
-
-This is a communications and measurement pilot, not yet a battery-life or
-solar-autonomy test.
+Experiments, datasets, analysis and deployment plans/results belong in
+[`cura-agrorum-logbook`](https://github.com/S3tuit/cura-agrorum-logbook), normally
+checked out at `../cura-agrorum-logbook`. The logbook may use public firmware
+components; production code here must not depend on the logbook.
 
 ## Repository map
 
-- `firmware/` — ESP-IDF node firmware, reusable production components,
-  architecture notes and host/on-device tests.
-- `protocol/` — the current LoRa v2 wire contract, schemas, generated codecs,
-  provisioning tools and cross-language tests; v1 documents the earlier Wi-Fi
-  protocol.
-- `receiver/` — Python v2 codec and authenticated-frame building blocks for
-  the Raspberry Pi receiver.
+| Path | Responsibility |
+| --- | --- |
+| [`firmware/`](firmware/) | ESP-IDF node application, wake-cycle controller, persistence, sensors, radio and platform components. |
+| [`receiver/`](receiver/README.md) | Raspberry Pi receiver application, radio/clock integration, authenticated ingestion and durable SQLite storage. |
+| [`protocol/protocol-v2-lora/`](protocol/protocol-v2-lora/README.md) | LoRa wire contract, schemas, generated C/Python codecs, provisioning and cross-language tests. |
+| [`tests/rf/`](tests/rf/README.md) | Joint node/receiver RF procedures, runners, host verification and offline capture analysis. |
 
-The logbook may depend on public components exposed from
-`firmware/components/`. Production code in this repository must not depend on
-the logbook. During the repository split, old experiment, deployment, or
-reference files may remain here temporarily until their migrated copies have
-been reviewed; the logbook versions are the authoritative records.
+## Where the rules live
 
-The v2 protocol and the persistence, sensor and SX1262 firmware components are
-implemented. Full node wake-cycle orchestration and the receiver application
-remain in progress; see [`firmware/ARCHITECTURE.md`](firmware/ARCHITECTURE.md)
-and [`firmware/TESTING.md`](firmware/TESTING.md) for the current contracts and
-test status.
+Start with the documents for the component you are changing:
 
-## Tests
+| Subject | Authoritative documents |
+| --- | --- |
+| Runtime behavior and component ownership | [Firmware architecture](firmware/ARCHITECTURE.md), [receiver architecture](receiver/ARCHITECTURE.md) |
+| Component interfaces and stored data | [Firmware interfaces](firmware/INTERFACE.md), [receiver interfaces](receiver/INTERFACE.md) |
+| Wire encoding and authentication | [LoRa protocol](protocol/protocol-v2-lora/README.md) |
+| Receiver diagnostic definitions | [Diagnostic interface](receiver/INTERFACE_DIAGNOSTIC.md) |
+| Test scope, procedures and coverage | [Firmware testing](firmware/TESTING.md), [receiver testing](receiver/TESTING.md), [joint RF verification](tests/rf/README.md) |
+| Test-result retention | [Evidence policy](EVIDENCE.md) |
 
-Run native firmware host tests with `make test-host`. Protocol tests and their
-dependencies are documented in
-[`protocol/protocol-v2-lora/tests/README.md`](protocol/protocol-v2-lora/tests/README.md);
-ESP32-C6 hardware-test commands are documented in
-[`firmware/test_apps/on_device/README.md`](firmware/test_apps/on_device/README.md).
+These documents own their rules; local READMEs explain navigation, setup and
+editing instructions. Generated files implement their schema/generator inputs.
+
+## Development and tests
+
+Run host checks from the repository root after preparing the linked prerequisites:
+
+| Scope | Entry point | Setup and details |
+| --- | --- | --- |
+| Native firmware | `make test-host` | [Firmware host tests](firmware/TESTING.md#philosophy-and-build) |
+| Receiver | `make test-receiver-host` | [Python environment](receiver/README.md#python-setup) |
+| RF tooling | `make test-rf-host` | [RF host checks](tests/rf/README.md#host-checks) |
+| Protocol | `.venv/bin/python -m pytest protocol/protocol-v2-lora/tests` | [Protocol test prerequisites](protocol/protocol-v2-lora/tests/README.md#running) |
+
+Hardware execution has separate fixture and device requirements; follow the
+linked testing procedures. Install and configure production systems using the
+[firmware deployment guide](firmware/deploy/README.md) and
+[receiver deployment guide](receiver/deploy/README.md).

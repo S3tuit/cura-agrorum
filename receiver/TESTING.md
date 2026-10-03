@@ -83,8 +83,8 @@ from transmitting during this pre-radio qualification. Later runtime time,
 storage and full-system RF acceptance remain open until separately verified.
 
 RF functional tests, including RF-019/RF-020, use the explicitly identified
-10-second node build and agreed UART sleep-entry boundary. The bench/pilot
-validates900-second cadence; no prior long RF run is required.
+10-second node build and agreed UART sleep-entry boundary. Production900-second
+cadence requires separate validation; no prior long RF run is required.
 
 RF-020 verifies the production reading/ACK exchange, received sensor flags and
 established nominal ranges, exact decoded values in canonical SQLite records,
@@ -913,7 +913,7 @@ component peer result cannot establish complete receiver acceptance.
 - **Clock and timestamp evidence (RF-026):** Run online and approved offline-holdover episodes and verify stored monotonic events, trusted observations and derived direct/logical timestamps against independent test timing evidence.
 - **Receiver process restart (RF-027):** Restart or crash the service between node attempts and verify new receiver identity, unchanged Linux boot identity, conservative airtime state and correct durable duplicate handling.
 - **Pi reboot (RF-028):** Reboot between node attempts, verify both receiver and boot identities change, restore time/state conservatively and accept or suppress ACK exactly as the durable contracts require.
-- **Complete pilot soak (RF-030):** Run a legally airtime-bounded mixed current/backlog workload with health sampling, checkpoints and controlled recoverable faults, then reconcile every transmitted logical message, ACK observation, SQLite identity, profile and diagnostic/health aggregate.
+- **Endurance (RF-030):** Run a legally airtime-bounded mixed current/backlog workload with health sampling, checkpoints and controlled recoverable faults, then reconcile every transmitted logical message, ACK observation, SQLite identity, profile and diagnostic/health aggregate.
 
 Shared executions must retain every mapped ID's distinct assertions and
 source-bound evidence. RF-008/RF-020 cover positive transitions and stale
@@ -921,8 +921,6 @@ contents; RF-004 retains both negative assertions: C6 rejection of normal IQ
 during downlink RX and Pi rejection of inverted IQ during normal uplink RX.
 Both negatives remain proposed deferred coverage, including full-service
 verification; component results cannot close that end-to-end obligation.
-RF-030 has separate bench and field results: the bench phase precedes deployment,
-and the at-least-one-week field phase follows first deployment.
 
 ### Approved pilot RF envelope
 

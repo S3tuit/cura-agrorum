@@ -17,7 +17,9 @@ def tree_sources():
                  "receiver/test_apps/radio_peer", "receiver/tests", "receiver/schemas", "receiver/db",
                  "receiver/deploy", "receiver/native", "receiver/tools",
                  "protocol/protocol-v2-lora/python", "tests/rf"):
+        # RF guides and local Markdown notes are not source-staging inputs.
         paths.extend(p for p in (REPO / name).rglob("*") if p.is_file() and
+                     (name != "tests/rf" or p.suffix != ".md") and
                      not any(part in {"__pycache__", "runs", "raw", ".pytest_cache", "evidence"} for part in p.parts) and
                      (p.name.startswith("Kconfig") or p.suffix in {".c", ".h", ".py", ".md", ".txt", ".cmake", ".yml", ".json", ".ini", ".sql", ".service", ".conf", ".rules"}) and
                      not p.name.startswith(("WORKPLAN", "REVIEW")))

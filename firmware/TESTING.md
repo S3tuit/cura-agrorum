@@ -266,7 +266,7 @@ For RF-019/RF-020, finish the complete observation sequence before entering the
 ROM bootloader to read the entire reviewed LittleFS `storage` partition to the
 laptop. RF-019/RF-020 functional sequences use10-second configured deep sleep,
 real deep-sleep resets and previous-wake metrics. Production900-second cadence
-validation belongs to the bench/pilot, not routine RF acceptance. The historical
+requires separate validation. The historical
 855–945-second RF observation remains source-bound evidence only. Bootloader entry is an
 explicit end-of-episode stop, not part of the measured wake sequence; account
 for its timing and any uncertain activity in the operator record. Leave the
@@ -1532,6 +1532,7 @@ Received-current intervals are9.5..45.5s, allowing the unchanged30s radio-cycle
 budget and acquisition/finalization overhead, not claiming oscillator accuracy.
 The lease is50s per wake plus10s. Missing/duplicate/extra markers, unexpected
 resets, missing captures or cleanup fail without automatic retry.
-Production defaults remain900s with observation disabled. The bench/pilot owns
-cadence, endurance and real long-duration observation; accelerated RF results do
-not qualify those obligations. Shortening sleep does not increase airtime allowance.
+Production defaults remain900s with observation disabled. Cadence, endurance and
+real long-duration observation require separate validation; accelerated RF
+results do not qualify those obligations. Shortening sleep does not increase
+airtime allowance.

@@ -46,7 +46,7 @@ def preflight(args):
     seal = verify_build(args.build)
     duration = seal.get("sleep_seconds", 900)
     if duration != 10 or not seal.get("sleep_observation", False):
-        raise ValueError("RF-019 requires observed accelerated10s build; cadence belongs to bench/pilot")
+        raise ValueError("RF-019 requires observed accelerated10s build; production cadence requires separate validation")
     group = load_receiver_group(args.local_group)
     node_id = bytes.fromhex(seal["node_id"])
     keys = authentication_keys(group)

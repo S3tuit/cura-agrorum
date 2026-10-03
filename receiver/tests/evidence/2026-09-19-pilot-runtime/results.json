@@ -682,9 +682,10 @@
       },
       "retired": "f4d9d2cd33348a8d"
     },
-    "operator_controls": "User confirmed nominal fixtures, airtime authority, exclusive Pi radio use and physically exercised removal of all C6 power after erase. Stop-on-lost-control and no automatic restart remain in runbook.",
+    "operator_controls": "User confirmed nominal fixtures, airtime authority, exclusive Pi radio use and physically exercised removal of all C6 power after erase. The runbook required stop-on-lost-control and no automatic restart.",
     "final_state": "Pi inactive with exact clean-stop record and no remaining processes/inhibitor; C6 verified in ROM loader; no continued autonomous run authorized by closure.",
     "runbook": "tests/rf/PILOT_RUNBOOK.md",
+    "runbook_retained": false,
     "runbook_sha256": "fe3a6d53ac3984fe3a2c7b1c979ffc438d8062ab99261a11dd911cc38289abab"
   },
   "quiet_radio_preparation": {

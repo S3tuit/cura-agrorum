@@ -154,6 +154,10 @@ def control_failure(result, *, command, purpose, started, finished, fatal=False,
     failure = result.failure_kind.name if hasattr(result, 'failure_kind') else result.status.name
     if failure in ('NONE', 'LOADED'):
         return None
+    from .airtime_commissioning import AirtimeCommissioningState
+    if (failure == 'STATE_UNAVAILABLE' and result.state_condition.name == 'MISSING'
+            and getattr(result, 'commissioning', None) is AirtimeCommissioningState.PENDING):
+        return None
     normalized = 'IO_ERROR' if failure == 'OS_ERROR' else failure
     condition = getattr(result, 'state_condition', None)
     code = ({'MISSING': 'STATE_MISSING', 'CORRUPT': 'STATE_CORRUPT', 'UNSUPPORTED_VERSION': 'UNSUPPORTED_STATE_VERSION',

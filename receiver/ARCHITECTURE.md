@@ -180,7 +180,8 @@ with INSERT ... SELECT in the same transaction as replacement, so rejected
 evidence never depends on a Python text conversion or rebinding round trip.
 
 At startup, the persistence thread loads and validates the singleton before the
-communicator is allowed to transmit. A missing or corrupt row means:
+communicator is allowed to transmit. Except for the explicit commissioning
+authorization below, a missing or corrupt row means:
 
 ```text
 airtime history = unavailable until a synthetic worst-case ledger commits
@@ -218,6 +219,33 @@ reserve 18 entries of 2 seconds each through `startup + wait(W + T)`. This
 requires no trusted UTC and introduces no invented earlier traffic schedule.
 A valid empty saved state with eligible time is distinct: startup adds only one
 historical recovery entry for possible usage since the last confirmed snapshot.
+
+### Initial airtime commissioning
+
+Database creation explicitly chooses known-empty airtime commissioning or
+conservative creation. Only known-empty creation seeds the one-use token in
+`airtime_commissioning`; this asserts knowledge of the radio's history, not
+merely that its database or software is new. The table is required by the current
+schema. Missing or malformed contents provide no authorization; missing schema
+and damaged SQLite storage retain the ordinary database failure policies.
+
+With a valid token and genuinely absent communicator-state rows, the communicator
+constructs a generation-one empty ledger (36 seconds of nominal headroom).
+Commissioning needs no trusted UTC or historical aging and establishes no RTC
+provenance. It shares the ordinary snapshot, persistence, reconciliation and TX
+gating path. Persistence rechecks authorization and absent history inside the
+transaction, installs the initial state and deletes the token atomically. TX
+requires confirmation of both effects. A crash before commit permits a retry;
+a crash after commit follows ordinary recovery, even if acknowledgement was lost.
+
+Existing communicator state always takes precedence, including corrupt or
+incompatible state. Each successful state installation clears residual token
+contents in its own transaction. Runtime never recreates a token. Ordinary
+deployment preserves history; a replacement database for unknown or recently
+used radio history must use conservative creation. Never restore a prepared
+commissioning database after transmissions without reestablishing empty history.
+
+### State ownership
 
 The communicator is the sole logical owner of the live state, while the persistence thread is the sole physical writer. The commit protocol is:
 
@@ -1459,7 +1487,8 @@ snapshot, then reserves one historical 2-second entry for possible unsaved use.
 If full, extend an earliest deadline with `max(old, startup + hold)`; this does
 not authorize spending a historical entry. Freeze the recovery snapshot at the
 same startup correlation and enable TX only after its exact commit is confirmed.
-Missing/corrupt history or ineligible time installs all 18 entries through
+Outside authorized initial commissioning, missing/corrupt history or ineligible
+time installs all 18 entries through
 `startup + hold`, suppressing ACKs for a complete conservative window. Incompatible
 format/policy retains the established full no-TX wait and atomic archive/replace.
 A freshly initialized database is required for this release; predecessor layouts
@@ -1469,7 +1498,9 @@ This intentional over-accounting can suppress ACKs after repeated short restarts
 small groups closed by RTC saves, or repeated conservative save/load conversions.
 Valid reading acceptance remains independent of ACK availability. Idle expiration
 alone causes no persistence write. Controlled shutdown uses the same save rules;
-every startup still adds recovery uncertainty, without a clean-stop exemption.
+every subsequent startup still adds recovery uncertainty, without a clean-stop
+exemption. Initial commissioning instead installs the explicitly authorized
+empty ledger under the atomic token-consumption contract above.
 
 ### Invalid and rejected packets
 
@@ -2567,7 +2598,7 @@ Examples:
 
 - Communicator-state load or commit failure:
   - keep the preceding durable generation authoritative;
-  - use generation zero for missing or corrupt history and keep RTC provenance untrusted until the synthetic worst-case generation-one ledger commits;
+  - outside authorized initial commissioning, use generation zero for missing or corrupt history and keep RTC provenance untrusted until the synthetic worst-case generation-one ledger commits;
   - preserve a corrupt singleton in the same atomic transaction as its synthetic generation-one replacement;
   - for unsupported-version or policy-mismatch state, suppress TX for the complete conservative active-policy rolling-window wait, then atomically archive the exact old singleton and install an empty generation-one ledger;
   - continue RX and application-queue admission;
@@ -2903,7 +2934,8 @@ At minimum, add tests or simulations for:
 - health-request capacity consumption causing a later measurement/profile reservation to fail without eviction or reordering;
 - monotonic timestamp fields missing on partial/error paths and analysis
   returning no UTC without a qualifying clock observation;
-- missing and corrupt communicator-state rows produce conservative generation zero, then atomically install the configured synthetic worst-case generation-one ledger before TX;
+- missing and corrupt communicator-state rows without eligible commissioning authorization produce conservative generation zero, then atomically install the configured synthetic worst-case generation-one ledger before TX;
+- valid commissioning authorization with absent state installs empty generation one and consumes its token atomically before TX, including with untrusted UTC;
 - every observed corrupt communicator-state row is preserved and its synthetic generation-one replacement commits atomically;
 - unsupported-version and policy-mismatch state suppresses TX for a complete conservative rolling-window wait, a process restart restarts that wait, and the exact rejected row is archived with an empty generation-one replacement in one transaction;
 - an unknown embedded version together with a bad digest is `CORRUPT`, while an

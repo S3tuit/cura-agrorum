@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 from enum import Enum, auto
 
+from .airtime_commissioning import AirtimeCommissioningState
 from .generated.receiver_entities_generated import (
     CommunicatorStateV2,
     RtcProvenanceV1,
@@ -130,10 +131,16 @@ class CommunicatorStateLoadResult:
     sqlite_extended_code: int | None = None
     os_errno: int | None = None
     state: CommunicatorStateV2 | None = None
+    commissioning: AirtimeCommissioningState = AirtimeCommissioningState.ABSENT
 
     def __post_init__(self) -> None:
         _enum(self.status, CommunicatorStateLoadStatus)
         _enum(self.state_condition, CommunicatorStateCondition)
+        _enum(self.commissioning, AirtimeCommissioningState)
+        if self.status not in (CommunicatorStateLoadStatus.LOADED,
+                               CommunicatorStateLoadStatus.STATE_UNAVAILABLE):
+            if self.commissioning is not AirtimeCommissioningState.ABSENT:
+                raise ValueError("failed load cannot carry commissioning evidence")
         loaded = self.status is CommunicatorStateLoadStatus.LOADED
         if loaded != (self.state is not None):
             raise ValueError("state is present exactly for LOADED")

@@ -24,8 +24,8 @@ GROUP = bytes.fromhex("0102030405060708")
 def test_handle_binds_alias_and_reopens_same_file(tmp_path):
     first = tmp_path / "first.db"
     second = tmp_path / "second.db"
-    initialize_database(first, GROUP)
-    initialize_database(second, GROUP)
+    initialize_database(first, GROUP, known_empty_airtime=False)
+    initialize_database(second, GROUP, known_empty_airtime=False)
     alias = tmp_path / "alias.db"
     alias.symlink_to(first.name)
     database = open_receiver_database(alias, GROUP, minimum_free_bytes=0).database
@@ -52,8 +52,8 @@ def test_handle_binds_alias_and_reopens_same_file(tmp_path):
 def test_handle_rejects_replaced_database(tmp_path):
     first = tmp_path / "first.db"
     replacement = tmp_path / "replacement.db"
-    initialize_database(first, GROUP)
-    initialize_database(replacement, GROUP)
+    initialize_database(first, GROUP, known_empty_airtime=False)
+    initialize_database(replacement, GROUP, known_empty_airtime=False)
     database = open_receiver_database(first, GROUP, minimum_free_bytes=0).database
     database.close()
     first.rename(tmp_path / "original.db")
@@ -70,7 +70,7 @@ def test_handle_rejects_replaced_database(tmp_path):
 
 def _database(tmp_path: Path) -> Path:
     path = tmp_path / "receiver ?# database.sqlite3"
-    initialize_database(path, GROUP)
+    initialize_database(path, GROUP, known_empty_airtime=False)
     return path
 
 

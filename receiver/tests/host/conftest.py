@@ -18,7 +18,7 @@ from tests.support.coordination.persistence_worker import prepare_worker_files
 @pytest.fixture
 def setup(tmp_path):
     path = tmp_path / "receiver.db"
-    initialize_database(path, GROUP)
+    initialize_database(path, GROUP, known_empty_airtime=False)
     database = open_receiver_database(path, GROUP, minimum_free_bytes=0).database
     connection = database.connection
     instance = ReceiverInstanceStart(INSTANCE, 0)
@@ -76,10 +76,11 @@ def airtime_component(tmp_path):
 
     workers = []
 
-    def create(condition=C.MISSING, *, utc=0, initial_state=None, rate_bound_ppm=3700):
+    def create(condition=C.MISSING, *, utc=0, initial_state=None, rate_bound_ppm=3700,
+               known_empty_airtime=False):
         root = tmp_path / str(len(workers))
         root.mkdir()
-        database, config, boot = prepare_worker_files(root)
+        database, config, boot = prepare_worker_files(root, known_empty_airtime=known_empty_airtime)
         with sqlite3.connect(database) as connection:
             if initial_state is not None:
                 condition = C.NONE

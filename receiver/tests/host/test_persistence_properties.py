@@ -55,7 +55,7 @@ class PersistenceMachine(RuleBasedStateMachine):
         self.root = Path(tempfile.mkdtemp(prefix="cura-persistence-model-"))
         self.path = self.root / "receiver.db"
         self.checked = False
-        initialize_database(self.path, GROUP)
+        initialize_database(self.path, GROUP, known_empty_airtime=False)
         self.model = DurableModel()
         self.clock = FakeOsClock(monotonic_us=100)
         self.fault = FaultTransactions()

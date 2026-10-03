@@ -19,6 +19,27 @@ offline initializer verifies the schema fingerprint and creates a fresh
 database for the supplied group. Archive incompatible epochs; never silently
 migrate, reinitialize or manufacture group credentials at service startup.
 
+When creating the database, explicitly choose its initial airtime policy through
+`initialize_database(database_path, group_id, known_empty_airtime=...)`:
+
+- `True` asserts that this radio has known-empty airtime history. It creates a
+  pending commissioning token, not a runtime airtime snapshot. On first startup,
+  the receiver commits generation one with all 18 entries empty and consumes the
+  token in the same transaction before any TX. Initial nominal headroom is 36
+  seconds; commissioning also works without trusted UTC and establishes no RTC
+  provenance.
+- `False` creates no authorization token. Use this for unknown or recent radio
+  use, including a replacement database without independent empty-history
+  evidence. Ordinary conservative recovery applies.
+
+The choice is required; a fresh file or software installation does not prove
+unused radio airtime. Keep the radio exclusively controlled from establishing
+empty history until startup. Ordinary upgrades preserve existing state. Never
+reuse a commissioning image after transmissions without reestablishing empty
+history. Schema epoch 13 requires the marker table; earlier epochs are archived,
+not migrated. Missing/invalid marker contents disable commissioning; existing
+communicator state and SQLite failure policies retain their normal precedence.
+
 [ApplicationSettings](../cura_receiver/application_settings.py) supplies the
 explicit pilot runtime profile using existing validated component settings:
 

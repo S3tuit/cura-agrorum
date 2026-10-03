@@ -225,7 +225,8 @@ class TxAirtimePolicy:
                     return AirtimeUpdate(AirtimeReason.RECOVERY_WAIT)
             evidence = self._snapshot_time(now)
             ledger = (AirtimeLedger(self.policy, monotonic_us=now, rate_bound_ppm=self.rate)
-                      if incompatible else self._recover_ledger(previous, evidence, now))
+                      if incompatible or self.owner.commissioning_pending
+                      else self._recover_ledger(previous, evidence, now))
             requested = self._state_value(ledger, now, evidence, previous,
                                          provenance=None if previous is None else previous.rtc_provenance)
             self._prepared = _PreparedSave(requested, recovery_ledger=ledger)

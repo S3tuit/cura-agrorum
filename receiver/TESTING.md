@@ -707,6 +707,16 @@ clock-correlation tests.
 - **Entry accounting:** Cover all occupancies, pre-TX reservation/extension,
   current versus historical entries, expiration without counter reset, exact
   28/29/30 ACK and equality boundaries, variable charges and definite refunds.
+- **Initial commissioning:** Create databases through both explicit creation
+  modes. With a valid token and absent state, require generation one with zero
+  historical entries, token deletion and ACK admission after commit, with and
+  without trusted UTC. Missing/malformed/duplicate/NULL/wrong-type tokens use
+  ordinary recovery; missing table/column fails schema validation and damaged
+  SQLite remains a storage failure. Existing valid/corrupt/incompatible state
+  takes precedence. Change authorization or history between load and commit and
+  require rejection. Test rollback, lost replies, exact replay, mismatched
+  token/state reconciliation, subprocess termination around commit and receipt,
+  repeated restarts and post-TX restart; no restart grants commissioning twice.
 - **Recovery coverage:** Check minimum elapsed credit, full-array max replacement,
   ties, valid empty versus missing/corrupt/untrusted fallback, repeated restarts,
   immutable startup snapshots and failed/lost confirmation.
@@ -934,4 +944,4 @@ Missing Chrony must remain compatible with
 untrusted offline startup. PERM-001 in deploy/README.md defers a broader permissions
 review until after the pilot; these checks do not establish command-level isolation.
 
-The production RF service procedure in [tests/rf/README.md](../tests/rf/README.md#production-receiver-service-servicereading_delivery) permits deliberate offline zero-airtime test database preparation only after operator-attested all-transmitter silence for the complete conservatively converted rolling window. It uses production state encoding/validation, creates a separate new candidate and never changes production missing-history recovery or fabricates current clock/RTC trust. Shared preflight requires fresh network time and valid airtime prerequisites; only actual RF results establish ACK delivery.
+The production RF service procedure in [tests/rf/README.md](../tests/rf/README.md#production-receiver-service-servicereading_delivery) permits deliberate offline zero-airtime test database preparation only after operator-attested all-transmitter silence for the complete conservatively converted rolling window. It uses the production known-empty database initializer and token classifier to create a separate pending commissioning candidate. Receiver startup installs empty history and consumes the token atomically; preparation creates no runtime state or clock/RTC trust. Without a valid token, missing-history recovery remains conservative. Shared preflight requires fresh network time and valid airtime prerequisites; only actual RF results establish ACK delivery.

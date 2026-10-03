@@ -138,9 +138,12 @@ def classify_communicator_state_rows(
     SQLite errors propagate to that caller's control transaction boundary.
     """
 
+    commissioning = repository.read_airtime_commissioning()
+
     def unavailable(condition):
         return LoadResult(
-            LoadStatus.STATE_UNAVAILABLE, Operation.READ, state_condition=condition
+            LoadStatus.STATE_UNAVAILABLE, Operation.READ, state_condition=condition,
+            commissioning=commissioning,
         )
 
     if not raw_rows:
@@ -182,4 +185,5 @@ def classify_communicator_state_rows(
         return unavailable(Condition.CORRUPT)
     if any(getattr(state, name) != getattr(policy, name) for name in _POLICY_FIELDS):
         return unavailable(Condition.POLICY_MISMATCH)
-    return LoadResult(LoadStatus.LOADED, Operation.NONE, state=state)
+    return LoadResult(LoadStatus.LOADED, Operation.NONE, state=state,
+                      commissioning=commissioning)

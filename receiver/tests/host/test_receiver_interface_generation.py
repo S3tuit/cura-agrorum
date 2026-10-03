@@ -20,6 +20,7 @@ MANIFEST = RECEIVER_ROOT / "schemas" / "receiver_enums.json"
 ENTITY_MANIFEST = RECEIVER_ROOT / "schemas" / "receiver_entities.json"
 SCHEMA = RECEIVER_ROOT / "db" / "schema.sql"
 HANDWRITTEN_TABLES = {
+    "airtime_commissioning",
     "database_metadata",
     "receiver_instances",
     "quarantined_communicator_states",
@@ -220,7 +221,7 @@ def test_schema_fingerprint_is_exact_schema_sql_sha256() -> None:
         hashlib.sha256(schema_bytes).digest() == generated.DATABASE_SCHEMA_FINGERPRINT
     )
     assert generated.SQLITE_APPLICATION_ID == 0x43555252
-    assert generated.DATABASE_SCHEMA_VERSION == 12
+    assert generated.DATABASE_SCHEMA_VERSION == 13
 
 
 # Requires every declared catalogue, entity table, and trigger in assembled SQL.
@@ -1145,7 +1146,7 @@ def test_raw_state_envelope_passes_database_integrity(tmp_path, raw_rows):
 
     path = tmp_path / "raw-state.db"
     group = b"test0001"
-    initialize_database(path, group)
+    initialize_database(path, group, known_empty_airtime=False)
     with sqlite3.connect(path) as connection:
         connection.executemany(
             "INSERT INTO communicator_state VALUES (?, ?, ?, ?, ?)", raw_rows

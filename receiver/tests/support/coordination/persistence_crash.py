@@ -164,7 +164,7 @@ def _kill_at(path: Path, boundary: str, intended):
 
 def exercise_pair_crash(tmp_path, boundary):
     path = tmp_path / "receiver.db"
-    initialize_database(path, GROUP)
+    initialize_database(path, GROUP, known_empty_airtime=False)
     opened = open_receiver_database(path, GROUP, minimum_free_bytes=0)
     insert_receiver_instance_start(
         opened.database.connection, ReceiverInstanceStart(INSTANCE, 0), b"b" * 16

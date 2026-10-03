@@ -65,8 +65,9 @@ class PersistenceControlChannel:
     def load_communicator_state(self, *, deadline_monotonic_us):
         return self._call(Kind.LOAD_STATE, None, deadline_monotonic_us)
 
-    def commit_communicator_state(self, state, *, deadline_monotonic_us):
-        return self._call(Kind.COMMIT_STATE, state, deadline_monotonic_us)
+    def commit_communicator_state(self, state, *, deadline_monotonic_us, commissioning=False):
+        return self._call(Kind.COMMIT_STATE, state, deadline_monotonic_us,
+                          commissioning=commissioning)
 
     def commit_receiver_clean_stop(self, marker, *, deadline_monotonic_us):
         return self._call(Kind.CLEAN_STOP, marker, deadline_monotonic_us)
@@ -90,7 +91,7 @@ class PersistenceControlChannel:
                 return False
             remaining_seconds = remaining_us / 1_000_000
 
-    def _call(self, kind, payload, deadline):
+    def _call(self, kind, payload, deadline, *, commissioning=False):
         worker = self._worker
         with worker._scheduler_lock:
             if self._owner is None:
@@ -105,6 +106,8 @@ class PersistenceControlChannel:
             )
         if kind is Kind.COMMIT_STATE:
             try:
+                if type(commissioning) is not bool:
+                    raise TypeError("commissioning flag must be bool")
                 require_immutable_state(payload)
             except (TypeError, ValueError):
                 return control_failure(
@@ -116,7 +119,7 @@ class PersistenceControlChannel:
             )
         if worker._clock.now_monotonic_us() >= deadline:
             return control_failure(kind, "DEADLINE_EXCEEDED")
-        command = ControlCommand(ControlRequest(kind, deadline, payload), worker._clock)
+        command = ControlCommand(ControlRequest(kind, deadline, payload, commissioning), worker._clock)
         with worker._scheduler_lock:
             if worker._channel_closed:
                 return control_failure(kind, "CHANNEL_CLOSED")

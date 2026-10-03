@@ -225,8 +225,7 @@ def main():
             group = load_receiver_group(Path(config['test_root']) / 'config/receiver-group.json')
             result = create_zero_airtime_database(args.output, group.group_id,
                 json.loads(args.silence_record.read_text()), board_id=state['board_id'],
-                boot_id=state['boot_id'], now_monotonic_us=time.monotonic_ns() // 1000,
-                utc_us=time.time_ns() // 1000)
+                boot_id=state['boot_id'], now_monotonic_us=time.monotonic_ns() // 1000)
         elif args.action == "reading-baseline":
             from reading_baseline import capture_readings
             result = capture_readings(database, bytes.fromhex(args.node_id))

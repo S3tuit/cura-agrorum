@@ -47,6 +47,7 @@ QUARANTINED_COMMUNICATOR_STATE_COLUMNS = (
 # One inventory of the row access required by startup and storage recovery.
 # Metadata is validated separately as the version/fingerprint authority.
 REQUIRED_TABLE_PROJECTIONS = (
+    ("airtime_commissioning", ("request",)),
     (rows.CLOCK_OBSERVATION_V1_TABLE, rows.CLOCK_OBSERVATION_V1_COLUMNS),
     (rows.DIAGNOSTIC_V1_TABLE, rows.DIAGNOSTIC_V1_COLUMNS),
     (rows.RECEIVER_HEALTH_V1_TABLE, rows.RECEIVER_HEALTH_V1_COLUMNS),
@@ -259,6 +260,20 @@ class SqliteRepository:
             "instance_ordinal < ? ORDER BY instance_ordinal DESC LIMIT 1",
             (_unsigned(instance_ordinal, 63),),
         )
+
+    def read_airtime_commissioning(self):
+        """Read at most two bounded values; rejected TEXT never reaches Python."""
+        from .airtime_commissioning import (
+            AIRTIME_COMMISSIONING_TOKEN, AirtimeCommissioningState as State,
+        )
+        values = self._connection.execute(
+            "SELECT CASE WHEN typeof(request) = 'blob' AND length(request) = ? "
+            "THEN request END FROM airtime_commissioning LIMIT 2",
+            (len(AIRTIME_COMMISSIONING_TOKEN),),
+        ).fetchall()
+        if not values:
+            return State.ABSENT
+        return State.PENDING if values == [(AIRTIME_COMMISSIONING_TOKEN,)] else State.INVALID
 
     def read_communicator_state_rows(self) -> tuple[CommunicatorStateRow, ...]:
         """Inspect every row without decoding rejected TEXT, even invalid UTF-8."""

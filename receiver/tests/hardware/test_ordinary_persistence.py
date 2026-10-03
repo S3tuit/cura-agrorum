@@ -48,7 +48,7 @@ pytestmark = pytest.mark.hardware
 
 
 def _create(path, *, minimum_free_bytes=0, host_observations=None):
-    initialize_database(path, GROUP)
+    initialize_database(path, GROUP, known_empty_airtime=False)
     database = open_receiver_database(path, GROUP, minimum_free_bytes=0).database
     connection = database.connection
     instance = ReceiverInstanceStart(INSTANCE, 0)

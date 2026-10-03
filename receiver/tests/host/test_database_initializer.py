@@ -31,7 +31,7 @@ def test_initializer_installs_exact_packaged_schema_and_metadata(
     database = tmp_path / "receiver.sqlite3"
     group_id = bytes.fromhex("0011223344556677")
 
-    result = initialize_database(database, group_id)
+    result = initialize_database(database, group_id, known_empty_airtime=False)
 
     assert result.database_path == database
     assert result.cleanup_complete
@@ -96,7 +96,7 @@ def test_initializer_rejects_invalid_group_identity(
 ) -> None:
     database = tmp_path / "receiver.sqlite3"
     with pytest.raises(ValueError, match="group_id"):
-        initialize_database(database, group_id)  # type: ignore[arg-type]
+        initialize_database(database, group_id, known_empty_airtime=False)  # type: ignore[arg-type]
     assert not database.exists()
 
 
@@ -109,7 +109,7 @@ def test_initializer_rejects_schema_bytes_that_do_not_match_generated_hash(
     database = tmp_path / "receiver.sqlite3"
 
     with pytest.raises(DatabaseInitializationError, match="fingerprint"):
-        initialize_database(database, bytes(8), schema_path=tampered_schema)
+        initialize_database(database, bytes(8), schema_path=tampered_schema, known_empty_airtime=False)
 
     assert not database.exists()
     assert not list(tmp_path.glob(".receiver.sqlite3.*.initializing"))
@@ -124,7 +124,7 @@ def test_initializer_never_overwrites_an_existing_destination(
     before = hashlib.sha256(database.read_bytes()).digest()
 
     with pytest.raises(FileExistsError):
-        initialize_database(database, bytes(8))
+        initialize_database(database, bytes(8), known_empty_airtime=False)
 
     assert hashlib.sha256(database.read_bytes()).digest() == before
 
@@ -141,7 +141,7 @@ def test_initializer_cleans_temporary_artifacts_after_sqlite_failure(
 
     monkeypatch.setattr(database_initializer.sqlite3, "connect", fail_connect)
     with pytest.raises(DatabaseInitializationError, match="initialization failed"):
-        initialize_database(database, bytes(8))
+        initialize_database(database, bytes(8), known_empty_airtime=False)
 
     assert not database.exists()
     assert not list(tmp_path.glob(".receiver.sqlite3.*.initializing"))
@@ -165,7 +165,7 @@ def test_initializer_preserves_and_reconciles_uncertain_installation(
         fail_directory_sync,
     )
     with pytest.raises(DatabaseInstallationUncertainError) as captured:
-        initialize_database(database, group_id)
+        initialize_database(database, group_id, known_empty_airtime=False)
 
     uncertain = captured.value
     assert uncertain.database_path == database
@@ -203,7 +203,7 @@ def test_initializer_reports_temporary_unlink_as_cleanup_pending(
         path_unlink(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "unlink", fail_temporary_unlink)
-    result = initialize_database(database, bytes(8))
+    result = initialize_database(database, bytes(8), known_empty_airtime=False)
 
     assert database.is_file()
     assert not result.cleanup_complete
@@ -228,7 +228,7 @@ def test_reconciliation_rejects_a_replaced_temporary_artifact(
         fail_directory_sync,
     )
     with pytest.raises(DatabaseInstallationUncertainError) as captured:
-        initialize_database(database, bytes(8))
+        initialize_database(database, bytes(8), known_empty_airtime=False)
 
     uncertain = captured.value
     uncertain.temporary_path.unlink()
@@ -260,7 +260,7 @@ def test_initializer_reports_cleanup_sync_failure_without_failing_installation(
         "_synchronize_directory",
         fail_second_directory_sync,
     )
-    result = initialize_database(database, bytes(8))
+    result = initialize_database(database, bytes(8), known_empty_airtime=False)
 
     assert call_count == 2
     assert database.is_file()

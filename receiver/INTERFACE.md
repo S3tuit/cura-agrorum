@@ -2531,6 +2531,7 @@ load_communicator_state(
 commit_communicator_state(
     state: CommunicatorStateV2,
     *, deadline_monotonic_us: MonotonicUs,
+    commissioning: bool = False,
 ) -> CommunicatorStateCommitResult
 
 commit_receiver_clean_stop(
@@ -2941,7 +2942,8 @@ remaining = max(0, saved_remaining - elapsed_min)
 deadline = 0 if remaining == 0 else m_b + wait(remaining)
 ```
 
-An impossible negative elapsed_max, invalid arithmetic/evidence, missing/corrupt
+Outside explicit initial commissioning below, an impossible negative elapsed_max,
+invalid arithmetic/evidence, missing/corrupt
 history or ineligible time requires the full-budget fallback: all 18 deadlines
 are m_b + hold. Otherwise insert one historical recovery entry at m_b + hold,
 or replace an earliest deadline by max(old, m_b + hold) when full. Recovered
@@ -2979,6 +2981,42 @@ prepared value before submission. No writes occur solely because entries expire.
 Required saves cannot be starved by continuous packet arrival, and paced retries
 must allow ordinary packet admission between waits. Shutdown does not exempt the
 next startup from recovery. The deferred late-SPI limitation remains explicit.
+
+### Initial airtime commissioning
+
+`airtime_commissioning` is a required STRICT table with one nullable `request ANY`
+column. The only valid request is exactly one row containing the BLOB
+`b'cura-airtime-known-empty-v1'`. Classification is bounded to two rows and
+projects only the expected BLOB type and length; malformed TEXT is never decoded.
+`AirtimeCommissioningState` is `ABSENT` for zero rows, `PENDING` for that exact
+token, or `INVALID` for every other set of contents. Content constraints do not
+turn invalid tokens into whole-database integrity failures. A missing table or
+column is incompatible schema; SQLite corruption and I/O failures remain storage
+failures. No compatibility fallback or migration is provided.
+
+`initialize_database(..., known_empty_airtime=...)` requires an explicit bool.
+True seeds the token within the database-creation transaction; false creates an
+empty token table. True is the caller's assertion of known-empty radio airtime
+history. File absence, installation, and clock trust do not establish that fact.
+
+Only `MISSING` communicator state with a `PENDING` token authorizes commissioning.
+The communicator prepares generation one with all 18 entries empty and no RTC
+provenance, using its current monotonic instant and optional actual time evidence.
+No trusted UTC or silence wait is needed after the creation assertion. This gives
+36 seconds of nominal headroom and uses the normal complete-state commit path.
+The commit request carries `commissioning=True`, retained with its immutable
+state across retries. Persistence rechecks absent history, the exact valid token,
+generation one, empty entries and absent RTC provenance inside `BEGIN IMMEDIATE`.
+It installs state and deletes all token rows atomically before TX is permitted.
+
+An exact repeat is `ALREADY_COMMITTED` only with the exact requested state and an
+empty token table. An uncertain commit is reconciled against both those effects;
+matching state with remaining token contents is a conflict, not confirmation.
+Existing state, including corrupt/incompatible state, cannot be replaced by a
+commissioning request. Ordinary successful state installations also clear token
+contents atomically. Missing/invalid tokens never trigger repair or initialization.
+After commit, every replacement process follows ordinary recovery; no clean stop
+or lost acknowledgement permits commissioning again.
 
 ### State-row conditions and loading
 
@@ -3043,6 +3081,7 @@ sqlite_primary_code: i32 or absent
 sqlite_extended_code: i32 or absent
 os_errno: int or absent
 state: CommunicatorStateV2 or absent
+commissioning: AirtimeCommissioningState
 ```
 
 `state` is present if and only if status is `LOADED`. Loading is read-only and
@@ -3050,8 +3089,13 @@ serialized after earlier control commands. A reconciliation load submitted
 after an unknown commit observes that commit's terminal database state or
 reaches its own deadline.
 
-Every non-`NONE` condition produces conservative generation-zero runtime state
-and suppresses TX. `MISSING` and `CORRUPT` become usable only after the full-window
+The commissioning classification accompanies completed loads independently of
+the state-row condition; failed loads carry `ABSENT` without asserting a database
+observation. Existing state always wins over a pending token. Authorized pending
+commissioning is expected startup work and emits no missing-state diagnostic.
+
+Every non-`NONE` condition produces generation-zero runtime state and suppresses
+TX. Except for authorized commissioning above, `MISSING` and `CORRUPT` become usable only after the full-window
 generation-one ledger defined above is durably installed; trusted
 UTC is not required. A corrupt relation is preserved in the same atomic
 replacement transaction.
@@ -3112,7 +3156,7 @@ Generation handling is deterministic:
 - requested generation is older: `NOT_INSTALLED + STALE_GENERATION`; and
 - requested generation skips ahead: `NOT_INSTALLED + GENERATION_GAP`.
 
-A missing baseline accepts only a valid generation-one full-budget fallback: all
+A missing baseline without an explicit commissioning request accepts only a valid generation-one full-budget fallback: all
 18 remaining lifetimes cover at least W + T. Snapshot UTC is optional. A corrupt
 baseline accepts that same form of generation one only in one SQLite
 transaction that:
@@ -3140,6 +3184,12 @@ known to precede `COMMIT` returns `NOT_INSTALLED`. Once `COMMIT` may have been
 issued, lack of confirmation returns `OUTCOME_UNKNOWN`. Caller timeout never
 cancels possibly committed work. A later serialized load reconciles the exact
 installed generation and bytes.
+
+Every successful installation also deletes `airtime_commissioning` contents in
+the same transaction. The read-only ordinary `ALREADY_COMMITTED` result does not
+repair leftover tokens or change history. `commissioning` defaults to false on
+ordinary commit calls; only the state owner with a pending creation authorization
+submits a true flag. That flag is strictly typed and frozen with the request.
 
 The communicator's `CommunicatorStateOwner` retains immutable preceding and
 requested complete states before submitting an ordinary next-generation
@@ -3323,7 +3373,7 @@ handwritten; `schema.sql`,
 must not be edited. Resources are resolved relative to the installed receiver
 package, never the process working directory.
 
-`schema_source.sql` owns the exceptional `database_metadata`,
+`schema_source.sql` owns the exceptional `database_metadata`, `airtime_commissioning`,
 `receiver_instances` and `quarantined_communicator_states` tables. Generation
 executes the fully assembled schema in memory and verifies that every foreign
 key names an existing parent column set backed by a complete primary or unique
@@ -3339,11 +3389,11 @@ it only after validation. Startup never drops, upgrades or rewrites an
 incompatible database. Complete automatic retention applies inside one active
 epoch; earlier epochs remain read-only archives.
 
-Schema epoch 12 appends `AckTxResult.TX_UNCONFIRMED = 7` to the persisted
-catalogue. Existing ACK result assignments and the communicator-state encoding
-are unchanged. Databases from epoch 11 remain archived under the same
-fresh-database deployment rule; adding the catalogue entry in place is not a
-supported migration.
+Schema epoch 13 adds the required `airtime_commissioning` token table. Existing
+ACK result assignments and communicator-state encoding remain unchanged.
+Earlier databases remain archived under the fresh-database deployment rule;
+adding the table in place is not a supported migration. Creation for unknown
+radio history must explicitly choose `known_empty_airtime=False`.
 
 SQLite `application_id = 0x43555252` (`CURR`, decimal `1129665106`) remains the
 separate SQLite-header file-type marker. `database_metadata` is the single
@@ -3366,7 +3416,9 @@ the fingerprint in its own input would be self-referential.
 the exact packaged `schema.sql` before executing it, compares that hash with
 the generated Python constant, creates a temporary database, sets
 `application_id`, executes the already verified SQL and inserts the metadata
-singleton in the same creation transaction. Only after integrity and foreign-
+singleton in the same creation transaction. The required `known_empty_airtime`
+bool controls whether this transaction also seeds the pending commissioning
+token. Only after integrity and foreign-
 key checks succeed does it atomically install the new database at an absent
 destination. It never overwrites an existing database, discovers or sorts SQL
 fragments on the Pi, or computes a new local expected value with which to bless
@@ -3388,7 +3440,7 @@ Existing-database startup checks `application_id`, the one metadata row, exact
 configured `group_id`, exact generated schema version and exact generated
 fingerprint. Read-only preflight, the actual writable startup connection and
 recovery use one shared inventory to prepare zero-row projections of every
-required ordinary, lifecycle, communicator-state and quarantine table/column
+required ordinary, commissioning, lifecycle, communicator-state and quarantine table/column
 set. Missing required tables or columns publish
 `UNAVAILABLE_INCOMPATIBLE_SCHEMA`, even when metadata still matches. These
 checks do not attest live DDL, constraints or catalogue contents; metadata

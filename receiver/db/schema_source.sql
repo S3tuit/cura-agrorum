@@ -34,6 +34,11 @@ BEGIN
     SELECT RAISE(ABORT, 'database_metadata is immutable');
 END;
 
+-- Invalid contents are classified locally; missing schema remains incompatible.
+CREATE TABLE airtime_commissioning (
+    request ANY
+) STRICT;
+
 CREATE TABLE receiver_instances (
     instance_ordinal INTEGER PRIMARY KEY,
     receiver_instance_id BLOB NOT NULL UNIQUE

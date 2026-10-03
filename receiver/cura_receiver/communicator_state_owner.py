@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from enum import Enum, auto
 
+from .airtime_commissioning import AirtimeCommissioningState as Commissioning
 from .generated import receiver_enums_generated as E
 
 from .generated.receiver_entities_generated import (
@@ -63,6 +64,7 @@ class PendingStateCommit:
     preceding_condition: Condition = Condition.NONE
     purpose: E.PersistenceControlPurpose | None = None
     bucket_expiration_utc_us: int | None = None
+    commissioning: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,10 +88,13 @@ class CommunicatorStateOwner:
     """
 
     def __init__(
-        self, *, control, initial_state=None, initial_condition=Condition.NONE, clock=None, observer=None
+        self, *, control, initial_state=None, initial_condition=Condition.NONE, clock=None, observer=None,
+        initial_commissioning=Commissioning.ABSENT,
     ):
         if type(initial_condition) is not Condition:
             raise TypeError("initial condition must come from the state load")
+        if type(initial_commissioning) is not Commissioning:
+            raise TypeError("commissioning must come from the state load")
         if initial_state is not None and initial_condition is not Condition.NONE:
             raise ValueError("a loaded state cannot also have an unavailable condition")
         if initial_state is not None:
@@ -100,6 +105,7 @@ class CommunicatorStateOwner:
         self._control = control
         self._confirmed = initial_state
         self._condition = initial_condition
+        self._commissioning = initial_commissioning
         self._pending = None
         self._reconciliation_conflict = False
         self._recovery_retry_permitted = False
@@ -113,7 +119,13 @@ class CommunicatorStateOwner:
             control=control,
             initial_state=loaded.state,
             initial_condition=loaded.state_condition, clock=clock, observer=observer,
+            initial_commissioning=loaded.commissioning,
         )
+
+    @property
+    def commissioning_pending(self):
+        return (self._condition is Condition.MISSING
+                and self._commissioning is Commissioning.PENDING)
 
     @property
     def condition(self):
@@ -151,6 +163,7 @@ class CommunicatorStateOwner:
         receipt = StateCommitReceipt(requested)
         self._pending = PendingStateCommit(
             self._confirmed, requested, receipt, self._condition, purpose, bucket_expiration_utc_us,
+            commissioning=self.commissioning_pending,
         )
         self._submit_pending(deadline_monotonic_us=deadline_monotonic_us)
         return receipt
@@ -160,7 +173,8 @@ class CommunicatorStateOwner:
         self._recovery_retry_permitted = False
         started = self._clock.now_monotonic_us() if self._observer is not None else None
         result = self._control.commit_communicator_state(
-            pending.requested, deadline_monotonic_us=deadline_monotonic_us
+            pending.requested, deadline_monotonic_us=deadline_monotonic_us,
+            **({"commissioning": True} if pending.commissioning else {}),
         )
         if pending.receipt.commit_result is None:
             pending.receipt._commit_result = result
@@ -193,6 +207,9 @@ class CommunicatorStateOwner:
                 if expected is not None and actual == encode_communicator_state_v2(
                     expected
                 ):
+                    if pending.commissioning and loaded.commissioning is not Commissioning.ABSENT:
+                        self._reconciliation_conflict = True
+                        break
                     self._resolve(expected)
                     break
             else:
@@ -204,7 +221,12 @@ class CommunicatorStateOwner:
             and not self._reconciliation_conflict
         ):
             # Same condition is not exact-row equality. Only reissue the retained request.
-            self._recovery_retry_permitted = True
+            if pending.commissioning and loaded.commissioning is not Commissioning.PENDING:
+                self._reconciliation_conflict = True
+            else:
+                self._recovery_retry_permitted = True
+        elif pending.commissioning and loaded.status is LS.STATE_UNAVAILABLE:
+            self._reconciliation_conflict = True
         if self._observer is not None:
             self._observer(ObservedStateCall(loaded, E.PersistenceControlCommand.LOAD_COMMUNICATOR_STATE,
                 E.PersistenceControlPurpose.RECONCILIATION, started, finished, pending.requested.generation,
@@ -224,6 +246,8 @@ class CommunicatorStateOwner:
             else StateCommitResolution.NOT_INSTALLED
         )
         self._confirmed = state
+        if state is self._pending.requested:
+            self._commissioning = Commissioning.ABSENT
         self._condition = condition
         self._pending = None
         self._reconciliation_conflict = False

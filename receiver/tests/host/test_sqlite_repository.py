@@ -330,7 +330,7 @@ def _examples():
 @pytest.fixture
 def database(tmp_path: Path):
     path = tmp_path / "receiver.db"
-    initialize_database(path, NODE)
+    initialize_database(path, NODE, known_empty_airtime=False)
     result = open_receiver_database(path, NODE, minimum_free_bytes=0)
     assert result.failure is None
     connection = result.database.connection

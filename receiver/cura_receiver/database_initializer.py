@@ -10,6 +10,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from .airtime_commissioning import AIRTIME_COMMISSIONING_TOKEN
 from .generated.receiver_enums_generated import (
     DATABASE_SCHEMA_FINGERPRINT,
     DATABASE_SCHEMA_VERSION,
@@ -58,6 +59,7 @@ def initialize_database(
     database_path: str | os.PathLike[str],
     group_id: bytes,
     *,
+    known_empty_airtime: bool,
     schema_path: str | os.PathLike[str] = PACKAGED_SCHEMA_PATH,
 ) -> DatabaseInitializationResult:
     """Create and atomically install one new receiver database.
@@ -66,8 +68,12 @@ def initialize_database(
     verification tests, but its exact bytes must always match the generated
     schema fingerprint before SQLite sees them. The result distinguishes clean
     installation from non-fatal temporary-name cleanup still pending.
+    ``known_empty_airtime`` explicitly asserts unused radio history when true;
+    false preserves conservative startup for unknown history.
     """
 
+    if type(known_empty_airtime) is not bool:
+        raise TypeError("known_empty_airtime must be an explicit bool")
     if type(group_id) is not bytes or len(group_id) != 8:
         raise ValueError("group_id must contain exactly 8 bytes")
 
@@ -111,6 +117,11 @@ def initialize_database(
             f"PRAGMA application_id = {SQLITE_APPLICATION_ID};\n"
             + schema_sql
         )
+        if known_empty_airtime:
+            connection.execute(
+                "INSERT INTO airtime_commissioning (request) VALUES (?)",
+                (AIRTIME_COMMISSIONING_TOKEN,),
+            )
         connection.execute(
             "INSERT INTO database_metadata "
             "(singleton_id, group_id, database_schema_version, "

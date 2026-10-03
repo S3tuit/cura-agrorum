@@ -880,7 +880,7 @@ interface incorrectly and therefore uses `CORE`, not this domain.
 | `0` | `NONE` | Success only; invalid in a diagnostic |
 | `1` | `CONFIGURATION_REJECTED` | The protocol loader rejected receiver configuration content or file-security policy |
 | `2` | `HOST_IDENTITY_REJECTED` | The current Linux boot identity was readable but not one canonical UUID |
-| `3` | `STATE_MISSING` | The communicator-state singleton is absent and conservative generation zero is in use |
+| `3` | `STATE_MISSING` | The communicator-state singleton is absent without valid commissioning authorization and conservative generation zero is in use |
 | `4` | `STATE_CORRUPT` | The state SQL envelope, digest, canonical encoding or invariants failed validation |
 | `5` | `UNSUPPORTED_STATE_VERSION` | The stored state format is unsupported and requires guarded no-TX recovery before replacement |
 | `6` | `STATE_POLICY_MISMATCH` | Stored airtime-policy parameters do not equal the active deployment policy |
@@ -1124,7 +1124,8 @@ follow the control result even when diagnostic admission is unavailable.
 |---|---|
 | Receiver configuration is rejected | Emit one `READ + CONFIGURATION_REJECTED + FATAL`, preserve the stable protocol rejection code when supplied and do not start normal radio operation |
 | Linux boot identity is noncanonical | Emit one `READ + HOST_IDENTITY_REJECTED + FATAL` and do not start normal radio operation |
-| Communicator-state row is missing | Adopt conservative generation zero and emit one startup `READ + STATE_MISSING + WARN`; commit the full-budget/full-window generation-one fallback before TX, even without trusted UTC |
+| Communicator-state row is missing without valid commissioning authorization | Adopt conservative generation zero and emit one startup `READ + STATE_MISSING + WARN`; commit the full-budget/full-window generation-one fallback before TX, even without trusted UTC |
+| Communicator-state row is missing with valid commissioning authorization | Expected initial commissioning; emit no `STATE_MISSING` diagnostic. Commit empty generation one and consume the token atomically before TX; persistence failures retain their ordinary diagnostics |
 | Communicator-state row is corrupt | Emit one `READ + STATE_CORRUPT + ERROR`, use conservative runtime state, suppress TX, then atomically preserve the rejected rows and install the full-budget/full-window generation-one fallback before TX |
 | State version is unsupported or policy mismatches | Emit one corresponding `READ + ERROR`, suppress TX for the complete conservative active-policy rolling-window wait, then archive the exact old singleton and atomically install an empty current-policy generation-one ledger; restart restarts the wait |
 | Configuration filesystem or host-ID read fails | Emit `READ + IO`; it is `FATAL` when startup cannot establish receiver identity/configuration |

@@ -22,13 +22,13 @@ class CheckedPersistenceWorker(PersistenceWorker):
             raise self.failure
 
 
-def prepare_worker_files(tmp_path):
+def prepare_worker_files(tmp_path, *, known_empty_airtime=False):
     import json
     from cura_receiver.database_initializer import initialize_database
     from tests.support.builders.persistence import GROUP
 
     database = tmp_path / "worker.db"
-    initialize_database(database, GROUP)
+    initialize_database(database, GROUP, known_empty_airtime=known_empty_airtime)
     configuration = tmp_path / "test-group.json"
     configuration.write_text(
         json.dumps(

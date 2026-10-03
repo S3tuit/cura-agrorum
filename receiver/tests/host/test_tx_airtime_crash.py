@@ -222,5 +222,46 @@ def test_repeated_airtime_process_crashes_accumulate_conservatively(worker_files
         worker.finish_test()
 
 
+@pytest.mark.parametrize("boundary", BOUNDARIES)
+def test_commissioning_process_kill_keeps_token_and_state_atomic(tmp_path, boundary):
+    from tests.support.coordination.persistence_worker import prepare_worker_files
+    database, _, _ = prepare_worker_files(tmp_path, known_empty_airtime=True)
+    kill_at(tmp_path, boundary)
+    before_commit = boundary == "recovery_before_commit"
+    with sqlite3.connect(database) as connection:
+        assert connection.execute('SELECT count(*) FROM airtime_commissioning').fetchone() == (
+            1 if before_commit else 0,)
+        assert connection.execute('SELECT count(*) FROM communicator_state').fetchone() == (
+            0 if before_commit else 1,)
+    replacement, worker, clock = component(tmp_path, 1)
+    try:
+        assert replacement.available_charge_us == 0
+        assert replacement.recover(deadline_monotonic_us=5_000_101).reason is R.STATE_READY
+        assert replacement.total_used == (
+            0 if before_commit else 4_000_000 if boundary == "save_after_commit" else 2_000_000)
+        assert replacement.state.generation == (
+            1 if before_commit else 3 if boundary == "save_after_commit" else 2)
+        with sqlite3.connect(database) as connection:
+            assert connection.execute('SELECT * FROM airtime_commissioning').fetchall() == []
+            assert connection.execute('PRAGMA integrity_check').fetchone() == ('ok',)
+    finally:
+        worker.finish_test()
+
+
+def test_commissioning_is_not_repeated_across_process_crashes(tmp_path):
+    from tests.support.coordination.persistence_worker import prepare_worker_files
+    prepare_worker_files(tmp_path, known_empty_airtime=True)
+    for episode in range(4):
+        kill_at(tmp_path, "recovery_acknowledged", elapsed=episode * 10_000_000,
+                episode=str(episode))
+    replacement, worker, clock = component(tmp_path, 40_000_000)
+    try:
+        assert replacement.recover(deadline_monotonic_us=45_000_100).reason is R.STATE_READY
+        assert replacement.state.generation == 5
+        assert replacement.total_used == 8_000_000
+    finally:
+        worker.finish_test()
+
+
 if __name__ == "__main__":
     child(Path(sys.argv[1]), sys.argv[2], int(sys.argv[3]))

@@ -292,14 +292,16 @@ separate from the RF runner and never automatically retried:
 
    The helper checks the stopped service, board/boot binding and elapsed interval.
    The operator attestation covers other transmitters; the helper cannot infer
-   their absence. It creates only a new candidate using the production schema,
-   V2 empty-entry encoding, validator and classifier. State generation
-   is one, historical charge zero, RTC provenance absent and recorded time quality
-   UNTRUSTED; no clock trust or spendable allowance is fabricated. Under V2 this
-   untrusted snapshot still triggers the full-window fallback at startup. The
-   helper therefore does not bypass the initial ACK hold. Readiness remains
-   conservative until an eligible later saved snapshot shows headroom; stored
-   lifetimes are not treated as current live allowance.
+   their absence. It creates only a new candidate through the production
+   initializer with `known_empty_airtime=True`. The production classifier must
+   report missing communicator state and a valid pending commissioning token.
+   No runtime state, RTC provenance or clock trust is fabricated. The preparation
+   receipt uses schema 2, generation zero and no charged-airtime value because
+   startup has not yet installed an airtime snapshot. On first startup the
+   receiver atomically installs an empty generation-one ledger and consumes the
+   token before TX, including with untrusted UTC. Later startups use ordinary
+   recovery. The RF runner still requires its separate fresh network-time and
+   validated-history prerequisites; a prepared token alone does not pass them.
    Retain stdout as the preparation receipt. Existing destinations are rejected.
 4. While still stopped and exclusively controlled, explicitly install the
    candidate through the existing offline database replacement procedure, retaining

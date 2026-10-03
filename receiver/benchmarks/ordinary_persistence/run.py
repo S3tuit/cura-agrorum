@@ -98,7 +98,7 @@ def _percentiles(values):
 def _case(output, units, mode, batch_size, rate, checkpoint_every):
     output.mkdir()
     path = output / "receiver.db"
-    initialize_database(path, GROUP)
+    initialize_database(path, GROUP, known_empty_airtime=False)
     database = open_receiver_database(path, GROUP, minimum_free_bytes=0).database
     connection = database.connection
     instance = ReceiverInstanceStart(INSTANCE, 0)

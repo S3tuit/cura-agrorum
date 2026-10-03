@@ -55,7 +55,7 @@ def _configuration(tmp_path: Path) -> Path:
 # The deployed SQLite stack establishes production durability settings and exact on-disk rows.
 def test_target_sqlite_capabilities(tmp_path: Path) -> None:
     path = tmp_path / "test-receiver.db"
-    initialize_database(path, GROUP)
+    initialize_database(path, GROUP, known_empty_airtime=False)
     opened = open_receiver_database(path, GROUP, minimum_free_bytes=1)
     assert opened.failure is None
     connection = opened.database.connection
@@ -162,7 +162,7 @@ def test_target_configuration_and_boot_identity(tmp_path: Path) -> None:
 # Two real process starts create ordered durable rows under one unchanged kernel boot UUID.
 def test_target_process_restart_identities(tmp_path: Path) -> None:
     path = tmp_path / "test-receiver.db"
-    initialize_database(path, GROUP)
+    initialize_database(path, GROUP, known_empty_airtime=False)
     configuration = _configuration(tmp_path)
     receiver_root = Path(__file__).resolve().parents[2]
     protocol_root = receiver_root.parent / "protocol/protocol-v2-lora/python"

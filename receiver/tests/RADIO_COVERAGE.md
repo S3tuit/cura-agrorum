@@ -1,7 +1,7 @@
 # Radio component coverage map
 
 This maps the required [Radio families](../TESTING.md#radio) to their
-implementation boundaries and recorded validation.
+implementation boundaries and assertions.
 The production physical port, Linux adapter, SX1262 command backend, radio
 owner and diagnostic codec/factory are implemented. Host coverage lives in:
 
@@ -22,29 +22,16 @@ and independent physical timing remain separate obligations. Non-peer cases
 are in `hardware/test_radio.py`, with the procedure in
 [hardware/RADIO_TESTS.md](hardware/RADIO_TESTS.md).
 
-On 2026-09-17, all three nominal Pi cases passed in 2.09 s: device/GPIO/SPI
-configuration, initialization/profile readback, and finite RX-timeout IRQ
-handling with direct RX restoration. All three teardowns confirmed safe
-shutdown; no SetTx was submitted. Source archive and manifests were verified.
-The fixture records operator wiring/power confirmations. Later operator DC
-measurements are recorded below. IRQ delivery is functional evidence, not an independent
-pin/kernel timestamp or waveform qualification.
-
-The fast nominal captures are not permanently retained. The manual held-BUSY
-run taught a separate cleanup lesson: expected INITIALIZE and CLEANUP /
-BUSY_TIMEOUT returned in 277,477 µs with 809 HIGH samples and no SPI/RX/TX,
-but `safe_shutdown=false` aborted the session. A passing fault assertion does
-not establish safe shutdown. After operator-confirmed power removal/selector
-restoration, three nominal cases passed in 2.28 s; that separate boot cannot
-retroactively pass the failed run. Exact commands/numeric exits were not captured.
+A passing held-BUSY fault assertion does not establish safe shutdown. The
+expected INITIALIZE/CLEANUP BUSY_TIMEOUT can coexist with `safe_shutdown=false`;
+stop the session and restore power/wiring before checking nominal operation.
 
 Two startup/IRQ lessons remain in the backend regressions: post-reset `0x2A`
 needs fresh command confirmation; correlated `0x26`/IRQ `0x0200` must be interpreted
 with the immutable event snapshot while subsequent command checks stay strict.
 See `test_tcxo_initial_status_and_error_clear`,
 `test_post_reset_standby_confirmation_failure`, `test_immutable_timeout_observation`
-and `test_immediate_completion` in `host/test_sx1262.py`. Failed sessions and
-duplicate source/trace archives were discarded under the retention policy.
+and `test_immediate_completion` in `host/test_sx1262.py`.
 
 The operator also reported the following multimeter readings in nominal wiring
 after boot, before pytest: RESET 2.796 V, CS 3.276 V, BUSY 0 V, DIO1 0 V,
@@ -55,25 +42,6 @@ RESET is consistent with a roughly 59 kohm path to ground, within the Pi 3's
 This is a pull-down hypothesis, not a measured bias setting or independent
 logic-threshold/timing qualification. The Linux adapter currently preserves
 GPIO bias with AS_IS; no pull configuration was changed during this audit.
-
-Host validation on 2026-09-17 after the approved runtime status/IRQ
-correction: `make test-receiver-host` passed 3,142 cases; the focused
-backend/owner/model/ingress/diagnostic/Linux/fixture selection passed 657. Diff checks passed.
-Earlier backend validation passed 258 protocol cases and both generators'
-validation/freshness checks; the manual fixture revision changes no protocol
-or schema production code. These results do not satisfy any physical acceptance
-row.
-
-The subsequent implementation-review corrections have host validation only:
-3,229 receiver tests and 744 focused radio cases pass. Reset timing now starts
-after GPIO assertion; resource lifecycle errors preserve acquisition and every
-release failure; soft/hard recovery explicitly resynchronizes the Linux event
-stream before rearm. Tests compose the real adapter/backend/owner and demonstrate
-later packet delivery after a sequence gap, with strict malformed-evidence and
-bounded-failure behavior. The retained Pi snapshot predates these corrections;
-its results remain evidence for that recorded source, not physical qualification
-of the revised implementation. Existing RF, waveform and gated-recovery deferrals
-remain unchanged.
 
 ## Host families
 
@@ -108,12 +76,12 @@ builders, command encoders, or state transitions.
 
 ## Hardware families
 
-| Required family | Evidence boundary |
+| Required family | Observation |
 |---|---|
-| Device and permission probe | Nominal PASS: configured devices opened as the intended service user |
-| Real initialization | Nominal PASS: attached board, production SPI/GPIO, confirmed profile/mode |
-| Finite RX timeout/rearm | Nominal PASS: real timeout IRQ and complete receive restoration; no independent timing claim |
-| Manual held-BUSY startup | Expected fault observed on Pi in 277,477 us; no SPI/RX/TX, unconfirmed cleanup retained; subsequent nominal restoration PASS |
+| Device and permission probe | Configured devices open as the intended service user |
+| Real initialization | Attached board, production SPI/GPIO, confirmed profile/mode |
+| Finite RX timeout/rearm | Real timeout IRQ and complete receive restoration; no independent timing claim |
+| Manual held-BUSY startup | Expected startup fault with no SPI/RX/TX; stop on unconfirmed cleanup and require manual nominal restoration |
 | Real BUSY behavior | Raw radio BUSY waveform and bounded production waits |
 | DIO1 timestamp path | Controlled radio IRQ, kernel monotonic edge, matching observations |
 | Normal-IQ uplink reception | Independent component peer and reviewed exact payload |
@@ -121,7 +89,7 @@ builders, command encoders, or state transitions.
 | Profile restoration | Alternating peer RX/TX evidence after each rearm |
 | Radio timing characterization | Raw command/edge samples and independent timing reference |
 | Hardware reset recovery | Controllable physical fault, real reset/profile restoration |
-| Safe-state teardown | Nominal PASS; TX-adjacent/recovery conditions still require their deferred fixtures |
+| Safe-state teardown | Confirm nominal shutdown; TX-adjacent/recovery conditions require their own fixtures |
 
 The [carrier proposal](../hardware/TEST_CARRIER.md#proposed-sx1262-extension)
 defines connections and fault states. Selected missing hardware fails; there

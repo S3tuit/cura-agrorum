@@ -5,7 +5,7 @@ directory staged by the laptop. It verifies the Pi serial, nominal fixture and
 sources before GPIO/SPI access. GPIO line requests and a process lock enforce
 exclusive ownership. The production service must be stopped.
 
-Normal cases compose `Radio -> Sx1262 -> LinuxRadioIo`. RF-006 is explicitly
+Normal cases compose `Radio -> Sx1262 -> LinuxRadioIo`. `component.invalid_downlinks` is explicitly
 labelled `Sx1262/LinuxRadioIo`: its finite burst does not claim the Radio owner's
 one-response-per-occurrence behavior. The backend retains its fixed production
 PHY and watchdog. This peer has no protocol acceptance, SQLite or durable

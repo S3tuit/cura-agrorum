@@ -1,7 +1,7 @@
 """Finite raw RF peer. Production components, no service or durable allowance.
 
 Run from an isolated, hash-verified tree as the configured service UID.
-stdout contains only bounded JSON records. RF-006 uses the existing backend
+stdout contains only bounded JSON records. The invalid-downlink case uses the existing backend
 directly, with its layer named in every run; all other cases use Radio.
 """
 from __future__ import annotations
@@ -37,11 +37,11 @@ D2 = bytes.fromhex("c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6")
 X = bytes.fromhex("e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6")
 # Expected RX count, maximum TX count. Kept independent of laptop declarations.
 CASES = {
-    "RF-001.exchange": (1, 1), "RF-003.silence": (1, 0),
-    "RF-006.invalid": (1, 3), "RF-008.silence": (2, 0),
-    "RF-008.exchange": (2, 2), "RF-009.untouched": (1, 0),
-    "RF-009.initialized": (1, 0), "RF-010.wake": (2, 2),
-    "RF-012.disconnected": (1, 0), "RF-013.absent": (0, 0),
+    "component.ack_exchange": (1, 1), "component.ack_timeout": (1, 0),
+    "component.invalid_downlinks": (1, 3), "component.repeat_timeout": (2, 0),
+    "component.repeat_exchange": (2, 2), "component.cold_sleep": (1, 0),
+    "component.initialized_sleep": (1, 0), "component.sleep_wake": (2, 2),
+    "component.dio1_disconnected": (1, 0), "component.radio_absent": (0, 0),
 }
 
 
@@ -222,7 +222,7 @@ def execute(case, backend, radio, stop, started):
         require(len(packets) < expected_count, "extra uplink")
         require(frame == expected[len(packets)], "unexpected uplink bytes")
         packets.append(packet)
-        if case == "RF-006.invalid":
+        if case == "component.invalid_downlinks":
             transmissions.extend(lower_burst(backend, packet, stop))
         elif maximum_tx:
             transmissions.append(response(radio, packet, B if len(packets) == 1 else D2, len(packets)))
@@ -269,7 +269,7 @@ def run_session(args, fixture, seal, maximum_tx, executor, *, lease_seconds=45, 
         clock = LinuxOsClock()
         io = io_class(clock, maximum_tx)
         backend = Sx1262(io, clock, clock, RadioConfiguration())
-        radio = None if (args.case == "RF-006.invalid" if raw is None else raw) else Radio(backend)
+        radio = None if (args.case == "component.invalid_downlinks" if raw is None else raw) else Radio(backend)
         stop = threading.Event()
         io.stop_requested = stop.is_set
         identity = dict(run=args.run, case=args.case, pid=os.getpid(),

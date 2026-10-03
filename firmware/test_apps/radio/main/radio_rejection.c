@@ -2,14 +2,14 @@
 #include <string.h>
 #include "protocol_v2_lora_crypto.h"
 
-static const char *const names[] = {RF023_CASE_NAMES};
-const char *rf023_case_name(unsigned index) {
-  return index < RF023_CASE_COUNT ? names[index] : NULL;
+static const char *const names[] = {REJECTION_CASE_NAMES};
+const char *rejection_case_name(unsigned index) {
+  return index < REJECTION_CASE_COUNT ? names[index] : NULL;
 }
-static bool valid(const rf023_config_t *config) {
+static bool valid(const rejection_config_t *config) {
   if (!config || config->run[32] != '\0' ||
-      config->first_message > UINT32_MAX - (RF023_CASE_COUNT - 1) ||
-      config->first_sample > UINT32_MAX - (RF023_CASE_COUNT - 1)) return false;
+      config->first_message > UINT32_MAX - (REJECTION_CASE_COUNT - 1) ||
+      config->first_sample > UINT32_MAX - (REJECTION_CASE_COUNT - 1)) return false;
   for (unsigned i = 0; i < 32; ++i)
     if (!((config->run[i] >= '0' && config->run[i] <= '9') ||
           (config->run[i] >= 'a' && config->run[i] <= 'f'))) return false;
@@ -18,15 +18,15 @@ static bool valid(const rf023_config_t *config) {
       if (!memcmp(config->node_ids[i], config->node_ids[j], 8)) return false;
   return true;
 }
-bool rf023_authorized(const rf023_config_t *config, const char *run,
+bool rejection_authorized(const rejection_config_t *config, const char *run,
                       unsigned index, unsigned phase) {
-  return valid(config) && run && index < RF023_CASE_COUNT && phase == 0 &&
+  return valid(config) && run && index < REJECTION_CASE_COUNT && phase == 0 &&
          !strcmp(config->run, run);
 }
-bool rf023_build(const rf023_config_t *config, unsigned index, rf023_packet_t *out) {
+bool rejection_build(const rejection_config_t *config, unsigned index, rejection_packet_t *out) {
   if (!out) return false;
   memset(out, 0, sizeof(*out));
-  if (!valid(config) || index >= RF023_CASE_COUNT) return false;
+  if (!valid(config) || index >= REJECTION_CASE_COUNT) return false;
   const unsigned identity = index == 8 ? 1 : index >= 10 ? 2 : 0;
   cura_lora_v2_clear_header_t header = {
     .control = 0x20, .domain = 1,
@@ -54,7 +54,7 @@ bool rf023_build(const rf023_config_t *config, unsigned index, rf023_packet_t *o
     if (index == 5) status = -1;
   }
   if (index == 7 || index == 8 || index == 9 || index == 11) status = -1;
-  rf023_packet_t packet = {0};
+  rejection_packet_t packet = {0};
   if (cura_lora_v2_seal_frame(packet.frame, sizeof(packet.frame), &packet.frame_length,
                             key, &header, body, body_length) != CURA_LORA_V2_CRYPTO_OK) return false;
   if (index == 7) packet.frame[packet.frame_length - 1] ^= 1;

@@ -6,7 +6,7 @@ pytest-embedded flashes the image, selects cases and records their results.
 The bare-C6 app and its fake sensor adapters are separate.
 The `reading` operation additionally links production core, codec/crypto and
 real test-partition persistence to verify the same acquisition's canonical body.
-See the [coverage and evidence index](COVERAGE.md) for the current acceptance boundary.
+See the [coverage index](COVERAGE.md) for the current acceptance boundary.
 
 Unity console waits yield to the C6 idle task while the operator answers prompts.
 The app forwards to the installed Unity parser and UART implementation; the
@@ -30,40 +30,12 @@ The approved carrier includes **permanent R12, 100 kohm from
 in the carrier revision label, together with the actual I2C pull-up choice.
 Use ordinary guided acceptance with R12 fitted.
 
-## Retained acceptance evidence
+## Run results
 
-Inspect [evidences/](evidences/) for recorded test runs. Each JSON record contains
-the operation, fixture, DUT/build identity, timestamps, observations and outcome.
-Compare its source/configuration hashes with the build being assessed. Required
-coverage and acceptance criteria are defined in [TESTING.md](../../TESTING.md);
-this README describes how to run the cases and retain their evidence.
-
-Manually retain the latest reviewed successful `carrier-evidence.json` for
-each required implemented case in [evidences/](evidences/). Copy the original
-bytes without editing metadata, outcomes, timestamps, measurements or hashes.
-Use `<operation>-<fixture>-<mode>[-<position>]-evidence.json`, where mode is
-`sensor-guided` or `automatic` for unguided cases. Examples:
-
-```text
-gate-on-nominal-sensor-guided-evidence.json
-adc-reference-adc_reference-sensor-guided-A-evidence.json
-adc-reference-adc_reference-sensor-guided-B-evidence.json
-repeat-nominal-automatic-evidence.json
-```
-
-Copy matching A/B records together: B binds A's run ID and exact file SHA256.
-A retains `position_A_complete_sequence_incomplete` and cannot establish
-acceptance alone. Unguided runs retain `software_passed_operator_acceptance_pending`;
-their software completion establishes automated coverage, including the complete
-requested count for repetition. Guided electrical acceptance belongs to separate
-records. Discovery is setup; create evidence files only for implemented cases.
-
-Review the original JSON, JUnit report and UART log before replacing a record.
-Keep failed/incomplete/exploratory attempts and raw reports/logs locally; they
-cannot replace successful evidence. A later failure remains unresolved even
-when an earlier passing file is retained. Missing required evidence means
-pending coverage. Git retains earlier committed versions. Keep dates, measured
-results and pass/fail history in the original evidence records.
+The runner writes temporary `carrier-evidence.json`, UART and JUnit results in
+the selected session directory. Review them before cleaning up. A/B procedures
+need the matching position-A result during the same measurement sequence.
+Keep fixture lessons in this guide or beside the checks, then discard run output.
 
 ## Destructive test storage
 
@@ -432,18 +404,6 @@ flags and zeroing. Unguided reading runs retain the existing
 this operation has no assigned electrical hold. Guided ADC B records paired
 acceptance. Neither outcome accepts an outstanding electrical obligation.
 
-Use `reading-<fixture>-automatic-evidence.json` and
-`reading-adc_reference-sensor-guided-{A,B}-evidence.json` when manually retaining
-reviewed records. Keep separate nominal session-start and final-restoration
-records with `reading-nominal-automatic-session-start-evidence.json` and
-`reading-nominal-automatic-restoration-evidence.json`; preserve any earlier
-nominal evidence. Keep failures and raw UART/JUnit logs in the session directory.
-The [coverage index](COVERAGE.md) identifies prior electrical/identity evidence
-that may be reused after confirming its circuit and relevant behavior unchanged.
-If a mapping failure leads to a production fix, repeat affected component and
-electrical observations before closing acceptance. Existing bare-C6 Make targets
-retain their original meaning.
-
 Use the build/record-build commands and define `sensor_carrier` above in this
 same shell. Every invocation creates a new run directory below
 `SENSOR_CARRIER_SESSION` and records its path in `SENSOR_CARRIER_LAST_RUN`.
@@ -777,8 +737,8 @@ DS connector arrangement, repeat wiring preflight and restore `nominal`.
 Every run retains `carrier-evidence.json`, `report.xml` and pytest-embedded
 `dut.log`. Inspect the evidence status, not just Unity PASS: software success,
 position-A incompletion, full guided acceptance and exploration have distinct
-states. Follow the [retained-evidence policy](#retained-acceptance-evidence)
-to copy reviewed records into `evidences/` with their original contents.
+states. After diagnosis, keep useful lessons in the owning documentation and
+discard the temporary session results.
 
 The app locally uses merged JUnit reporting: the Python orchestration case and
 the Unity cases are both retained, with totals reconciled from their actual

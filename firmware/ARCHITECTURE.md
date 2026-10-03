@@ -139,7 +139,7 @@ experience; no source/configuration-bound report or reset history was supplied
 with the decision. It does not establish reset-safe rolling-hour enforcement.
 The firmware behavior remains unchanged. A more elaborate reset-spanning
 mechanism and its verification are deferred under DEP-007 and the firmware
-ledger portion of RF-029; they are not prerequisites for this pilot.
+ledger portion of rolling airtime; they are not prerequisites for this pilot.
 
 Revisit this deferral on repeated/unexpected resets, changed wake cadence or
 retry budgets, a requirement for independent reset-safe enforcement, or resumed

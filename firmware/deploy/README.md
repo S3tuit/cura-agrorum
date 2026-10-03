@@ -45,11 +45,9 @@ service UID ownership and 0600 mode at installation. Restart the receiver after
 group/allowlist changes. Retire old IDs through the protocol tool when replacing
 an existing active identity; retain historical receiver data separately.
 
-Disposable bench credentials are separate from final production credentials.
-Final production handover remains a later agreed transition, bound to the final
-artifact and affected checks under the evidence-reuse policy. Lost, exhausted or
-erased counters never permit resuming the previous identity. No blanket re-soak
-or automatic evidence transfer to changed credentials is assumed here.
+Disposable test credentials are separate from production credentials. Identity
+handover requires the applicable build, provisioning and integration checks.
+Lost, exhausted or erased counters never permit resuming the previous identity.
 
 Building this image does not authorize autonomous transmission or complete
 production handover. Keep the non-transmitting test image installed until

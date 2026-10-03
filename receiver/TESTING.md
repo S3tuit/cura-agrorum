@@ -1,27 +1,10 @@
 # Receiver testing
 
-Status: this document defines the pilot receiver test suite. Generated
-contracts, initialization, clocks, queue, ingress, configuration/boot identity,
-database opening, lifecycle start and SQLite row primitives have host coverage.
-Caller-driven ordinary transactions, immutable enrichment, reading classification,
-exact replay, poison isolation, recovery deadlines, explicit checkpoints,
-process-kill boundaries and model-based sequences also have host coverage.
-The sole persistence worker, synchronous controls, state validation/recovery,
-shared storage recovery, concurrency boundaries and component shutdown also
-have host coverage, including worker SIGKILL and generated schedule tests.
-Pure time arithmetic, normalized trust decisions, candidate observations/RTC
-provenance, clock correlation and logical timestamp analysis also have host
-coverage, including independent generated history and anchor-selection models.
-Pi component coverage includes queue/ingress, startup, ordinary transactions,
-worker control/checkpoint scheduling, a seeded CPU/storage-load soak,
-process-kill recovery and isolated capacity/access/corruption recovery.
-Runtime time/Chrony/DS3231, durable airtime and the production radio stack are
-implemented with host and source-bound Pi component evidence; retained target
-results do not qualify every later source/configuration change. Communicator
-orchestration, observability and the service lifecycle are implemented with
-host coverage. Source-bound [installed pre-radio qualification](tests/evidence/2026-09-18-production-installation/README.md#final-qualification)
-covers the isolated Pi deployment; full-service RF and later runtime time/storage
-acceptance remain separate.
+The repository must pass its implemented tests. Before committing a new test,
+make it pass; after software or hardware changes, rerun all necessary tests.
+Contributors choose those tests during implementation using their judgment.
+Keep useful failure lessons beside the affected code or in its documentation.
+Run outputs are temporary working data, not a permanent pass/fail archive.
 
 ## Purpose and authority
 
@@ -47,18 +30,8 @@ Every test obligation below belongs to one of two suites:
   controls the C6 over its actual UART connector, and SSH controls a separate Pi
   process. Receiver production code and hardware operations execute on Pi.
 
-Field-pilot-v2 deployment and full-system acceptance use the explicitly
-reviewed pilot-readiness gate, with selected requirement and test IDs,
-dependencies and required source-bound evidence recorded in the deployment
-record. Every production behavior needed by that pilot and every selected gate
-obligation must be implemented and verified. Other required coverage remains
-identified as deferred, with its reason, consequence and revisit condition;
-deferred is neither passed nor deleted. Component RF tests may run when their
-own prerequisites pass, before complete receiver service readiness.
-Full-system RF tests require the real production service and the relevant
-integration/lifecycle prerequisites, not automatic completion of all unrelated
-deferred physical tests. Any change to behavior, protocol, identity/counters,
-timing or evidence standards still requires an explicit decision.
+Component RF tests require their own fixture prerequisites. Full-system RF
+tests use the real production service and applicable integration checks.
 
 ## Framework and organization
 
@@ -82,11 +55,11 @@ boot/offline/missing-device/restart checks are distinct phases. Keep the C6
 from transmitting during this pre-radio qualification. Later runtime time,
 storage and full-system RF acceptance remain open until separately verified.
 
-RF functional tests, including RF-019/RF-020, use the explicitly identified
+RF functional tests, including node/service.reading_delivery, use the explicitly identified
 10-second node build and agreed UART sleep-entry boundary. Production900-second
 cadence requires separate validation; no prior long RF run is required.
 
-RF-020 verifies the production reading/ACK exchange, received sensor flags and
+service.reading_delivery verifies the production reading/ACK exchange, received sensor flags and
 established nominal ranges, exact decoded values in canonical SQLite records,
 delivery outcomes and the accelerated10-second next wake with previous metrics.
 A compact pre-run baseline of selected-node reading IDs/row hashes allows
@@ -95,8 +68,8 @@ unchanged prior rows and exactly two new instance-bound readings against the
 required final consistent SQLite capture.
 Independent same-acquisition sensor-to-packet conversion checks remain in the
 [sensor-carrier integration tests](../firmware/TESTING.md#node_sensors-automated-cases).
-Their passing evidence must apply to the selected sources/configuration and is
-a separate prerequisite. RF-020 does not require production acquisition
+Run those checks when relevant to the selected sources/configuration.
+`service.reading_delivery` does not require production acquisition
 instrumentation or claim to repeat that conversion check during its RF run.
 
 ### Suite layout
@@ -115,9 +88,7 @@ power removal, battery retention, oscillator-stop rejection and recovery.
 It records human actions and raw device evidence across Pi power cycles and
 is not collected by pytest or any Make target. This manual hardware evidence
 complements the production-adapter tests below; it does not satisfy their
-runtime policy, privilege, timeout or durable-provenance obligations. Dated
-bench results and raw captures are Git-tracked alongside the procedure under
-[`hardware/ds3231/results/`](hardware/ds3231/results/README.md).
+runtime policy, privilege, timeout or durable-provenance obligations.
 
 The implemented layout is:
 
@@ -256,12 +227,8 @@ Ordinary hardware targets continue to exclude `rf_peer`.
   relevant configuration, service journal, device trace, test seed and host
   metadata without retaining secret keys.
 
-Permanent [hardware evidence](tests/hardware/evidence/README.md) follows the
-[repository policy](../EVIDENCE.md): only destructive tests, physical-action
-tests or runs longer than five minutes. Keep a short report and essential
-observations/source identity. Fast hardware and host checks can be rerun.
-After investigation, move useful lessons to code/regressions or owning
-documentation and discard failed sessions, routine receipts and raw duplicates.
+After investigating failures, put useful lessons in code, regression tests or
+owning documentation, then discard the run output.
 
 The current low-level `FakeOsClock` is manually controlled. Reading monotonic or
 realtime never advances either value. Tests call `advance_elapsed_us()` to move
@@ -359,9 +326,9 @@ tests/rf/ with a separate Pi component process in
 receiver/test_apps/radio_peer/. Reuse the production Pi radio components where
 their fixed profile and state contract applies; deliberate alternative-profile
 cases identify the lower layer they exercise. The component peer and
-[joint runner](../tests/rf/README.md) implement RF-001/003/006/008/009/010/012/013;
-their [manual-fixture evidence](../tests/rf/evidence/README.md) records costly
-physical results. Nominal tests are rerun when needed; host checks do not prove RF outcomes. RF-006's finite burst explicitly exercises Sx1262/LinuxRadioIo.
+[joint runner](../tests/rf/README.md) implement the component cases in
+[spec.py](../tests/rf/spec.py). The `component.invalid_downlinks` finite burst
+exercises Sx1262/LinuxRadioIo.
 Independent waveform/timestamp qualification and
 controlled BUSY-gate recovery retain their separate deferred status.
 Only a multimeter is currently available; voltage readings do not establish
@@ -453,7 +420,7 @@ persistence model also have host coverage. Pi tests exercise mixed ordinary
 transactions, named crash boundaries, a bounded full filesystem, permissions,
 read-only remounts and corrupt-file maintenance. The
 [FULL/NORMAL storage benchmark](benchmarks/ordinary_persistence/README.md)
-retains raw target evidence separately from correctness tests.
+measures target performance separately from correctness tests.
 
 The caller-driven component is now integrated into the sole persistence worker.
 Its host suites exercise interruptible waiting, commit-driven timer dispatch,
@@ -464,8 +431,6 @@ soak with CPU/fsync load, and kill/restart the real worker at named boundaries.
 The bounded test caller does not implement the production communicator. Full
 service signals, radio safe-state/airtime saving, live time policy and
 physical power interruption remain with their owning components/fixtures.
-See the [worker evidence](tests/hardware/evidence/persistence_worker/README.md)
-for source identity, timing limits, costly-test results and failure lessons.
 
 The ordinary storage destructive fixture runs pytest under a root supervisor,
 which mounts only a dedicated 4 MiB tmpfs below the marked test root. A child
@@ -485,8 +450,6 @@ remounting, then verifies a real reopen after restoring write access. Permission
 denial changes only the child's own database. Normal transaction measurements
 and the benchmark use the deployed storage filesystem; tmpfs failure tests do
 not establish physical power-loss durability.
-Current service-UID target results and local snapshot/restoration checks are
-recorded in the [pilot runtime evidence](tests/evidence/2026-09-19-pilot-runtime/README.md#current-persistence-and-storage-qualification).
 
 ### Host tests
 
@@ -637,20 +600,14 @@ reference models and episode builders remain local.
 | Operator-created oscillator-stop fault | `hardware/test_ds3231_osf.py`: valid pre-fault baseline, confirmed RTC-04 power/cell cycle, changed boot, current OSF boot evidence and production-adapter `INVALID`/`EINVAL` capture before RTC-05 recovery; the operator run owns physical restoration |
 | Controller fault qualification | `hardware/test_time_mutations.py::test_ds3231_controller_fault`: four held-SCL/SDA read/write cases, confirmed temporary wiring, physical pad levels, actual ioctl and pending-SIGKILL evidence, bounded completion/reaping and restoration. Dedicated RTC-only fixture keeps normal Chrony running; read cleanup verifies without writing, write cleanup explicitly restores after authorized submission, and uncertain cleanup stops dependent cases. Target execution is required before claiming qualification |
 
-Short run summaries and the evidence worth keeping are in
-[`hardware/evidence/runtime_time/README.md`](tests/hardware/evidence/runtime_time/README.md).
-The destructive installed-UID time/step subset is retained in the
-[19 September pilot runtime qualification](tests/evidence/2026-09-19-pilot-runtime/README.md).
 For installed-profile nominal RTC-refresh and forward/backward-step qualification,
 pass `--receiver-time-user cura-receiver` to the root-supervised fixture. Its
 component child runs under that actual unprivileged account; the default remains
 `cura` for the historical bench setup. Root is rejected as the component identity.
 This option does not change the physical controller-fault fixture or constitute
 service-sandbox/RF acceptance.
-That overview includes the historical passes' limitations. Routine output goes
-in ignored `receiver/tests/hardware/raw/` or outside the repository. Apply the
-retention threshold above; put useful lessons in the owning code or procedure
-and discard failed sessions and repetitive logs after diagnosis. New runtime/slew runs use
+Put useful lessons in the owning code or procedure and discard run output after
+diagnosis. Runtime/slew runs use
 the Make targets above and `receiver/tests/hardware/time_reference.py --help`
 for the laptop-reference options, with fresh source staging and fixture roots.
 A supplied test provenance value proves the offline component's treatment of
@@ -737,14 +694,13 @@ arithmetic failure for TIME diagnostics without duplicating the equations.
 
 Test coverage, reproduction commands and availability scenarios are described in
 [Airtime recovery coverage](tests/AIRTIME_RECOVERY_COVERAGE.md). Earlier
-qualification counts below retain their historical source scope.
+failures below explain the regression assertions.
 
 Two historical defects have lasting regression value: one global retention
 deadline delayed an ACK by 3,793 s in the steady-time host scenario, motivating
 per-bucket deadlines; separate UTC/monotonic reads could add 30 s under
 descheduling, so use a paired observation. Keep these in the availability and
-clock-correlation tests. Their virtual-time runs are inexpensive to repeat and
-need no evidence archive.
+clock-correlation tests.
 
 ### Host tests
 
@@ -826,9 +782,8 @@ after failure. The read-only Chrony/RTC fixture may require root; root-owned
 configuration and database files must have trusted ancestry (for example under
 the dedicated `/var/tmp` root). This privilege does not establish receiver-user
 deployment permissions. Raw pytest/JUnit, clock/state JSON, source manifests and
-database/WAL/SHM snapshots are temporary validation inputs. Curate the costly
-result and essential observations under the retention policy; no radio command
-is executed.
+database/WAL/SHM snapshots are temporary validation inputs. Keep lessons in
+the owning procedure after diagnosis; no radio command is executed.
 
 ## Deployment and lifecycle
 
@@ -902,36 +857,31 @@ evidence listed by the approved pilot gate. Unselected scenarios remain
 explicit required deferred coverage with IDs and revisit conditions. A
 component peer result cannot establish complete receiver acceptance.
 
-- **First valid RF reading (RF-020):** Transmit one reviewed current reading over the pilot PHY, require the exact authenticated accepted ACK at the node and verify the receiver's canonical SQLite row and complete profiling timestamps.
-- **Lost accepted ACK (RF-021):** Suppress or miss the first downlink at the node, retransmit the identical uplink and verify deterministic ACK bytes, one canonical reading and two occurrence profiles with retransmission classification.
-- **Failed receiver TX outcome (RF-031):** Force a controllable post-SetTx failure, verify conservative charge/profile/recovery behavior and prove the node's later retry succeeds without cached receiver history.
-- **Current then backlog RF identity (RF-022):** Send the same sample first as current and later as a newly constructed backlog message and verify transport IDs differ while application classification and stored bodies remain correct.
-- **Authenticated rejection and silence matrix (RF-023):** Send representative authenticated malformed, unsupported and wrong-direction packets plus unauthenticated traffic and verify exact rejection ACKs or required silence over RF and in persistence evidence.
-- **Queue and persistence backpressure (RF-024):** Stall the isolated persistence path, fill the bounded queue, require retry-later responses only for eligible packets and verify nodes retain/retry readings after recovery.
-- **Airtime-suppressed RF acceptance (RF-025):** Exhaust receiver ACK allowance legally, transmit a valid reading, observe no downlink and prove persistence still accepts the occurrence; retry later and verify duplicate classification.
-- **Profile transition interoperability (RF-008 / RF-004):** Alternate normal-IQ node uplinks and inverted-IQ receiver ACKs across multiple episodes and prove neither side receives the wrong direction profile or stale IRQ/buffer contents.
-- **Clock and timestamp evidence (RF-026):** Run online and approved offline-holdover episodes and verify stored monotonic events, trusted observations and derived direct/logical timestamps against independent test timing evidence.
-- **Receiver process restart (RF-027):** Restart or crash the service between node attempts and verify new receiver identity, unchanged Linux boot identity, conservative airtime state and correct durable duplicate handling.
-- **Pi reboot (RF-028):** Reboot between node attempts, verify both receiver and boot identities change, restore time/state conservatively and accept or suppress ACK exactly as the durable contracts require.
-- **Endurance (RF-030):** Run a legally airtime-bounded mixed current/backlog workload with health sampling, checkpoints and controlled recoverable faults, then reconcile every transmitted logical message, ACK observation, SQLite identity, profile and diagnostic/health aggregate.
+- **First valid RF reading (service.reading_delivery):** Transmit one reviewed current reading over the pilot PHY, require the exact authenticated accepted ACK at the node and verify the receiver's canonical SQLite row and complete profiling timestamps.
+- **Lost accepted ACK (backlog recovery):** Suppress or miss the first downlink at the node, retransmit the identical uplink and verify deterministic ACK bytes, one canonical reading and two occurrence profiles with retransmission classification.
+- **Failed receiver TX outcome (uncertain TX recovery):** Force a controllable post-SetTx failure, verify conservative charge/profile/recovery behavior and prove the node's later retry succeeds without cached receiver history.
+- **Current then backlog RF identity (current/backlog identity):** Send the same sample first as current and later as a newly constructed backlog message and verify transport IDs differ while application classification and stored bodies remain correct.
+- **Authenticated rejection and silence matrix (rejection matrix):** Send representative authenticated malformed, unsupported and wrong-direction packets plus unauthenticated traffic and verify exact rejection ACKs or required silence over RF and in persistence evidence.
+- **Queue and persistence backpressure (persistence backpressure):** Stall the isolated persistence path, fill the bounded queue, require retry-later responses only for eligible packets and verify nodes retain/retry readings after recovery.
+- **Airtime-suppressed RF acceptance (airtime-suppressed acceptance):** Exhaust receiver ACK allowance legally, transmit a valid reading, observe no downlink and prove persistence still accepts the occurrence; retry later and verify duplicate classification.
+- **Profile transition interoperability (repeated exchanges / negative-IQ rejection):** Alternate normal-IQ node uplinks and inverted-IQ receiver ACKs across multiple episodes and prove neither side receives the wrong direction profile or stale IRQ/buffer contents.
+- **Clock and timestamp evidence (clock/timestamp verification):** Run online and approved offline-holdover episodes and verify stored monotonic events, trusted observations and derived direct/logical timestamps against independent test timing evidence.
+- **Receiver process restart (receiver restart):** Restart or crash the service between node attempts and verify new receiver identity, unchanged Linux boot identity, conservative airtime state and correct durable duplicate handling.
+- **Pi reboot (Pi reboot):** Reboot between node attempts, verify both receiver and boot identities change, restore time/state conservatively and accept or suppress ACK exactly as the durable contracts require.
+- **Endurance (endurance):** Run a legally airtime-bounded mixed current/backlog workload with health sampling, checkpoints and controlled recoverable faults, then reconcile every transmitted logical message, ACK observation, SQLite identity, profile and diagnostic/health aggregate.
 
 Shared executions must retain every mapped ID's distinct assertions and
-source-bound evidence. RF-008/RF-020 cover positive transitions and stale
-contents; RF-004 retains both negative assertions: C6 rejection of normal IQ
+source-bound evidence. repeated exchanges/service.reading_delivery cover positive transitions and stale
+contents; negative-IQ rejection retains both negative assertions: C6 rejection of normal IQ
 during downlink RX and Pi rejection of inverted IQ during normal uplink RX.
 Both negatives remain proposed deferred coverage, including full-service
 verification; component results cannot close that end-to-end obligation.
 
-### Approved pilot RF envelope
+### RF operating envelope
 
-The [2026-09-18 DEC-003/DEP-023 decision](../tests/rf/OPERATING_ENVELOPE.md)
-approves the documented firmware and receiver schematics/configuration at
-configured +14 dBm, including autonomous wakes, retries and resets. RF-018
-source/configuration evidence disposition is accepted; physical measurement
-remains deferred NOT RUN and numerical uncertainty is unmeasured. Existing
-receiver production airtime enforcement and operator-owned component-test
-accounting remain unchanged. This approval does not close service or aggregate
-deployment acceptance.
+The [operating envelope](../tests/rf/OPERATING_ENVELOPE.md) defines the accepted
+configuration basis, physical measurement limits and per-transmitter accounting
+for controlled tests.
 
 Application shutdown diagnostic boundary: close the real ordinary queue, then
 exercise definite and unknown clean-stop failures. Require no diagnostic
@@ -984,4 +934,4 @@ Missing Chrony must remain compatible with
 untrusted offline startup. PERM-001 in deploy/README.md defers a broader permissions
 review until after the pilot; these checks do not establish command-level isolation.
 
-The production RF service procedure in [tests/rf/README.md](../tests/rf/README.md#production-receiver-service-rf-020) permits deliberate offline zero-airtime test database preparation only after operator-attested all-transmitter silence for the complete conservatively converted rolling window. It uses production state encoding/validation, creates a separate new candidate and never changes production missing-history recovery or fabricates current clock/RTC trust. Shared preflight requires fresh network time and valid airtime prerequisites; only actual RF results establish ACK delivery.
+The production RF service procedure in [tests/rf/README.md](../tests/rf/README.md#production-receiver-service-servicereading_delivery) permits deliberate offline zero-airtime test database preparation only after operator-attested all-transmitter silence for the complete conservatively converted rolling window. It uses production state encoding/validation, creates a separate new candidate and never changes production missing-history recovery or fabricates current clock/RTC trust. Shared preflight requires fresh network time and valid airtime prerequisites; only actual RF results establish ACK delivery.

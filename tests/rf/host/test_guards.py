@@ -26,8 +26,8 @@ def fixture():
 
 
 @pytest.mark.parametrize("selection,fixture_name", [(None, "nominal"), ("", "nominal"),
-    ("RF-001", "nominal"), ("RF-020.nominal", "nominal"), ("RF-001.exchange,RF-001.exchange", "nominal"),
-    ("RF-012.disconnected", "nominal"), ("RF-001.exchange,RF-013.absent", "nominal")])
+    ("ACK exchange", "nominal"), ("service.reading_delivery", "nominal"), ("component.ack_exchange,component.ack_exchange", "nominal"),
+    ("component.dio1_disconnected", "nominal"), ("component.ack_exchange,component.radio_absent", "nominal")])
 def test_selection_fails_closed(selection, fixture_name):
     with pytest.raises(ValueError):
         select_cases(selection, fixture_name)
@@ -46,7 +46,7 @@ def test_budget_is_only_a_bounded_declaration():
     assert sum(e.charge["c6_us"] for e in EPISODES.values()) == 1467986
     assert sum(e.charge["pi_us"] for e in EPISODES.values()) == 469712
     assert len(EPISODES) == 10
-    assert EPISODES["RF-013.absent"].c6_packets == 1
+    assert EPISODES["component.radio_absent"].c6_packets == 1
 
 
 @pytest.fixture
@@ -54,7 +54,7 @@ def options(tmp_path, fixture, monkeypatch):
     file = tmp_path / "fixture.json"; file.write_text(json.dumps(fixture))
     sheet = tmp_path / "record.txt"; sheet.write_text("operator-owned history and this batch reservation")
     output = tmp_path / "new-run"
-    values = dict(rf_fixture=str(file), rf_cases="RF-001.exchange", rf_run="a"*32, rf_output=str(output),
+    values = dict(rf_fixture=str(file), rf_cases="component.ack_exchange", rf_run="a"*32, rf_output=str(output),
                   rf_manual_record=str(sheet), rf_session=str(tmp_path / "session.json"), rf_confirm_flash=True, count=1, embedded_services="esp,idf",
                   target="esp32c6", app_path=str(APP), port="/dev/ttyUSB0", port_mac="cc:8d:a2:fc:02:24",
                   build_dir=str(APP / "build"), root_logdir=str(output / "uart"), xmlpath=str(output / "junit.xml"))

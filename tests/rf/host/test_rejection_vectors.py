@@ -1,4 +1,4 @@
-"""RF-023 matrix checked against production ingress, not the vector builder itself."""
+"""rejection matrix matrix checked against production ingress, not the vector builder itself."""
 from dataclasses import asdict
 
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM

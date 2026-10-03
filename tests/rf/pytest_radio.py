@@ -4,7 +4,7 @@ import shutil
 import pytest
 
 from control import Node, Remote, verify_uart_identity
-from evidence import admit_episode, episode_capture
+from capture import admit_episode, episode_capture
 from inputs import digest, session_identity, start_session, source_manifest, write_json
 from spec import EPISODES
 from verify import verify_case
@@ -60,7 +60,7 @@ def test_rf_component(request, joint_run, episode_name, record_property):
         cleanups.append(("component peer", peer.close))
         peer.arm()
         node.phase(0)
-        if episode_name == "RF-010.wake":
+        if episode_name == "component.sleep_wake":
             node.phase(1)
         result = peer.finish()
         checked = verify_case(episode_name, node.events, result, run["run"], ctx["fixture"], run["elf"])

@@ -8,7 +8,7 @@ import shlex
 import subprocess
 import tarfile
 
-from evidence import REPO, digest, write_json
+from capture import REPO, digest, write_json
 
 
 class RemoteTransport:

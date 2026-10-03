@@ -17,9 +17,7 @@ interfaces, Python package, schema sources, generators, and tests.
 - [`hardware/ds3231/README.md`](hardware/ds3231/README.md) documents DS3231
   wiring, kernel selection and bench time configuration; its
   [operator procedure](hardware/ds3231/OPERATOR_TESTS.md) defines physical
-  retention, oscillator-stop and recovery checks with evidence requirements.
-  [Recorded results](hardware/ds3231/results/README.md) retain dated outcomes
-  and raw evidence alongside the procedure in Git.
+  retention, oscillator-stop and recovery checks.
 - [`tests/hardware/RADIO_TESTS.md`](tests/hardware/RADIO_TESTS.md) describes
   explicit SX1262 component-fixture selection, source staging and evidence.
   The [carrier schematic](hardware/TEST_CARRIER.md#proposed-sx1262-extension)
@@ -111,5 +109,3 @@ clean marker.
 The raw communicator-state envelope advances the pilot schema to epoch 10.
 Existing epoch databases require the documented offline fresh-database
 deployment boundary; there is no automatic migration or restoration.
-Worker validation evidence is recorded under
-[`tests/hardware/evidence/persistence_worker/`](tests/hardware/evidence/persistence_worker/README.md).

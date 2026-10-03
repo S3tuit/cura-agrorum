@@ -30,7 +30,7 @@ def test_production_radio_peer_completes_real_scheduled_sequence(action, downlin
         backend.initialize(deadline)
         backend.arm_receive(deadline)
     key, node = bytes(range(16)), bytes.fromhex("0102030405060708")
-    policy = AckCase("RF-019.current." + action, node, key, sleep_seconds)
+    policy = AckCase("node.current." + action, node, key, sleep_seconds)
     interval = (sleep_seconds + 1) * 1_000_000
     if sleep_seconds == 10:
         original_complete = policy.complete

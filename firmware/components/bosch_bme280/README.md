@@ -36,49 +36,17 @@ the consumed checkout and commit. This is verification of pinned source bytes,
 not proof that the hosted fork already serves that commit. Publishing a local
 fork commit is a separate action; an unpublished pin cannot be fetched remotely.
 
-## Local correction evidence
+## Corrections protected by regressions
 
-The upstream base is `c90d419492e26dd95586598a794e65eb2760753a`.
-The originally tested local fork branch `cura-failure-low-power` contained separate changes:
+The fork preserves a communication error when an NVM-status read fails after
+an earlier busy observation. Upstream polling could mask this error;
+`nvm_later_error` in the driver tests protects the failure path.
 
-- `ff69236`: preserve the communication error when a later NVM-status read fails
-  after an earlier busy observation. The existing `nvm_later_error` driver test
-  aborts on its assertion against the unmodified upstream source; the corrected
-  pin passes. A first-read failure and the nominal combined-read case pass on
-  both sources, distinguishing the specific regression.
-- `e8fd7bebe3c297aec94b4c76baf58750e5457c3c`: project double-compensation adaptation
-  and this repository relationship. The independent temperature/pressure outlier
-  and undefined-pressure tests fail against the original clipping/fallback
-  behavior and pass against the pin. This adaptation is distinct from the
-  upstream polling defect.
+Double compensation must preserve representable outliers and distinguish an
+undefined pressure result, rather than clipping or substituting a plausible
+value. Independent temperature/pressure vectors protect these adaptations.
 
-On 2026-09-12, the full native firmware suite passed 127 cases (56 focused Bosch
-and adapter cases), with strict project warnings and ASan/UBSan. Carrier native
-and orchestration checks passed 559 cases. Carrier and bare-C6 builds succeeded;
-production configuration and the selected sources compile, but the complete
-production build is blocked by the absent private
-`firmware/main/protocol_v2_lora_identity.h`. No identity was manufactured.
-No protocol behavior changed. No hardware run or electrical acceptance follows
-from these checks.
-
-Local review artifacts are in ignored `firmware/build-host/bme280-review/`:
-separate `git format-patch` files, `upstream-comparison.json` (process exit status,
-not a Bosch diagnostic), and `build-inspection.json`. These are local preparation artifacts; no Bosch upstream issue/PR or standalone
-reproducer was created. Publication of the dependency fork is recorded below.
-The user subsequently published the changes as squash commit
-`5f4119ed6ee638abc573e75516ad9aa6e1cd612a` on master. All four source/header/license
-hashes match the previously tested pin. Cura now pins that published commit;
-host and both test-app builds have also passed using fresh remote resolution
-(`fetched_pin`) with the local override cleared.
-
-On 2026-09-14, the approved channel-validation correction changed only Cura's
-adapter and contracts: verify actual x1 settings after configuration, before
-triggering and at completed conversion, accepting representable raw midpoint
-codes when those checks pass. This requires no Bosch fork patch or pin change.
-The firmware suite passes 147 cases (76 focused driver/adapter cases), including
-independent midpoint vectors and disabled/non-x1 settings at each validation
-phase; all 560 carrier native/runner cases pass. Both C6 test apps build with
-the same fetched pin. Recorded hardware runs are retained in
-[sensor-carrier evidences/](../../test_apps/sensor_carrier/evidences/).
-The initial failed nominal run remains in local session logs; its raw code was
-not captured.
+The Cura adapter verifies actual x1 channel settings after configuration, before
+triggering and at conversion completion. A raw midpoint is representable when
+those checks pass; rejecting that code alone incorrectly rejects valid readings.
+Disabled and non-x1 settings are tested at each validation phase.

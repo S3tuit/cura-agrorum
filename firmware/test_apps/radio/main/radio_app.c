@@ -1,4 +1,4 @@
-/* Bounded component tests; optional run-bound RF-023 credentials. No storage writes. */
+/* Bounded component tests; optional run-bound rejection matrix credentials. No storage writes. */
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
@@ -14,8 +14,8 @@
 #include "radio_observe.h"
 #include "radio_command.h"
 #include "radio_rejection.h"
-#ifdef RF023_ENABLED
-#include "rf023_inputs.h"
+#ifdef REJECTION_ENABLED
+#include "rejection_inputs.h"
 #endif
 #include "sdkconfig.h"
 #include "sx1262_radio.h"
@@ -32,9 +32,9 @@
 #endif
 
 static const char *const cases[] = {
-  "RF-001.exchange", "RF-003.silence", "RF-006.invalid", "RF-008.silence",
-  "RF-008.exchange", "RF-009.untouched", "RF-009.initialized", "RF-010.wake",
-  "RF-012.disconnected", "RF-013.absent", RF023_CASE_NAMES
+  "component.ack_exchange", "component.ack_timeout", "component.invalid_downlinks", "component.repeat_timeout",
+  "component.repeat_exchange", "component.cold_sleep", "component.initialized_sleep", "component.sleep_wake",
+  "component.dio1_disconnected", "component.radio_absent", REJECTION_CASE_NAMES
 };
 #define COMPONENT_CASE_COUNT 10u
 static unsigned selected, phase;
@@ -44,7 +44,7 @@ static const node_platform_ports_t *ports;
 /* Only a host-selected continuation can use this record. It never triggers TX. */
 RTC_DATA_ATTR static struct {
   uint32_t magic, previous_boot;
-  char run[33], selection[32];
+  char run[33], selection[64];
   unsigned continuation;
 } retained;
 
@@ -145,14 +145,14 @@ static void cold_sleep(void) {
 }
 static void test_episode(void) {
   if (selected >= COMPONENT_CASE_COUNT) {
-#ifdef RF023_ENABLED
-    rf023_packet_t packet;
-    TEST_ASSERT_TRUE(rf023_build(&rf023_config, selected - COMPONENT_CASE_COUNT, &packet));
+#ifdef REJECTION_ENABLED
+    rejection_packet_t packet;
+    TEST_ASSERT_TRUE(rejection_build(&rejection_config, selected - COMPONENT_CASE_COUNT, &packet));
     transmit_payload(packet.frame, packet.frame_length, true);
     receive_packet(last_tx_done + 500000, packet.ack_length ? packet.ack : NULL, (unsigned)packet.ack_length);
     TEST_ASSERT_EQUAL_UINT(1, radio_observation().starts);
 #else
-    TEST_FAIL_MESSAGE("RF-023 disabled without private run-bound build inputs");
+    TEST_FAIL_MESSAGE("rejection matrix disabled without private run-bound build inputs");
 #endif
   } else if (selected == 5) {
     cold_sleep(); cold_sleep();
@@ -281,11 +281,11 @@ void app_main(void) {
     reject_command("unsupported_case_or_continuation", &line);
   }
   if (selected >= COMPONENT_CASE_COUNT) {
-#ifdef RF023_ENABLED
-    if (!rf023_authorized(&rf023_config, run_id, selected - COMPONENT_CASE_COUNT, phase))
-      reject_command("wrong_rf023_run_or_phase", &line);
+#ifdef REJECTION_ENABLED
+    if (!rejection_authorized(&rejection_config, run_id, selected - COMPONENT_CASE_COUNT, phase))
+      reject_command("wrong_rejection_run_or_phase", &line);
 #else
-    reject_command("rf023_not_enabled", &line);
+    reject_command("rejection_not_enabled", &line);
 #endif
   }
   /* A boot executes at most one command, then sleeps even when Unity fails. */

@@ -1,4 +1,4 @@
-"""RF-020 accepts actual SQLite snapshots and rejects incomplete evidence."""
+"""service.reading_delivery accepts actual SQLite snapshots and rejects incomplete evidence."""
 from copy import deepcopy
 import io
 import json
@@ -12,7 +12,7 @@ import tarfile
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 import pytest
 
-from evidence import REPO, digest
+from capture import REPO, digest
 from run_service import package_files, same_service, InstalledService, verify_service_stop
 from service_probe import database_observation, snapshot, validate_config, expected_unit
 from verify_service import BODY, FIELDS, verify_service

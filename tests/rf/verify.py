@@ -11,12 +11,12 @@ B = "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6"
 D = "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6"
 X = "e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6"
 EXPECTED = {
-    "RF-001.exchange": ([A], [B]), "RF-003.silence": ([A], [""]),
-    "RF-006.invalid": ([A], ["00", "deadbeef", X, ""]),
-    "RF-008.silence": ([A, U], [""]), "RF-008.exchange": ([A, U], [B, D]),
-    "RF-009.untouched": ([A], []), "RF-009.initialized": ([A, A], []),
-    "RF-010.wake": ([A, U], [B, D]), "RF-012.disconnected": ([A], []),
-    "RF-013.absent": ([A], []),
+    "component.ack_exchange": ([A], [B]), "component.ack_timeout": ([A], [""]),
+    "component.invalid_downlinks": ([A], ["00", "deadbeef", X, ""]),
+    "component.repeat_timeout": ([A, U], [""]), "component.repeat_exchange": ([A, U], [B, D]),
+    "component.cold_sleep": ([A], []), "component.initialized_sleep": ([A, A], []),
+    "component.sleep_wake": ([A, U], [B, D]), "component.dio1_disconnected": ([A], []),
+    "component.radio_absent": ([A], []),
 }
 
 
@@ -145,7 +145,7 @@ def verify_case(case, events, peer, run, fixture, elf):
     boots = [v for v in events if v["kind"] == "boot"]
     begins = [v for v in events if v["kind"] == "begin"]
     ends = [v for v in events if v["kind"] == "end"]
-    phases = 2 if case == "RF-010.wake" else 1
+    phases = 2 if case == "component.sleep_wake" else 1
     commands = [v for v in events if v["kind"] == "command"]
     require(len(commands) == phases and all(v["boot"] == b["boot"] and
             0 <= v["elapsed_us"] <= 2_000_000 and 0 < v["bytes"] <= 159
@@ -163,7 +163,7 @@ def verify_case(case, events, peer, run, fixture, elf):
             require(value["run"] == run and value["case"] == case and value["phase"] == index and
                     value["boot"] == boots[index]["boot"], "phase identity mismatch")
         require(end["failed"] == 0, "C6 Unity failed")
-        require(end["cleanup_error"] == 0 or case == "RF-013.absent", "C6 cleanup failed")
+        require(end["cleanup_error"] == 0 or case == "component.radio_absent", "C6 cleanup failed")
     results = [v for v in events if v["kind"] == "result"]
     tx = [v for v in results if v["tx"]]
     rx = [v for v in results if not v["tx"]]
@@ -172,7 +172,7 @@ def verify_case(case, events, peer, run, fixture, elf):
     require([v["payload"] for v in rx] == expected_rx, "wrong or missing C6 RX results")
     for index, value in enumerate(tx):
         require(0 < value["before"] <= value["after"] <= value["deadline"] + 50_000, "C6 TX bound")
-        failed = case in {"RF-012.disconnected", "RF-013.absent"} or case == "RF-009.initialized" and index == 1
+        failed = case in {"component.dio1_disconnected", "component.radio_absent"} or case == "component.initialized_sleep" and index == 1
         if not failed:
             require(value["error"] == 0 and value["operation"] == 0 and not value["diagnostic"] and
                     value["started"] is True and value["done"] is True, "C6 TX outcome")
@@ -180,11 +180,11 @@ def verify_case(case, events, peer, run, fixture, elf):
             require(102656 <= value["tx_done"] - value["set_tx"] <= 112922, "C6 TX airtime")
         else:
             require(value["error"] != 0 and value["done"] is False, "missing expected TX fault")
-            if case == "RF-012.disconnected":
+            if case == "component.dio1_disconnected":
                 diag = bytes.fromhex(value["diagnostic"])
                 require(value["started"] is True and value["operation"] == 16 and len(diag) == 14 and
                         diag[2] == 11 and diag[3] & 8, "DIO1 certainty/diagnostic")
-            elif case == "RF-013.absent":
+            elif case == "component.radio_absent":
                 require(value["started"] is False and value["error"] == 0x20004 and value["operation"] == 1,
                         "absence must be an initialization BUSY failure")
             else:
@@ -200,26 +200,26 @@ def verify_case(case, events, peer, run, fixture, elf):
                     "nonzero deadline packet fields")
             require(value["deadline"] <= value["after"] <= value["deadline"] +
                     ((value["deadline"] - value["before"]) * 15 + 99) // 100, "C6 RX deadline extension")
-    if case == "RF-006.invalid":
+    if case == "component.invalid_downlinks":
         require(len({v["deadline"] for v in rx}) == 1, "invalid packets extended RX deadline")
     trace = [v for v in events if v["kind"] == "trace"]
     starts = [v for v in trace if v["operation"] == "start_tx"]
-    positive = len(tx) - int(case in {"RF-009.initialized", "RF-013.absent"})
+    positive = len(tx) - int(case in {"component.initialized_sleep", "component.radio_absent"})
     require(len(starts) == positive and all(v["result"] == 2 for v in starts), "C6 SetTx facts")
     initializes = [v for v in trace if v["operation"] == "initialize"]
     require(len(initializes) == phases, "C6 initialization count")
-    require(all(v["result"] == int(case != "RF-013.absent") for v in initializes), "initialization outcome")
+    require(all(v["result"] == int(case != "component.radio_absent") for v in initializes), "initialization outcome")
     sleep_calls = [v for v in trace if v["operation"] == "set_sleep_cold"]
-    require(case == "RF-013.absent" or len(sleep_calls) == phases and all(v["result"] == 2 for v in sleep_calls),
+    require(case == "component.radio_absent" or len(sleep_calls) == phases and all(v["result"] == 2 for v in sleep_calls),
             "missing cold-sleep evidence")
-    if case == "RF-009.untouched":
+    if case == "component.cold_sleep":
         require(trace[0]["operation"] == "initialize", "untouched sleep performed I/O")
-    if case == "RF-009.initialized":
+    if case == "component.initialized_sleep":
         require(trace[-1]["operation"] == "set_sleep_cold" and trace[-1]["after"] <= tx[-1]["before"],
                 "terminal sleep performed later I/O")
     require(peer["kind"] == "complete" and peer["case"] == case and peer["run"] == run and
             peer["failure"] is None and peer["cleanup"]["safe_shutdown"] is True, "peer failed or wrong identity")
-    expected_air = [] if case == "RF-013.absent" else expected_tx[:positive]
+    expected_air = [] if case == "component.radio_absent" else expected_tx[:positive]
     packets = peer["outcome"]["packets"]
     require([p["frame"] for p in packets] == expected_air, "Pi copied packet mismatch")
     for packet in packets:
@@ -232,8 +232,8 @@ def verify_case(case, events, peer, run, fixture, elf):
     buffers = [v["tx"][4:] for v in peer["trace"] if v["operation"] == "spi" and v["tx"].startswith("0e00")]
     require(buffers == expected_down, "Pi downlink buffer mismatch")
     require(len(peer["outcome"]["transmissions"]) == len(expected_down), "missing Pi TX outcome")
-    if case == "RF-006.invalid":
-        require(peer["layer"] == "Sx1262/LinuxRadioIo", "wrong RF-006 layer claim")
+    if case == "component.invalid_downlinks":
+        require(peer["layer"] == "Sx1262/LinuxRadioIo", "wrong invalid downlinks layer claim")
         for value in peer["outcome"]["transmissions"]:
             require(value["event"]["irq_status"] == 1 and value["certainty"] == "CONFIRMED_APPLIED" and
                     value["set_tx"] <= value["tx_done"] <= value["set_tx"] + 250000, "burst TX incomplete")

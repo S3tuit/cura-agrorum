@@ -11,5 +11,5 @@ Outcome and actual attempted counts (retain uncertain attempts):
 Operator pacing / next admitted episode:
 Cleanup and nominal-restoration reference:
 
-Use EPISODES.md's simple totals; conservative whole-batch records are sufficient.
+Use spec.py's per-test charges; conservative whole-batch records are sufficient.
 The runner retains this record without interpreting or resetting its history.

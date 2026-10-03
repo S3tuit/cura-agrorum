@@ -1,4 +1,4 @@
-"""Explicit RF-019 runner for an already provisioned production image.
+"""Explicit node runner for an already provisioned production image.
 
 Does not flash, format, erase or create identities. Preparation is separate.
 """
@@ -11,18 +11,17 @@ import shutil
 import sys
 import time
 
-from evidence import REPO, admit_episode, digest, episode_capture, write_json
+from capture import REPO, admit_episode, digest, episode_capture, write_json
 sys.path.insert(0, str(REPO / "receiver"))
 sys.path.insert(0, str(REPO / "protocol/protocol-v2-lora/python"))
 
 from cura_protocol_v2_lora.receiver_group import load_receiver_group
 from cura_receiver.application import authentication_keys
-from test_apps.radio_peer.ack_cases import CASES, episode
 from control import Peer
 from inputs import source_manifest
 from node_capture import build_reader
 from production_node import verify_build, verify_installed, capture_storage, identify, NodeUART
-from spec import validate_fixture
+from spec import NODE_CASES as CASES, node_episode as episode, validate_fixture
 from transport import RemoteTransport
 from verify_ack import verify_ack_case, verify_ack_transmissions
 from sleep_observation import sleep_count
@@ -32,7 +31,7 @@ from sleep_observation import sleep_count
 def preflight(args):
     fixture = validate_fixture(json.loads(args.fixture.read_text()))
     if fixture["c6_fixture"] != "nominal":
-        raise ValueError("RF-019 requires nominal production fixture")
+        raise ValueError("node requires nominal production fixture")
     if not re.fullmatch("[0-9a-f]{32}", args.run):
         raise ValueError("invalid run identity")
     if not args.output.is_absolute() or args.output.exists() or not args.output.parent.is_dir():
@@ -46,7 +45,7 @@ def preflight(args):
     seal = verify_build(args.build)
     duration = seal.get("sleep_seconds", 900)
     if duration != 10 or not seal.get("sleep_observation", False):
-        raise ValueError("RF-019 requires observed accelerated10s build; production cadence requires separate validation")
+        raise ValueError("node requires observed accelerated10s build; production cadence requires separate validation")
     group = load_receiver_group(args.local_group)
     node_id = bytes.fromhex(seal["node_id"])
     keys = authentication_keys(group)
@@ -68,7 +67,7 @@ def run(args):
     args.output.mkdir(mode=0o700)
     root = args.output
     write_json(root / "host-deadline.json", dict(exit=host.returncode, stdout=host.stdout,
-               scope="firmware host prerequisite, not RF-019 result"))
+               scope="firmware host prerequisite, not node result"))
     manifest = source_manifest()
     write_json(root / "source-manifest.json", manifest)
     write_json(root / "production-build.json", seal)
@@ -96,7 +95,7 @@ def run(args):
         verify_installed(fixture, args.build, root)
         baseline = capture_storage(fixture, root, "before", reader, seal, args.run)
         if any(records for records in baseline["logs"].values()):
-            raise ValueError("RF-019 setup requires explicitly initialized empty logs; never auto-erase")
+            raise ValueError("node setup requires explicitly initialized empty logs; never auto-erase")
         peer = Peer(remote.ssh(command), remote.env, args.run, args.case, root,
                     digest(root / "source-manifest.json"), lease_seconds=plan["lease_seconds"])
         cleanups.append(("authenticated peer", peer.close))

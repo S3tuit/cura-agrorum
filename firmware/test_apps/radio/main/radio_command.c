@@ -38,7 +38,7 @@ bool rf_command_parse(const char *text, rf_command_t *command) {
   while (*p && *p != ' ') {
     if (length == sizeof(parsed.selection) - 1 ||
         !((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
-          (*p >= '0' && *p <= '9') || *p == '-' || *p == '.')) return false;
+          (*p >= '0' && *p <= '9') || *p == '-' || *p == '_' || *p == '.')) return false;
     parsed.selection[length++] = *p++;
   }
   if (!length || *p++ != ' ' || *p < '0' || *p > '9') return false;

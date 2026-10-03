@@ -3,7 +3,7 @@ import subprocess
 
 import pytest
 
-from evidence import episode_capture
+from capture import episode_capture
 from transport import RemoteTransport
 
 

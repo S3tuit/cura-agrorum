@@ -6,11 +6,9 @@ radio/RTC hardware, changes SQLite durability mode, or opens pilot data.
 
 Run the same harness against two source roots using the same Pi Python/SQLite
 environment. Both use worker defaults: FULL commits, five-second ordinary
-flushing, 64-entity batches, and the source's checkpoint policy. The baseline is
-commit `0b9e8262ba7226e94828f124de0661a4e8463480`; the changed source is identified
-by the complete recorded file hashes, including uncommitted modules. Preserve
-the harness hash and Python/SQLite versions with each result. Sources must not
-change during a run.
+flushing, 64-entity batches, and each source's checkpoint policy. Select the two
+source roots to compare and record their hashes and Python/SQLite versions with
+the temporary results. Sources must not change during a run.
 
 Before execution, confirm the Pi SSH endpoint, a writable parent directory on
 the intended SD filesystem, and the matching whole-device block-stat path.
@@ -44,7 +42,7 @@ Example for each source (replace the explicit paths after fixture selection):
 ```bash
 python /path/to/changed/receiver/benchmarks/checkpoint_scheduling/run.py \
   --source-root /path/to/baseline-or-changed \
-  --source-commit 0b9e8262ba7226e94828f124de0661a4e8463480 \
+  --source-commit COMMIT_OF_SELECTED_SOURCE \
   --label baseline-or-changed \
   --fixture-root /sd-test-parent/checkpoint-baseline-or-changed \
   --block-stat /sys/block/mmcblk0/stat \
@@ -53,7 +51,7 @@ python /path/to/changed/receiver/benchmarks/checkpoint_scheduling/run.py \
 
 Run target persistence checks for the changed source separately, selecting
 `receiver/tests/hardware/test_persistence_worker.py` with `--receiver-hardware`
-and initially excluding its `slow` cases. The updated timer/stall test uses a
+and initially excluding its `slow` cases. The timer/stall test uses a
 one-second interval as a fixture parameter; the comparison above uses the
 production five-second default.
 
@@ -84,3 +82,11 @@ amplification, remaining lifetime or physical-write savings from call counts.
 baseline compatibility. Such results are explicitly labelled and provide no
 Pi, RF or storage-medium acceptance. Keep the fixture databases until results
 are reviewed; the harness does not delete them.
+
+Interpret fewer checkpoint calls separately from storage latency or physical
+write savings. An idle WAL can remain allocated after complete coverage; its
+size alone must not trigger repeated maintenance. A Pi comparison removed idle
+calls without reducing the largest sampled checkpoint stall (about 167 ms).
+Whole-device background writes varied enough to make background subtraction
+negative, so those counters could not establish flash-write or wear savings.
+The five-second interval is not claimed to be optimal.

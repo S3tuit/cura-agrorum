@@ -1,4 +1,4 @@
-"""RF-019 packet/storage reconciliation, separate from peer reply selection."""
+"""node packet/storage reconciliation, separate from peer reply selection."""
 from collections import Counter
 import struct
 
@@ -14,9 +14,9 @@ def verify_ack_case(case, node_id, key, packets, decoded):
     target_cycle = seed_count
     statuses = {"accepted": 1, "retry_later": 2, "unsupported": 3,
                 "malformed": 4, "invalid_auth": 1, "wrong_message": 8, "domain_status": 8}
-    if (not case.startswith("RF-019.") or scope not in ("current", "backlog") or action not in statuses or
+    if (not case.startswith("node.") or scope not in ("current", "backlog") or action not in statuses or
             (scope == "backlog" and action not in ("accepted", "retry_later", "unsupported", "malformed"))):
-        raise ValueError("unknown RF-019 assertion set")
+        raise ValueError("unknown node assertion set")
     currents, messages, order = [], {}, []
     counts = Counter()
     for packet in packets:

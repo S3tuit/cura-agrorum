@@ -1,4 +1,4 @@
-"""F-004: cancel actual RF-006 sessions during production backend preparation."""
+"""F-004: cancel actual invalid downlinks sessions during production backend preparation."""
 import json
 from pathlib import Path
 import queue
@@ -21,7 +21,7 @@ def test_cancel_during_burst_preparation_keeps_cleanup(source, stage, packet_ind
     air = support["Air"](clock)
     signals, context = {}, {}
     pending = queue.Queue()
-    pending.put(f"GO {'a' * 32} RF-006.invalid\n")
+    pending.put(f"GO {'a' * 32} component.invalid_downlinks\n")
     watchers = []
 
     class Input:
@@ -67,7 +67,7 @@ def test_cancel_during_burst_preparation_keeps_cleanup(source, stage, packet_ind
         air.incoming.append((started + 100000, peer.A))
         return peer.execute(case, backend, radio, stop, started)
 
-    args = SimpleNamespace(run="a" * 32, case="RF-006.invalid")
+    args = SimpleNamespace(run="a" * 32, case="component.invalid_downlinks")
     try:
         status = peer.run_session(args, {}, "source", 3, execute)
     finally:

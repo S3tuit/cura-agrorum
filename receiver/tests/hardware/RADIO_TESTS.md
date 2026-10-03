@@ -2,9 +2,8 @@
 
 These cases use the production Linux adapter, command backend and owner.
 They do not run receiver end-to-end orchestration, spend durable airtime or
-submit `SetTx`. Historical nominal results and the held-BUSY cleanup lesson are
-in the [coverage record](../RADIO_COVERAGE.md). Fast nominal captures and failed
-sessions are not permanent evidence; use the [retention policy](../../../EVIDENCE.md).
+submit `SetTx`. The [coverage map](../RADIO_COVERAGE.md) relates cases to
+implementation and explains the held-BUSY cleanup lesson.
 RF-peer, gated recovery and instrument-dependent assertions remain separate.
 
 Follow the [carrier schematic](../../hardware/TEST_CARRIER.md#proposed-sx1262-extension)
@@ -22,8 +21,8 @@ The approved peer is the real C6 radio application, coordinated from laptop
 tests/rf/ with a separate Pi component process in
 receiver/test_apps/radio_peer/. Reuse the production Pi radio components where
 their fixed profile and state contract applies; deliberate alternative-profile
-cases identify the lower layer they exercise. Peer implementation and RF
-execution are still pending. Independent waveform/timestamp qualification and
+cases identify the lower layer they exercise. Joint RF commands are documented
+in [tests/rf](../../../tests/rf/README.md). Independent waveform/timestamp qualification and
 controlled BUSY-gate recovery retain their separate deferred status.
 
 The available multimeter can support supply/static-level checks; it cannot qualify BUSY, DIO1, CS or
@@ -44,9 +43,8 @@ and run from that new directory. Retain the archive hash and exact command
 line beside the results. Do not assume any existing Pi checkout is current.
 After execution, copy captures into ignored
 `receiver/tests/hardware/raw/radio/` on the development machine and verify
-their hashes against the Pi originals. Curate the useful result and essential
-inputs into the [permanent archive](evidence/README.md), then delete raw copies.
-A Pi path alone is not retained evidence.
+their hashes against the Pi originals. After verification and diagnosis, put
+useful lessons in the owning code or documentation and discard the captures.
 
 Run these two blocks in the same **local Bash terminal**. Avoid editing the
 source trees while packaging. `git ls-files` supplies tracked and nonignored
@@ -105,17 +103,15 @@ sha256sum --check SHA256SUMS | tee results/archive-verification.log
 mkdir src
 printf 'cd %q\ntar -xzf source.tar.gz -C src\n' "$PWD" > results/extract-command.txt
 tar -xzf source.tar.gz -C src
-printf '\nStaged source: %s/src\nEvidence directory: %s/results\n' "$PWD" "$PWD"
+printf '\nStaged source: %s/src\nRun directory: %s/results\n' "$PWD" "$PWD"
 REMOTE
 
 printf "\nConnect with: ssh -F /dev/null cura@cura-receiver\nThen: cd ~/%s/src\n" "$remote_stage"
 ```
 
 Require `source.tar.gz: OK` before using the printed source directory. Keep the
-archive and `results/` metadata until the run is checked. Permanent evidence
-needs one tested source identity; retain a source archive only when Git cannot
-recover it. The candidate list and packaging/extraction logs are temporary
-diagnostics. Do not write authentication credentials into command captures.
+archive and `results/` metadata until the run is checked. The candidate list
+and packaging/extraction logs are temporary diagnostics. Do not write authentication credentials into command captures.
 
 On the Pi, install the native build prerequisites once. For the recorded
 Debian 13 / Python 3.13 target:
@@ -153,12 +149,9 @@ the venv is unnecessary. An import-only check does not open radio devices:
 The fixture writes a SHA-256 source manifest, exact operator input and target
 metadata before any device operation. Capture dependency versions, archive hash,
 source manifest, JUnit and stdout/stderr for diagnosis, including failures.
-After checking the run, keep its outcome, relevant fixture/target metadata,
-restoration and essential measurements; consolidate repeated metadata and
-replace resolved failed sessions with lessons. Keep production credentials out
-of captures; these tests require no receiver identity or keys.
-The [evidence index](evidence/README.md) describes what merits retention. Preserve the relationship between faults and restoration;
-transfer needed inputs before the Pi or temporary files become unavailable.
+After checking the run, keep useful lessons in the owning code or guide and
+discard captures. Preserve fault/restoration results until cleanup is confirmed.
+Keep credentials out of captures; these tests require no receiver identity or keys.
 
 ## Explicit fixture input
 
@@ -201,7 +194,7 @@ fitted. Schema 1 and the former `busy_fault_gate_fitted` field are rejected;
 they describe a different selector connection and cannot authorize this one.
 
 From the staged `src/`, save the nominal operator JSON as
-`../evidence/fixture-nominal.json`. Run the following in Bash. It creates a fresh
+`../results/fixture-nominal.json`. Run the following in Bash. It creates a fresh
 run directory, verifies and retains the archive hash, and saves the expanded
 command, working directory, log, JUnit and numeric exit status. The component
 evidence directory must not already exist; its parent must exist.
@@ -209,7 +202,7 @@ evidence directory must not already exist; its parent must exist.
 ```bash
 (
 set -euo pipefail
-run=$(mktemp -d "$PWD/../evidence/nominal.XXXXXXXX")
+run=$(mktemp -d "$PWD/../results/nominal.XXXXXXXX")
 printf 'Evidence: %s\n' "$run"
 (cd .. && sha256sum --check SHA256SUMS) > "$run/archive-check.log"
 cp ../SHA256SUMS "$run/"
@@ -235,8 +228,7 @@ exit "$status"
 The fixture also retains source hashes and target/boot identity. Repeat this
 capture pattern after manual restoration, using a fresh run directory and
 the newly confirmed nominal operator input. A prior shell exit cannot be
-recovered later from `$?` or inferred as a captured value from JUnit. Existing
-audited runs retain that limitation; do not overwrite their evidence.
+recovered later from `$?` or inferred as a captured value from JUnit.
 
 Selected missing/inaccessible hardware fails. There are no runtime skips.
 Ordinary receiver hardware targets include these obligations; while the carrier
@@ -300,13 +292,13 @@ shutdown cannot restart the failed owner. `manual-restoration-required.json` and
 result retain that incomplete status. Capture the complete log, trace and
 JUnit for diagnosis: an exit code alone does not distinguish the expected restoration stop
 from an earlier assertion/device failure, and a matching fault is not a safe
-teardown pass. Once checked, permanent evidence needs the fault observation,
-unconfirmed cleanup/session outcome and essential trace, not the full session.
+teardown pass. Keep the fault and cleanup observations until restoration is
+confirmed and diagnosis is complete.
 
 After the run, shut down Linux, remove external power and restore the one shunt
 to 1-2. Verify nominal continuity and no rail tie to BUSY. Reboot, confirm the
 service remains stopped, and run the nominal command with a fresh nominal
-operator file and evidence directory. Retain both outcomes, their boot/source
+operator file and temporary capture directory. Retain both outcomes, their boot/source
 identities and the operator's restoration confirmation together. Later
 success does not relabel the held run's unconfirmed cleanup. These separate
 runs establish startup failure and manual restoration, not runtime recovery.

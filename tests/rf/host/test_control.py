@@ -14,7 +14,7 @@ def process_script(mode):
     # A child process exercises actual pipes, exit handling and bounded cleanup.
     return f'''
 import json, sys
-identity = dict(run="a"*32, case="RF-001.exchange", source="s", pid=123, boot="boot", layer="Radio/Sx1262/LinuxRadioIo")
+identity = dict(run="a"*32, case="component.ack_exchange", source="s", pid=123, boot="boot", layer="Radio/Sx1262/LinuxRadioIo")
 def emit(kind, **values):
     print(json.dumps(dict(kind=kind, **identity, **values)), flush=True)
 mode = {mode!r}
@@ -34,7 +34,7 @@ if sys.stdin.readline().startswith("GO"):
 @pytest.mark.parametrize("mode", ["good", "stale", "identity", "unsafe", "duplicate", "missing"])
 def test_real_process_handshake_and_teardown(tmp_path, mode):
     peer = Peer([sys.executable, "-u", "-c", process_script(mode)], os.environ.copy(),
-                "a"*32, "RF-001.exchange", tmp_path, "s")
+                "a"*32, "component.ack_exchange", tmp_path, "s")
     try:
         if mode == "good":
             peer.arm(); peer.finish()
@@ -56,7 +56,7 @@ def test_failed_or_skipped_report_cannot_become_requested_run_pass(tmp_path):
     hook = importlib.util.module_from_spec(spec); spec.loader.exec_module(hook)
     xml = tmp_path / "junit.xml"
     xml.write_text('<testsuites><testsuite><testcase name="Unity passed"/><testcase name="peer failed"><failure/></testcase></testsuite></testsuites>')
-    run = dict(selected=["RF-001.exchange"], results=[dict(case="RF-001.exchange", status="PASS")])
+    run = dict(selected=["component.ack_exchange"], results=[dict(case="component.ack_exchange", status="PASS")])
     config = SimpleNamespace(_rf_run=run, _rf_context={"output": tmp_path}, getoption=lambda _: str(xml))
     session = SimpleNamespace(config=config, exitstatus=0)
     execution = hook.pytest_sessionfinish(session, 0)
@@ -89,7 +89,7 @@ def test_c6_rejection_is_retained_and_fails_without_resending(tmp_path):
     writes = []
     event = b'RF_REJECT {"boot":11,"reason":"incomplete_timeout","bytes":3,"elapsed_us":2000001}\n'
     dut = SimpleNamespace(write=writes.append, expect=lambda pattern, **kw: re.search(pattern, event))
-    node = Node(dut, {}, "elf", "a"*32, "RF-001.exchange", tmp_path)
+    node = Node(dut, {}, "elf", "a"*32, "component.ack_exchange", tmp_path)
     node.boot = 11
     with pytest.raises(RuntimeError, match="incomplete_timeout.*no resend"):
         node.phase(0)

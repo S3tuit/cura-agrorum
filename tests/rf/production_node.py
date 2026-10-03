@@ -7,7 +7,7 @@ import subprocess
 import sys
 import threading
 
-from evidence import REPO, digest, write_json
+from capture import REPO, digest, write_json
 from inputs import check_flash, firmware_sources
 from node_capture import decode_image
 

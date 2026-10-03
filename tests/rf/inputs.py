@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess
 import time
 
-from evidence import REPO, digest, write_json
+from capture import REPO, digest, write_json
 APP = REPO / "firmware/test_apps/radio"
 
 
@@ -20,7 +20,7 @@ def tree_sources():
         # RF guides and local Markdown notes are not source-staging inputs.
         paths.extend(p for p in (REPO / name).rglob("*") if p.is_file() and
                      (name != "tests/rf" or p.suffix != ".md") and
-                     not any(part in {"__pycache__", "runs", "raw", ".pytest_cache", "evidence"} for part in p.parts) and
+                     not any(part in {"__pycache__", "runs", "raw", ".pytest_cache"} for part in p.parts) and
                      (p.name.startswith("Kconfig") or p.suffix in {".c", ".h", ".py", ".md", ".txt", ".cmake", ".yml", ".json", ".ini", ".sql", ".service", ".conf", ".rules"}) and
                      not p.name.startswith(("WORKPLAN", "REVIEW")))
     paths.extend(APP / name for name in ("CMakeLists.txt", "sdkconfig.defaults", "partitions.csv", "dependencies.lock"))
@@ -158,16 +158,16 @@ def start_session(path, identity, selected):
                          set(state) != {"schema", "identity", "boot", "started", "passed"} or
                          state["schema"] != 1 or type(state["started"]) not in (int, float) or
                          not isinstance(state["passed"], list) or
-                         any(name not in {"RF-001.exchange", "RF-003.silence"} for name in state["passed"])):
+                         any(name not in {"component.ack_exchange", "component.ack_timeout"} for name in state["passed"])):
         raise ValueError("not an RF session receipt; choose a new temporary file")
     valid = (state.get("identity") == identity and state.get("boot") == boot and
              0 <= now - state.get("started", -43201) <= 43200)
     passed = set(state.get("passed", [])) if valid else set()
     planned = set(passed)
     for name in selected:
-        required = set() if name in {"RF-001.exchange", "RF-009.untouched", "RF-009.initialized"} else {"RF-001.exchange"}
-        if name.startswith("RF-008."):
-            required.add("RF-003.silence")
+        required = set() if name in {"component.ack_exchange", "component.cold_sleep", "component.initialized_sleep"} else {"component.ack_exchange"}
+        if name in {"component.repeat_timeout", "component.repeat_exchange"}:
+            required.add("component.ack_timeout")
         if not required <= planned:
             raise ValueError(f"{name} requires fresh nominal prerequisites {sorted(required - planned)}")
         planned.add(name)
@@ -181,7 +181,7 @@ def finish_session(path, state, passed, run):
     # Failed/interrupted runs and all fault runs require nominal requalification.
     if run["status"] == "PASS" and run["fixture"]["c6_fixture"] == "nominal":
         state["passed"] = sorted((passed | set(run["selected"])) &
-                                 {"RF-001.exchange", "RF-003.silence"})
+                                 {"component.ack_exchange", "component.ack_timeout"})
     write_json(path, state)
 
 

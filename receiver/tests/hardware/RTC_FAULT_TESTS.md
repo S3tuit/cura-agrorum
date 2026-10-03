@@ -43,9 +43,9 @@ controller findings, approved pilot recovery and qualification outcome.
 6. Before another RTC write, capture the new boot's kernel RTC bootstrap and
    a production-adapter read. Require a third boot ID, successful RTC bootstrap,
    no OSF rejection, `OK` RTC input, normal Chrony synchronization and unchanged
-   configuration/device access. Repeat the safe time suite, collect originals
-   with SHA256, and archive the result with its source manifest and physical
-   confirmations. Mark completion only after restoration passes.
+   configuration/device access. Repeat the safe time suite and check the captures
+   and physical confirmations. Mark completion only after restoration passes.
+   Preserve useful lessons in this procedure, then discard run output.
 
 ## Controller faults and in-flight helper termination
 

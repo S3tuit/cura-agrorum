@@ -9,7 +9,7 @@ import sqlite3
 import sys
 import tempfile
 
-from evidence import REPO, digest
+from capture import REPO, digest
 from node_capture import build_reader, decode_image
 from service_probe import validate_config
 

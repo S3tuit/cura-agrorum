@@ -1,4 +1,4 @@
-"""RF-023 packet matrix and expected observations; no device or credential I/O.
+"""rejection matrix packet matrix and expected observations; no device or credential I/O.
 
 Call only for a newly provisioned dedicated test identity set and reserved counter
 range. This function is not a nonce allocator and must not reuse a production
@@ -10,14 +10,10 @@ import struct
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 from cura_receiver.generated.receiver_enums_generated import ProcessingResult, AckSelection
 
-CASES = ('implausible_reading', 'unsupported_control', 'unknown_domain',
-         'malformed_length', 'malformed_flags', 'wrong_direction',
-         'unsupported_control_wrong_direction', 'bad_tag', 'unknown_node',
-         'short_header', 'revocation_baseline', 'revoked_node')
-C6_CASES = ('RF-023.implausible', 'RF-023.control', 'RF-023.domain',
-            'RF-023.body-length', 'RF-023.flags', 'RF-023.direction',
-            'RF-023.control-direction', 'RF-023.bad-tag', 'RF-023.unknown',
-            'RF-023.short-header', 'RF-023.before-revoke', 'RF-023.revoked')
+from spec import REJECTION_CASES
+
+CASES = tuple(vector for vector, _ in REJECTION_CASES.values())
+C6_CASES = tuple(REJECTION_CASES)
 
 
 @dataclass(frozen=True)

@@ -70,38 +70,14 @@ checked separately. Physical wiring changes still require external power off.
   Require high pads and a valid RTC read before any restoration write, and
   high pads again after verification. A failed recovery stops dependent tests.
 
-## Qualification on 2026-09-15
+## Interpreting fault results
 
-All four fault cases passed in 21.26 seconds on the stock driver. The original
-three-second operation bound, 500-ms write-fault deadline and three-second
-read-recovery window were unchanged.
-
-| Injected operation | Result under fault | Operation duration | Recovery reads | Recovery duration |
-|---|---|---:|---:|---:|
-| Read, SCL low | IO_ERROR / ETIMEDOUT | 1,013,279 µs | 4 | 1,050,358 µs |
-| Read, SDA low | INVALID / EINVAL | 3,022 µs | 1 | 8,622 µs |
-| Write, SCL low | OUTCOME_UNKNOWN / DEADLINE_EXCEEDED | 2,069,579 µs | 3 | 1,039,883 µs |
-| Write, SDA low | COMPLETED | 4,941 µs | 1 | 8,305 µs |
-
-The held-SCL write included 218 observations of pending SIGKILL inside the
-native helper ioctl; the helper was reaped before fault release. A completed
-SDA-low write is only the driver's reported operation outcome, not trusted
-RTC content. Both write cases performed one restoration write after a valid
-recovery read and verified it. All four fixtures restored successfully; normal
-Chrony identity/configuration stayed unchanged. Independent postflight verified
-RTC reads, high bus pads, released GPIOs, original device permissions and
-removed temporary helpers.
-
-After an externally unpowered return to the nominal carrier with both shunts
-open, the new boot initialized Linux time from the RTC without OSF. The final
-RTC refresh/replacement and both clock-step cases passed (**3 tests, 97.797
-seconds**), followed by **8 safe Pi tests in 6.597 seconds**. All restoration
-checks passed. The host suite passed **2,300 tests**.
-
-The [consolidated time record](../../tests/hardware/evidence/runtime_time/results.json)
-retains controller and intrusive nominal outcomes with relevant source hashes
-from manifest `e457c8999da1abbe481743f62386f0e2717348199c8902d46e392d89e5c47aae`.
-Earlier failure lessons are summarized here; their raw runs are discarded.
+Held-SCL reads can report transport failures; held-SDA reads can report an
+invalid calendar. A held-SCL write can remain in an ioctl after a kill request,
+so request submission is not proof of helper termination. Wait for actual reap.
+A completed held-SDA write establishes only the driver-reported outcome, not
+valid RTC contents. Recovery must check pad levels and a valid read before
+writing, and verify the write afterward.
 
 ## Deferred work
 

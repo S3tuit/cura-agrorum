@@ -1,32 +1,12 @@
-"""RF-019's finite controlled-peer cases; no hardware or production policy edits."""
+"""Finite controlled-peer cases for the production node."""
 from dataclasses import asdict
 
 from cura_receiver.generated import protocol_v2_lora_generated as wire
 from cura_receiver.protocol_v2_lora_crypto import open_frame, seal_frame
 
+from spec import NODE_CASES as CASES, node_episode as episode
+
 STATUSES = {"accepted": 0, "retry_later": 1, "unsupported": 2, "malformed": 3}
-CASES = tuple(f"RF-019.{scope}.{status}" for scope in ("current", "backlog")
-              for status in STATUSES) + (
-    "RF-019.current.invalid_auth", "RF-019.current.wrong_message",
-    "RF-019.current.domain_status",
-)
-
-
-def episode(case, sleep_seconds=900):
-    if sleep_seconds not in (10, 900):
-        raise ValueError("unreviewed RF sleep duration")
-    if case not in CASES:
-        raise ValueError("unknown RF-019 case")
-    scope, action = case.split(".")[1:]
-    seeds = 2 if scope == "backlog" else 1
-    wakes = seeds + 2  # Setup, target, then next-wake metrics observation.
-    backlogs = (2 if action != "retry_later" else 1) if scope == "backlog" else (
-        1 if action in ("accepted", "invalid_auth") else 0)
-    replies = seeds + 1 + (2 if action == "invalid_auth" else 1) + backlogs
-    return dict(case=case, scope=scope, action=action, seed_wakes=seeds,
-                wakes=wakes, sleep_seconds=sleep_seconds,
-                lease_seconds=(wakes - 1) * 945 + 60 if sleep_seconds == 900 else wakes * 50 + 10,
-                c6_max_packets=70 * wakes, pi_max_packets=replies)
 
 
 class AckCase:

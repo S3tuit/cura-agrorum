@@ -11,8 +11,7 @@ ESP32-C6-DEVKITM-1-N4. The carrier is powered from the development board's
 The existing [sensor circuit](#common-carrier-schematic) and its
 [parts](#parts-used-by-this-carrier) remain below. The
 [SX1262 radio sections](#sx1262-radio-fixture) add the node radio wiring,
-[manual connection states](#declared-radio-connection-states), and
-[assembly handoff](#radio-assembly-and-handoff). TESTING.md owns both sensor
+and [manual connection states](#declared-radio-connection-states). TESTING.md owns both sensor
 and radio preflight/measurement procedures.
 
 The field-pilot record at

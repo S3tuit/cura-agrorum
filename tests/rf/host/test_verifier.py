@@ -21,7 +21,7 @@ def complete_trace():
 
 
 def record():
-    identity = dict(run="a"*32, case="RF-001.exchange", boot=11, phase=0)
+    identity = dict(run="a"*32, case="component.ack_exchange", boot=11, phase=0)
     boot = dict(kind="boot", dut="cc8da2fc0224", elf="image", boot=11)
     tx = dict(kind="result", tx=True, payload=A, before=100, after=102900, deadline=2000100,
               error=0, operation=0, diagnostic="", started=True, done=True, set_tx=200, tx_done=102856)
@@ -46,7 +46,7 @@ def record():
 
 
 def check(events, peer):
-    return verify_case("RF-001.exchange", events, peer, "a"*32, {"c6_dut": "cc8da2fc0224"}, "image")
+    return verify_case("component.ack_exchange", events, peer, "a"*32, {"c6_dut": "cc8da2fc0224"}, "image")
 
 
 def test_reviewed_nominal_record():

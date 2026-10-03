@@ -5,6 +5,8 @@ import subprocess
 
 import pytest
 
+from spec import EPISODES, REJECTION_CASES
+
 
 class Line(ctypes.Structure):
     _fields_ = [("text", ctypes.c_char * 160), ("length", ctypes.c_size_t),
@@ -13,7 +15,7 @@ class Line(ctypes.Structure):
 
 
 class Command(ctypes.Structure):
-    _fields_ = [("run", ctypes.c_char * 33), ("selection", ctypes.c_char * 32),
+    _fields_ = [("run", ctypes.c_char * 33), ("selection", ctypes.c_char * 64),
                 ("boot", ctypes.c_uint32), ("phase", ctypes.c_uint)]
 
 
@@ -45,7 +47,7 @@ def parse(library):
 @pytest.mark.parametrize("ending", [b"\n", b"\r\n"])
 def test_fragmented_command_survives_empty_reads(feed, ending):
     line = Line()
-    command = b"RUN aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa RF-001.exchange 1234 0"
+    command = b"RUN aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa component.ack_exchange 1234 0"
     assert feed(line, -1, 900000000) == 0  # No idle timeout.
     for index, byte in enumerate(command + ending):
         assert feed(line, -1, 900000000 + index * 20000) == 0
@@ -88,23 +90,35 @@ def test_invalid_bytes_latch(feed, bad):
 @pytest.mark.parametrize("boot,phase", [(0, 0), (657787608, 0), (4294967295, 1)])
 def test_actual_selection_and_numeric_boundaries(parse, boot, phase):
     command = Command()
-    assert parse(f"RUN a98f95a41f6e48c88bd18a7164b02ba1 RF-001.exchange {boot} {phase}".encode(), command)
+    assert parse(f"RUN a98f95a41f6e48c88bd18a7164b02ba1 component.ack_exchange {boot} {phase}".encode(), command)
     assert command.run == b"a98f95a41f6e48c88bd18a7164b02ba1"
-    assert command.selection == b"RF-001.exchange" and command.boot == boot and command.phase == phase
+    assert command.selection == b"component.ack_exchange" and command.boot == boot and command.phase == phase
 
 
 @pytest.mark.parametrize("tail", [b"4294967296 0", b"-1 0", b"01 0", b"1 2", b"1 00", b"1 0 extra",
                                   b"1 0 ", b"1", b"", b"1 ", b"+1 0", b"1  0"])
 def test_invalid_numeric_and_truncated_commands(parse, tail):
     command = Command(boot=123)
-    assert not parse(b"RUN " + b"a"*32 + b" RF-001.exchange " + tail, command)
+    assert not parse(b"RUN " + b"a"*32 + b" component.ack_exchange " + tail, command)
     assert command.boot == 123  # Parsing failure cannot partially update selection.
 
 
 def test_all_truncated_prefixes_and_overlong_tokens_rejected(parse):
-    valid = b"RUN " + b"a"*32 + b" RF-001.exchange 123 0"
+    valid = b"RUN " + b"a"*32 + b" component.ack_exchange 123 0"
     for length in range(len(valid)):
         assert not parse(valid[:length], Command())
     for bad in (valid.replace(b"a"*32, b"a"*31), valid.replace(b"a"*32, b"a"*33),
-                valid.replace(b"a"*32, b"g"*32), valid.replace(b"RF-001.exchange", b"R"*32)):
+                valid.replace(b"a"*32, b"g"*32), valid.replace(b"component.ack_exchange", b"R"*64)):
         assert not parse(bad, Command())
+
+
+@pytest.mark.parametrize("selection", [*EPISODES, *REJECTION_CASES])
+def test_descriptive_selectors_reach_c_command_without_truncation(parse, selection):
+    command = Command()
+    assert parse(f"RUN {'a' * 32} {selection} 4294967295 0".encode(), command)
+    assert command.selection.decode() == selection
+
+
+@pytest.mark.parametrize("length,accepted", [(63, True), (64, False)])
+def test_selection_buffer_boundary(parse, length, accepted):
+    assert parse(b"RUN " + b"a" * 32 + b" " + b"a" * length + b" 0 0", Command()) == accepted

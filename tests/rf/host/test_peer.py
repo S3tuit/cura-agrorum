@@ -64,7 +64,7 @@ def rig(case):
     clock = Clock(monotonic_us=10000)
     io = Air(clock)
     backend = Sx1262(io, clock, clock)
-    radio = None if case == "RF-006.invalid" else Radio(backend)
+    radio = None if case == "component.invalid_downlinks" else Radio(backend)
     if radio:
         assert radio.initialize().state is State.RX_SINGLE
     else:
@@ -74,16 +74,16 @@ def rig(case):
 
 
 @pytest.mark.parametrize("case,uplinks,downlinks", [
-    ("RF-001.exchange", [peer.A], [peer.B]),
-    ("RF-003.silence", [peer.A], []),
-    ("RF-006.invalid", [peer.A], [b"\0", b"\xde\xad\xbe\xef", peer.X]),
-    ("RF-008.silence", [peer.A, peer.U2], []),
-    ("RF-008.exchange", [peer.A, peer.U2], [peer.B, peer.D2]),
-    ("RF-009.untouched", [peer.A], []),
-    ("RF-009.initialized", [peer.A], []),
-    ("RF-010.wake", [peer.A, peer.U2], [peer.B, peer.D2]),
-    ("RF-012.disconnected", [peer.A], []),
-    ("RF-013.absent", [], []),
+    ("component.ack_exchange", [peer.A], [peer.B]),
+    ("component.ack_timeout", [peer.A], []),
+    ("component.invalid_downlinks", [peer.A], [b"\0", b"\xde\xad\xbe\xef", peer.X]),
+    ("component.repeat_timeout", [peer.A, peer.U2], []),
+    ("component.repeat_exchange", [peer.A, peer.U2], [peer.B, peer.D2]),
+    ("component.cold_sleep", [peer.A], []),
+    ("component.initialized_sleep", [peer.A], []),
+    ("component.sleep_wake", [peer.A, peer.U2], [peer.B, peer.D2]),
+    ("component.dio1_disconnected", [peer.A], []),
+    ("component.radio_absent", [], []),
 ])
 def test_real_peer_sequences(case, uplinks, downlinks):
     clock, io, backend, radio = rig(case)
@@ -105,7 +105,7 @@ def test_real_peer_sequences(case, uplinks, downlinks):
 
 @pytest.mark.parametrize("fault", ["missing", "wrong", "extra", "lost_done", "stop"])
 def test_peer_failures_do_not_become_silent_passes(fault):
-    clock, io, backend, radio = rig("RF-001.exchange")
+    clock, io, backend, radio = rig("component.ack_exchange")
     start = clock.now_monotonic_us()
     stop = threading.Event()
     if fault != "missing":
@@ -117,13 +117,13 @@ def test_peer_failures_do_not_become_silent_passes(fault):
     if fault == "stop":
         stop.set()
     with pytest.raises(RuntimeError):
-        peer.execute("RF-001.exchange", backend, radio, stop, start)
+        peer.execute("component.ack_exchange", backend, radio, stop, start)
     assert sum(cmd[0] == 0x83 for cmd in io.commands) <= 1
     assert radio.shutdown().safe_shutdown is True
 
 
 def test_missed_local_burst_target_stops_before_tx():
-    clock, io, backend, _ = rig("RF-006.invalid")
+    clock, io, backend, _ = rig("component.invalid_downlinks")
     clock.advance_elapsed_us(500000)
     with pytest.raises(RuntimeError, match="missed local target"):
         peer.lower_burst(backend, {"edge_timestamp_ns": 0}, threading.Event())

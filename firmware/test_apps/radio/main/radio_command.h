@@ -21,7 +21,7 @@ typedef struct {
 rf_line_status_t rf_line_feed(rf_line_t *line, int byte, uint64_t now_us);
 
 typedef struct {
-  char run[33], selection[32];
+  char run[33], selection[64];
   uint32_t boot;
   unsigned phase;
 } rf_command_t;

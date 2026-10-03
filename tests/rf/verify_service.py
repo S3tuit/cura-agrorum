@@ -1,4 +1,4 @@
-"""Independent RF-020 reconciliation of a consistent SQLite/node capture.
+"""Independent service.reading_delivery reconciliation of a consistent SQLite/node capture.
 
 Sensor acquisition correctness is a separate sensor-carrier prerequisite.
 No production peer policy or generated reading decoder supplies expected values.
@@ -118,6 +118,6 @@ def verify_service(database, node_id, key, decoded, instance_id, baseline=None):
                 raise ValueError("node delivery identity mismatch")
         if (finish["final_result"], finish["attempt_count"]) != (1, counts[m]):
             raise ValueError("node outcome/attempts differ from receiver evidence")
-    return dict(case="RF-020", status="PASS", scope="production_node_receiver_service", sleep_seconds=10, cadence_scope="accelerated functional RF",
+    return dict(case="service.reading_delivery", status="PASS", scope="production_node_receiver_service", sleep_seconds=10, cadence_scope="accelerated functional RF",
                 wakes=2, profiles=len(profiles), inter_wake_us=elapsed,
                 sensor_conversion="separate sensor-carrier prerequisite")

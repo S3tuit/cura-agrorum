@@ -1,9 +1,7 @@
 # Receiver application coverage
 
-The production receiver application is implemented and host-verified. This closes
-DEP-003's host phase; installed service, Pi timing/permissions and RF acceptance
-remain separate gates. Run `make test-receiver-host` to verify the current tree;
-fast host runs have no permanent archive under the [retention policy](../../EVIDENCE.md).
+Run `make test-receiver-host` to verify the production application on the host.
+Installed service, Pi timing/permissions and RF behavior have separate tests.
 The governing assertions remain in [TESTING.md](../TESTING.md),
 [INTERFACE.md](../INTERFACE.md) and [INTERFACE_DIAGNOSTIC.md](../INTERFACE_DIAGNOSTIC.md).
 
@@ -39,34 +37,23 @@ Helper digest and validated target RTC/kernel bound remain required installation
 inputs. No service was installed, device accessed, clock changed or RF emitted
 for this host verification.
 
-The isolated Pi signal validation ran the affected host suites on Python 3.13
-and exercised the production entry point under transient systemd units as the
-unprivileged `cura` user. SIGTERM restart/stop and SIGINT stop produced distinct
-UUIDs, increasing lifecycle ordinals and confirmed clean markers in real SQLite.
-The first ten-second deadline and previous handlers/wakeup descriptor were
-preserved. RTC, Chrony and physical radio ports were faked, and the retained
-clock-boundary retry state selected the application wait. Production storage
-reserve and policies were preserved; the installed pilot service kept running.
-This is software/supervisor evidence, with no physical radio, RTC write, boot,
-suspend, installed-unit privilege or over-the-air qualification.
-
 ## Implementation file map
 
 | File | Change |
 |---|---|
-| [stop_intent.py](../cura_receiver/stop_intent.py) (new) | Retains one coherent first request/deadline pair, including nested handler re-entry; exposes read-only intent. |
-| [linux_signal_wait.py](../cura_receiver/platform/linux_signal_wait.py) (new) | Owns nonblocking wakeup pipe, absolute wait, SIGTERM/SIGINT installation, rollback and restoration before descriptor close. |
+| [stop_intent.py](../cura_receiver/stop_intent.py) | Retains one coherent first request/deadline pair, including nested handler re-entry; exposes read-only intent. |
+| [linux_signal_wait.py](../cura_receiver/platform/linux_signal_wait.py) | Owns nonblocking wakeup pipe, absolute wait, SIGTERM/SIGINT installation, rollback and restoration before descriptor close. |
 | [application.py](../cura_receiver/application.py) | Reads shared intent, exposes its retained deadline and delegates waiting to an injected adapter. |
 | [__main__.py](../cura_receiver/__main__.py) | Wires one intent to application/radio and scopes Linux signal ownership across startup, run and shutdown. |
 | [radio.py](../cura_receiver/radio.py) | Reads application intent at existing operation/primitive boundaries; retains the independent thread-safe shutdown API. |
-| [communicator.py](../cura_receiver/communicator.py) | Earlier review correction: constructs the complete failed-receive profile unit before reserving queue capacity. |
-| [test_stop_intent.py](host/test_stop_intent.py) (new) | Repeated/nested requests and coherent deadline arithmetic. |
-| [test_linux_signal_wait.py](host/test_linux_signal_wait.py) (new) | Notification hints/full pipe, EINTR/absolute deadlines, partial installation, foreign-thread rejection and restoration/reuse. |
-| [test_application_signals.py](host/test_application_signals.py) (new) | Named actual-signal process interleavings, observed kernel blocking, held radio lock, owner cleanup and real durable marker. |
+| [communicator.py](../cura_receiver/communicator.py) | constructs the complete failed-receive profile unit before reserving queue capacity. |
+| [test_stop_intent.py](host/test_stop_intent.py) | Repeated/nested requests and coherent deadline arithmetic. |
+| [test_linux_signal_wait.py](host/test_linux_signal_wait.py) | Notification hints/full pipe, EINTR/absolute deadlines, partial installation, foreign-thread rejection and restoration/reuse. |
+| [test_application_signals.py](host/test_application_signals.py) | Named actual-signal process interleavings, observed kernel blocking, held radio lock, owner cleanup and real durable marker. |
 | [test_application.py](host/test_application.py) | Shares intent in the production fixture and permits actual Linux clocks/waits. |
 | [test_application_entrypoint.py](host/test_application_entrypoint.py) | Checks exact intent wiring and waiter/context lifecycle. |
 | [test_application_shutdown.py](host/test_application_shutdown.py) | Migrates stop assertions to shared intent and the explicit wait input. |
 | [test_radio.py](host/test_radio.py) | Adds application-stop checkpoints before TX, after profile transfer and after actual SetTx submission. |
-| [test_communicator.py](host/test_communicator.py) | Earlier review regressions: allocation/constructor failures cannot strand a failed-receive reservation; preserve CORE policy/drain. |
+| [test_communicator.py](host/test_communicator.py) | allocation/constructor failures cannot strand a failed-receive reservation; preserve CORE policy/drain. |
 | [ARCHITECTURE.md](../ARCHITECTURE.md), [INTERFACE.md](../INTERFACE.md), [TESTING.md](../TESTING.md) | Define the approved ownership boundary and regression obligations. |
 | APPLICATION_COVERAGE.md | Closes the signal gap, records actual validation scope and maps the changed files. |

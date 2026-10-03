@@ -25,7 +25,7 @@ def test_profile_replay_accepts_actual_peer_backend_traces(case, monkeypatch):
     io = peer.TraceIo(clock, len(downlinks))
     io.transmit_deadline = clock.now_monotonic_us() + 45_000_000
     backend = peer.Sx1262(io, clock, clock)
-    radio = None if case == "RF-006.invalid" else peer.Radio(backend)
+    radio = None if case == "component.invalid_downlinks" else peer.Radio(backend)
     if radio:
         assert radio.initialize().state is peer.State.RX_SINGLE
     else:
@@ -35,8 +35,8 @@ def test_profile_replay_accepts_actual_peer_backend_traces(case, monkeypatch):
         backend.arm_receive(end)
     start = clock.now_monotonic_us()
     uplinks = EXPECTED[case][0]
-    if case == "RF-013.absent": uplinks = []
-    elif case == "RF-009.initialized": uplinks = uplinks[:1]
+    if case == "component.radio_absent": uplinks = []
+    elif case == "component.initialized_sleep": uplinks = uplinks[:1]
     air.incoming.extend((start + 100_000 + i * 6_000_000, bytes.fromhex(frame))
                         for i, frame in enumerate(uplinks))
     peer.execute(case, backend, radio, threading.Event(), start)

@@ -6,23 +6,16 @@ includes the `node_persistence` matrix, the complete bare-board RTC suite, the
 receiver-free `node_core` integration suite, and platform clock, randomness,
 software-reset-reason and timer-deep-sleep cases. A sibling sensor-carrier app
 implements real sensor component and core-reading integration cases, including
-operator-guided fixtures. Its [coverage/evidence index](test_apps/sensor_carrier/COVERAGE.md)
-distinguishes implementation, prior component evidence and pending mapping runs.
+operator-guided fixtures. Its [coverage index](test_apps/sensor_carrier/COVERAGE.md)
+maps requirements to executable cases and their limits.
 
-## Evidence retention
+## Testing policy
 
-Follow the repository [evidence policy](../EVIDENCE.md). Useful failure lessons
-belong in code comments, regression tests or owning documentation; archive a
-lesson only when no better home exists. Routine failed runs are discarded.
-
-Use [tests/evidence/](tests/evidence/README.md) only for destructive tests, tests
-requiring physical intervention, or runs lasting more than five minutes. Retain
-a concise result, device/build identity, essential observations and restoration
-or acceptance limits. Fast host checks, ordinary builds and easily repeated
-nominal runs need no permanent evidence archive. Do not retain full dependency
-manifests, duplicate reports or verbose logs merely to prove execution. Removing
-routine captures does not erase historical outcomes or turn partial acceptance
-into PASS.
+The repository must pass its implemented tests. Before committing a new test,
+make it pass; after software or hardware changes, rerun all necessary tests.
+Contributors choose those tests during implementation using their judgment.
+Keep useful failure lessons beside the affected code or in its documentation.
+Run outputs are temporary working data, not a permanent pass/fail archive.
 
 ## Pilot production fixture and configuration sequencing
 
@@ -60,8 +53,7 @@ the final production build. Verify the resolved image/configuration and actual
 assembly afterward. Ordinary rebuilds preserve valid counters; destructive
 test storage and identity replacement retain their existing authorization and
 reset requirements. Test-to-production identity handover is a later phase.
-Historical evidence is reusable only for unchanged applicable inputs; changes
-to test-only branches do not by themselves qualify the assembled image.
+Rerun the necessary tests for the assembled image when these inputs change.
 
 ## Philosophy and build
 
@@ -136,9 +128,9 @@ are tested without real waiting.
   The exact unchanged absolute deadline is owned by the firmware host test
   `invalid_acks_share_one_receive_interval` in
   `tests/host/test_node_core_delivery.c`. Run it against the current source as
-  an RF-019 prerequisite; its assertions are not physical RF-019 results.
-  RF-019 owns real ACK rejection/acceptance and node-state consequences;
-  RF-006 separately owns its component receive-deadline RF assertions.
+  an node prerequisite; its assertions are not physical node results.
+  node owns real ACK rejection/acceptance and node-state consequences;
+  invalid downlinks separately owns its component receive-deadline RF assertions.
 - Parameterized invalid ACKs cover bad length, bad tag, foreign node, wrong
   message ID, unsupported control, uplink domain and domain/status mismatch.
 - An authenticated unknown ACK status is isolated from domain/status mismatch
@@ -262,9 +254,9 @@ are tested without real waiting.
 
 ### Offline production-node evidence capture
 
-For RF-019/RF-020, finish the complete observation sequence before entering the
+For node/service.reading_delivery, finish the complete observation sequence before entering the
 ROM bootloader to read the entire reviewed LittleFS `storage` partition to the
-laptop. RF-019/RF-020 functional sequences use10-second configured deep sleep,
+laptop. node/service.reading_delivery functional sequences use10-second configured deep sleep,
 real deep-sleep resets and previous-wake metrics. Production900-second cadence
 requires separate validation. The historical
 855–945-second RF observation remains source-bound evidence only. Bootloader entry is an
@@ -846,7 +838,7 @@ No RF or actual sleep behavior is claimed by this integration operation.
 
 These sensor-carrier checks own the independent same-acquisition sensor-to-packet
 assertions. Applicable passing evidence for the selected firmware sources and
-sensor configuration is a separate prerequisite to RF-020. RF-020 does not
+sensor configuration is a separate prerequisite to service.reading_delivery. service.reading_delivery does not
 repeat acquisition observation or add a production sample observer; it checks
 the received sensor flags/ranges, authenticated frames, receiver persistence,
 ACK consequences and ordinary next wake. Neither result substitutes for the
@@ -960,8 +952,7 @@ These tests use the available AN8008 multimeter for stable DC observations.
 This section owns the wiring preflight, measurement procedure, settling times
 and voltage limits. The schematic and fixture connections are defined in
 [SENSOR_CARRIER.md](test_apps/on_device/SENSOR_CARRIER.md). Commands are in the
-[sensor-carrier README](test_apps/sensor_carrier/README.md); recorded runs are in
-[sensor-carrier evidences/](test_apps/sensor_carrier/evidences/).
+[sensor-carrier README](test_apps/sensor_carrier/README.md).
 Measure DC voltage relative to an adjacent carrier ground point. The meter's
 hold function does not provide transient capture or a min/max measurement.
 
@@ -1112,10 +1103,9 @@ The radio circuit and manual connection states are documented in
 [SENSOR_CARRIER.md](test_apps/on_device/SENSOR_CARRIER.md#sx1262-radio-fixture).
 Assembly/static preflight and the first RF operating envelope are specified
 below. The [component radio app](test_apps/radio/README.md), Pi peer and
-[joint runner](../tests/rf/README.md) implement RF-001/003/006/008/009/010/012/013.
-Their [runner instructions](../tests/rf/README.md) describe implemented cases;
-[manual-fixture evidence](../tests/rf/evidence/README.md) records costly physical results. Unselected cases retain their
-required coverage; component results do not establish full-service acceptance.
+[joint runner](../tests/rf/README.md) implement the component cases declared in
+[spec.py](../tests/rf/spec.py). Component results cover their selected assertions;
+full-service integration has its own tests.
 
 SX1262 hardware tests exercise behavior that the fake backend cannot prove:
 real SPI/BUSY/DIO1 operation, RF interoperability, IRQ timestamps,
@@ -1332,15 +1322,10 @@ carrier accuracy or unwanted emissions. Retain the specified kit antennas and
 PA settings; a different antenna or conflicting RF evidence requires renewed
 assessment. Lower duty cycle does not cure excessive instantaneous ERP.
 
-**Pilot envelope approval, 2026-09-18.** The operator accepts this existing
-source-based assessment and the documented firmware/receiver schematics at
-configured +14 dBm, explicitly including autonomous wakes, retries and resets.
-The [retained DEC-003/DEP-023 decision](../tests/rf/OPERATING_ENVELOPE.md)
-closes RF-018 disposition and defers physical measurement as NOT RUN. This is
-operator acceptance of the documented basis and remaining uncertainty, not a
-new numerical bound or measured compliance result. The initial component limits
-below, declared expanded episodes, existing production policies and operator
-ownership of test airtime remain distinct and unchanged.
+The [operating envelope](../tests/rf/OPERATING_ENVELOPE.md) accepts this
+configuration basis, including autonomous wakes, retries and resets. Physical
+output power and emissions remain unmeasured; nominal exchanges do not establish
+a numerical uncertainty bound.
 
 **Airtime and initial pacing.** The protocol's independently specified values
 are the expected results, not values copied from DUT output:
@@ -1413,7 +1398,7 @@ An additional LoRa receiver may cross-check the records; decoded silence,
 including ten quiet minutes, is not the accounting method or a fresh allowance.
 This operator-controlled test envelope does not establish the node's
 reset-spanning production enforcement. DEC-002 accepts the existing per-wake
-heuristic for this pilot and defers DEP-007 plus RF-029's future firmware-ledger
+heuristic for this pilot and defers DEP-007 plus rolling airtime's future firmware-ledger
 assertions. Current per-wake checks, receiver durable enforcement and selected
 RF verification remain required.
 Larger payloads, filtering bursts, transition cases and stress runs retain all
@@ -1520,12 +1505,12 @@ measurement setup and remain deferred.
 
 RF tests use the same production source with
 `CONFIG_NODE_DEEP_SLEEP_SECONDS=10` and `CONFIG_NODE_RF_SLEEP_OBSERVATION=y`.
-This includes RF-019 and RF-020; a prior900-second RF run is not required.
+This includes node and service.reading_delivery; a prior900-second RF run is not required.
 The run/build seal records both settings. Require one exact sleep marker per
 boot, genuine SLEEP_WAKEUP resets between cycles and the expected wake count.
 The operator accepts the cycle-finished/timer-configured marker as sleep entry.
-RF-019 additionally forwards a matched run/case-bound final notification to its
-controlled peer. RF-020 observes the marker directly alongside service progress.
+node additionally forwards a matched run/case-bound final notification to its
+controlled peer. service.reading_delivery observes the marker directly alongside service progress.
 This replaces the final35-second wait; all ACK/retry limits, packet/storage
 reconciliation and safe endpoint shutdown remain required.
 Received-current intervals are9.5..45.5s, allowing the unchanged30s radio-cycle

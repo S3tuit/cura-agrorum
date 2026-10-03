@@ -39,7 +39,7 @@ def accepted_transcript():
 
 def test_real_packets_require_matching_node_storage():
     packets, dump = accepted_transcript()
-    result = verify_ack_case("RF-019.current.accepted", NODE, KEY, packets, dump)
+    result = verify_ack_case("node.current.accepted", NODE, KEY, packets, dump)
     assert result["status"] == "PASS"
     assert result["host_deadline_assertion"] == "separate prerequisite"
 
@@ -76,7 +76,7 @@ def invalid_ack_transcript(action, *, attempts=2, result=8):
 @pytest.mark.parametrize("action", ["wrong_message", "domain_status"])
 def test_invalid_ack_then_silence_requires_two_attempt_no_ack_result(action):
     packets, dump = invalid_ack_transcript(action)
-    result = verify_ack_case("RF-019.current." + action, NODE, KEY, packets, dump)
+    result = verify_ack_case("node.current." + action, NODE, KEY, packets, dump)
     assert result["status"] == "PASS"
     assert result["packets"] == 4
     assert result["wakes"] == 3
@@ -87,7 +87,7 @@ def test_invalid_ack_then_silence_requires_two_attempt_no_ack_result(action):
 def test_invalid_ack_silence_rejects_wrong_outcome_or_attempt_count(action, attempts, result):
     packets, dump = invalid_ack_transcript(action, attempts=attempts, result=result)
     with pytest.raises(ValueError):
-        verify_ack_case("RF-019.current." + action, NODE, KEY, packets, dump)
+        verify_ack_case("node.current." + action, NODE, KEY, packets, dump)
 
 
 @pytest.mark.parametrize("action", ["wrong_message", "domain_status"])
@@ -112,7 +112,7 @@ def test_invalid_ack_silence_requires_matching_retained_state_and_metrics(action
         packets[-1]["frame"] = frame.hex()
         logs["pending.log"][-1]["reading_body"] = body.hex()
     with pytest.raises(ValueError):
-        verify_ack_case("RF-019.current." + action, NODE, KEY, packets, dump)
+        verify_ack_case("node.current." + action, NODE, KEY, packets, dump)
 
 
 @pytest.mark.parametrize("damage", [None, "wrong_ack", "missing_spi", "extra_tx"])
@@ -132,7 +132,7 @@ def test_downlinks_match_actual_spi_and_selected_status(damage):
         trace.pop(0)
     elif damage == "extra_tx":
         trace.append(dict(operation="spi", tx="83000100"))
-    args = ("RF-019.current.accepted", NODE, KEY, dict(packets=packets, transmissions=transmissions), trace, 4)
+    args = ("node.current.accepted", NODE, KEY, dict(packets=packets, transmissions=transmissions), trace, 4)
     if damage:
         with pytest.raises(ValueError, match="ACK bytes"):
             verify_ack_transmissions(*args)
@@ -165,4 +165,4 @@ def test_incomplete_or_conflicting_evidence_cannot_pass(damage):
         frame = bytes.fromhex(packets[0]["frame"])
         packets[0]["frame"] = (frame[:-1] + bytes([frame[-1] ^ 1])).hex()
     with pytest.raises(ValueError):
-        verify_ack_case("RF-019.current.accepted", NODE, KEY, packets, dump)
+        verify_ack_case("node.current.accepted", NODE, KEY, packets, dump)

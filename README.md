@@ -3,7 +3,7 @@
 Cura Agrorum collects soil and enclosure measurements using an ESP32-C6 sensor
 node and a Raspberry Pi receiver connected over authenticated EU868 LoRa.
 This repository owns the production firmware, receiver, wire protocol and their
-test procedures. Retained test results follow [EVIDENCE.md](EVIDENCE.md).
+test procedures. Testing policy is in the firmware and receiver testing guides.
 
 Experiments, datasets, analysis and deployment plans/results belong in
 [`cura-agrorum-logbook`](https://github.com/S3tuit/cura-agrorum-logbook), normally
@@ -30,7 +30,6 @@ Start with the documents for the component you are changing:
 | Wire encoding and authentication | [LoRa protocol](protocol/protocol-v2-lora/README.md) |
 | Receiver diagnostic definitions | [Diagnostic interface](receiver/INTERFACE_DIAGNOSTIC.md) |
 | Test scope, procedures and coverage | [Firmware testing](firmware/TESTING.md), [receiver testing](receiver/TESTING.md), [joint RF verification](tests/rf/README.md) |
-| Test-result retention | [Evidence policy](EVIDENCE.md) |
 
 These documents own their rules; local READMEs explain navigation, setup and
 editing instructions. Generated files implement their schema/generator inputs.

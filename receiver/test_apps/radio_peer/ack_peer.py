@@ -1,4 +1,4 @@
-"""RF-019 controlled authenticated peer; never the production receiver service."""
+"""Production-node controlled authenticated peer; never the production receiver service."""
 from __future__ import annotations
 
 import argparse
@@ -11,6 +11,7 @@ import sys
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "receiver"))
+sys.path.insert(0, str(REPO / "tests/rf"))
 sys.path.insert(0, str(REPO / "protocol/protocol-v2-lora/python"))
 
 from cura_protocol_v2_lora.receiver_group import load_receiver_group

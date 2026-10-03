@@ -1,4 +1,4 @@
-"""Create fresh private RF-023 build inputs; never read existing production credentials."""
+"""Create fresh private rejection matrix build inputs; never read existing production credentials."""
 import argparse
 from dataclasses import replace
 import json
@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import sys
 
-from evidence import REPO, digest
+from capture import REPO, digest
 sys.path[:0] = [str(REPO / 'receiver'), str(REPO / 'protocol/protocol-v2-lora/python'),
                str(REPO / 'protocol/protocol-v2-lora/tools')]
 from provisioning_common import (generate_receiver_group, generate_unique_node_id,
@@ -46,25 +46,25 @@ def prepare(output, run):
     write_new_secret(output / 'receiver-group-after.json', render_receiver_group(after))
     def array(value):
         return '{' + ','.join('0x%02x' % b for b in value) + '}'
-    header = ('/* PRIVATE: disposable RF-023 credentials; never archive this file or enabled images. */\n'
+    header = ('/* PRIVATE: disposable rejection matrix credentials; never archive this file or enabled images. */\n'
               '#pragma once\n#include "radio_rejection.h"\n'
-              'static const rf023_config_t rf023_config = {\n'
+              'static const rejection_config_t rejection_config = {\n'
               f' .run = "{run}",\n'
               ' .node_ids = {' + ','.join(array(n) for n, _ in identities) + '},\n'
               ' .node_keys = {' + ','.join(array(k) for _, k in identities) + '},\n'
               ' .first_message = 0, .first_sample = 0\n};\n')
-    write_new_secret(output / 'rf023_inputs.h', header)
+    write_new_secret(output / 'rejection_inputs.h', header)
     vectors = matrix(active=active, unknown=unknown, revoked=revoked, first_message=0, first_sample=0)
     public = dict(schema=1, run=run, group_id=group.group_id.hex(),
                   nodes=dict(active=active[0].hex(), unknown=unknown[0].hex(), revoked=revoked[0].hex()),
                   sources={name: digest(REPO / name) for name in BOUND_SOURCES},
-                  input_header_sha256=digest(output / 'rf023_inputs.h'),
+                  input_header_sha256=digest(output / 'rejection_inputs.h'),
                   first_message=0, first_sample=0,
                   cases=[dict(name=v.name, command_case=case, phase=v.phase, frame=v.frame.hex(), ack=v.ack.hex() if v.ack else None,
                               processing_result=v.processing_result, sample_id=v.sample_id)
                          for v, case in zip(vectors, C6_CASES, strict=True)])
     # Header/keys and both allowlists are private; this public manifest has only hashes/frames/IDs.
-    with (output / 'rf023-manifest.json').open('x') as stream:
+    with (output / 'rejection-manifest.json').open('x') as stream:
         json.dump(public, stream, indent=2, sort_keys=True); stream.write('\n')
     return public
 
@@ -75,7 +75,7 @@ def main():
     parser.add_argument('--run', required=True)
     args = parser.parse_args()
     value = prepare(args.output, args.run)
-    print(json.dumps(dict(run=value['run'], group_id=value['group_id'], manifest=str(args.output / 'rf023-manifest.json'))))
+    print(json.dumps(dict(run=value['run'], group_id=value['group_id'], manifest=str(args.output / 'rejection-manifest.json'))))
 
 
 if __name__ == '__main__':

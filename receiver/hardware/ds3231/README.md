@@ -5,16 +5,13 @@ Raspberry Pi OS Trixie arm64, and an Adafruit DS3231 with a CR1220 battery.
 The repeatable acceptance procedure is in [OPERATOR_TESTS.md](OPERATOR_TESTS.md).
 The stock-driver recovery limitation and its qualification are documented in
 [LIMITATION.md](LIMITATION.md).
-[Recorded results](results/README.md) are Git-tracked beside this procedure,
-including the dated installation and raw evidence in the
-[September 2026 record](results/2026-09-12-run-01/README.md).
 
-These are operator commands for an isolated bench Pi. The production authority
-remains [the time model](../../ARCHITECTURE.md#time-model) and
+These operator commands apply to an isolated test Pi. Production behavior is
+specified by [the time model](../../ARCHITECTURE.md#time-model) and
 [the Linux backend contract](../../INTERFACE.md#pilot-linux-backend-and-privilege-boundary).
 Do not run manual clock steps or RTC writes alongside the receiver service.
-No production adapter, privileged helper, stable device alias, or trusted
-`RTC_HOLDOVER` state is installed by this guide.
+This guide does not install the production adapter, privileged helper, stable
+device alias or trusted `RTC_HOLDOVER` state.
 
 ## 1. Wire and enable the device
 
@@ -192,7 +189,7 @@ driftfile /var/lib/chrony/chrony.drift
 leapsecmode slew
 maxslewrate 3500
 
-# Disable UPD for remote monitoring 
+# Disable UPD for remote monitoring
 cmdport 0
 
 # Unix domain socket path to which the chronyd daemon binds for listening to

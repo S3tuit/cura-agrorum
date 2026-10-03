@@ -44,9 +44,8 @@ Use these outcomes for each test:
 
 Existing September results predate this procedure. Their qualitative pass
 does not retroactively satisfy new measurement or evidence requirements.
-See the [results index](results/README.md) for archived runs and their limits.
 
-## Evidence setup
+## Capture setup
 
 For the default procedure below, connect from the laptop to the Pi:
 
@@ -96,9 +95,7 @@ rtc_capture() {
 }
 ```
 
-For an alternative that saves captures directly on the laptop, see
-[collecting Pi output from the laptop](#optional-collect-pi-output-from-the-laptop).
-The unwrapped `rtc_capture ... sudo ...` examples below assume the Pi shell.
+The `rtc_capture ... sudo ...` examples below run in the Pi shell.
 
 ### Shared bracketed capture
 
@@ -456,28 +453,10 @@ it a coarse estimate. One second of offset-change uncertainty corresponds to
 about 11.6 ppm over 24 hours. Longer intervals improve resolution; these
 captures do not by themselves certify the datasheet or receiver drift bound.
 
-## Close and archive the run
+## Close the run
 
-Record the outcome and evidence filenames for every test, including not-run
-items, and confirm RTC-05 recovery. Archive evidence alongside this procedure
-under [results/](results/README.md) after recording the physical actions and
-checking completeness. On the Pi:
-
-```bash
-cd "$RTC_RUN"
-sha256sum ./*.txt > SHA256SUMS
-```
-
-From the laptop, copy that run into a new
-`receiver/hardware/ds3231/results/<run-id>/data/raw/` directory in
-`cura-agrorum`, and verify `sha256sum -c SHA256SUMS` in that copied directory.
-Add a run summary, link it from the results index, and include the summary,
-captures and checksums in Git. Do not overwrite earlier runs. Use
-`ssh -F /dev/null` / `scp -F /dev/null` when the laptop's default SSH config
-is unusable; do not put passwords into checked-in instructions or evidence.
-
-The final record must distinguish physical actions reported by the operator,
-raw software captures, derived measurements, missing evidence, and whether
-the hardware was restored. Normal pytest collection does not execute this
-procedure, and a manual PASS does not replace the stage-9 automated tests.
-
+Confirm RTC-05 recovery and review the observations against each executed case.
+Keep captures until failures are understood and restoration is checked, then
+discard them. Put useful failure or measurement lessons in the relevant part of
+this procedure or the driver documentation. Normal pytest collection does not
+execute this manual procedure.

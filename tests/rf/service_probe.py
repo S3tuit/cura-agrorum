@@ -1,4 +1,4 @@
-"""Pi-local read-only RF-020 service inspection and SQLite capture.
+"""Pi-local read-only service.reading_delivery service inspection and SQLite capture.
 
 Administrative inspection runs separately from database access under the actual
 service UID. This helper never installs packages, starts services or touches RF.

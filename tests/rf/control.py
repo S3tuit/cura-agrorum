@@ -9,7 +9,7 @@ import subprocess
 import sys
 import threading
 
-from evidence import write_json
+from capture import write_json
 from transport import RemoteTransport
 
 
@@ -187,8 +187,8 @@ class Node:
                 raise ValueError("unexpected reset or event during C6 case")
         self.dut.expect_exact("RF_SLEEP", timeout=3)
         wake = self.booted(previous=boot)
-        if value["failed"] or (value["cleanup_error"] and self.case != "RF-013.absent"):
+        if value["failed"] or (value["cleanup_error"] and self.case != "component.radio_absent"):
             raise RuntimeError("C6 assertion or cleanup failure")
-        if phase == 0 and self.case == "RF-010.wake" and wake["continuation"] != 1:
-            raise ValueError("missing RF-010 continuation")
+        if phase == 0 and self.case == "component.sleep_wake" and wake["continuation"] != 1:
+            raise ValueError("missing sleep/wake continuation")
         return value

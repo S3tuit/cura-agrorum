@@ -78,10 +78,8 @@ __pycache__/
 .env
 .venv
 
-# Temporary hardware captures; curate useful results, then delete raw runs.
+# Temporary hardware captures; discard after verification and diagnosis.
 /receiver/tests/hardware/raw/
-/receiver/tests/hardware/evidence/**/20??-??-??/
-/receiver/tests/hardware/evidence/**/raw/
 
 # Fuzzing
 protocol/protocol-v2-lora/.fuzz-corpus/

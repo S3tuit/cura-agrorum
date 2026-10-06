@@ -13,8 +13,8 @@ from .control_diagnostics import ControlEpisodeTracker, control_failure
 from .elapsed_duration import checked_monotonic_deadline
 from .generated import receiver_enums_generated as E
 from .producer_admission import ProducerAdmission
+from .persistence_startup import observe_persistence_startup
 from .protocol_ingress import ProtocolIngress
-from .receiver_configuration import ReceiverConfigurationLoadStatus
 from .runtime_time import RuntimeTime
 from .tx_airtime import TxAirtimePolicy
 
@@ -41,6 +41,7 @@ class ReceiverApplication:
         self.stop_intent = stop_intent
         self.runtime = None
         self.start_result = None
+        self.startup_decision = None
         self._started = False
         self._radio_started = False
         self.shutdown_result = None
@@ -57,28 +58,18 @@ class ReceiverApplication:
         value = checked_monotonic_deadline(self.clock.now_monotonic_us(), budget)
         return value if self.stop_deadline is None else min(value, self.stop_deadline)
 
-    def start(self):
+    def start(self, *, wait):
         if self._started:
             raise RuntimeError('application startup is single-use')
         self._started = True
-        self.worker.start()
-        observed = self.clock.now_monotonic_us()
-        startup = self.worker.wait_started(deadline_monotonic_us=self._deadline(
-            self.settings.time_settings.control_budget_us))
-        if self.stop_intent.is_requested():
-            self.start_result = ApplicationStartResult(False, 'STOP_REQUESTED')
+        decision = self.startup_decision = observe_persistence_startup(
+            worker=self.worker, clock=self.clock, stop_intent=self.stop_intent,
+            wait=wait, budget_us=self.settings.persistence_startup_budget_us)
+        if decision.outcome != 'SUCCESS':
+            self.start_result = ApplicationStartResult(False, decision.outcome)
             return self.start_result
-        if startup is None:
-            self.start_result = ApplicationStartResult(False, 'PERSISTENCE_STARTUP_INCOMPLETE')
-            return self.start_result
-        if startup.configuration_load.status is not ReceiverConfigurationLoadStatus.LOADED:
-            # No established lifecycle row / ordinary admission; diagnostics cannot
-            # pass the initial clock boundary. Keep only bounded startup evidence.
-            self.start_result = ApplicationStartResult(False, startup.configuration_load.status.name)
-            return self.start_result
-        if startup.database_failure is not None or startup.state_load is None:
-            self.start_result = ApplicationStartResult(False, 'PERSISTENCE_STARTUP_FAILED')
-            return self.start_result
+        startup = decision.snapshot.result
+        observed = decision.begin_monotonic_us
         tracker = ControlEpisodeTracker()
         owner = CommunicatorStateOwner.from_load(control=self.worker.control,
             loaded=startup.state_load, clock=self.clock, observer=tracker)

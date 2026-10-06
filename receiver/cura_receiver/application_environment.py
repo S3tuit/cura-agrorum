@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from pathlib import Path
+import re
 
 from .application_settings import ApplicationSettings
 
@@ -24,7 +25,13 @@ def _absolute_path(value):
 
 
 def settings_from_environment(environment):
-    settings = ApplicationSettings()
+    budget = environment.get("CURA_RECEIVER_STARTUP_BUDGET_US")
+    if not isinstance(budget, str) or re.fullmatch(r"[0-9]+", budget) is None:
+        raise ValueError("a positive decimal persistence startup budget is required")
+    try:
+        settings = ApplicationSettings(persistence_startup_budget_us=int(budget))
+    except (ValueError, OverflowError):
+        raise ValueError("invalid persistence startup budget") from None
     present = [name in environment for name in PATH_VARIABLES]
     if any(present) and not all(present):
         raise ValueError("deployment paths must be supplied together")

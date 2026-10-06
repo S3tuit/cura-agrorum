@@ -10,6 +10,7 @@ from uuid import RFC_4122, UUID, uuid4
 
 from .generated.receiver_enums_generated import PersistenceAdmissionState
 from .ports.clocks import MonotonicClock
+from .persistence_startup import StartupStage
 from .receiver_configuration import (
     ReceiverConfigurationLoadResult,
     ReceiverConfigurationLoadStatus,
@@ -68,6 +69,8 @@ def insert_receiver_instance_start(
     connection: sqlite3.Connection,
     instance: ReceiverInstanceStart,
     linux_boot_id: bytes,
+    *,
+    failure_observer=None,
 ) -> ReceiverInstanceStartResult:
     """Commit exactly one start row using its own transaction, never retry it.
 
@@ -116,6 +119,14 @@ def insert_receiver_instance_start(
                 failure.sqlite_extended_code,
                 failure.os_errno,
             )
+        disposition = (
+            ReceiverInstanceStartDisposition.OUTCOME_UNKNOWN
+            if commit_may_have_run
+            else ReceiverInstanceStartDisposition.NOT_STARTED
+        )
+        result = ReceiverInstanceStartResult(disposition, failure=failure)
+        if failure_observer is not None:
+            failure_observer(result)
         if connection.in_transaction:
             try:
                 connection.execute("ROLLBACK")
@@ -123,20 +134,20 @@ def insert_receiver_instance_start(
                 # Cleanup cannot replace the classified startup failure. The
                 # owner must discard this connection even if rollback failed.
                 pass
-        disposition = (
-            ReceiverInstanceStartDisposition.OUTCOME_UNKNOWN
-            if commit_may_have_run
-            else ReceiverInstanceStartDisposition.NOT_STARTED
-        )
-        return ReceiverInstanceStartResult(disposition, failure=failure)
+        return result
+    except BaseException:
+        if failure_observer is not None:
+            failure_observer(None)
+        raise
 
 
 @dataclass(frozen=True, slots=True)
 class ReceiverStartupResult:
-    configuration_load: ReceiverConfigurationLoadResult
+    configuration_load: ReceiverConfigurationLoadResult | None
     database_failure: DatabaseFailure | None = None
     instance_start: ReceiverInstanceStartResult | None = None
     database: ReceiverDatabase | None = field(default=None, repr=False)
+    unexpected_failure: bool = False
 
     @property
     def started(self) -> bool:
@@ -150,6 +161,8 @@ def start_receiver_instance(
     configuration_reader: ReceiverConfigurationReader,
     database_path: Path,
     minimum_free_bytes: int,
+    stage_entered=None,
+    failure_observer=None,
 ) -> ReceiverStartupResult:
     """Run the actual startup prerequisites on the persistence owner's thread.
 
@@ -161,20 +174,44 @@ def start_receiver_instance(
 
     if type(instance) is not ReceiverInstanceStart:
         raise TypeError("instance must be a ReceiverInstanceStart")
-    configuration = configuration_reader.read()
+    configuration = None
+    def enter(stage):
+        if stage_entered is not None:
+            stage_entered(stage)
+    def failed(result):
+        if failure_observer is not None:
+            failure_observer(result)
+    def open_failed(failure):
+        failed(ReceiverStartupResult(configuration, database_failure=failure,
+                                     unexpected_failure=failure is None))
+    def instance_failed(result):
+        failed(ReceiverStartupResult(configuration, instance_start=result,
+                                     unexpected_failure=result is None))
+    enter(StartupStage.CONFIGURATION_LOAD)
+    try:
+        configuration = configuration_reader.read()
+    except BaseException:
+        failed(ReceiverStartupResult(None, unexpected_failure=True))
+        raise
     if configuration.status is not ReceiverConfigurationLoadStatus.LOADED:
-        return ReceiverStartupResult(configuration)
+        result = ReceiverStartupResult(configuration)
+        failed(result)
+        return result
+    enter(StartupStage.DATABASE_OPEN_VALIDATION)
     opened = open_receiver_database(
         database_path,
         configuration.configuration.group_id,
         minimum_free_bytes=minimum_free_bytes,
+        **({} if failure_observer is None else {"failure_observer": open_failed}),
     )
     if opened.database is None:
         return ReceiverStartupResult(configuration, database_failure=opened.failure)
     database = opened.database
     try:
+        enter(StartupStage.INSTANCE_COMMIT)
         start = insert_receiver_instance_start(
-            database.connection, instance, configuration.linux_boot_id
+            database.connection, instance, configuration.linux_boot_id,
+            **({} if failure_observer is None else {"failure_observer": instance_failed}),
         )
         if start.disposition is ReceiverInstanceStartDisposition.STARTED:
             result = ReceiverStartupResult(
@@ -183,6 +220,9 @@ def start_receiver_instance(
             database = None
             return result
         return ReceiverStartupResult(configuration, instance_start=start)
+    except BaseException:
+        failed(ReceiverStartupResult(configuration, unexpected_failure=True))
+        raise
     finally:
         if database is not None:
             try:

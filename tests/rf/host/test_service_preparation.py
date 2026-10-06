@@ -13,7 +13,7 @@ from tests.support.builders.persistence import GROUP, INSTANCE
 
 RECEIPT = dict(schema=1, board_id='pi', boot_id='boot', silent_since_monotonic_us=100,
                all_pi_transmitters_remain_silent=True, operator_record='exclusive test radio; no other transmitters')
-SETTINGS = ApplicationSettings()
+SETTINGS = ApplicationSettings(persistence_startup_budget_us=12_000_000)
 WAIT = minimum_wait_monotonic_us(SETTINGS.airtime_policy.rolling_window_us,
     rate_bound_ppm=SETTINGS.time_policy.monotonic_elapsed_rate_bound_ppm)
 

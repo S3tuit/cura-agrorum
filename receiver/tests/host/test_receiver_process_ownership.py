@@ -2,6 +2,8 @@
 
 from contextlib import contextmanager
 import errno
+import json
+import socket
 import multiprocessing
 import os
 from pathlib import Path
@@ -48,17 +50,23 @@ def environment(root):
         'CURA_RECEIVER_DATABASE': str(root / 'worker.db'),
         'SQLITE_TMPDIR': str(root / 'sqlite-temp'),
         'CURA_RECEIVER_TEST_ROOT': str(root),
+        'CURA_RECEIVER_STARTUP_BUDGET_US': '12000000',
     }
 
 
 def reject_contender(root):
-    result = subprocess.run(
-        [sys.executable, '-m', 'cura_receiver', '--rtc-helper-sha256', '0' * 64,
-         '--rtc-kernel-bound-us', '3000000'],
-        env=environment(root), capture_output=True, text=True, timeout=10)
-    assert result.returncode == 1, result.stderr
-    assert result.stdout == 'receiver startup: RECEIVER_ALREADY_RUNNING\n'
-    assert result.stderr == ''
+    reader, writer = socket.socketpair()
+    with reader, writer:
+        result = subprocess.run(
+            [sys.executable, '-m', 'cura_receiver', '--rtc-helper-sha256', '0' * 64,
+             '--rtc-kernel-bound-us', '3000000'],
+            env=environment(root), stdout=writer, stderr=subprocess.PIPE, timeout=10)
+        assert result.returncode == 1, result.stderr
+        reader.settimeout(1)
+        record = json.loads(reader.recv(4096))
+        assert record['event'] == 'receiver_startup'
+        assert record['outcome'] == 'RECEIVER_ALREADY_RUNNING'
+        assert result.stderr == b''
 
 
 def durable_rows(path):

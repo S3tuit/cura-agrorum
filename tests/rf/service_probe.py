@@ -100,7 +100,8 @@ def inspect(config):
             if name in environment:
                 raise ValueError("duplicate deployment environment")
             environment[name] = value
-    expected = dict(CURA_RECEIVER_TEST_ROOT=str(root),
+    expected = dict(CURA_RECEIVER_STARTUP_BUDGET_US="12000000",
+                    CURA_RECEIVER_TEST_ROOT=str(root),
                     CURA_RECEIVER_CONFIGURATION=str(root / "config/receiver-group.json"),
                     CURA_RECEIVER_DATABASE=str(root / "data/receiver.sqlite3"),
                     SQLITE_TMPDIR=str(root / "data/tmp"))
@@ -155,7 +156,7 @@ def database_observation(database):
         from cura_receiver.sqlite_repository import SqliteRepository
         repository = SqliteRepository(db)
         loaded = classify_communicator_state_rows(repository.read_communicator_state_rows(),
-                                                  repository, ApplicationSettings().airtime_policy)
+                                                  repository, ApplicationSettings(persistence_startup_budget_us=12_000_000).airtime_policy)
         airtime = dict(status=loaded.status.name, condition=loaded.state_condition.name,
                        total_charged_us=None, budget_us=None)
         if loaded.state is not None:

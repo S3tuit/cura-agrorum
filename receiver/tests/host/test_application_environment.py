@@ -13,8 +13,26 @@ from cura_receiver.application_environment import settings_from_environment
 from cura_receiver.application_settings import ApplicationSettings
 
 
+@pytest.mark.parametrize('value', [None, '', '0', '-1', '+12', '1.2', 'nan', 'inf',
+                                  ' 12000000', '12000000\n', '１２', str(1 << 64),
+                                  '9' * 5000])
+def test_missing_or_invalid_startup_budget_fails_without_echo(value):
+    environment = {} if value is None else {'CURA_RECEIVER_STARTUP_BUDGET_US': value}
+    with pytest.raises(ValueError) as error:
+        settings_from_environment(environment)
+    if value:
+        assert value not in str(error.value)
+
+
+def test_startup_budget_override_is_independent_of_runtime_controls():
+    settings = settings_from_environment({'CURA_RECEIVER_STARTUP_BUDGET_US': '17000000'})
+    assert settings.persistence_startup_budget_us == 17_000_000
+    assert settings.time_settings.control_budget_us == 1_000_000
+
+
 def isolated_environment(root):
     return {
+        "CURA_RECEIVER_STARTUP_BUDGET_US": "12000000",
         "CURA_RECEIVER_CONFIGURATION": str(root / "group.json"),
         "CURA_RECEIVER_DATABASE": str(root / "data" / "readings.sqlite3"),
         "SQLITE_TMPDIR": str(root / "data" / "tmp"),
@@ -23,20 +41,20 @@ def isolated_environment(root):
 
 
 def test_default_and_isolated_profiles_keep_policy_unchanged(tmp_path):
-    assert settings_from_environment({}) == ApplicationSettings()
+    assert settings_from_environment({"CURA_RECEIVER_STARTUP_BUDGET_US": "12000000"}) == ApplicationSettings(persistence_startup_budget_us=12_000_000)
     env = isolated_environment(tmp_path)
     settings = settings_from_environment(env)
     assert settings.database_path == tmp_path / "data/readings.sqlite3"
     assert settings.configuration_path == tmp_path / "group.json"
     assert settings.sqlite_temporary_directory == tmp_path / "data/tmp"
-    assert settings.time_policy == ApplicationSettings().time_policy
-    assert settings.radio == ApplicationSettings().radio
+    assert settings.time_policy == ApplicationSettings(persistence_startup_budget_us=12_000_000).time_policy
+    assert settings.radio == ApplicationSettings(persistence_startup_budget_us=12_000_000).radio
     assert env == isolated_environment(tmp_path)
 
 
 def test_unit_does_not_mask_partial_environment_file_overrides():
     unit = Path(__file__).resolve().parents[2] / "deploy/systemd/cura-receiver.service"
-    environment = {}
+    environment = {"CURA_RECEIVER_STARTUP_BUDGET_US": "12000000"}
     for line in unit.read_text().splitlines():
         if line.startswith("Environment="):
             for assignment in shlex.split(line.removeprefix("Environment=")):
@@ -93,6 +111,7 @@ def process_environment(paths):
     env = dict(os.environ)
     for key in isolated_environment(Path("/unused")):
         env.pop(key, None)
+    env["CURA_RECEIVER_STARTUP_BUDGET_US"] = "12000000"
     env.update(paths)
     repo = Path(__file__).resolve().parents[3]
     env["PYTHONPATH"] = os.pathsep.join((str(repo / "receiver"), str(repo / "protocol/protocol-v2-lora/python")))

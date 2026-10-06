@@ -9,9 +9,20 @@ from cura_receiver.application_settings import ApplicationSettings
 from cura_receiver.time_policy import TimePolicy
 
 
+def test_startup_budget_has_no_implicit_default():
+    with pytest.raises(TypeError, match='persistence_startup_budget_us'):
+        ApplicationSettings()
+
+
+@pytest.mark.parametrize('value', [float('inf'), float('nan'), 1 << 64])
+def test_startup_budget_rejects_nonfinite_or_overflowing_values(value):
+    with pytest.raises((TypeError, OverflowError)):
+        ApplicationSettings(persistence_startup_budget_us=value)
+
+
 # Dedicated tests can replace every persistent path without mutating the pilot profile.
 def test_isolated_paths_and_time_policy_do_not_change_pilot_settings(tmp_path):
-    pilot = ApplicationSettings()
+    pilot = ApplicationSettings(persistence_startup_budget_us=12_000_000)
     isolated = replace(
         pilot,
         configuration_path=tmp_path / "test-group.json",
@@ -32,20 +43,20 @@ def test_isolated_paths_and_time_policy_do_not_change_pilot_settings(tmp_path):
 @pytest.mark.parametrize("path", (Path("relative"), Path("/var/lib/../etc/data"), "/absolute/string"))
 def test_reject_invalid_application_paths(field, path):
     with pytest.raises(ValueError):
-        replace(ApplicationSettings(), **{field: path})
+        replace(ApplicationSettings(persistence_startup_budget_us=12_000_000), **{field: path})
 
 
 # Distinct configuration, database and temporary locations cannot alias by name.
 @pytest.mark.parametrize("field", ("database_path", "sqlite_temporary_directory"))
 def test_reject_overlapping_application_paths(field):
-    settings = ApplicationSettings()
+    settings = ApplicationSettings(persistence_startup_budget_us=12_000_000)
     with pytest.raises(ValueError, match="distinct"):
         replace(settings, **{field: settings.configuration_path})
 
 
 # Invalid budgets cannot silently disable bounded lifecycle behavior.
-@pytest.mark.parametrize("field", ("health_interval_us", "shutdown_budget_us"))
+@pytest.mark.parametrize("field", ("persistence_startup_budget_us", "health_interval_us", "shutdown_budget_us"))
 @pytest.mark.parametrize("value,error", ((0, ValueError), (-1, OverflowError), (True, TypeError), (1.5, TypeError)))
 def test_reject_invalid_application_intervals(field, value, error):
     with pytest.raises(error):
-        replace(ApplicationSettings(), **{field: value})
+        replace(ApplicationSettings(persistence_startup_budget_us=12_000_000), **{field: value})

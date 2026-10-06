@@ -808,6 +808,34 @@ the owning procedure after diagnosis; no radio command is executed.
 
 ## Deployment and lifecycle
 
+Persistence startup measurement coverage is retained in
+`test_persistence_startup_evidence.py` and `test_startup_benchmark.py`.
+The former exercises the real worker and nested SQLite failure cleanup, every
+stage's unexpected error, zero/unreached stage entries, strict publication edges,
+delayed observation, late failure, SIGTERM/SIGINT, simultaneous completion/stop,
+unavailable snapshots, full notification pipes and saturated/broken/partial
+summary output. Existing worker/configuration/lifecycle/state-recovery suites
+retain the ordinary contracts. `test_application_startup.py` covers the actual
+application's independent budget, checked deadline overflow, strict publication
+edges despite delayed observation, stop-before-launch, real SIGTERM/SIGINT
+during initialization, and bounded cleanup after a published failure. Settings
+and environment tests require an explicit positive startup budget, including
+the isolated RF service guard. Entry-point tests exercise shared waiter/resource
+ownership and bounded startup/setup/runtime/shutdown evidence. Host integration
+does not qualify the installed application on the Pi.
+
+The benchmark tests cover synthetic current-schema fixtures, private attempts,
+same-boot/repeated-boot guards, persisted results, timeout, corrupt storage,
+missing result accounting and source/template verification. The
+benchmark also retains late success/failure as separate post-cleanup evidence
+without changing a timeout, bounds unavailable snapshots, and separates cap and
+source-inventory cohorts in analysis. The
+[Pi procedure](benchmarks/startup_readiness/README.md) defines warm/reboot/physical
+cold cohorts, first-in-boot arming, source provenance and separate cleanup/journal
+evidence. Host results do not qualify Pi latency, reboot journal retention,
+physical power loss or RF. Setup smoke samples are kept separate from campaign
+samples. Missing/failed/unconfirmed samples must remain in reported counts.
+
 Current component tests cover strict configuration loading, canonical boot-ID
 reading, UUIDv4 process identities and the ordering through durable instance
 insertion. A bounded child-process kill verifies lifecycle durability without

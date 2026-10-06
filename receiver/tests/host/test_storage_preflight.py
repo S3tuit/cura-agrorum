@@ -7,7 +7,7 @@ from cura_receiver.storage_preflight import check_storage
 
 
 def test_storage_preflight_requires_initialized_database_and_temp_path(tmp_path):
-    settings = replace(ApplicationSettings(), database_path=tmp_path/'receiver.db',
+    settings = replace(ApplicationSettings(persistence_startup_budget_us=12_000_000), database_path=tmp_path/'receiver.db',
         sqlite_temporary_directory=tmp_path/'sqlite-temp', minimum_free_bytes=0)
     with pytest.raises(ValueError, match='directory missing'):
         check_storage(settings)

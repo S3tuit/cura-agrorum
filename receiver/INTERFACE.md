@@ -2709,8 +2709,8 @@ same Linux network namespace; it need not be the host namespace.
 
 Contention, including a second claim in the same process, raises
 `ReceiverAlreadyRunning`. The entry point reports
-`receiver startup: RECEIVER_ALREADY_RUNNING` and exits with status 1. Other
-socket-acquisition `OSError`s report `receiver startup: PROCESS_OWNERSHIP_FAILED`
+`RECEIVER_ALREADY_RUNNING` in a bounded `receiver_startup` JSON record and exits
+with status 1. Other socket-acquisition `OSError`s report `PROCESS_OWNERSHIP_FAILED`
 and also exit with status 1. Neither path loads configuration/state, inserts a
 lifecycle row, starts the worker or accesses a device. These are service startup
 messages, with no persistence diagnostic attempted before ownership exists.
@@ -2726,9 +2726,31 @@ guarded entry point. Storage preflight does not start a receiver and does not
 acquire this guard. Competing receivers in different network namespaces and
 uncooperative hardware tools are outside this ownership contract.
 
+### Persistence startup evidence and observation
+
+`PersistenceWorkerStartup` is immutable and contains `configuration_load`
+(absent if initialization failed before it returned), `instance_start`,
+`database_failure`, `state_load`, `published_at_monotonic_us` and
+`unexpected_failure`. The first terminal publication wins. Known failures retain
+their classification and SQLite codes/errno; uncertain instance COMMIT retains
+`OUTCOME_UNKNOWN`. Completion is published before failure cleanup, including
+cleanup inside the database opener and lifecycle-insert helper. Queue admission
+failure publication is separate metadata, not an error message consumed from the
+ordinary queue. Neither result nor completion event acknowledges cleanup.
+
+The pilot environment explicitly supplies 12,000,000 microseconds for the
+measured 21 MB fixture; broader production policy is deferred. See the
+[benchmark findings](benchmarks/startup_readiness/README.md) for the evidence.
+
 ### Receiver configuration loading
 
 Installed entry points share these startup environment inputs:
+
+`CURA_RECEIVER_STARTUP_BUDGET_US` is mandatory independently of path overrides.
+It must contain only ASCII decimal digits representing a positive unsigned
+64-bit microsecond duration. Missing, zero, signed, fractional, nonfinite or
+out-of-range inputs are rejected before storage/device access, without echoing
+the value.
 
 | Variable | Default when the entire path set is omitted |
 |---|---|

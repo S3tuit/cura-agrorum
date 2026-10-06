@@ -3,6 +3,7 @@
 import os
 import tempfile
 from .application_environment import settings_from_environment
+from .service_evidence import emit_service_evidence
 
 
 def check_storage(settings):
@@ -30,7 +31,8 @@ def main():
         os.environ['SQLITE_TMPDIR'] = str(settings.sqlite_temporary_directory)
         check_storage(settings)
     except (OSError, ValueError):
-        print('receiver storage preflight failed')
+        emit_service_evidence(dict(format_version=1, event='receiver_preflight',
+                                   outcome='STORAGE_PREFLIGHT_FAILED'))
         return 1
     return 0
 

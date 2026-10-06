@@ -16,7 +16,10 @@ class CheckedPersistenceWorker(PersistenceWorker):
 
     def finish_test(self):
         self.request_stop(deadline_monotonic_us=0)
-        self.join(5)
+        if self.ident is not None:
+            self.join(5)
+        if self.startup_notification is not None:
+            self.startup_notification.close()
         assert not self.is_alive(), "persistence worker did not reach a safe exit"
         if self.failure is not None:
             raise self.failure

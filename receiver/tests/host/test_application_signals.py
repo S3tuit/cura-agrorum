@@ -28,7 +28,7 @@ def signal_application(connection, directory, boundary):
     real_poll = wait_module.select.select
     try:
         with LinuxSignalWait(clock, app.stop_intent) as wait:
-            assert app.start().ready
+            assert app.start(wait=wait).ready
             if boundary in ('before_wait', 'before_poll', 'blocked_poll'):
                 # Establish the retained clock-boundary retry state that uses
                 # the application's waiter. Ordinary idle RX waits in Radio.

@@ -132,6 +132,16 @@ or interrupted attempt. RuntimeDirectory storage disappears at reboot. Bootstrap
 never accesses receiver configuration or SQLite, and its provisional clock copy
 never establishes receiver time trust or RTC provenance.
 
+Also set the required receiver budget in that file:
+
+```ini
+CURA_RECEIVER_STARTUP_BUDGET_US=12000000
+```
+
+It is an explicit positive decimal microsecond duration, validated by both
+storage preflight and the runtime. Manual launches must export it too. The unit
+provides no fallback.
+
 Install/order bootstrap before starting Chrony. An already-synchronized kernel
 clock makes bootstrap skip copying. Receiver restarts do not rerun the copy.
 A failed bootstrap outcome still permits Chrony and receiver startup; runtime
@@ -153,6 +163,7 @@ cannot silently combine test and production paths. To install a test instance,
 set all of these in its trusted deployment environment file:
 
 ```ini
+CURA_RECEIVER_STARTUP_BUDGET_US=12000000
 CURA_RECEIVER_TEST_ROOT=/var/lib/cura-pilot-test
 CURA_RECEIVER_CONFIGURATION=/var/lib/cura-pilot-test/config/receiver-group.json
 CURA_RECEIVER_DATABASE=/var/lib/cura-pilot-test/data/receiver.sqlite3
@@ -217,6 +228,31 @@ the receiver sandbox must permit that directory write. Preserve the vendor's
 `!` launch prefix and verify effective startup arguments/privilege behavior.
 For deliberate missing-device tests, count the journal's five bounded starts;
 the unit can retain `Result=exit-code` instead of `start-limit-hit`.
+
+## Persistent service journal
+
+Install `systemd/60-cura-persistent.conf` as
+`/etc/systemd/journald.conf.d/60-cura-persistent.conf` (root:root, 0644).
+The receiver unit explicitly routes stdout/stderr to the journal with
+`SyslogIdentifier=cura-receiver`. The drop-in requests `Storage=persistent`,
+`SystemMaxUse=64M`, `SystemKeepFree=1G`, and `MaxRetentionSec=30day` for the
+default system journal. It affects the host journal, not just receiver records.
+Inspect vendor and local overrides before asserting the effective policy:
+
+```sh
+systemd-analyze cat-config systemd/journald.conf
+sudo systemctl restart systemd-journald
+sudo journalctl --flush
+sudo journalctl --disk-usage
+sudo journalctl --list-boots
+sudo ls -l /var/log/journal
+```
+
+Verify persistent journal files under the machine-ID directory, then retain a
+known startup record's boot/instance IDs. After an authorized orderly reboot,
+read that record with `journalctl -b BOOT_ID -u cura-receiver.service` (or the
+isolated benchmark's unit). Installation and current-boot visibility alone do
+not prove reboot retention.
 
 ## Deferred post-pilot permissions review
 

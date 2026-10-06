@@ -142,7 +142,7 @@ def database_failure(error: sqlite3.Error | OSError) -> DatabaseFailure:
     return DatabaseFailure(state, primary, extended, os_errno)
 
 
-def _connect(path: Path, *, mode: str) -> sqlite3.Connection:
+def _connect(path: Path, *, mode: str, failure_observer=None) -> sqlite3.Connection:
     # URI quoting prevents '?' or '#' in a deployment path becoming URI options.
     connection = sqlite3.connect(
         path.as_uri() + f"?mode={mode}",
@@ -167,9 +167,18 @@ def _connect(path: Path, *, mode: str) -> sqlite3.Connection:
         ):
             raise _ValidationFailure(PersistenceAdmissionState.UNAVAILABLE_IO)
         return connection
-    except BaseException:
+    except BaseException as error:
+        _observe_open_failure(failure_observer, error)
         connection.close()
         raise
+
+
+def _observe_open_failure(observer, error):
+    if observer is not None:
+        failure = (DatabaseFailure(error.state) if isinstance(error, _ValidationFailure)
+                   else database_failure(error) if isinstance(error, (sqlite3.Error, OSError))
+                   else None)
+        observer(failure)
 
 
 def _validate_identity(connection: sqlite3.Connection, group_id: bytes) -> None:
@@ -232,6 +241,7 @@ def open_receiver_database(
     group_id: bytes,
     *,
     minimum_free_bytes: int,
+    failure_observer=None,
 ) -> DatabaseOpenResult:
     """Validate, then open without create; all returned I/O stays on this thread.
 
@@ -267,14 +277,16 @@ def open_receiver_database(
         if filesystem.f_bavail * filesystem.f_frsize < minimum_free_bytes:
             raise _ValidationFailure(PersistenceAdmissionState.UNAVAILABLE_LOW_SPACE)
 
-        connection = _connect(destination, mode="ro")
+        connection = _connect(destination, mode="ro", **(
+            {} if failure_observer is None else {"failure_observer": failure_observer}))
         _validate_identity(connection, group_id)
         _validate_integrity(connection)
         _validate_required_projections(connection)
         connection.close()
         connection = None
 
-        connection = _connect(destination, mode="rw")
+        connection = _connect(destination, mode="rw", **(
+            {} if failure_observer is None else {"failure_observer": failure_observer}))
         # Recheck the actual write connection; never trust a previous path open.
         _validate_identity(connection, group_id)
         _validate_integrity(connection)
@@ -306,8 +318,13 @@ def open_receiver_database(
         return result
     except _ValidationFailure as exc:
         failure = DatabaseFailure(exc.state)
+        _observe_open_failure(failure_observer, exc)
     except (sqlite3.Error, OSError) as exc:
         failure = database_failure(exc)
+        _observe_open_failure(failure_observer, exc)
+    except BaseException as exc:
+        _observe_open_failure(failure_observer, exc)
+        raise
     finally:
         # The successful result transfers connection ownership to the caller.
         if connection is not None:

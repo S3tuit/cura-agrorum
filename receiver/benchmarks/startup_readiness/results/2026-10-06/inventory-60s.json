@@ -1,0 +1,165 @@
+{
+  "fixture_basis": "Synthetic current-schema rows: approximately 10000 health, 10000 clock and 800 profiles for pilot; large is 10x. Historical pilot database was about 3 MiB. These are controlled size/history fixtures, not a byte replay of the historical database.",
+  "fixture_scale": 1,
+  "fixtures": {
+    "large": {
+      "clock_rows": 100000,
+      "files": {
+        "receiver.sqlite3": {
+          "bytes": 21315584,
+          "sha256": "8b9eb9b330fd101e61c017d24a3701e40c4d482de640833e360fad08adfbadd5"
+        },
+        "receiver.sqlite3-wal": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "health_rows": 100000,
+      "inherited_wal": false,
+      "profile_rows": 8000,
+      "shm_reconstructed": true,
+      "valid_state": true
+    },
+    "pilot": {
+      "clock_rows": 10000,
+      "files": {
+        "receiver.sqlite3": {
+          "bytes": 2297856,
+          "sha256": "b75a6d7fbfd24349b04aa8482773679e464847b80ef4da38c157740bd7bba4f8"
+        },
+        "receiver.sqlite3-wal": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "health_rows": 10000,
+      "inherited_wal": false,
+      "profile_rows": 800,
+      "shm_reconstructed": true,
+      "valid_state": true
+    },
+    "wal": {
+      "clock_rows": 10000,
+      "files": {
+        "receiver.sqlite3": {
+          "bytes": 233472,
+          "sha256": "2f3553b6e50fac2357daa36c13463794fd7c5b20c9943302571ae177c8085591"
+        },
+        "receiver.sqlite3-wal": {
+          "bytes": 2105352,
+          "sha256": "945e7bcdb4b06f94bdf7d0f360fea6f4271f9edb81eed5cba197b8e925458ef7"
+        }
+      },
+      "health_rows": 10000,
+      "inherited_wal": true,
+      "profile_rows": 800,
+      "shm_reconstructed": true,
+      "valid_state": true
+    }
+  },
+  "format_version": 1,
+  "prepared_on": {
+    "hostname": "cura-receiver",
+    "python": "3.13.5 (main, Aug 10 2026, 12:06:59) [GCC 14.2.0]",
+    "sqlite": "3.46.1"
+  },
+  "previous_inventory_sha256": "3eede4215f79db1b016aa1316edcab09878d9279a54d54f13a812b0639c144f2",
+  "source_archive_sha256": "54363817a144c1ff4ffc5715d839d2c05b635af23750f65a3b79420ac98765d3",
+  "source_commit": "4c7ac444bc0f10bcf90742c40b19b8f58061d5e5",
+  "source_files": {
+    "protocol/protocol-v2-lora/python/cura_protocol_v2_lora/__init__.py": "73172f384b536dd7a05d97a9f410190b933ff93dcd2e96f0b6242b324285c9a7",
+    "protocol/protocol-v2-lora/python/cura_protocol_v2_lora/receiver_group.py": "d25d60a34394e120474f78c68d8c2e44bef9d11c12470997793880d222bf8dc8",
+    "receiver/benchmarks/startup_readiness/README.md": "328fe9aa5bb117951ce1675d16337ded521d93f888228d7bf4680fd7d75fa04d",
+    "receiver/benchmarks/startup_readiness/control.py": "1d7b3c2b8a9f0cf11b328c75f52b080caef150dc961f14e2674a1af2195cc16c",
+    "receiver/benchmarks/startup_readiness/cura-startup-benchmark.service": "ea495cdc4c028622da1295b06d7d265cd3e13e41d2c544fcdb533ab192c687f9",
+    "receiver/benchmarks/startup_readiness/run.py": "9d5b0890ebd40501b1fd99cbf24c0cc92c1edcb5b67b07587b5c43094581c6b8",
+    "receiver/cura_receiver/__init__.py": "c1a097ed661455a20ddf3d7a4b2afb8e85f5113b9fbcbdb6f896fc4c747d6710",
+    "receiver/cura_receiver/__main__.py": "7de55fe12b774026d38afd373f8d7a13edeaa556b8e3a75ee3f5b2b85d39ae84",
+    "receiver/cura_receiver/airtime_commissioning.py": "15eebde16660a250e35bbc3c191ac62b907905eda7b1a15e97ff2640698fdc5b",
+    "receiver/cura_receiver/airtime_ledger.py": "2607459ddaf98792f956baa3f485ffc5d610ef33a72774549aacb62e0e59acf7",
+    "receiver/cura_receiver/application.py": "7b7fab2d04e172f14132f974e5923a3eaf901d2cdeff353d534f61d726e43933",
+    "receiver/cura_receiver/application_environment.py": "11deb3531db665a07de5d004a1537a6e55dd4ca9c6c030b0d6974e05c38d7f5c",
+    "receiver/cura_receiver/application_settings.py": "24c2d6366048f5d0afa66cdaa13e646983bd3f08968e444209602801834cd59c",
+    "receiver/cura_receiver/application_shutdown.py": "5e9e62bd978721ed0f204cfa779d9a219118e7e716c16ee8a33d711a7555e6fa",
+    "receiver/cura_receiver/checkpoint_maintenance.py": "dacaf9562d08535933eaf1cff3645d739f2f669a1426f24fe7f138f0516fe71b",
+    "receiver/cura_receiver/clock_correlation.py": "8b863b9239dae31c8270266903f5c529fbb82abcf6a032dcbbafbf57520b5b17",
+    "receiver/cura_receiver/communicator.py": "3166eaac1fedaedf1c3d27dcaefef69e4eea8e27d98cebfd82d40495c0cb0f58",
+    "receiver/cura_receiver/communicator_runtime.py": "fd4cb98d7545d9ae1bfd2546e14eb1553fabe44eebed6af4a34305218be8dfc3",
+    "receiver/cura_receiver/communicator_scheduler.py": "68e36b7d866bfc023289ed9ebcd3e5700024ac6bc874e89dcb05acb50c8f1d2c",
+    "receiver/cura_receiver/communicator_state_owner.py": "45c0325811db65f25cb5e35fa600187dd6fb37a0e5ca786cdbd9bf18bfcfc66c",
+    "receiver/cura_receiver/communicator_state_persistence.py": "ec2ef926e782cf8e8514bdb8193f4bb720bc8fb657a369e2b49744ab8baafca8",
+    "receiver/cura_receiver/communicator_telemetry.py": "6d81d7613882c424bfcb15a724ddfa6dc4cb99afee9476c72bbb2b0a75eea4b4",
+    "receiver/cura_receiver/control_diagnostics.py": "6e3f3c51af7dca4e602afe7202a0db3bc44daf3aed18878c5773c2a9c154c375",
+    "receiver/cura_receiver/core_diagnostics.py": "92b3d949c758a28539c33b3505f0da1db75558f62cbb405d9d7733ee2830cac8",
+    "receiver/cura_receiver/database_initializer.py": "9627778affa82dc3bf0670c19ab88a7aefb9abdfc7ec27df4f6465bf09285fd6",
+    "receiver/cura_receiver/elapsed_duration.py": "90d74ac7b6769177fbffbf9447e57f680bdb0d4d2e0f1010a1cb79d932daca69",
+    "receiver/cura_receiver/generated/__init__.py": "aa1d3f7852ad0badf2acb45352d4940be291547804c27cfee41a3fc30c2c9ff6",
+    "receiver/cura_receiver/generated/protocol_v2_lora_generated.py": "6f6057431d9bfcc115f7d14f101569b8086f55fac59f75a9eac8b2100f342fd3",
+    "receiver/cura_receiver/generated/receiver_entities_generated.py": "2b5ef7947c5593e84050650cbe2ed617ccb34282ed2b1b87b0533f49049badc0",
+    "receiver/cura_receiver/generated/receiver_enums_generated.py": "1acd75668be546eb5eb65be33005bbc1bfe6c8a4c7372f4451c103b394c5851c",
+    "receiver/cura_receiver/logical_timestamps.py": "5dc1bcbcc03f9c2f1cba91fc7db2c5c6430ce74bfd9734e39f269a3fc85aa232",
+    "receiver/cura_receiver/ordinary_persistence.py": "422c5493a4a07696485e492c5c48780d6f09d0a638e3742b6b26d9cc7f83d618",
+    "receiver/cura_receiver/persist_queue.py": "c33d428450b68e103c1ba6981b6f73fee2f296e82f0a0d1a4c3ebc8d62451a45",
+    "receiver/cura_receiver/persist_queue_entities.py": "8ba7532edaa278dc7c0ed723f8f7f4d27e2e1cd8704a7334877e51f21795d692",
+    "receiver/cura_receiver/persistence_control_channel.py": "a3ee988a342791a6ad1ef9f3c1c1f32d68d016c2f792bc72147a005240dbf1c6",
+    "receiver/cura_receiver/persistence_control_execution.py": "222ee4c601f290429efa76c800c4f07fce176017cfd36bc7dfb5e45bb55a6574",
+    "receiver/cura_receiver/persistence_control_operations.py": "5f70e5dc0aa28651df46924ab8a099f1c4f79c899f4be8aefdfda55ff1cba63b",
+    "receiver/cura_receiver/persistence_control_values.py": "3a8ec5daccecbe55a886c3597dc374467a76ee64f1e0bad16dc797f3f4f1daae",
+    "receiver/cura_receiver/persistence_failures.py": "df4fcd920c12f681b3beb33a29cdbbd852e41c0cf8d2b66bd61fbefdae1a33ba",
+    "receiver/cura_receiver/persistence_recovery.py": "0e819350e58c2e2184de5ce40814522d58acc1c5f821bffa8556b7354961e2a6",
+    "receiver/cura_receiver/persistence_startup.py": "cfa4acf64277004cb94c79893619eac8e380af280346cc1aaac2033def833cbb",
+    "receiver/cura_receiver/persistence_worker.py": "b549dff995ebc55eb272013aff7bf13f07657829807f243921e9cc4dcb75125e",
+    "receiver/cura_receiver/platform/__init__.py": "ad4d3e91add175d06ca3a76013e7403477937656b499fa3074662ab097601935",
+    "receiver/cura_receiver/platform/_time_process.py": "5dc1b3d0ba38b34cd9964d8bdb1fc8e8e416b6ffc56f27ef1ac71859c5f47965",
+    "receiver/cura_receiver/platform/linux_boot_identity.py": "dbb17137bc5c2de86ba80897423803b1430688d1189e3162223b10096e334959",
+    "receiver/cura_receiver/platform/linux_chrony.py": "e134133857e14b05728dbb7627bae939d2590056d8d81050ea80444eb917f800",
+    "receiver/cura_receiver/platform/linux_clocks.py": "59f6da9801936eee5d6d94a54ed8ac968c3198c0000807b98c66bce1d6b3a757",
+    "receiver/cura_receiver/platform/linux_ds3231.py": "8fe2df4864268279f0abfcdd645368ed9caef2e0346e664fa3d0df1ec8dc5784",
+    "receiver/cura_receiver/platform/linux_host_observations.py": "a139872bacc80f9f4e54ef32cf3ebb778d035f8275d00e2f6ce32ea0660ac30d",
+    "receiver/cura_receiver/platform/linux_kernel_clock.py": "3baa04456bc3bcc2755352f662832a98a53e8d80e6d95532d34fadc000ac318f",
+    "receiver/cura_receiver/platform/linux_process_ownership.py": "2e359acce6992866476ae250ce0a8f61e53a093f593f4abfd78d3a3dfde5e295",
+    "receiver/cura_receiver/platform/linux_radio.py": "70c67c2715d9413d9f3f4ff1f9a1bb6b677377a7a042905b63bae231c808e27a",
+    "receiver/cura_receiver/platform/linux_signal_wait.py": "99be92922a9efac0f1cc18594768081a73db8f0ae6f2bcb2d184178b0a8eff28",
+    "receiver/cura_receiver/ports/__init__.py": "3e0b76ca5db519b22ad20b80865b634b44d828d87a8f0923804929f91925e242",
+    "receiver/cura_receiver/ports/chrony.py": "019b1b4028c138abf040318b6a69cc50a6c3c21470fe306d70786739decad033",
+    "receiver/cura_receiver/ports/clocks.py": "7ae58e40b06be78dd5535f0fe83f3440911da735d2f9b4f5bd7362e3d63ae9c1",
+    "receiver/cura_receiver/ports/ds3231.py": "4f854b18a8eeb98e6d57590f18ef43bd2e04a28fcccaabe935847425342e9986",
+    "receiver/cura_receiver/ports/host_observations.py": "c8eab1b235596aae413a01847e42554fb1badc1f57791f30be9ba90c8ca83fe4",
+    "receiver/cura_receiver/ports/kernel_clock.py": "825cc99229e4131d68f45c8ec4fc1d46f6ddf5be201e6808c4cf17b0f5a1c3a7",
+    "receiver/cura_receiver/ports/radio.py": "fb17ad495894257b5cb4bd88eab930b3197a0da3fb84d7c248cbd2f149d24dd6",
+    "receiver/cura_receiver/producer_admission.py": "6ee76d98672e320f136fd29a6ee8c57957fea30d4099bc548ad4a7fc38b00e10",
+    "receiver/cura_receiver/protocol_ingress.py": "e072845ad93ed8f087d96f1c0abd26cfd568f889b6d3a649eb9f5dea10078820",
+    "receiver/cura_receiver/protocol_v2_lora_crypto.py": "efb23339ca9ebcd3f76f8a7e998826b7fe0ba8ccc2b11996992c4726f7d60632",
+    "receiver/cura_receiver/quarantine_evidence.py": "0fa3cf5b4aeb89249d992cf38b076254472f66032d8ce9ef8f43374b3e949729",
+    "receiver/cura_receiver/radio.py": "c3dba01074006f0e5123193cd595461f450da37e2f620fea928f58e2eae1a351",
+    "receiver/cura_receiver/radio_diagnostics.py": "9b676692235fbf9dcc26d92a7e1565bcad9bb9099f5f97c3f1da56eccefcb6c2",
+    "receiver/cura_receiver/reading_persistence.py": "8f06383839512ac9f276f3e60ef9638d76c06b07b32226b7db2ed37d8dff7f9c",
+    "receiver/cura_receiver/receiver_configuration.py": "0452a1a8dd1da357020881fbc0853721cb70bd79bbae1f7473a3b3207e494cd5",
+    "receiver/cura_receiver/receiver_startup.py": "2a5b6a9eeddbe6b7d5cc3ac01ae353ccb9a8aacb47a2a26b0f3aa3bc097a2a69",
+    "receiver/cura_receiver/rtc_bootstrap.py": "ee4cefe03ede12aa0746e2e6a1ba34b3239910dff68de3929ca282253643de96",
+    "receiver/cura_receiver/runtime_time.py": "bd2b1c04077c0c0fa46f5dfa152113c872dd5abc5277e07d69fc87234cd457bc",
+    "receiver/cura_receiver/service_evidence.py": "1aa8fa5ac2f379b1254aaa3ff0bf491a2db24e85509831b29aade22b6cb0e36b",
+    "receiver/cura_receiver/sqlite_database.py": "7be4b38a0a80c266ef887c1cd484bda0721f737ba8411265567cb272e8a165e2",
+    "receiver/cura_receiver/sqlite_repository.py": "7a173ceac814d00f0a4d93050470d1fdbfbc49b48ca7e2d336a6bc1be1d6b0fc",
+    "receiver/cura_receiver/sqlite_transactions.py": "68b77c3fcea6b2f1b5dc15df689becb2980a9e16b1ee07be0acc84dbf79df4d8",
+    "receiver/cura_receiver/stop_intent.py": "a557175fe82728068d2e3c15cfdb56b663f341bd6d544175f63528f9939c7726",
+    "receiver/cura_receiver/storage_preflight.py": "d7bafd20649fc9bfb077eb9ed4ff631d016e7a9e629137827d2e57e7309e465b",
+    "receiver/cura_receiver/sx1262.py": "6d8b16e68f254bedbabc0c5f08a10e07a45042dbb0084e593f10d99e79f309e0",
+    "receiver/cura_receiver/time_diagnostics.py": "e212939ad36c43e05dc38779f518318a5a847b1927ee69cf2f41e05e7e6a17af",
+    "receiver/cura_receiver/time_observations.py": "5ad08aa1dbe958e3295ee25391fa61c12fba874570b0c0c9e1f4902cf628dde9",
+    "receiver/cura_receiver/time_policy.py": "69c2793890b2faaa91035f6168667884a4b3cbc53454486da3772b29b3024031",
+    "receiver/cura_receiver/tx_airtime.py": "a94a969dc33954e170dc1a14393064d7413b6d3498f4a8bff526fd66978a7f6d",
+    "receiver/db/schema.sql": "6715b126ba61ab450a8a1a8e6da2086f9b73d65b0c5ed6054b10f3a91ac6fb40",
+    "receiver/db/schema_source.sql": "05c69a719755ac8f8cabdee6c119bc209ad2dc9f253bf697140352e8425afc33",
+    "receiver/deploy/systemd/60-cura-persistent.conf": "644d8508c38bb777c6fa3869aaa71f81906685278f4c001ba8e059f72c15abbf",
+    "receiver/deploy/systemd/chrony-bootstrap.conf": "6935cb0aaca2896255829cae809b89f49189cd161806b293e71771ddda7897e5",
+    "receiver/deploy/systemd/cura-receiver.service": "efa77ef8de870b43a71c923eb2905564ee5a3702b04cb7fb54844ed08931a56d",
+    "receiver/deploy/systemd/cura-rtc-bootstrap.service": "7341e0d5e6bf0cd39402d9bd769192aaff6840be858f932058082031d1ecd760",
+    "receiver/tests/__init__.py": "cd4082db6aafb04cdc56c319b93f6feb7aad02547f34958069e25681a806d93d",
+    "receiver/tests/support/__init__.py": "866c35579dc5a0b96a12bc4015db6297cbe32bf3d5ab955a8be5f0ffc823ce17",
+    "receiver/tests/support/builders/__init__.py": "516c7ae19d5b5558a9a567e48aa23a9cc37fc7bd4a7dd18ae4ca4b1cc2907f50",
+    "receiver/tests/support/builders/persistence.py": "3fba2b2cc17a0e0d4e056fd4373eaf322c590ef02b650362b135a068d07c0b5b",
+    "receiver/tests/support/builders/persistence_control.py": "78010a6b2934fd6f1c9ca738213d8e1546d5d0d474bb06542a32f31785368223",
+    "receiver/tests/support/builders/protocol_ingress.py": "7ff1b030cc9fc00e567ee4ecd9999f4f4e85c1834afdae3803fc1356a5d74ef0"
+  }
+}

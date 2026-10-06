@@ -8,7 +8,7 @@ import pytest
 
 from cura_receiver.persistence_control_values import ReceiverCleanStopCommitDisposition as D, ReceiverCleanStopCommitFailureKind as F
 from cura_receiver.generated import receiver_enums_generated as E
-from tests.host.test_application import make_application
+from tests.host.test_application import make_application, start_application
 
 
 def wait_for_worker(app):
@@ -22,7 +22,7 @@ def wait_for_worker(app):
 def test_clean_stop_drains_marks_and_is_idempotent(tmp_path):
     app, _, database, _ = make_application(tmp_path)
     try:
-        assert app.start().ready
+        assert start_application(app).ready
         app.runtime.step()
         app.request_stop()
         deadline = app.stop_deadline
@@ -43,7 +43,7 @@ def test_clean_stop_drains_marks_and_is_idempotent(tmp_path):
 def test_unknown_clean_marker_retries_identical_request(tmp_path, monkeypatch, installed):
     app, _, _, _ = make_application(tmp_path)
     try:
-        assert app.start().ready
+        assert start_application(app).ready
         real = app.worker.control.commit_receiver_clean_stop
         requests = []
         def commit(marker, **kwargs):
@@ -63,7 +63,7 @@ def test_unknown_clean_marker_retries_identical_request(tmp_path, monkeypatch, i
 def test_unexpected_marker_exception_still_stops_disk_owner(tmp_path, monkeypatch):
     app, _, _, _ = make_application(tmp_path)
     try:
-        assert app.start().ready
+        assert start_application(app).ready
         def fail(*args, **kwargs):
             raise RuntimeError('marker transport escape')
         monkeypatch.setattr(app.worker.control, 'commit_receiver_clean_stop', fail)
@@ -77,7 +77,7 @@ def test_unexpected_marker_exception_still_stops_disk_owner(tmp_path, monkeypatc
 def test_fatal_exit_never_marks_clean(tmp_path):
     app, _, database, _ = make_application(tmp_path)
     try:
-        assert app.start().ready
+        assert start_application(app).ready
         app.runtime._terminate(RuntimeError('injected fatal'))
         result = app.shutdown(clean_requested=False, wait=wait_for_worker(app))
         assert not result.clean_stop_confirmed and result.worker_stopped
@@ -90,7 +90,7 @@ def test_fatal_exit_never_marks_clean(tmp_path):
 def test_unsafe_radio_cleanup_forbids_marker(tmp_path):
     app, io, database, _ = make_application(tmp_path)
     try:
-        assert app.start().ready
+        assert start_application(app).ready
         io.busy_forever = True
         result = app.shutdown(clean_requested=True, wait=wait_for_worker(app))
         assert not result.radio_safe and not result.clean_stop_confirmed
@@ -104,7 +104,7 @@ def test_unsafe_radio_cleanup_forbids_marker(tmp_path):
 def test_unknown_marker_expires_without_reopening_diagnostics(tmp_path, monkeypatch):
     app, _, _, _ = make_application(tmp_path)
     try:
-        assert app.start().ready
+        assert start_application(app).ready
         real = app.worker.control.commit_receiver_clean_stop
         requests, counts = [], []
         def uncertain(marker, **kwargs):
@@ -146,7 +146,7 @@ def test_durable_marker_survives_final_storage_cleanup_failure(tmp_path, monkeyp
             raise OSError(5, 'close failure')
     monkeypatch.setattr(ReceiverDatabase, 'close', close)
     try:
-        assert app.start().ready
+        assert start_application(app).ready
         result = app.shutdown(clean_requested=True, wait=wait_for_worker(app))
         assert result.clean_stop_confirmed and result.worker_stopped
         assert trace == ['checkpoint', 'close']
@@ -164,7 +164,7 @@ def test_unresolved_queue_reservation_cannot_get_clean_marker(tmp_path):
     from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC
     app, _, database, _ = make_application(tmp_path)
     try:
-        assert app.start().ready
+        assert start_application(app).ready
         reserved = app.admission.try_reserve_one(PROFILE_ONLY_V1_SPEC)
         assert reserved.reservation is not None
         result = app.shutdown(clean_requested=True, wait=wait_for_worker(app))
@@ -178,7 +178,7 @@ def test_unresolved_queue_reservation_cannot_get_clean_marker(tmp_path):
 
 def _application_crash_child(root, boundary, pipe):
     app, _, _, _ = make_application(root)
-    assert app.start().ready
+    assert start_application(app).ready
     if boundary == 'after_startup':
         pipe.send('ready')
         pipe.recv()
@@ -213,7 +213,7 @@ def test_application_sigkill_and_restart_preserve_marker_meaning(tmp_path, bound
             assert (marker is not None) == (boundary == 'after_clean_commit')
         restarted, _, database, _ = make_application(tmp_path, reuse_storage=True, instance_id=bytes.fromhex('112233445566478899aabbccddeeff00'))
         try:
-            assert restarted.start().ready
+            assert start_application(restarted).ready
             assert restarted.runtime.communicator.occurrence_sequence == 0
             assert restarted.runtime.telemetry.health_sequence == 0
             assert restarted.runtime.telemetry.diagnostic_sequence <= 1
@@ -236,7 +236,7 @@ def test_unknown_complete_state_prevents_clean_marker(tmp_path):
     from tests.support.builders.persistence_control import synthetic
     app, _, database, _ = make_application(tmp_path)
     try:
-        assert app.start().ready
+        assert start_application(app).ready
         owner = app.runtime.communicator.airtime.owner
         lost = LostStateReply(app.worker.control, installed=True)
         lost.fail_load = True
@@ -259,7 +259,7 @@ def test_application_stop_during_rtc_read_cancels_before_write(tmp_path):
     from cura_receiver.ports.ds3231 import Ds3231ReadResult, Ds3231ReadStatus as R
     app, _, _, _ = make_application(tmp_path)
     try:
-        assert app.start().ready
+        assert start_application(app).ready
         c = app.runtime.communicator
         sample(c.time, app.kernel)
         c.time.sample_network(tracking(c.time))

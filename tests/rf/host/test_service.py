@@ -212,7 +212,7 @@ def test_failed_service_restoration_does_not_mark_stopped():
     assert not service.stopped
 
 
-@pytest.mark.parametrize("damage", [None, "source", "unit", "uid", "dropin", "environment", "credentials_mode"])
+@pytest.mark.parametrize("damage", [None, "source", "unit", "uid", "dropin", "environment", "startup_budget", "credentials_mode"])
 def test_installed_source_service_and_environment_guards(tmp_path, monkeypatch, damage):
     import service_probe as probe
     from types import SimpleNamespace
@@ -229,7 +229,8 @@ def test_installed_source_service_and_environment_guards(tmp_path, monkeypatch, 
     group = root / "config/receiver-group.json"
     group.write_text("private group fixture")
     group.chmod(0o600)
-    env = dict(CURA_RECEIVER_TEST_ROOT=c["test_root"],
+    env = dict(CURA_RECEIVER_STARTUP_BUDGET_US="12000000",
+        CURA_RECEIVER_TEST_ROOT=c["test_root"],
         CURA_RECEIVER_CONFIGURATION=c["test_root"] + "/config/receiver-group.json",
         CURA_RECEIVER_DATABASE=c["test_root"] + "/data/receiver.sqlite3",
         SQLITE_TMPDIR=c["test_root"] + "/data/tmp", RTC_HELPER_SHA256="a" * 64, RTC_KERNEL_BOUND_US="3000000")
@@ -259,6 +260,8 @@ def test_installed_source_service_and_environment_guards(tmp_path, monkeypatch, 
         state["DropInPaths"] = "/unexpected/override.conf"
     elif damage == "environment":
         env["CURA_RECEIVER_DATABASE"] = "/var/lib/cura-agrorum/receiver.sqlite3"
+    elif damage == "startup_budget":
+        env["CURA_RECEIVER_STARTUP_BUDGET_US"] = "1000000"
     elif damage == "credentials_mode":
         group.chmod(0o644)
     (root / "config/deployment.env").write_text("\n".join(k + "=" + v for k, v in env.items()))

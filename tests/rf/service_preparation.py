@@ -24,7 +24,7 @@ def validate_silence(receipt, *, board_id, boot_id, now_monotonic_us):
             or not receipt['operator_record'].strip()):
         raise ValueError('missing or mismatched operator silence attestation')
     since = receipt['silent_since_monotonic_us']
-    settings = ApplicationSettings()
+    settings = ApplicationSettings(persistence_startup_budget_us=12_000_000)
     wait = minimum_wait_monotonic_us(settings.airtime_policy.rolling_window_us,
         rate_bound_ppm=settings.time_policy.monotonic_elapsed_rate_bound_ppm)
     if type(since) is not int or not 0 <= since <= now_monotonic_us - wait:
@@ -43,7 +43,7 @@ def create_zero_airtime_database(destination, group_id, receipt, *, board_id, bo
     result = initialize_database(path, group_id, known_empty_airtime=True)
     if not result.cleanup_complete:
         raise RuntimeError('database initialization cleanup incomplete; preserve candidate')
-    policy = ApplicationSettings().airtime_policy
+    policy = ApplicationSettings(persistence_startup_budget_us=12_000_000).airtime_policy
     with sqlite3.connect(path) as db:
         db.execute('PRAGMA foreign_keys=ON')
         db.execute('BEGIN')

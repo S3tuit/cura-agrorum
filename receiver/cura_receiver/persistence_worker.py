@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from threading import Event, Lock, Thread
 
@@ -42,16 +42,19 @@ from .sqlite_database import DatabaseFailure, StorageUnavailable
 from .sqlite_repository import SqliteRepository
 from .sqlite_transactions import ObservedSqliteTransactions, SqliteTransactions
 from .persistence_failures import classify_global_failure
+from .persistence_startup import StartupSnapshot, StartupStage
 
 
 @dataclass(frozen=True, slots=True)
 class PersistenceWorkerStartup:
     """Immutable startup evidence; no SQLite handle crosses the owner boundary."""
 
-    configuration_load: ReceiverConfigurationLoadResult
+    configuration_load: ReceiverConfigurationLoadResult | None
     instance_start: ReceiverInstanceStartResult | None = None
     database_failure: DatabaseFailure | None = None
     state_load: CommunicatorStateLoadResult | None = None
+    published_at_monotonic_us: int = 0
+    unexpected_failure: bool = False
 
 
 class PersistenceWorker(Thread):
@@ -72,6 +75,7 @@ class PersistenceWorker(Thread):
         wake_threshold_entities: int = 64,
         batch_limit_entities: int = 64,
         checkpoint_interval_us: int = 5_000_000,
+        startup_notification=None,
     ):
         super().__init__(name="receiver-persistence", daemon=True)
         if type(instance) is not ReceiverInstanceStart:
@@ -116,6 +120,10 @@ class PersistenceWorker(Thread):
         self._bypassed_persistence_action = None
         self._startup_completed = Event()
         self._startup = None
+        self._startup_prerequisites = None
+        self.startup_notification = startup_notification
+        self._startup_begin = None
+        self._startup_stages = [None] * len(StartupStage)
         self._stop_deadline = None
         self._database = None
         self._ordinary = None
@@ -132,6 +140,44 @@ class PersistenceWorker(Thread):
     def startup_snapshot(self):
         with self._scheduler_lock:
             return self._startup
+
+    def start(self, *, begin_monotonic_us=None):
+        self._startup_begin = (self._clock.now_monotonic_us() if begin_monotonic_us is None
+                               else begin_monotonic_us)
+        super().start()
+
+    def startup_completed(self):
+        return self._startup_completed.is_set()
+
+    def startup_evidence(self, *, deadline_monotonic_us, nonblocking=False):
+        remaining = 0 if nonblocking else max(0, deadline_monotonic_us - self._clock.now_monotonic_us())
+        if not self._scheduler_lock.acquire(timeout=remaining / 1_000_000):
+            return None
+        try:
+            return StartupSnapshot(self._startup_begin, tuple(self._startup_stages),
+                                   self._startup, self._clock.now_monotonic_us())
+        finally:
+            self._scheduler_lock.release()
+
+    def _enter_startup_stage(self, stage):
+        with self._scheduler_lock:
+            if self._startup is None:
+                self._startup_stages[stage] = self._clock.now_monotonic_us()
+
+    def _publish_startup(self, started, *, state_load=None):
+        failure = started.database_failure or (
+            started.instance_start.failure if started.instance_start else None)
+        if self._startup is None and failure is not None:
+            self._publish_failure(failure)
+        with self._scheduler_lock:
+            if self._startup is not None:
+                return
+            self._startup = PersistenceWorkerStartup(
+                started.configuration_load, started.instance_start, failure, state_load,
+                self._clock.now_monotonic_us(), started.unexpected_failure)
+            self._startup_completed.set()
+        if self.startup_notification is not None:
+            self.startup_notification.notify()
 
     def wait_started(self, *, deadline_monotonic_us):
         remaining = max(0, deadline_monotonic_us - self._clock.now_monotonic_us())
@@ -182,13 +228,17 @@ class PersistenceWorker(Thread):
             configuration_reader=reader,
             database_path=self._database_path,
             minimum_free_bytes=self._minimum_free_bytes,
+            stage_entered=self._enter_startup_stage,
+            failure_observer=self._publish_startup,
         )
+        self._startup_prerequisites = started
         failure = started.database_failure or (
             started.instance_start.failure if started.instance_start else None
         )
         state_load = None
         if started.database is not None:
             self._database = started.database
+            self._enter_startup_stage(StartupStage.PERSISTENCE_COMPONENT_SETUP)
             # Startup commits outside the ordinary/control helper. Its durable
             # lifecycle row and inherited WAL both have unknown coverage here.
             self._checkpoint.mark_possible_work()
@@ -214,22 +264,20 @@ class PersistenceWorker(Thread):
                 )
                 self._recovery = self._ordinary.recovery
                 repository = SqliteRepository(self._database.connection)
+                self._enter_startup_stage(StartupStage.COMMUNICATOR_STATE_LOAD)
                 state_load = classify_communicator_state_rows(
                     repository.read_communicator_state_rows(), repository, self._policy
                 )
                 self._ordinary.enable_admission()
             except (sqlite3.Error, OSError, StorageUnavailable) as error:
                 failure = classify_global_failure(error)
+                self._publish_startup(replace(started, database_failure=failure))
                 self._database.close()
                 self._ordinary = self._controls = None
                 self._recovery = None
         if failure is not None:
             self._publish_failure(failure)
-        with self._scheduler_lock:
-            self._startup = PersistenceWorkerStartup(
-                started.configuration_load, started.instance_start, failure, state_load
-            )
-            self._startup_completed.set()
+        self._publish_startup(started, state_load=state_load)
 
     def _work_due(self, now, snapshot, *, preferred_action=None):
         ordinary = self._ordinary
@@ -385,7 +433,13 @@ class PersistenceWorker(Thread):
 
     def run(self):
         try:
-            self._initialize()
+            try:
+                self._initialize()
+            except Exception:
+                from .receiver_startup import ReceiverStartupResult
+                started = self._startup_prerequisites or ReceiverStartupResult(None)
+                self._publish_startup(replace(started, unexpected_failure=True))
+                return
             self._flush_deadline = self._clock.now_monotonic_us() + self._flush_interval
             while True:
                 self._wake.clear()

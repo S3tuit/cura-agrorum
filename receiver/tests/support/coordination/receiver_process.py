@@ -30,6 +30,7 @@ def run_receiver(pipe, directory, boundary, *, trusted=False, spend=False):
         'CURA_RECEIVER_DATABASE': str(root / 'worker.db'),
         'SQLITE_TMPDIR': str(root / 'sqlite-temp'),
         'CURA_RECEIVER_TEST_ROOT': str(root),
+        'CURA_RECEIVER_STARTUP_BUDGET_US': '12000000',
     })
     clock = FakeOsClock(monotonic_us=100)
     applications = []
@@ -58,8 +59,8 @@ def run_receiver(pipe, directory, boundary, *, trusted=False, spend=False):
             super().__init__(**kwargs)
             applications.append(self)
 
-        def start(self):
-            result = super().start()
+        def start(self, *, wait):
+            result = super().start(wait=wait)
             arrive('after_start', ready=result.ready)
             return result
 
@@ -112,7 +113,7 @@ def run_receiver(pipe, directory, boundary, *, trusted=False, spend=False):
     entry.LinuxKernelClock = lambda _clock: FakeKernelClock()
     entry.LinuxRadioIo = PhysicalPort
     entry.Sx1262 = lambda io, clock, wait, configuration: real_sx1262(io, clock, Wait(clock), configuration)
-    entry.PersistenceWorker = worker
+    entry.ServicePersistenceWorker = worker
     entry.ReceiverApplication = Application
     try:
         try:
@@ -120,6 +121,10 @@ def run_receiver(pipe, directory, boundary, *, trusted=False, spend=False):
         except RuntimeError:
             if boundary != 'construction_failed':
                 raise
+            arrive('construction_failed')
+            return
+        if boundary == 'construction_failed':
+            assert code == 1
             arrive('construction_failed')
             return
         if boundary == 'returned_with_worker':

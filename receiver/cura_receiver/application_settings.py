@@ -12,6 +12,7 @@ from .time_policy import TimePolicy
 
 @dataclass(frozen=True, slots=True)
 class ApplicationSettings:
+    persistence_startup_budget_us: int = field(kw_only=True)
     configuration_path: Path = Path("/etc/cura-agrorum/receiver-group.json")
     database_path: Path = Path("/var/lib/cura-agrorum/receiver.sqlite3")
     sqlite_temporary_directory: Path = Path("/var/lib/cura-agrorum/tmp")
@@ -31,7 +32,8 @@ class ApplicationSettings:
         if len(set(paths)) != len(paths):
             raise ValueError("configuration, database and temporary paths must be distinct")
         checked_duration_us(self.minimum_free_bytes)
-        for duration in (self.health_interval_us, self.shutdown_budget_us):
+        for duration in (self.persistence_startup_budget_us,
+                         self.health_interval_us, self.shutdown_budget_us):
             checked_duration_us(duration)
             if duration == 0:
                 raise ValueError("application intervals must be positive")

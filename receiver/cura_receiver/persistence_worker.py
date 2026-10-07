@@ -150,14 +150,23 @@ class PersistenceWorker(Thread):
         return self._startup_completed.is_set()
 
     def startup_evidence(self, *, deadline_monotonic_us, nonblocking=False):
+        # The completion event is authoritative. Publication is first-wins and
+        # freezes the stage entries, so a published result needs no lock and
+        # scheduler contention cannot hide it from a delayed observer.
+        if self._startup_completed.is_set():
+            return self._copy_startup_evidence()
         remaining = 0 if nonblocking else max(0, deadline_monotonic_us - self._clock.now_monotonic_us())
         if not self._scheduler_lock.acquire(timeout=remaining / 1_000_000):
-            return None
+            # The worker may have published while holding the lock.
+            return self._copy_startup_evidence() if self._startup_completed.is_set() else None
         try:
-            return StartupSnapshot(self._startup_begin, tuple(self._startup_stages),
-                                   self._startup, self._clock.now_monotonic_us())
+            return self._copy_startup_evidence()
         finally:
             self._scheduler_lock.release()
+
+    def _copy_startup_evidence(self):
+        return StartupSnapshot(self._startup_begin, tuple(self._startup_stages),
+                               self._startup, self._clock.now_monotonic_us())
 
     def _enter_startup_stage(self, stage):
         with self._scheduler_lock:

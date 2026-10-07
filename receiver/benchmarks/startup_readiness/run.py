@@ -265,10 +265,16 @@ def analyze(root):
         confirmation = ((directory / 'physical-confirmation.json').exists()
                         if request['mode'] == 'cold' else None)
         verified_cold = request['mode'] != 'cold' or confirmation
+        # Warm/smoke samples are same-boot process starts; reboot/cold samples
+        # need a new boot. A warm request consumed at boot (for example after
+        # an unexpected restart) ran with a cold cache: retain it, never count it.
+        boot_eligible = None if result is None else (
+            (result['boot_id'] == request['armed_boot_id']) == (request['mode'] in ('smoke', 'warm')))
         records.append(dict(attempt_id=directory.name, fixture=request['fixture'], mode=request['mode'],
                             label=request['label'], observation_budget_us=request['observation_budget_us'],
                             inventory_sha256=request['inventory_sha256'],
                             outcome=status, physical_confirmation=confirmation,
+                            boot_eligible=boot_eligible,
                             boot_id=None if result is None else result['boot_id'],
                             cleanup_worker_stopped=None if result is None else result['cleanup']['worker_stopped']))
         key = (f"{request['fixture']}/{request['mode']}/{request['observation_budget_us']}us/"
@@ -278,7 +284,8 @@ def analyze(root):
             attempts=0, outcomes={}, complete_us=[], stages_us={}))
         group['attempts'] += 1
         group['outcomes'][status] = group['outcomes'].get(status, 0) + 1
-        if result and status == 'SUCCESS' and result['cleanup']['worker_stopped'] and verified_cold:
+        if (result and status == 'SUCCESS' and result['cleanup']['worker_stopped'] and verified_cold
+                and boot_eligible):
             group['complete_us'].append(result['completion_elapsed_us'])
             # JSON is sorted, so order stage names by the production enum.
             from cura_receiver.persistence_startup import StartupStage

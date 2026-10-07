@@ -148,6 +148,43 @@ def test_publication_boundary_survives_delayed_observer(worker_files, offset, ex
             finish(worker)
 
 
+@pytest.mark.parametrize('failing,expected', [(False, 'SUCCESS'), (True, 'UNEXPECTED_INITIALIZATION_ERROR')])
+def test_timely_publication_survives_scheduler_lock_contention(worker_files, monkeypatch, failing, expected):
+    clock = FakeOsClock(monotonic_us=0)
+    if failing:
+        monkeypatch.setattr(workers, 'PersistenceControlOperations',
+                            lambda *a, **k: (_ for _ in ()).throw(RuntimeError('fixture')))
+    with CompletionNotification() as notification:
+        worker = worker_for(worker_files, clock=clock, startup_notification=notification)
+        publish = worker._publish_startup
+        def published(*a, **k):
+            clock.advance_elapsed_us(99 - clock.now_monotonic_us())
+            publish(*a, **k)
+        worker._publish_startup = published
+        holding, release = Event(), Event()
+        def run_loop_holds_lock():
+            with worker._scheduler_lock:
+                holding.set()
+                assert release.wait(3)
+        holder = Thread(target=run_loop_holds_lock)
+        class LateWait:
+            def wait_until_monotonic_us(self, *_args, **_kwargs):
+                assert worker._startup_completed.wait(3)
+                holder.start()
+                assert holding.wait(3)
+                clock.advance_elapsed_us(104 - clock.now_monotonic_us())
+        try:
+            result = observe_persistence_startup(worker=worker, clock=clock,
+                stop_intent=StopIntent(clock, 1000), wait=LateWait(), budget_us=100)
+            assert result.outcome == expected
+            assert result.snapshot.result.published_at_monotonic_us == 99
+            assert result.observed_at_monotonic_us == 104
+        finally:
+            release.set()
+            holder.join(3)
+            finish(worker)
+
+
 @pytest.mark.parametrize('signum', [signal.SIGTERM, signal.SIGINT])
 def test_real_signal_ends_startup_wait_before_worker_cleanup(worker_files, signum):
     clock = LinuxOsClock()

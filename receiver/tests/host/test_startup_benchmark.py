@@ -61,6 +61,23 @@ def test_boot_request_cannot_run_in_arming_boot(prepared, mode):
     assert benchmark.analyze(prepared)['attempts'][0]['outcome'] == 'NOT_STARTED'
 
 
+@pytest.mark.parametrize('mode', ['warm', 'smoke'])
+def test_process_start_request_consumed_in_later_boot_is_retained_but_ineligible(prepared, mode):
+    attempt = benchmark.arm(prepared, 'pilot', mode, 'unexpected-restart')
+    path = prepared / 'armed.json'
+    request = json.loads(path.read_text())
+    request['armed_boot_id'] = 'previous-simulated-boot'
+    path.write_text(json.dumps(request))
+    (prepared / 'attempts' / attempt / 'request.json').write_text(json.dumps(request))
+    assert run(prepared).returncode == 0
+    report = benchmark.analyze(prepared)
+    [record] = report['attempts']
+    assert record['outcome'] == 'SUCCESS' and record['boot_eligible'] is False
+    [group] = report['groups'].values()
+    assert group['attempts'] == 1 and group['eligible_successes'] == 0
+    assert (prepared / 'results' / f'{attempt}.json').exists()
+
+
 @pytest.mark.parametrize('late_failure', [False, True])
 def test_timeout_retained_separately_from_success_and_late_worker(prepared, late_failure):
     attempt = benchmark.arm(prepared, 'pilot', 'smoke', 'held-worker')

@@ -142,6 +142,14 @@ It is an explicit positive decimal microsecond duration, validated by both
 storage preflight and the runtime. Manual launches must export it too. The unit
 provides no fallback.
 
+The 12-second value covers only the measured pilot fixture envelope; see the
+[benchmark findings](../benchmarks/startup_readiness/README.md). Startup,
+failure and shutdown records are sent only to a socket standard output, such as
+the unit's journal stream. A manual launch from a terminal, file or pipe prints
+no record, even for rejected deployment input; inspect its exit status. Record
+contents and delivery limits are in
+[`INTERFACE.md`](../INTERFACE.md#service-evidence-records).
+
 Install/order bootstrap before starting Chrony. An already-synchronized kernel
 clock makes bootstrap skip copying. Receiver restarts do not rerun the copy.
 A failed bootstrap outcome still permits Chrony and receiver startup; runtime
@@ -253,6 +261,14 @@ known startup record's boot/instance IDs. After an authorized orderly reboot,
 read that record with `journalctl -b BOOT_ID -u cura-receiver.service` (or the
 isolated benchmark's unit). Installation and current-boot visibility alone do
 not prove reboot retention.
+
+Retention limits:
+
+- `MaxRetentionSec=30day` is an upper bound. `SystemMaxUse=64M` and
+  `SystemKeepFree=1G` may rotate host journal entries away sooner.
+- A successful stream write reaches journald; it is not a durable
+  acknowledgement. Records not yet flushed to disk can be lost.
+- No power-cut durability is claimed for receiver records.
 
 ## Deferred post-pilot permissions review
 

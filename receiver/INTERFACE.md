@@ -2742,6 +2742,55 @@ The pilot environment explicitly supplies 12,000,000 microseconds for the
 measured 21 MB fixture; broader production policy is deferred. See the
 [benchmark findings](benchmarks/startup_readiness/README.md) for the evidence.
 
+The application captures one checked absolute deadline, startup begin plus the
+budget, immediately before launching the worker. Neither stage progress nor
+repeated waits extend it. The main thread waits for completion or stop on the
+shared signal waiter, and then makes one immutable decision:
+
+| Outcome | Condition |
+|---|---|
+| `STOP_REQUESTED` | Stop was requested before launch or by the decision; takes precedence over any published result. |
+| `PERSISTENCE_STARTUP_INCOMPLETE` | No result was published, or it was published at or after the deadline. |
+| `SUCCESS` | A loaded result was published strictly before the deadline. |
+| Classified failure | A failed result was published strictly before the deadline: the configuration status name, the database admission state, `PERSISTENCE_STARTUP_FAILED` or `UNEXPECTED_INITIALIZATION_ERROR`. |
+
+Eligibility uses the result's publication time, not when the main thread
+observed it, so a timely result observed late remains eligible. Later
+publication never revises a committed decision. The stage snapshot is
+diagnostic only: an unavailable snapshot cannot change a published result's
+outcome. A non-`SUCCESS` decision enters bounded failed-start shutdown and never
+starts RF.
+
+#### Service evidence records
+
+The entry point and storage preflight emit fixed one-line JSON records
+(`format_version` 1):
+
+| `event` | When | Content |
+|---|---|---|
+| `receiver_preflight` | Storage preflight failure | `outcome=STORAGE_PREFLIGHT_FAILED` |
+| `receiver_startup` | One attempt per launch after argument parsing | The decision summary: `outcome`, `receiver_instance_id`, begin/deadline/observation/publication times, elapsed values, `stage_entry_offsets_us` (`null` = not reached), `last_stage`, `snapshot_available`, `worker_failure`, instance-start disposition, configuration status/rejection, SQLite codes and errno, plus `application_outcome`. Before a decision, `outcome` is `DEPLOYMENT_CONFIGURATION_REJECTED`, `RECEIVER_ALREADY_RUNNING`, `PROCESS_OWNERSHIP_FAILED`, `APPLICATION_SETUP_FAILED` or `APPLICATION_STARTUP_FAILED`. |
+| `receiver_application` | Runtime or teardown exception | `outcome=APPLICATION_FAILED` or `APPLICATION_TEARDOWN_FAILED` |
+| `receiver_shutdown` | Shutdown failure | The shutdown failure, `worker_stopped`, `clean_stop_confirmed` |
+| `receiver_persistence` | Service worker thread exception | `outcome=WORKER_FAILED`; the Python traceback hook is never invoked |
+
+`outcome` is the persistence decision. `application_outcome` is final
+application readiness: `SUCCESS`, the non-`SUCCESS` persistence outcome, the
+radio state reached instead of `RX_SINGLE`, `STOP_REQUESTED` or
+`APPLICATION_STARTUP_FAILED`. Persistence `SUCCESS` can therefore accompany an
+application failure. No exception text, key or path is emitted.
+
+Delivery is one best-effort attempt per record, never a durable
+acknowledgement. Each record is sent only when standard output is a socket, as
+under systemd's journal stream. It is sent once with
+`MSG_DONTWAIT | MSG_NOSIGNAL` and is never retried, buffered or written through
+a fallback. Results are `SENT`, `PARTIAL`, `BACKPRESSURE`, `UNAVAILABLE`,
+`TOO_LARGE` (over 4096 bytes) or `UNSUPPORTED_SINK`. A terminal, regular file or
+pipe is `UNSUPPORTED_SINK`: manual launches print no startup or failure records,
+including for rejected deployment input. Command-line argument errors still use
+the standard argparse message. Loss of a record never changes the startup
+decision or delays cleanup.
+
 ### Receiver configuration loading
 
 Installed entry points share these startup environment inputs:

@@ -257,7 +257,11 @@ sudo /usr/local/sbin/cura-startup-benchmark collect
 ```
 
 Require `SUCCESS`, `cleanup.worker_stopped=true`, one request/result/boot claim,
-matching inventory, and a changed boot for reboot/cold attempts. Record power
+matching inventory, and a changed boot for reboot/cold attempts. Warm/smoke
+attempts must run in their arming boot: the enabled unit consumes any armed
+request at boot, so a warm request left armed across an unexpected restart runs
+with a cold cache. `analyze` retains it but reports `boot_eligible=false` and
+excludes it from timing statistics. Record power
 flags (`vcgencmd get_throttled`) and system/service state before and after each
 boot. Copy the printed export to the workstation and verify its SHA-256 before
 arming the next boot attempt. Retain current/preceding boot journal readback

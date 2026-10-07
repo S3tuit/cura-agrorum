@@ -194,6 +194,13 @@ into a known outcome. No exception text or keys enter startup evidence.
 `ApplicationSettings.persistence_startup_budget_us`, supplied explicitly as
 `CURA_RECEIVER_STARTUP_BUDGET_US` in the deployment environment. The pilot value
 choice is described at [`README.md`](benchmarks/startup_readiness/README.md).
+One absolute deadline is fixed before worker launch. Only a terminal result
+published strictly before it is eligible, judged by publication time rather than
+observation time. A stop request takes precedence over any result, and the
+decision is immutable once made. Startup evidence is a best-effort, bounded,
+socket-only service record. Losing it cannot change the decision or delay
+cleanup. The outcomes, records and delivery limits are specified in
+[`INTERFACE.md`](INTERFACE.md#persistence-startup-evidence-and-observation).
 
 ## Durable communicator state
 

@@ -97,6 +97,7 @@ def test_target_sqlite_capabilities(tmp_path: Path) -> None:
                 False,
                 SystemTimeQuality.UNTRUSTED,
                 RtcHealth.MISSING,
+                None, None, None, None, None, None,
             )
         )
         connection.execute("COMMIT")
@@ -109,6 +110,7 @@ def test_target_sqlite_capabilities(tmp_path: Path) -> None:
             0,
             0,
             2,
+            *(None,) * 21,
         )
         assert connection.execute("PRAGMA integrity_check").fetchall() == [("ok",)]
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []

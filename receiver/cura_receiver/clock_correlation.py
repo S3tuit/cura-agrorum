@@ -11,7 +11,12 @@ from .elapsed_duration import (
     checked_duration_us,
     checked_utc_us,
 )
-from .generated.receiver_entities_generated import ClockObservationV1
+from .generated.receiver_entities_generated import (
+    CLOCK_OBSERVATION_V1_COLUMNS,
+    ClockObservationV1,
+    NetworkClockEvidenceV1,
+    RtcClockEvidenceV1,
+)
 from .generated.receiver_enums_generated import RtcHealth, SystemTimeQuality
 
 
@@ -24,6 +29,23 @@ def _persisted_unsigned(value: int) -> None:
     checked_duration_us(value)
     if value > (1 << 63) - 1:
         raise OverflowError("persisted unsigned value exceeds SQLite's integer range")
+
+
+def clock_observation_from_row(row: tuple[object, ...]) -> ClockObservationV1:
+    """Inverse of the generated binder for one row in ``CLOCK_OBSERVATION_V1_COLUMNS`` order."""
+    if len(row) != len(CLOCK_OBSERVATION_V1_COLUMNS):
+        raise ValueError("clock observation row has the wrong column count")
+    network = row[12:23]
+    rtc = row[23:29]
+    return ClockObservationV1(
+        *row[:5],
+        bool(row[5]),
+        SystemTimeQuality(row[6]),
+        RtcHealth(row[7]),
+        *row[8:12],
+        None if network[0] is None else NetworkClockEvidenceV1(*network),
+        None if rtc[0] is None else RtcClockEvidenceV1(*rtc),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,8 +77,8 @@ class ClockCorrelation:
     """Index a supplied history snapshot; never compare clocks across instances or boots.
 
     Invalid history raises an input error. An event without an eligible, representable
-    UTC has no result. Exact per-observation uncertainty is deliberately not persisted;
-    analysis follows the recorded segment boundaries asserted by trusted publication.
+    UTC has no result. Correlation follows the recorded segment boundaries asserted by
+    trusted publication; per-observation error evidence is retained but not used here.
     """
 
     def __init__(

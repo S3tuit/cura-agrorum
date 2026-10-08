@@ -85,6 +85,8 @@ ENTITY_MODES = {
     "multi_table_transaction",
 }
 FIELD_TYPE_RE = re.compile(r"^bytes(?:\[([1-9][0-9]*)\])?$")
+# Expanded-leaf annotation: (record attribute, member's own nullability).
+NULLABLE_GROUP_KEY = "_nullable_group"
 LOGICAL_RECORD_REFERENCE_RE = re.compile(
     r"^logical_record:([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*)$"
 )
@@ -1411,9 +1413,20 @@ def validate_entity_field(
     if logical_record_reference is not None:
         if mode == "logical_record":
             raise ManifestError(f"{context} logical records cannot be nested")
-        require_exact_keys(field, {"name", "type", "sql"}, context)
+        require_allowed_keys(
+            field, {"name", "type", "sql", "nullable"}, {"name", "type", "sql"}, context
+        )
         record_name = logical_record_reference.group(1)
-        entity_manifest.logical_record_named(record_name)
+        record = entity_manifest.logical_record_named(record_name)
+        if "nullable" in field:
+            if not isinstance(field["nullable"], bool):
+                raise ManifestError(f"{context}.nullable must be Boolean")
+            if field["nullable"] and all(
+                child.get("nullable", False) for child in record["fields"]
+            ):
+                raise ManifestError(
+                    f"{context} nullable logical records need a non-nullable member"
+                )
         sql = field.get("sql")
         if not isinstance(sql, dict):
             raise ManifestError(f"{context}.sql must be an object")
@@ -2019,9 +2032,20 @@ def expand_field(
         record = entity_manifest.logical_record_named(
             logical_record_reference.group(1)
         )
+        nullable_group = field.get("nullable", False)
         expanded_record: list[tuple[str, str, dict[str, Any]]] = []
         for child in record["fields"]:
             for attribute, column, leaf in expand_field(child, entity_manifest):
+                if nullable_group:
+                    # An absent record stores NULL in every member column.
+                    leaf = {
+                        **leaf,
+                        "nullable": True,
+                        NULLABLE_GROUP_KEY: (
+                            field["name"],
+                            bool(leaf.get("nullable", False)),
+                        ),
+                    }
                 expanded_record.append(
                     (f"{field['name']}.{attribute}", column, leaf)
                 )
@@ -2072,6 +2096,10 @@ def render_entity_table(
         row["fields"], entity_manifest
     ):
         definitions.append(f"CHECK (length({bytes_column}) = {length_column})")
+    for columns in iter_nullable_group_columns(row["fields"], entity_manifest):
+        absent = " AND ".join(f"{column} IS NULL" for column in columns)
+        present = " AND ".join(f"{column} IS NOT NULL" for column in columns)
+        definitions.append(f"CHECK (({absent}) OR ({present}))")
     primary_key = ", ".join(row["primary_key"])
     definitions.append(f"PRIMARY KEY ({primary_key})")
     for foreign_key in row["foreign_keys"]:
@@ -2096,6 +2124,27 @@ def render_entity_table(
     if row["write_policy"] == "append_only":
         lines.extend([*render_append_only_triggers(row), ""])
     return lines
+
+
+def iter_nullable_group_columns(
+    fields: list[dict[str, Any]],
+    entity_manifest: EntityManifest,
+) -> tuple[tuple[str, ...], ...]:
+    """Columns of each nullable record's non-nullable members, which co-occur."""
+    groups: list[tuple[str, ...]] = []
+    for field in fields:
+        if LOGICAL_RECORD_REFERENCE_RE.fullmatch(field["type"]) is None or not (
+            field.get("nullable", False)
+        ):
+            continue
+        groups.append(
+            tuple(
+                column
+                for _, column, leaf in expand_field(field, entity_manifest)
+                if not leaf[NULLABLE_GROUP_KEY][1]
+            )
+        )
+    return tuple(groups)
 
 
 def iter_length_field_checks(
@@ -2462,9 +2511,17 @@ def generate_entity_python(
         )
         for attribute, _, field in emitted_fields:
             expression = f"entity.{attribute}"
-            lines.append(
-                f"        {sqlite_binding_expression(expression, field)},"
-            )
+            group = field.get(NULLABLE_GROUP_KEY)
+            if group is None:
+                expression = sqlite_binding_expression(expression, field)
+            else:
+                group_name, member_nullable = group
+                member = {**field, "nullable": member_nullable}
+                expression = (
+                    f"None if entity.{group_name} is None else "
+                    f"{sqlite_binding_expression(expression, member)}"
+                )
+            lines.append(f"        {expression},")
         lines.extend(["    )", ""])
 
     for encoding in entity_manifest.encodings:

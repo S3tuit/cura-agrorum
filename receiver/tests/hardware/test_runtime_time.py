@@ -7,7 +7,7 @@ Destructive cases require the root-owned fixture in test_time_mutations.py.
 
 from cura_receiver.generated.receiver_entities_generated import AirtimeSnapshotV1
 from dataclasses import asdict, replace
-from decimal import Decimal, ROUND_CEILING, ROUND_UP
+from decimal import Decimal, ROUND_CEILING, ROUND_DOWN, ROUND_FLOOR, ROUND_UP
 import ctypes
 import json
 import os
@@ -36,6 +36,11 @@ from cura_receiver.receiver_startup import create_receiver_instance
 from cura_receiver.communicator_state_owner import CommunicatorStateOwner
 from cura_receiver.runtime_time import RuntimeTime, RuntimeTimeSettings
 from cura_receiver.time_policy import TimePolicy
+from cura_receiver.elapsed_duration import (
+    exclusive_trust_distance_us,
+    maximum_physical_half_bracket_us,
+    rate_growth_us,
+)
 from tests.support.builders.persistence_control import synthetic
 from tests.support.coordination.persistence_worker import (
     CheckedPersistenceWorker,
@@ -163,6 +168,26 @@ def test_real_chrony_tracking(tmp_path):
     assert result.estimated_skew_ppb == int(
         (Decimal(before[9]) * 1000).to_integral_value(rounding=ROUND_CEILING)
     )
+    # Retained evidence: identity fields are stable across the bracket; the
+    # slewing statistics must lie within the two independent captures.
+    assert result.reference_id == int(before[0], 16)
+    assert result.stratum == int(before[2])
+    assert result.reference_time_utc_us == int(
+        (Decimal(before[3]) * 1_000_000).to_integral_value(rounding=ROUND_FLOOR)
+    )
+
+    def converted(index, scale, rounding):
+        return sorted(
+            int((Decimal(fields[index]) * scale).to_integral_value(rounding=rounding))
+            for fields in (before, after)
+        )
+
+    for value, (low, high) in (
+        (result.root_delay_us, converted(10, 1_000_000, ROUND_CEILING)),
+        (result.root_dispersion_us, converted(11, 1_000_000, ROUND_CEILING)),
+        (result.estimated_frequency_ppb, converted(7, 1000, ROUND_DOWN)),
+    ):
+        assert low - 1000 <= value <= high + 1000
 
 
 # Actual driver read, missing configured path, rejected non-device and entry deadline need no physical mutation.
@@ -316,7 +341,10 @@ def test_offline_component_startup(tmp_path, proven):
 
     # Inspect the durable history consumed by analysis, including its real instance boundary.
     import sqlite3
-    from cura_receiver.generated.receiver_entities_generated import ClockObservationV1
+    from cura_receiver.clock_correlation import clock_observation_from_row
+    from cura_receiver.generated.receiver_entities_generated import (
+        CLOCK_OBSERVATION_V1_COLUMNS,
+    )
 
     with sqlite3.connect(database) as db:
         lifecycle = db.execute(
@@ -324,16 +352,9 @@ def test_offline_component_startup(tmp_path, proven):
             "started_at_monotonic_us FROM receiver_instances"
         ).fetchone()
         rows = db.execute(
-            "SELECT receiver_instance_id, observation_sequence, clock_state_generation, "
-            "sampled_at_monotonic_us, sampled_at_utc_us, step_discontinuity_boundary, "
-            "system_time_quality_id, rtc_health_id FROM clock_observations"
+            f"SELECT {', '.join(CLOCK_OBSERVATION_V1_COLUMNS)} FROM clock_observations"
         ).fetchall()
-    observations = [
-        ClockObservationV1(
-            *row[:5], bool(row[5]), E.SystemTimeQuality(row[6]), E.RtcHealth(row[7])
-        )
-        for row in rows
-    ]
+    observations = [clock_observation_from_row(row) for row in rows]
     assert observations == [update.observation]
     assert observations[0].sampled_at_monotonic_us >= instance.started_at_monotonic_us
     correlation = ClockCorrelation([AnalysisInstance(*lifecycle)], observations)
@@ -342,9 +363,118 @@ def test_offline_component_startup(tmp_path, proven):
     )
     if proven:
         assert derived is not None and derived.utc_us == observations[0].sampled_at_utc_us
+        evidence = observations[0].rtc_evidence
+        assert observations[0].network_evidence is None
+        assert evidence.reference_receiver_instance_id == instance.receiver_instance_id
+        assert evidence.reference_uncertainty_us == 3_000_000
+        drift = rate_growth_us(
+            10, observations[0].sampled_at_utc_us - evidence.reference_readback_utc_us
+        )
+        assert evidence.drift_contribution_us == drift
+        read = (
+            500_000
+            + maximum_physical_half_bracket_us(
+                observations[0].sample_finished_at_monotonic_us
+                - observations[0].sample_started_at_monotonic_us
+            )
+            + 1_000_000
+        )
+        assert observations[0].error_bound_us == 3_000_000 + drift + read
     else:
         assert derived is None
+        assert observations[0].error_bound_us is None
+        assert observations[0].rtc_evidence is None
     record(tmp_path, "offline-history", lifecycle=lifecycle, observations=rows)
+
+
+# A real Chrony/kernel network observation keeps its complete evidence through
+# the real persistence worker, and the stored row alone reproduces its bound.
+def test_network_observation_evidence_persists(tmp_path):
+    import sqlite3
+    from cura_receiver.clock_correlation import clock_observation_from_row
+    from cura_receiver.generated.receiver_entities_generated import (
+        CLOCK_OBSERVATION_V1_COLUMNS,
+    )
+
+    clock = LinuxOsClock()
+    chrony = tracking_port(clock)
+    rtc = rtc_port(clock)
+    database, config, _ = prepare_worker_files(tmp_path)
+    instance = create_receiver_instance(clock)
+    owner = CheckedPersistenceWorker(
+        instance=instance,
+        database_path=database,
+        configuration_path=config,
+        clock=clock,
+    )
+    owner.start()
+    try:
+        started = owner.wait_started(
+            deadline_monotonic_us=clock.now_monotonic_us() + 10_000_000
+        )
+        assert started.instance_start is not None, started
+        probe = rtc.read_time(deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000)
+        rt = RuntimeTime(
+            receiver_instance_id=instance.receiver_instance_id,
+            clock=clock,
+            kernel=LinuxKernelClock(clock),
+            queue=ProducerAdmission(owner.queue),
+            policy=TimePolicy(),
+            startup_rtc_result=probe,
+            settings=RuntimeTimeSettings(rtc_read_budget_us=5_000_000),
+        )
+        published = []
+        for _ in range(3):
+            update = rt.poll_chrony(chrony)
+            if update.observation is not None:
+                published.append(update.observation)
+            if rt.state.quality is E.SystemTimeQuality.NETWORK_SYNCED:
+                break
+            time.sleep(1)
+        trusted = [
+            o for o in published
+            if o.system_time_quality is E.SystemTimeQuality.NETWORK_SYNCED
+        ]
+        assert trusted, "the bench Pi must be Chrony-synchronized for this check"
+        owner.request_stop(deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000)
+        owner.join(5)
+        assert not owner.is_alive() and owner.queue.snapshot().closed_and_drained
+    finally:
+        owner.finish_test()
+
+    with sqlite3.connect(database) as db:
+        rows = db.execute(
+            f"SELECT {', '.join(CLOCK_OBSERVATION_V1_COLUMNS)} FROM clock_observations "
+            "ORDER BY observation_sequence"
+        ).fetchall()
+    stored = [clock_observation_from_row(row) for row in rows]
+    assert stored == published
+    observation = trusted[-1]
+    network = observation.network_evidence
+    assert observation.rtc_evidence is None
+    assert (
+        network.tracking_started_at_monotonic_us
+        <= network.tracking_finished_at_monotonic_us
+        <= observation.sample_started_at_monotonic_us
+        <= observation.sampled_at_monotonic_us
+        <= observation.sample_finished_at_monotonic_us
+    )
+    assert 1 <= network.stratum <= 15
+    assert observation.error_bound_us == (
+        abs(network.remaining_correction_us)
+        + network.root_distance_us
+        + 1_000_000
+        + rate_growth_us(
+            3700,
+            observation.sampled_at_monotonic_us
+            - network.tracking_started_at_monotonic_us,
+        )
+    )
+    assert observation.error_budget_expires_at_monotonic_us == (
+        observation.sampled_at_monotonic_us
+        + exclusive_trust_distance_us(observation.error_bound_us, 40_000_000)
+    )
+    record(tmp_path, "network-evidence", observations=rows)
 
 
 def chrony_process_arguments(pid):

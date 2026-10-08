@@ -123,6 +123,33 @@ finished_event(uint32_t cycle_sample_id, uint32_t sample_id,
   };
 }
 
+/* Masks node-monotonic times, which the persistence and host tests pin. */
+static bool delivery_byte_is_timing(size_t record_offset, size_t record_length) {
+  const size_t finished_length =
+      NODE_PERSISTENCE_DELIVERY_FINISHED_PAYLOAD_SIZE +
+      NODE_PERSISTENCE_RECORD_OVERHEAD;
+  if (record_length != finished_length) {
+    return false;
+  }
+  if (record_offset >= record_length - sizeof(uint32_t)) {
+    return true; /* CRC; each actual record is validated separately. */
+  }
+  const size_t payload = record_offset - NODE_PERSISTENCE_RECORD_HEADER_SIZE;
+  if (record_offset < NODE_PERSISTENCE_RECORD_HEADER_SIZE ||
+      payload >= NODE_PERSISTENCE_DELIVERY_FINISHED_PAYLOAD_SIZE) {
+    return false;
+  }
+  if (payload >= 15U && payload < 23U) {
+    return true;
+  }
+  if (payload < NODE_PERSISTENCE_DELIVERY_TX_CALL_OFFSET) {
+    return false;
+  }
+  const size_t slot_byte = (payload - NODE_PERSISTENCE_DELIVERY_TX_CALL_OFFSET) %
+                           NODE_PERSISTENCE_DELIVERY_TX_CALL_SIZE;
+  return slot_byte >= 2U && slot_byte < 26U;
+}
+
 static void assert_delivery_log(const node_delivery_event_t *events,
                                 size_t event_count) {
   TEST_ASSERT_NOT_NULL(events);
@@ -131,15 +158,36 @@ static void assert_delivery_log(const node_delivery_event_t *events,
   memset(&expected, 0, sizeof(expected));
   for (size_t index = 0U; index < event_count; ++index) {
     uint8_t encoded[NODE_PERSISTENCE_RECORD_MAX_SIZE];
-    const size_t encoded_length =
-        hwtest_encode_delivery_record(&events[index], encoded);
+    const node_delivery_event_t event =
+        events[index].type == NODE_DELIVERY_EVENT_FINISHED
+            ? hwtest_with_tx_calls(events[index], 0U)
+            : events[index];
+    const size_t encoded_length = hwtest_encode_delivery_record(&event, encoded);
     TEST_ASSERT_LESS_OR_EQUAL_UINT32(sizeof(expected.bytes) - expected.length,
                                      encoded_length);
     memcpy(expected.bytes + expected.length, encoded, encoded_length);
     expected.length += encoded_length;
   }
   hwtest_snapshot(HWTEST_DELIVERY_PATH, &actual);
-  hwtest_assert_snapshot_equal(&expected, &actual);
+  TEST_ASSERT_EQUAL_size_t(expected.length, actual.length);
+  size_t offset = 0U;
+  while (offset < actual.length) {
+    const size_t length =
+        node_persistence_load_le16(actual.bytes + offset + 6U) +
+        NODE_PERSISTENCE_RECORD_OVERHEAD;
+    TEST_ASSERT_EQUAL(NODE_PERSISTENCE_RECORD_VALID,
+                      node_persistence_record_validate(
+                          node_persistence_backend(),
+                          NODE_PERSISTENCE_LOG_DELIVERY, actual.bytes + offset,
+                          length));
+    for (size_t index = 0U; index < length; ++index) {
+      if (!delivery_byte_is_timing(index, length)) {
+        TEST_ASSERT_EQUAL_HEX8(expected.bytes[offset + index],
+                               actual.bytes[offset + index]);
+      }
+    }
+    offset += length;
+  }
 }
 
 static void assert_accepted_rtc(uint32_t sample_id, uint8_t current_attempts,

@@ -23,7 +23,7 @@ from .receiver_enums_generated import (
     SystemTimeQuality,
 )
 
-RECEIVER_ENTITY_MANIFEST_SHA256 = '191dd366f38af797ae71390e6608b813442f44a3c681d96fcd709d4f4d91c6ca'
+RECEIVER_ENTITY_MANIFEST_SHA256 = 'c527ac22325552273d7777134d4cd11031d01f18908a27508a2388c748401a82'
 
 __all__ = [
     "RECEIVER_ENTITY_MANIFEST_SHA256",
@@ -41,6 +41,8 @@ __all__ = [
     "READING_MESSAGE_ROW_V1_COLUMNS",
     "COMMUNICATOR_STATE_V2_TABLE",
     "COMMUNICATOR_STATE_V2_COLUMNS",
+    "NetworkClockEvidenceV1",
+    "RtcClockEvidenceV1",
     "MessageProfilingV1",
     "ClockObservationV1",
     "DiagnosticV1",
@@ -74,6 +76,27 @@ CLOCK_OBSERVATION_V1_COLUMNS = (
     'step_discontinuity_boundary',
     'system_time_quality_id',
     'rtc_health_id',
+    'error_bound_us',
+    'sample_started_at_monotonic_us',
+    'sample_finished_at_monotonic_us',
+    'error_budget_expires_at_monotonic_us',
+    'network_tracking_started_at_monotonic_us',
+    'network_tracking_finished_at_monotonic_us',
+    'network_remaining_correction_us',
+    'network_root_delay_us',
+    'network_root_dispersion_us',
+    'network_root_distance_us',
+    'network_estimated_frequency_ppb',
+    'network_estimated_skew_ppb',
+    'network_reference_id',
+    'network_reference_time_utc_us',
+    'network_stratum',
+    'rtc_reference_receiver_instance_id',
+    'rtc_reference_verified_at_utc_us',
+    'rtc_reference_readback_utc_us',
+    'rtc_reference_uncertainty_us',
+    'rtc_reference_drift_bound_ppm',
+    'rtc_drift_contribution_us',
 )
 
 DIAGNOSTIC_V1_TABLE = 'diagnostics'
@@ -289,6 +312,29 @@ def _require_bytes_length(value: bytes, length: int, field: str) -> bytes:
     return value
 
 @dataclass(frozen=True, slots=True)
+class NetworkClockEvidenceV1:
+    tracking_started_at_monotonic_us: int
+    tracking_finished_at_monotonic_us: int
+    remaining_correction_us: int
+    root_delay_us: int
+    root_dispersion_us: int
+    root_distance_us: int
+    estimated_frequency_ppb: int
+    estimated_skew_ppb: int
+    reference_id: int
+    reference_time_utc_us: int
+    stratum: int
+
+@dataclass(frozen=True, slots=True)
+class RtcClockEvidenceV1:
+    reference_receiver_instance_id: bytes
+    reference_verified_at_utc_us: int
+    reference_readback_utc_us: int
+    reference_uncertainty_us: int
+    reference_drift_bound_ppm: int
+    drift_contribution_us: int
+
+@dataclass(frozen=True, slots=True)
 class MessageProfilingV1:
     receiver_instance_id: bytes
     occurrence_sequence: int
@@ -331,6 +377,12 @@ class ClockObservationV1:
     step_discontinuity_boundary: bool
     system_time_quality: SystemTimeQuality
     rtc_health: RtcHealth
+    error_bound_us: int | None
+    sample_started_at_monotonic_us: int | None
+    sample_finished_at_monotonic_us: int | None
+    error_budget_expires_at_monotonic_us: int | None
+    network_evidence: NetworkClockEvidenceV1 | None
+    rtc_evidence: RtcClockEvidenceV1 | None
 
 def clock_observation_v1_parameters(entity: ClockObservationV1) -> tuple[object, ...]:
     return (
@@ -342,6 +394,27 @@ def clock_observation_v1_parameters(entity: ClockObservationV1) -> tuple[object,
         entity.step_discontinuity_boundary,
         entity.system_time_quality.value,
         entity.rtc_health.value,
+        entity.error_bound_us,
+        entity.sample_started_at_monotonic_us,
+        entity.sample_finished_at_monotonic_us,
+        entity.error_budget_expires_at_monotonic_us,
+        None if entity.network_evidence is None else entity.network_evidence.tracking_started_at_monotonic_us,
+        None if entity.network_evidence is None else entity.network_evidence.tracking_finished_at_monotonic_us,
+        None if entity.network_evidence is None else entity.network_evidence.remaining_correction_us,
+        None if entity.network_evidence is None else entity.network_evidence.root_delay_us,
+        None if entity.network_evidence is None else entity.network_evidence.root_dispersion_us,
+        None if entity.network_evidence is None else entity.network_evidence.root_distance_us,
+        None if entity.network_evidence is None else entity.network_evidence.estimated_frequency_ppb,
+        None if entity.network_evidence is None else entity.network_evidence.estimated_skew_ppb,
+        None if entity.network_evidence is None else entity.network_evidence.reference_id,
+        None if entity.network_evidence is None else entity.network_evidence.reference_time_utc_us,
+        None if entity.network_evidence is None else entity.network_evidence.stratum,
+        None if entity.rtc_evidence is None else entity.rtc_evidence.reference_receiver_instance_id,
+        None if entity.rtc_evidence is None else entity.rtc_evidence.reference_verified_at_utc_us,
+        None if entity.rtc_evidence is None else entity.rtc_evidence.reference_readback_utc_us,
+        None if entity.rtc_evidence is None else entity.rtc_evidence.reference_uncertainty_us,
+        None if entity.rtc_evidence is None else entity.rtc_evidence.reference_drift_bound_ppm,
+        None if entity.rtc_evidence is None else entity.rtc_evidence.drift_contribution_us,
     )
 
 @dataclass(frozen=True, slots=True)

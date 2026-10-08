@@ -757,7 +757,16 @@ message_id
 domain
 attempt_count                  relative to this wake cycle
 final_result
+application_start_us           node-monotonic, this wake
+tx_calls                       one timing/outcome slot per transmit call
 ```
+
+The transmit-call slots are local evidence only: they are captured in RAM and
+written in this one finished event, never sent in a packet, and they change no
+frame byte, identity, nonce, retry or ACK rule. Their exact layout is in the
+[firmware architecture](../../firmware/ARCHITECTURE.md). Because retries send
+identical bytes, a receiver occurrence cannot name the call it heard; offline
+joins must report that ambiguity rather than infer an on-air attempt number.
 
 `final_result` uses the persisted node-delivery mapping:
 

@@ -11,6 +11,7 @@ from .elapsed_duration import (
     checked_monotonic_elapsed,
     rate_growth_us,
 )
+from .generated.receiver_entities_generated import NetworkClockEvidenceV1
 from .generated.receiver_enums_generated import RtcHealth, SystemTimeQuality
 
 TIME_SAMPLING_MARGIN_US = 1_000_000
@@ -118,6 +119,7 @@ class NetworkEvidence:
 
     Constructing this value neither parses chronyc output nor proves it valid.
     Evaluation checks every field before it can support a policy decision.
+    The trailing facts are retained observation evidence only; no policy reads them.
     """
 
     sample_started_at_monotonic_us: int
@@ -127,6 +129,12 @@ class NetworkEvidence:
     remaining_correction_us: int
     root_distance_us: int
     estimated_skew_ppb: int
+    reference_id: int = 0
+    reference_time_utc_us: int = 0
+    stratum: int = 0
+    root_delay_us: int = 0
+    root_dispersion_us: int = 0
+    estimated_frequency_ppb: int = 0
 
 
 def network_root_distance_us(root_delay_us: int, root_dispersion_us: int) -> int:
@@ -147,11 +155,16 @@ def network_error_bound_us(remaining_correction_us: int, root_distance_us: int) 
 
 @dataclass(frozen=True, slots=True)
 class NetworkEstimate:
-    """Validated source facts with one initial bound anchored at query start."""
+    """Validated source facts with one initial bound anchored at query start.
+
+    ``facts`` retains the complete supporting tracking result for observation
+    evidence; it is never an input to the bound.
+    """
 
     sample_started_at_monotonic_us: int
     sample_finished_at_monotonic_us: int
     initial_error_bound_us: int
+    facts: NetworkClockEvidenceV1
 
     def __post_init__(self) -> None:
         checked_monotonic_elapsed(
@@ -186,10 +199,24 @@ def network_estimate(
         error = network_error_bound_us(
             evidence.remaining_correction_us, evidence.root_distance_us
         )
+        facts = NetworkClockEvidenceV1(
+            evidence.sample_started_at_monotonic_us,
+            evidence.sample_finished_at_monotonic_us,
+            evidence.remaining_correction_us,
+            evidence.root_delay_us,
+            evidence.root_dispersion_us,
+            evidence.root_distance_us,
+            evidence.estimated_frequency_ppb,
+            evidence.estimated_skew_ppb,
+            evidence.reference_id,
+            evidence.reference_time_utc_us,
+            evidence.stratum,
+        )
         return NetworkEstimate(
             evidence.sample_started_at_monotonic_us,
             evidence.sample_finished_at_monotonic_us,
             error,
+            facts,
         )
     except OverflowError:
         if report_calculation_failure:

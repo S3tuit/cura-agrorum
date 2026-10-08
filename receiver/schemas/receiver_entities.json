@@ -68,6 +68,35 @@
   ],
   "logical_records": [
     {
+      "name": "NETWORK_CLOCK_EVIDENCE_V1",
+      "python_name": "NetworkClockEvidenceV1",
+      "fields": [
+        {"name": "tracking_started_at_monotonic_us", "type": "u64", "column": "network_tracking_started_at_monotonic_us"},
+        {"name": "tracking_finished_at_monotonic_us", "type": "u64", "column": "network_tracking_finished_at_monotonic_us"},
+        {"name": "remaining_correction_us", "type": "i64", "column": "network_remaining_correction_us"},
+        {"name": "root_delay_us", "type": "u64", "column": "network_root_delay_us"},
+        {"name": "root_dispersion_us", "type": "u64", "column": "network_root_dispersion_us"},
+        {"name": "root_distance_us", "type": "u64", "column": "network_root_distance_us"},
+        {"name": "estimated_frequency_ppb", "type": "i64", "column": "network_estimated_frequency_ppb"},
+        {"name": "estimated_skew_ppb", "type": "u64", "column": "network_estimated_skew_ppb"},
+        {"name": "reference_id", "type": "u32", "column": "network_reference_id"},
+        {"name": "reference_time_utc_us", "type": "i64", "column": "network_reference_time_utc_us"},
+        {"name": "stratum", "type": "u8", "column": "network_stratum"}
+      ]
+    },
+    {
+      "name": "RTC_CLOCK_EVIDENCE_V1",
+      "python_name": "RtcClockEvidenceV1",
+      "fields": [
+        {"name": "reference_receiver_instance_id", "type": "bytes[16]", "column": "rtc_reference_receiver_instance_id"},
+        {"name": "reference_verified_at_utc_us", "type": "i64", "column": "rtc_reference_verified_at_utc_us"},
+        {"name": "reference_readback_utc_us", "type": "i64", "column": "rtc_reference_readback_utc_us"},
+        {"name": "reference_uncertainty_us", "type": "u64", "column": "rtc_reference_uncertainty_us"},
+        {"name": "reference_drift_bound_ppm", "type": "u32", "column": "rtc_reference_drift_bound_ppm"},
+        {"name": "drift_contribution_us", "type": "u64", "column": "rtc_drift_contribution_us"}
+      ]
+    },
+    {
       "name": "MESSAGE_PROFILING_V1",
       "python_name": "MessageProfilingV1",
       "fields": [
@@ -355,6 +384,22 @@
           "name": "rtc_health",
           "type": "enum:RTC_HEALTH",
           "column": "rtc_health_id"
+        },
+        {"name": "error_bound_us", "type": "u64", "nullable": true},
+        {"name": "sample_started_at_monotonic_us", "type": "u64", "nullable": true},
+        {"name": "sample_finished_at_monotonic_us", "type": "u64", "nullable": true},
+        {"name": "error_budget_expires_at_monotonic_us", "type": "u64", "nullable": true},
+        {
+          "name": "network_evidence",
+          "type": "logical_record:NETWORK_CLOCK_EVIDENCE_V1",
+          "nullable": true,
+          "sql": {"flatten": true}
+        },
+        {
+          "name": "rtc_evidence",
+          "type": "logical_record:RTC_CLOCK_EVIDENCE_V1",
+          "nullable": true,
+          "sql": {"flatten": true}
         }
       ],
       "foreign_keys": [

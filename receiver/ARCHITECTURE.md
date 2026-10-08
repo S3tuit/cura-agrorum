@@ -507,8 +507,16 @@ contains:
 - the source `receiver_instance_id`;
 - a per-instance `observation_sequence` and `clock_state_generation`;
 - one bounded monotonic/UTC correlation;
-- the current `system_time_quality`; and
-- the current `rtc_health`.
+- the current `system_time_quality`;
+- the current `rtc_health`; and
+- for a trusted observation, the evidence of its UTC-error bound: the bound
+  itself, the sampling bracket, the calculated error-budget horizon and either
+  the supporting Chrony tracking facts or a copy of the RTC verification
+  baseline with its drift contribution.
+
+The evidence is captured with the accepted sample and published unchanged; it
+explains the bound without changing trust, cadence or correlation. Its exact
+contract is in [`INTERFACE.md`](INTERFACE.md#observation-error-evidence).
 
 The communicator creates an observation after initial time and RTC state have
 been established, on every quality or RTC-health transition, immediately

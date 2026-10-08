@@ -110,6 +110,51 @@ typedef uint8_t node_delivery_final_result_t;
 #define NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR UINT8_C(7)
 #define NODE_DELIVERY_RESULT_NO_ACK_ATTEMPT_LIMIT UINT8_C(8)
 
+/* What ended one transmit call's part of a delivery. */
+typedef uint8_t node_delivery_tx_outcome_t;
+#define NODE_DELIVERY_TX_OUTCOME_INVALID UINT8_C(0)
+/* An authenticated, correlated ACK with a supported status, in time. */
+#define NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED UINT8_C(1)
+/* The ordinary ACK wait expired. Absence of an ACK proves no uplink loss. */
+#define NODE_DELIVERY_TX_OUTCOME_ACK_TIMEOUT UINT8_C(2)
+/* A TX, RX or ACK-processing failure local to the node. */
+#define NODE_DELIVERY_TX_OUTCOME_LOCAL_ERROR UINT8_C(3)
+/* The wake radio deadline cut the call before start or truncated its wait. */
+#define NODE_DELIVERY_TX_OUTCOME_DEADLINE_EXPIRED UINT8_C(4)
+
+/* Slots for transmit calls; node_core asserts its retry limit fits. */
+#define NODE_DELIVERY_TX_CALL_SLOTS 2U
+
+/*
+ * Timing evidence for one sx1262_radio_transmit_uplink() call, captured in
+ * RAM and persisted only inside the finished event. All times are in the
+ * wake's node-monotonic microsecond domain and are not comparable across
+ * wakes. A field is meaningful only under its condition; the encoder stores
+ * zero otherwise and decoders must treat it as absent (zero SNR is a real
+ * measurement, not a sentinel).
+ *
+ * tx_started:       Driver flag: SetTx crossed SPI, possibly with an
+ *                   uncertain effect after a later failure.
+ * tx_done:          Driver flag: TX_DONE was captured.
+ * outcome:          NODE_DELIVERY_TX_OUTCOME_*.
+ * set_tx_at_us:     Software time just before SetTx (when tx_started).
+ * tx_done_at_us:    Captured TX_DONE event time (when tx_done).
+ * ack_rx_done_at_us, ack_rssi_dbm_x2, ack_snr_db_x4:
+ *                   Captured RX_DONE time and driver signal statistics of
+ *                   the valid ACK (when outcome is ACK_RECEIVED). The ACK
+ *                   status is the event's final_result.
+ */
+typedef struct {
+  bool tx_started;
+  bool tx_done;
+  node_delivery_tx_outcome_t outcome;
+  uint64_t set_tx_at_us;
+  uint64_t tx_done_at_us;
+  uint64_t ack_rx_done_at_us;
+  int16_t ack_rssi_dbm_x2;
+  int16_t ack_snr_db_x4;
+} node_delivery_tx_call_t;
+
 /*
  * One durable delivery boundary event.
  *
@@ -119,7 +164,10 @@ typedef uint8_t node_delivery_final_result_t;
  * message_id:      Transport-message ID of this logical uplink.
  * domain:          CURRENT_READING_UPLINK or BACKLOG_READING_UPLINK.
  * detail.started:  Application-relative start time for a STARTED event.
- * detail.finished: Wake-local attempt count and terminal result for FINISHED.
+ * detail.finished: Wake-local charged attempt count (calls with tx_started),
+ *                  terminal result, the wake's application start time and
+ *                  every transmit call in order. A budget/time preflight
+ *                  rejection makes no call and has no slot.
  */
 typedef struct {
   node_delivery_event_type_t type;
@@ -134,6 +182,9 @@ typedef struct {
     struct {
       uint8_t attempt_count;
       node_delivery_final_result_t final_result;
+      uint64_t application_start_us;
+      uint8_t tx_call_count;
+      node_delivery_tx_call_t tx_calls[NODE_DELIVERY_TX_CALL_SLOTS];
     } finished;
   } detail;
 } node_delivery_event_t;

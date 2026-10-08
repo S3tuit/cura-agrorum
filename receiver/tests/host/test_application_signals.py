@@ -36,7 +36,7 @@ def signal_application(connection, directory, boundary):
                 time.pending_observation = ClockObservationV1(
                     app.instance.receiver_instance_id, time.observation_sequence + 1,
                     time.state.generation, clock.now_monotonic_us(), None, False,
-                    time.state.quality, time.state.rtc_health)
+                    time.state.quality, time.state.rtc_health, None, None, None, None, None, None)
                 app.runtime.scheduler.boundary_retry = clock.now_monotonic_us() + 2_000_000
                 notified = False
                 def barrier():

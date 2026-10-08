@@ -90,6 +90,32 @@ written by `node_core`, not by the radio component. `DELIVERY_STARTED` means
 that the controller entered delivery, not that the SX1262 certainly executed
 `SetTx`.
 
+`DELIVERY_FINISHED` also carries timing evidence for every
+`sx1262_radio_transmit_uplink()` call of the operation, including a failed call
+whose `tx_started` is false. The operation keeps one fixed RAM slot per call,
+sized by the two-attempt limit and cleared before each call, and fills it only
+from the driver's returned flags and captured event times: the software time
+just before `SetTx`, the captured `TX_DONE`, and for a valid ACK its captured
+`RX_DONE`, RSSI and SNR. No storage write occurs between `TX_DONE` and RX, during
+an ACK wait or between attempts; the slots reach flash only inside the existing
+finished append, so evidence adds bytes but no extra synchronization. A
+budget/time preflight rejection makes no call and has no slot; the charged
+`attempt_count` still counts only calls with `tx_started`. A lost finished record
+leaves the calls unknown; it is never evidence of a timeout. The packet,
+message identity, retries and deadlines are unchanged, so the receiver cannot
+tell which call it heard: the evidence is joined offline.
+
+Each call ends with exactly one outcome:
+
+| Outcome | Value | Meaning |
+|---|---:|---|
+| `ACK_RECEIVED` | `1` | Authenticated, correctly addressed and correlated ACK with a supported status and `RX_DONE` within the receive deadline; its status is the record's `final_result` |
+| `ACK_TIMEOUT` | `2` | The ordinary ACK wait expired; earlier calls of a retried delivery always end this way |
+| `LOCAL_ERROR` | `3` | A TX, RX or ACK-processing failure local to the node, including an uncertain or incomplete TX |
+| `DEADLINE_EXPIRED` | `4` | The wake radio deadline prevented the call from starting or truncated its ACK wait |
+
+Invalid, unrelated or late packets never supply ACK time or statistics.
+
 Each pair records the wake's current `cycle_sample_id`, the reading's
 `sample_id`, the logical transport `message_id` and its domain. Transport
 identity is `(node_id, message_id)`; reading identity remains
@@ -671,7 +697,7 @@ without its reading.
 | `domain` | `u8`, exact LoRa v2 domain byte |
 | `start_offset_ms` | `u32`, relative to application start |
 
-`DELIVERY_FINISHED` has a 15-byte payload:
+`DELIVERY_FINISHED` has an 84-byte payload:
 
 | Field | Encoding |
 |---|---:|
@@ -679,8 +705,38 @@ without its reading.
 | `sample_id` | `u32` |
 | `message_id` | `u32` |
 | `domain` | `u8`, exact LoRa v2 domain byte |
-| `attempt_count` | `u8`, attempts in this wake |
+| `attempt_count` | `u8`, charged attempts (calls with `tx_started`) in this wake |
 | `final_result` | `u8` |
+| `application_start_us` | `u64`, the wake's node-monotonic application start |
+| `tx_call_count` | `u8`, `0..2` |
+| `tx_calls` | two 30-byte slots, in call order |
+
+Each slot is:
+
+| Field | Encoding | Present when |
+|---|---:|---|
+| `flags` | `u8`: bit 0 `tx_started`, bit 1 `tx_done`; other bits zero | always |
+| `outcome` | `u8`, call-outcome table above | always |
+| `set_tx_at_us` | `u64` | `tx_started` |
+| `tx_done_at_us` | `u64` | `tx_done` |
+| `ack_rx_done_at_us` | `u64` | `outcome = ACK_RECEIVED` |
+| `ack_rssi_dbm_x2` | `i16`, driver units | `outcome = ACK_RECEIVED` |
+| `ack_snr_db_x4` | `i16`, driver units | `outcome = ACK_RECEIVED` |
+
+A field that is not present, and every byte of an unused slot, is zero;
+decoders report it as absent. Zero SNR is a measurement, never a sentinel. All
+times are node-monotonic microseconds of the transmitting wake and are not
+comparable across wakes. For backlog delivery, `cycle_sample_id` names the
+transmitting wake and `sample_id` the older reading; offsets from
+`application_start_us` say nothing about the sleep since that reading.
+
+Validation rejects any record that `node_core` cannot produce: unknown flag
+bits or outcomes, `tx_done` without `tx_started`, nonzero absent fields or
+unused slots, `attempt_count` different from the number of started calls, an
+earlier call that is not an `ACK_TIMEOUT` after `TX_DONE`, and an
+`ACK_RECEIVED` last call unless `final_result` is an ACK result (or the
+reverse). Encoding stores absent fields as zero, so a stale driver value can
+never be persisted.
 
 The numeric `final_result` mapping is the delivery-result table in the wake
 cycle section above.
@@ -866,6 +922,12 @@ smaller than the 2,944 KiB LittleFS partition:
 | `quarantine.log` | 192 KiB |
 | `diagnostic.log` | 256 KiB |
 | `delivery.log` | 256 KiB |
+
+Each delivery appends a 31-byte started and a 98-byte finished record
+(129 bytes; 60 before transmit-call evidence). The previous pilot produced
+about 114 deliveries a day, about 15 KB/day now, so `delivery.log` lasts
+about 17 days. The next pilot runs for 7 days from fresh storage (about
+105 KB), so the limit is unchanged; a longer run must recompute this.
 
 These limits total 1,216 KiB. A file reaching its logical limit does not imply
 that LittleFS is physically full; the unallocated capacity is intentional

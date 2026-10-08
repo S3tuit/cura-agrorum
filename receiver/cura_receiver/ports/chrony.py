@@ -32,6 +32,13 @@ class ChronyTrackingResult:
     remaining_correction_us: int = 0
     root_distance_us: int = 0
     estimated_skew_ppb: int = 0
+    # Retained evidence: they explain, but never enter, the error-bound policy.
+    reference_id: int = 0
+    reference_time_utc_us: int = 0
+    stratum: int = 0
+    root_delay_us: int = 0
+    root_dispersion_us: int = 0
+    estimated_frequency_ppb: int = 0
 
     def __post_init__(self):
         if type(self.status) is not ChronyQueryStatus:
@@ -47,6 +54,12 @@ class ChronyTrackingResult:
         integer(self.remaining_correction_us, -(1 << 63), (1 << 63) - 1)
         integer(self.root_distance_us)
         integer(self.estimated_skew_ppb)
+        integer(self.reference_id, 0, (1 << 32) - 1)
+        integer(self.reference_time_utc_us, -(1 << 63), (1 << 63) - 1)
+        integer(self.stratum, 0, 16)
+        integer(self.root_delay_us)
+        integer(self.root_dispersion_us)
+        integer(self.estimated_frequency_ppb, -(1 << 63), (1 << 63) - 1)
         if self.synchronized and not self.source_selected:
             raise ValueError("synchronized source must be selected")
         if self.status is not ChronyQueryStatus.OK and any(
@@ -56,6 +69,12 @@ class ChronyTrackingResult:
                 self.remaining_correction_us,
                 self.root_distance_us,
                 self.estimated_skew_ppb,
+                self.reference_id,
+                self.reference_time_utc_us,
+                self.stratum,
+                self.root_delay_us,
+                self.root_dispersion_us,
+                self.estimated_frequency_ppb,
             )
         ):
             raise ValueError("failed tracking result carries no normalized evidence")
@@ -71,6 +90,12 @@ class ChronyTrackingResult:
             self.remaining_correction_us,
             self.root_distance_us,
             self.estimated_skew_ppb,
+            self.reference_id,
+            self.reference_time_utc_us,
+            self.stratum,
+            self.root_delay_us,
+            self.root_dispersion_us,
+            self.estimated_frequency_ppb,
         )
 
 

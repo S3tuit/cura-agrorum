@@ -111,6 +111,7 @@ class RecordedTimeHistory(RuleBasedStateMachine):
                 step,
                 quality,
                 health,
+                None, None, None, None, None, None,
             )
         )
         self.primitives.append(

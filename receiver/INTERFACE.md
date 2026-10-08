@@ -850,8 +850,9 @@ daemon runs and use the same unit to restart after edits. This procedure needs
 no network synchronization, runtime receiver invocation or retained snapshot.
 
 The pilot isolates all chronyc-specific behavior behind one runtime adapter.
-It is not a persistence-control interface and none of its values cross
-`PersistQueue` or enter SQLite directly:
+It is not a persistence-control interface and its result types never cross
+`PersistQueue`; only the retained tracking facts of an accepted sample are
+copied into `ClockObservationV1` network evidence:
 
 ```python
 class ChronyControl(Protocol):
@@ -933,6 +934,14 @@ synchronized: bool
 remaining_correction_us: i64
 root_distance_us: u64
 estimated_skew_ppb: u64
+
+# Retained observation evidence; no policy decision reads these.
+reference_id: u32
+reference_time_utc_us: i64
+stratum: u8
+root_delay_us: u64
+root_dispersion_us: u64
+estimated_frequency_ppb: i64
 ```
 
 The normalized fields are valid only when `status = OK`. `synchronized`
@@ -957,6 +966,19 @@ rounded upward to an integer microsecond. `estimated_skew_ppb` is also a
 non-negative conservative integer conversion; chrony's skew in ppm is
 multiplied by 1,000 and rounded upward. Conversion overflow or a negative value
 for an unsigned input makes the response invalid.
+
+The retained facts are converted once, independently of `root_distance_us`:
+`reference_id` is the hexadecimal reference ID, `reference_time_utc_us` is
+chrony's last reference update rounded down, `root_delay_us` and
+`root_dispersion_us` are each rounded up, and `estimated_frequency_ppb` is
+chrony's frequency in ppm times 1,000 rounded toward zero. Recombining the
+separately rounded delay and dispersion can therefore exceed the stored
+`root_distance_us` by one microsecond; the stored distance is the policy input.
+Signs follow chronyc 4.6.1 CSV, verified on the pilot receiver: a positive
+`remaining_correction_us` means system time is behind ("slow of NTP time"), and
+a positive `estimated_frequency_ppb` means the uncorrected clock runs fast.
+The reference time states when chrony last updated its reference; it is not the
+age of the tracking query.
 
 For a fresh `OK` response from a selected, synchronized, reliable source, the
 communicator computes:
@@ -1483,6 +1505,12 @@ sampled_at_utc_us: i64 or absent
 step_discontinuity_boundary: bool
 system_time_quality: u8
 rtc_health: u8
+error_bound_us: u64 or absent
+sample_started_at_monotonic_us: u64 or absent
+sample_finished_at_monotonic_us: u64 or absent
+error_budget_expires_at_monotonic_us: u64 or absent
+network_evidence: NetworkClockEvidenceV1 or absent
+rtc_evidence: RtcClockEvidenceV1 or absent
 ```
 
 The generated immutable logical entity crosses the queue directly. Its
@@ -1546,7 +1574,7 @@ receiver never uses Linux `CLOCK_REALTIME` as the UTC source for an
 `RTC_HOLDOVER` observation.
 
 `UNTRUSTED` transition observations carry the transition boundary monotonic
-time and zero UTC; they need neither an `adjtimex()` sample nor an RTC read.
+time and absent UTC; they need neither an `adjtimex()` sample nor an RTC read.
 
 Chrony slew adjusts `CLOCK_REALTIME` and `CLOCK_MONOTONIC` together, so it does
 not invalidate this pair or a same-instance UTC derivation. An explicit step
@@ -1567,11 +1595,68 @@ the pending-boundary FIFO rule. This independent UTC-budget expiry may remove
 tracking value alone would retain the current quality; it does not authorize a
 step unless the separate step rule does.
 
-`ClockObservationV1` does not store the calculated uncertainty. Publication as
-a trusted quality asserts that the complete bound and its scheduled segment
-horizon satisfy `receiver_utc_error_budget_us`; analysis may conservatively use
-that configured ceiling. The pilot deliberately gives up the exact per-
-observation uncertainty to keep the fixed entity and analysis contract simple.
+### Observation error evidence
+
+A trusted observation also stores the evidence of its bound, captured from the
+same accepted sample before publication and never recomputed from a newer one.
+Collecting it adds no Chrony query, kernel read, RTC read or emission. These
+fields explain the bound; they change no trust, cadence or correlation rule.
+
+| Field | Meaning |
+|---|---|
+| `error_bound_us` | Complete calculated UTC error bound at `sampled_at_monotonic_us`, under the deployed policy. |
+| `sample_started_at_monotonic_us`, `sample_finished_at_monotonic_us` | The kernel `adjtimex()` bracket (network) or the successful RTC read bracket (holdover); `sampled_at_monotonic_us` remains its floor midpoint. |
+| `error_budget_expires_at_monotonic_us` | First monotonic instant at which the bound, grown at `monotonic_elapsed_rate_bound_ppm`, reaches `receiver_utc_error_budget_us`; absent only when that rate is zero. It is a calculation, not a promise: a quality change, poll deadline, step or instance boundary can end the segment earlier. |
+
+Presence follows `system_time_quality`:
+
+| Quality | Common fields | `network_evidence` | `rtc_evidence` |
+|---|---|---|---|
+| `NETWORK_SYNCED` | present | present | absent |
+| `RTC_HOLDOVER` | present | absent | present |
+| `UNTRUSTED` | absent | absent | absent |
+
+An inactive group is absent (SQL `NULL` in every member column), never stale
+values from an earlier observation; a generated SQL check rejects partially
+present groups. An `UNTRUSTED` boundary has no fake bracket and no zero bound.
+
+`NetworkClockEvidenceV1` holds the supporting tracking result's normalized
+facts as defined in the Chrony control interface, stored in columns prefixed
+`network_`: `tracking_started_at_monotonic_us` and
+`tracking_finished_at_monotonic_us` (the query bracket, distinct from the kernel
+bracket), `remaining_correction_us`, `root_delay_us`, `root_dispersion_us`,
+`root_distance_us`, `estimated_frequency_ppb`, `estimated_skew_ppb`,
+`reference_id`, `reference_time_utc_us` and `stratum`. Selection,
+synchronization and a normal leap state are implied, because only such a
+result can produce a trusted sample. The bound is reproduced as:
+
+```text
+error_bound_us = abs(remaining_correction_us) + root_distance_us
+               + time_sampling_margin_us
+               + ceil((sampled_at_monotonic_us - tracking_started_at_monotonic_us)
+                      * R / (1_000_000 - R))
+```
+
+`RtcClockEvidenceV1` copies the durable `RtcProvenanceV1` baseline that
+supported the read, stored in columns prefixed `rtc_`:
+`reference_receiver_instance_id`, `reference_verified_at_utc_us`,
+`reference_readback_utc_us`, `reference_uncertainty_us`,
+`reference_drift_bound_ppm`, plus `drift_contribution_us`. Several
+verifications can occur in one receiver instance, so the instance identity
+alone does not identify the baseline. Copies keep historical rows reproducible
+after the communicator's latest provenance changes. The bound is:
+
+```text
+drift_contribution_us = ceil((sampled_at_utc_us - reference_readback_utc_us)
+                             * D / (1_000_000 - D)),  D = reference_drift_bound_ppm
+error_bound_us = reference_uncertainty_us + drift_contribution_us
+               + rtc_read_whole_second_uncertainty_us
+```
+
+The drift contribution is already part of `error_bound_us`; do not add it
+twice. The returned RTC whole second is `(sampled_at_utc_us - 500_000) /
+1_000_000`. A new observation, reboot or provisional RTC-to-Linux copy resets
+neither the baseline age nor its uncertainty.
 
 The observation's identity is
 `(receiver_instance_id, observation_sequence)`. Its `receiver_instance_id`

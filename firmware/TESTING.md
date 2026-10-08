@@ -227,6 +227,31 @@ are tested without real waiting.
 - An ordinary diagnostic append failure never changes wake behavior and never
   triggers recursive logging.
 
+### Transmit-call evidence
+
+`tests/host/test_node_core_evidence.c` runs every finished event that
+`node_core` produces through the production record codec and validator:
+
+- A first-call timeout followed by an ACK keeps both calls in order with the
+  driver's exact `SetTx`, `TX_DONE` and ACK `RX_DONE` times and the ACK's own
+  negative RSSI/SNR; the retry still sends identical frame bytes.
+- Every ACK status is `ACK_RECEIVED` and its status is the final result; zero
+  SNR is retained as a value.
+- Complete silence records two `ACK_TIMEOUT` calls with no ACK fields.
+- An unrelated ACK during the wait supplies no ACK time or statistics.
+- Not-started, uncertain (`tx_started` without `TX_DONE`), pre-start deadline,
+  RX error and truncated-wait calls are classified distinctly, invent no
+  completion or ACK time, and a stale driver time is not persisted; a preflight
+  rejection has no call.
+- Backlog evidence names the transmitting wake and the older reading.
+- No delivery-log write occurs between the first transmit and the last receive.
+
+`tests/host/test_node_persistence_records.c` additionally rejects every
+non-canonical or impossible call history, checks that encoding zeroes absent
+fields and unused slots, and removes a torn finished record at every byte
+boundary instead of reading it as a timeout. The RF host tests decode the new
+layout from real LittleFS images, reporting absent fields as `None`.
+
 ### Metrics, RTC and finalization
 
 - Current acceptance on attempt two produces current attempts 2, cycle

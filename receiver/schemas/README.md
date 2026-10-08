@@ -20,7 +20,13 @@ target layouts. Its top-level `logical_records` define reusable immutable
 Python values that have no table or binder of their own. A relational field
 may reference one as `logical_record:<NAME>` with `sql.flatten: true`; the
 generated row keeps that Python composition while SQL columns and binding stay
-flat. Logical records do not nest.
+flat. Logical records do not nest. A flattened field may also set
+`nullable: true`: the Python value is then `Record | None`, every member column
+becomes nullable, the binder stores `NULL` in all of them for `None`, and a
+generated SQL `CHECK` requires the record's non-nullable members to be all
+`NULL` or all present. Such a record needs at least one non-nullable member.
+`ClockObservationV1` uses this for its `NetworkClockEvidenceV1` and
+`RtcClockEvidenceV1` groups.
 
 Persisted entities have four mapping modes:
 

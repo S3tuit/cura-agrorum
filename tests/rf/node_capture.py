@@ -39,6 +39,27 @@ def build_reader(destination: Path) -> dict[str, str]:
     return hashes
 
 
+TX_OUTCOMES = {1: "ACK_RECEIVED", 2: "ACK_TIMEOUT", 3: "LOCAL_ERROR",
+               4: "DEADLINE_EXPIRED"}
+
+
+def decode_tx_call(payload: bytes, offset: int) -> dict:
+    """One transmit call; a field outside its validity condition is absent (None).
+
+    Node-monotonic microseconds are comparable only within the same wake.
+    The ACK status of an ACK_RECEIVED call is the record's final_result.
+    """
+    flags, outcome, set_tx, tx_done, ack_rx, rssi, snr = struct.unpack_from(
+        "<BBQQQhh", payload, offset)
+    started, done, ack = bool(flags & 1), bool(flags & 2), outcome == 1
+    return dict(tx_started=started, tx_done=done, outcome=TX_OUTCOMES[outcome],
+                set_tx_at_us=set_tx if started else None,
+                tx_done_at_us=tx_done if done else None,
+                ack_rx_done_at_us=ack_rx if ack else None,
+                ack_rssi_dbm_x2=rssi if ack else None,
+                ack_snr_db_x4=snr if ack else None)
+
+
 def decode_record(record: dict) -> dict:
     """Decode only current RF identity/outcome fields; keep context as bytes."""
     payload = bytes.fromhex(record["payload"])
@@ -57,7 +78,11 @@ def decode_record(record: dict) -> dict:
         if kind == 4:
             result["start_offset_ms"] = struct.unpack_from("<I", payload, 13)[0]
         else:
-            result.update(attempt_count=payload[13], final_result=payload[14])
+            start, count = struct.unpack_from("<QB", payload, 15)
+            result.update(attempt_count=payload[13], final_result=payload[14],
+                          application_start_us=start,
+                          tx_calls=[decode_tx_call(payload, 24 + 30 * index)
+                                    for index in range(count)])
     elif kind == 3:
         domain, code, flags, offset, cycle, message, operation, length, schema = (
             struct.unpack_from("<HHHIIIHBB", payload))

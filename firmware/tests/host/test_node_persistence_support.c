@@ -13,6 +13,37 @@ void node_persistence_test_restart(void) {
   fake_backend_simulate_restart();
 }
 
+void node_persistence_test_fill_tx_calls(node_delivery_event_t *event) {
+  const uint8_t count = event->detail.finished.attempt_count;
+  const node_delivery_final_result_t result = event->detail.finished.final_result;
+  memset(event->detail.finished.tx_calls, 0,
+         sizeof(event->detail.finished.tx_calls));
+  event->detail.finished.application_start_us = UINT64_C(41200);
+  event->detail.finished.tx_call_count = count;
+  for (uint8_t index = 0U; index < count; ++index) {
+    node_delivery_tx_call_t *call = &event->detail.finished.tx_calls[index];
+    call->tx_started = true;
+    call->tx_done = true;
+    call->set_tx_at_us = UINT64_C(1000000) * (index + 1U);
+    call->tx_done_at_us = call->set_tx_at_us + UINT64_C(182500);
+    call->outcome = NODE_DELIVERY_TX_OUTCOME_ACK_TIMEOUT;
+  }
+  if (count == 0U) {
+    return;
+  }
+  node_delivery_tx_call_t *last = &event->detail.finished.tx_calls[count - 1U];
+  if (result <= NODE_DELIVERY_RESULT_MALFORMED) {
+    last->outcome = NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED;
+    last->ack_rx_done_at_us = last->tx_done_at_us + UINT64_C(177300);
+    last->ack_rssi_dbm_x2 = INT16_C(-96);
+    last->ack_snr_db_x4 = INT16_C(34);
+  } else if (result == NODE_DELIVERY_RESULT_RADIO_CYCLE_DEADLINE) {
+    last->outcome = NODE_DELIVERY_TX_OUTCOME_DEADLINE_EXPIRED;
+  } else if (result == NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR) {
+    last->outcome = NODE_DELIVERY_TX_OUTCOME_LOCAL_ERROR;
+  }
+}
+
 cura_lora_v2_reading_t node_persistence_test_make_reading(uint16_t marker) {
   cura_lora_v2_reading_t reading = {0};
   reading.sample_id = marker;

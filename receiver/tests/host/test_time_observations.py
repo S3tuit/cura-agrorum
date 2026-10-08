@@ -14,6 +14,7 @@ from cura_receiver.generated.receiver_enums_generated import (
     SystemTimeQuality as Quality,
 )
 from cura_receiver.time_observations import (
+    SampleEvidence,
     TrustedTimeSample,
     advanced_error_us,
     network_observation,
@@ -92,7 +93,10 @@ def verification(**overrides):
 # A bounded network bracket produces its midpoint and preserves a valid UTC zero.
 def test_network_midpoint_and_zero_utc():
     sample = network()
-    assert sample == TrustedTimeSample(150, 0, 1_000_001, Quality.NETWORK_SYNCED, 7)
+    facts = network_estimate(EVIDENCE).facts
+    assert sample == TrustedTimeSample(
+        150, 0, 1_000_001, Quality.NETWORK_SYNCED, 7, SampleEvidence(100, 200, facts)
+    )
     assert network(operation_finished_at_monotonic_us=201).monotonic_us == 150
 
 

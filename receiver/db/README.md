@@ -17,7 +17,9 @@ instructions in [`../tools/README.md`](../tools/README.md).
 Fresh databases are created by
 `cura_receiver.database_initializer.initialize_database()` from the exact
 packaged `schema.sql`. The initializer verifies its generated fingerprint and
-never overwrites or migrates an existing database. It returns whether temporary
+never overwrites or migrates an existing database. A schema-version change
+(for example version 14, which added clock-observation error evidence)
+therefore requires a freshly initialized database. It returns whether temporary
 name cleanup is complete. A failure after the absent destination has been
 linked but before its directory entry is durably synchronized raises
 `DatabaseInstallationUncertainError`, preserves both hard links, and must be

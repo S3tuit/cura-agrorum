@@ -11,7 +11,7 @@ from state_analysis import (seal_capture, report, read_database, reconcile,
                           DATABASE_SCHEMA_VERSION, DATABASE_SCHEMA_FINGERPRINT, SQLITE_APPLICATION_ID)
 from capture import REPO, digest
 from host.test_service import transcript, NODE
-from host.test_node_capture import binaries, image_from, record
+from host.test_node_capture import binaries, finished_payload, image_from, record
 
 GROUP = '1122334455667788'
 EMPTY = dict(readings=[], profiles=[], instances=[])
@@ -146,7 +146,7 @@ def captures(tmp_path, binaries, request):
     for r in data['delivery.log']:
         identity = (r['cycle_sample_id'], r['sample_id'], r['message_id'], r['domain'])
         payload = (struct.pack('<IIIBI', *identity, 10) if r['type'] == 4 else
-                   struct.pack('<IIIBBB', *identity, r['attempt_count'], r['final_result']))
+                   finished_payload(*identity, r['attempt_count'], r['final_result']))
         records.append(record(r['type'], payload))
     image_logs = [{'pending.log': b'',
                    'delivery.log': b''.join(records[:2]) if boundary else b'',

@@ -22,7 +22,9 @@ from tests.support.builders.persistence import (
     _diagnostic,
     _health_request,
     _measurement,
+    _network_observation,
     _observation,
+    _rtc_observation,
     _profile,
 )
 
@@ -66,8 +68,8 @@ def test_commit_before_acknowledgement(setup):
     assert connection.execute(
         "SELECT * FROM clock_observations ORDER BY observation_sequence"
     ).fetchall() == [
-        (INSTANCE, 1, 0, 10, None, 0, 0, 1),
-        (INSTANCE, 2, 0, 10, None, 0, 0, 1),
+        (INSTANCE, 1, 0, 10, None, 0, 0, 1, *(None,) * 21),
+        (INSTANCE, 2, 0, 10, None, 0, 0, 1, *(None,) * 21),
     ]
 
 
@@ -455,9 +457,14 @@ class _LoseOneCommitReply(SqliteTransactions):
 def _kind_case(kind):
     from cura_receiver import persist_queue_entities as entities
 
-    if kind == "clock":
+    if kind in ("clock", "clock_network", "clock_rtc"):
+        builder = {
+            "clock": _observation,
+            "clock_network": _network_observation,
+            "clock_rtc": _rtc_observation,
+        }[kind]
         return (
-            _observation(),
+            builder(),
             entities.CLOCK_OBSERVATION_V1_SPEC,
             "clock_observations",
             row.CLOCK_OBSERVATION_V1_COLUMNS,
@@ -602,7 +609,14 @@ def _collision_columns():
     for kind in ("clock", "diagnostic", "profile", "health", "measurement"):
         _, _, _, columns = _kind_case(kind)
         for column in columns[2:]:
+            if kind == "clock" and column.startswith(("network_", "rtc_r", "rtc_d")):
+                continue  # A lone group column cannot change; trusted cases below.
             yield pytest.param(kind, column, id=f"{kind}-{column}")
+    for kind, prefix in (("clock_network", "network_"), ("clock_rtc", "rtc_")):
+        _, _, _, columns = _kind_case(kind)
+        for column in columns:
+            if column.startswith(prefix) and column != "rtc_health_id":
+                yield pytest.param(kind, column, id=f"{kind}-{column}")
 
 
 # A differing value in any non-key column fails exact reconciliation and preserves conflicting evidence.
@@ -1082,6 +1096,7 @@ def test_failed_rollback_reopens_without_reconstruction(setup):
             0,
             0,
             1,
+            *(None,) * 21,
         )
 
 

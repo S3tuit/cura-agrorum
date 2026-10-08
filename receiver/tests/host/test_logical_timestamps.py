@@ -140,6 +140,7 @@ def clocks(*, instances=(INSTANCE,), observations=None):
                 False,
                 SystemTimeQuality.NETWORK_SYNCED,
                 RtcHealth.PRESENT,
+                None, None, None, None, None, None,
             )
         ]
     return ClockCorrelation(instances, observations)
@@ -254,6 +255,7 @@ def test_earliest_occurrence_across_boots():
             False,
             SystemTimeQuality.NETWORK_SYNCED,
             RtcHealth.PRESENT,
+            None, None, None, None, None, None,
         )
         for i, utc in ((INSTANCE, 100_000_000), (new, 0))
     ]
@@ -282,6 +284,7 @@ def test_step_gap_occurrence_cannot_anchor():
             True,
             SystemTimeQuality.UNTRUSTED,
             RtcHealth.PRESENT,
+            None, None, None, None, None, None,
         ),
         ClockObservationV1(
             INSTANCE.receiver_instance_id,
@@ -292,6 +295,7 @@ def test_step_gap_occurrence_cannot_anchor():
             False,
             SystemTimeQuality.NETWORK_SYNCED,
             RtcHealth.PRESENT,
+            None, None, None, None, None, None,
         ),
     ]
     output = analyze_reading_timestamps(
@@ -451,6 +455,7 @@ def test_logical_timestamp_overflow():
             False,
             SystemTimeQuality.NETWORK_SYNCED,
             RtcHealth.PRESENT,
+            None, None, None, None, None, None,
         )
     ]
     output = analyze_reading_timestamps(

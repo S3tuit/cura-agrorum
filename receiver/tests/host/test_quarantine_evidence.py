@@ -162,6 +162,7 @@ def _queue_entities() -> tuple[tuple[object, object], ...]:
                 step_discontinuity_boundary=False,
                 system_time_quality=SystemTimeQuality.UNTRUSTED,
                 rtc_health=RtcHealth.PRESENT,
+                error_bound_us=None, sample_started_at_monotonic_us=None, sample_finished_at_monotonic_us=None, error_budget_expires_at_monotonic_us=None, network_evidence=None, rtc_evidence=None,
             ),
             CLOCK_OBSERVATION_V1_SPEC,
         ),

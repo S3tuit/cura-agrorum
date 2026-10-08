@@ -256,7 +256,7 @@ size_t hwtest_encode_delivery_record(
     const node_delivery_event_t *event,
     uint8_t output[NODE_PERSISTENCE_RECORD_MAX_SIZE]) {
   TEST_ASSERT_NOT_NULL(event);
-  uint8_t payload[NODE_PERSISTENCE_DELIVERY_STARTED_PAYLOAD_SIZE];
+  uint8_t payload[NODE_PERSISTENCE_DELIVERY_FINISHED_PAYLOAD_SIZE] = {0};
   node_persistence_store_le32(payload, event->cycle_sample_id);
   node_persistence_store_le32(payload + 4U, event->sample_id);
   node_persistence_store_le32(payload + 8U, event->message_id);
@@ -272,6 +272,27 @@ size_t hwtest_encode_delivery_record(
     TEST_ASSERT_EQUAL(NODE_DELIVERY_EVENT_FINISHED, event->type);
     payload[13U] = event->detail.finished.attempt_count;
     payload[14U] = event->detail.finished.final_result;
+    node_persistence_store_le64(payload + 15U,
+                                event->detail.finished.application_start_us);
+    payload[23U] = event->detail.finished.tx_call_count;
+    TEST_ASSERT_LESS_OR_EQUAL_UINT8(NODE_DELIVERY_TX_CALL_SLOTS,
+                                    event->detail.finished.tx_call_count);
+    for (uint8_t index = 0U; index < event->detail.finished.tx_call_count;
+         ++index) {
+      /* Independent oracle: fixtures supply only canonical inactive zeros. */
+      const node_delivery_tx_call_t *call =
+          &event->detail.finished.tx_calls[index];
+      uint8_t *slot = payload + NODE_PERSISTENCE_DELIVERY_TX_CALL_OFFSET +
+                      index * NODE_PERSISTENCE_DELIVERY_TX_CALL_SIZE;
+      slot[0U] = (uint8_t)((call->tx_started ? 1U : 0U) |
+                           (call->tx_done ? 2U : 0U));
+      slot[1U] = call->outcome;
+      node_persistence_store_le64(slot + 2U, call->set_tx_at_us);
+      node_persistence_store_le64(slot + 10U, call->tx_done_at_us);
+      node_persistence_store_le64(slot + 18U, call->ack_rx_done_at_us);
+      node_persistence_store_le16(slot + 26U, (uint16_t)call->ack_rssi_dbm_x2);
+      node_persistence_store_le16(slot + 28U, (uint16_t)call->ack_snr_db_x4);
+    }
     record_type = NODE_PERSISTENCE_RECORD_TYPE_DELIVERY_FINISHED;
     payload_length = NODE_PERSISTENCE_DELIVERY_FINISHED_PAYLOAD_SIZE;
   }
@@ -370,5 +391,29 @@ node_delivery_event_t hwtest_make_delivery_finished(uint32_t cycle_sample_id,
       .detail.finished = {.attempt_count = 2U,
                           .final_result = NODE_DELIVERY_RESULT_ACCEPTED},
   };
+  return hwtest_with_tx_calls(event, UINT64_C(41200));
+}
+
+node_delivery_event_t hwtest_with_tx_calls(node_delivery_event_t event,
+                                           uint64_t application_start_us) {
+  const uint8_t count = event.detail.finished.attempt_count;
+  const node_delivery_final_result_t result = event.detail.finished.final_result;
+  memset(event.detail.finished.tx_calls, 0,
+         sizeof(event.detail.finished.tx_calls));
+  event.detail.finished.application_start_us = application_start_us;
+  event.detail.finished.tx_call_count = count;
+  for (uint8_t index = 0U; index < count; ++index) {
+    node_delivery_tx_call_t *call = &event.detail.finished.tx_calls[index];
+    call->tx_started = true;
+    call->tx_done = true;
+    call->set_tx_at_us = UINT64_C(1000000) * (index + 1U);
+    call->tx_done_at_us = call->set_tx_at_us + UINT64_C(182500);
+    call->outcome = NODE_DELIVERY_TX_OUTCOME_ACK_TIMEOUT;
+  }
+  if (count != 0U && result <= NODE_DELIVERY_RESULT_MALFORMED) {
+    node_delivery_tx_call_t *last = &event.detail.finished.tx_calls[count - 1U];
+    last->outcome = NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED;
+    last->ack_rx_done_at_us = last->tx_done_at_us + UINT64_C(177300);
+  }
   return event;
 }

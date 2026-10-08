@@ -18,7 +18,12 @@ from .elapsed_duration import (
     maximum_physical_half_bracket_us,
     rate_growth_us,
 )
-from .generated.receiver_entities_generated import RtcProvenanceV1
+from .generated.receiver_entities_generated import (
+    ClockObservationV1,
+    NetworkClockEvidenceV1,
+    RtcClockEvidenceV1,
+    RtcProvenanceV1,
+)
 from .generated.receiver_enums_generated import RtcHealth, SystemTimeQuality
 from .time_policy import (
     ClockState,
@@ -29,14 +34,40 @@ from .time_policy import (
 
 
 @dataclass(frozen=True, slots=True)
+class SampleEvidence:
+    """Inputs captured with one accepted sample, published with its observation.
+
+    The bracket is the kernel or RTC read itself; exactly the source group that
+    supplied the bound is present. Nothing here is recomputed at publication.
+    """
+
+    started_at_monotonic_us: int
+    finished_at_monotonic_us: int
+    network: NetworkClockEvidenceV1 | None = None
+    rtc: RtcClockEvidenceV1 | None = None
+
+    def __post_init__(self) -> None:
+        checked_monotonic_elapsed(
+            self.started_at_monotonic_us, self.finished_at_monotonic_us
+        )
+        if (self.network is None) == (self.rtc is None):
+            raise ValueError("sample evidence requires exactly one source group")
+
+
+@dataclass(frozen=True, slots=True)
 class TrustedTimeSample:
-    """Bounded candidate data, before a caller's atomic transition/publication."""
+    """Bounded candidate data, before a caller's atomic transition/publication.
+
+    ``evidence`` is always present on samples produced from a device read; only
+    correlation-only callers (airtime fixtures) construct samples without it.
+    """
 
     monotonic_us: int
     utc_us: int
     error_bound_us: int
     quality: SystemTimeQuality
     generation: int
+    evidence: SampleEvidence | None = None
 
     def __post_init__(self) -> None:
         checked_duration_us(self.monotonic_us)
@@ -52,6 +83,10 @@ class TrustedTimeSample:
             SystemTimeQuality.RTC_HOLDOVER,
         ):
             raise ValueError("a trusted sample must have a trusted quality")
+        if self.evidence is not None and (self.evidence.network is None) != (
+            self.quality is SystemTimeQuality.RTC_HOLDOVER
+        ):
+            raise ValueError("sample evidence must come from the sample's source")
 
 
 def _bracket(start_us: int, finish_us: int, policy: TimePolicy) -> tuple[int, int]:
@@ -116,6 +151,11 @@ def network_observation(
             estimate.error_at(midpoint, policy),
             SystemTimeQuality.NETWORK_SYNCED,
             before.generation,
+            SampleEvidence(
+                operation_started_at_monotonic_us,
+                operation_finished_at_monotonic_us,
+                network=estimate.facts,
+            ),
         )
         schedule = observation_schedule(
             sample,
@@ -199,8 +239,25 @@ def rtc_observation(
         )
         if error >= policy.receiver_utc_error_budget_us:
             return None
+        rtc = RtcClockEvidenceV1(
+            provenance.verified_by_receiver_instance_id,
+            provenance.network_utc_at_verification_us,
+            provenance.rtc_readback_utc_us,
+            provenance.verification_uncertainty_us,
+            provenance.drift_bound_ppm,
+            growth,
+        )
         sample = TrustedTimeSample(
-            midpoint, utc, error, SystemTimeQuality.RTC_HOLDOVER, before.generation
+            midpoint,
+            utc,
+            error,
+            SystemTimeQuality.RTC_HOLDOVER,
+            before.generation,
+            SampleEvidence(
+                operation_started_at_monotonic_us,
+                operation_finished_at_monotonic_us,
+                rtc=rtc,
+            ),
         )
         schedule = observation_schedule(sample, policy)
         if (
@@ -216,6 +273,65 @@ def rtc_observation(
         return None
     except (TypeError, ValueError):
         return None
+
+
+def trusted_clock_observation(
+    receiver_instance_id: bytes,
+    sequence: int,
+    sample: TrustedTimeSample,
+    schedule: ObservationSchedule,
+    *,
+    generation: int,
+    rtc_health: RtcHealth,
+) -> ClockObservationV1:
+    """Publish a sample with the evidence and horizon computed for it."""
+    evidence = sample.evidence
+    if evidence is None:
+        raise ValueError("a published trusted sample requires its evidence")
+    return ClockObservationV1(
+        receiver_instance_id,
+        sequence,
+        generation,
+        sample.monotonic_us,
+        sample.utc_us,
+        False,
+        sample.quality,
+        rtc_health,
+        sample.error_bound_us,
+        evidence.started_at_monotonic_us,
+        evidence.finished_at_monotonic_us,
+        schedule.trust_expires_at_monotonic_us,
+        evidence.network,
+        evidence.rtc,
+    )
+
+
+def untrusted_clock_observation(
+    receiver_instance_id: bytes,
+    sequence: int,
+    *,
+    generation: int,
+    at_monotonic_us: int,
+    step_boundary: bool,
+    rtc_health: RtcHealth,
+) -> ClockObservationV1:
+    """A boundary has no sample: no UTC, bound, bracket, horizon or evidence."""
+    return ClockObservationV1(
+        receiver_instance_id,
+        sequence,
+        generation,
+        at_monotonic_us,
+        None,
+        step_boundary,
+        SystemTimeQuality.UNTRUSTED,
+        rtc_health,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
 
 
 def advanced_error_us(

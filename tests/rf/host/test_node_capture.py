@@ -18,6 +18,27 @@ def record(kind, payload, version=2):
     return raw + struct.pack("<I", zlib.crc32(raw))
 
 
+def finished_payload(cycle, sample, message, domain, attempts, result,
+                     start_us=41_200, rssi=-96, snr=0):
+    """Independent LE serialization of the only call history node_core produces
+    when every call starts and completes: earlier calls time out, then the last
+    call carries the ACK for an ACK result or the terminal failure."""
+    calls = b""
+    for index in range(attempts):
+        set_tx = 1_000_000 * (index + 1)
+        done = set_tx + 182_500
+        last = index == attempts - 1
+        ack = last and 1 <= result <= 4
+        outcome = (1 if ack else 4 if last and result == 6
+                   else 3 if last and result == 7 else 2)
+        calls += struct.pack("<BBQQQhh", 3, outcome, set_tx, done,
+                             done + 177_300 if ack else 0,
+                             rssi if ack else 0, snr if ack else 0)
+    calls += bytes(30 * (2 - attempts))
+    return struct.pack("<IIIBBBQB", cycle, sample, message, domain, attempts,
+                       result, start_us, attempts) + calls
+
+
 @pytest.fixture(scope="module")
 def binaries(tmp_path_factory):
     root = tmp_path_factory.mktemp("image-binaries")
@@ -47,7 +68,7 @@ def test_real_image_all_required_families_and_no_mutation(tmp_path, binaries):
         "pending.log": record(1, body) + record(6, struct.pack("<II", 42, 73) + frame),
         "quarantine.log": record(2, body),
         "delivery.log": record(4, struct.pack("<IIIBI", 51, 42, 73, 2, 900)) +
-                        record(5, struct.pack("<IIIBBB", 51, 42, 73, 2, 3, 4)),
+                        record(5, finished_payload(51, 42, 73, 2, 2, 4)),
         "diagnostic.log": record(3, struct.pack("<HHHIIIHBB", 1, 6, 7, 12, 51, 73, 1, 7, 1) + bytes(7)),
     }
     image = image_from(tmp_path, binaries, logs)
@@ -59,14 +80,14 @@ def test_real_image_all_required_families_and_no_mutation(tmp_path, binaries):
     assert result["logs"]["quarantine.log"][0]["sample_id"] == 42
     start, finish = result["logs"]["delivery.log"]
     assert start["start_offset_ms"] == 900
-    assert (finish["attempt_count"], finish["final_result"]) == (3, 4)
+    assert (finish["attempt_count"], finish["final_result"]) == (2, 4)
     assert result["logs"]["diagnostic.log"][0]["context"] == "00" * 7
 
 
 @pytest.mark.parametrize("outcome", range(1, 9))
 def test_delivery_outcomes_in_real_image(tmp_path, binaries, outcome):
     image = image_from(tmp_path, binaries, {
-        "delivery.log": record(5, struct.pack("<IIIBBB", 51, 42, 73, 2, 2, outcome))})
+        "delivery.log": record(5, finished_payload(51, 42, 73, 2, 2, outcome))})
     before = image.read_bytes()
     finish, = decode_image(image, binaries[0])["logs"]["delivery.log"]
     assert (finish["attempt_count"], finish["final_result"]) == (2, outcome)
@@ -76,11 +97,52 @@ def test_delivery_outcomes_in_real_image(tmp_path, binaries, outcome):
 @pytest.mark.parametrize("outcome", [0, 9, 255])
 def test_unknown_delivery_outcomes_rejected(tmp_path, binaries, outcome):
     image = image_from(tmp_path, binaries, {
-        "delivery.log": record(5, struct.pack("<IIIBBB", 51, 42, 73, 2, 2, outcome))})
+        "delivery.log": record(5, finished_payload(51, 42, 73, 2, 2, outcome))})
     before = image.read_bytes()
     with pytest.raises(ValueError, match="record"):
         decode_image(image, binaries[0])
     assert image.read_bytes() == before
+
+
+# Transmit calls decode in order; inactive fields are absent, zero SNR and
+# negative statistics are values, and the ACK status stays the final result.
+def test_transmit_calls_decode_with_absent_fields(tmp_path, binaries):
+    image = image_from(tmp_path, binaries, {"delivery.log": record(
+        5, finished_payload(51, 42, 73, 2, 2, 2, start_us=7_000, rssi=-241, snr=0))})
+    finish, = decode_image(image, binaries[0])["logs"]["delivery.log"]
+    assert finish["application_start_us"] == 7_000
+    first, second = finish["tx_calls"]
+    assert first == dict(tx_started=True, tx_done=True, outcome="ACK_TIMEOUT",
+                         set_tx_at_us=1_000_000, tx_done_at_us=1_182_500,
+                         ack_rx_done_at_us=None, ack_rssi_dbm_x2=None,
+                         ack_snr_db_x4=None)
+    assert second["outcome"] == "ACK_RECEIVED" and finish["final_result"] == 2
+    assert (second["ack_rx_done_at_us"], second["ack_rssi_dbm_x2"],
+            second["ack_snr_db_x4"]) == (2_359_800, -241, 0)
+
+
+# A call that never started has no TX times; the record is still complete.
+def test_unstarted_call_and_no_call_records(tmp_path, binaries):
+    unstarted = (struct.pack("<IIIBBBQB", 51, 42, 73, 1, 0, 6, 5, 1)
+                 + struct.pack("<BBQQQhh", 0, 4, 0, 0, 0, 0, 0) + bytes(30))
+    preflight = struct.pack("<IIIBBBQB", 51, 43, 74, 2, 0, 5, 5, 0) + bytes(60)
+    image = image_from(tmp_path, binaries, {
+        "delivery.log": record(5, unstarted) + record(5, preflight)})
+    first, second = decode_image(image, binaries[0])["logs"]["delivery.log"]
+    call, = first["tx_calls"]
+    assert call["outcome"] == "DEADLINE_EXPIRED"
+    assert call["set_tx_at_us"] is None and call["tx_done_at_us"] is None
+    assert second["tx_calls"] == []
+
+
+# Non-canonical slots are rejected by the production validator, never guessed.
+@pytest.mark.parametrize("offset,value", [(24, 2), (25, 1), (42, 1), (54, 1), (23, 3)])
+def test_noncanonical_transmit_calls_rejected(tmp_path, binaries, offset, value):
+    payload = bytearray(finished_payload(51, 42, 73, 2, 1, 8))
+    payload[offset] = value
+    image = image_from(tmp_path, binaries, {"delivery.log": record(5, bytes(payload))})
+    with pytest.raises(ValueError, match="record"):
+        decode_image(image, binaries[0])
 
 
 def test_missing_is_distinct_from_empty(tmp_path, binaries):
@@ -95,7 +157,8 @@ def test_missing_is_distinct_from_empty(tmp_path, binaries):
     record(1, bytes(32))[:-1],
     record(1, bytes(32))[:-1] + b"\xff",
     record(1, bytes(32), version=99),
-    record(5, struct.pack("<IIIBBB", 1, 1, 1, 2, 1, 0)),
+    record(5, finished_payload(1, 1, 1, 2, 1, 0)),
+    record(5, finished_payload(1, 1, 1, 2, 1, 1)[:-1]),  # old/short layout
     record(2, bytes(32)),  # Valid framing, wrong physical file.
 ])
 def test_invalid_records_never_repaired(tmp_path, binaries, bad):

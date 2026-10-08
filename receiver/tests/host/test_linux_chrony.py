@@ -24,6 +24,60 @@ def test_real_capture():
         result.estimated_skew_ppb,
     ) == (-355, 21599, 233)
     assert result.evidence().sample_started_at_monotonic_us == 10
+    assert (
+        result.reference_id,
+        result.reference_time_utc_us,
+        result.stratum,
+        result.root_delay_us,
+        result.root_dispersion_us,
+        result.estimated_frequency_ppb,
+    ) == (0xB99DE5FE, 1789237487797281, 3, 24404, 9398, 5867)
+    assert result.evidence().estimated_frequency_ppb == 5867
+
+
+# The receiver Pi's own capture (2026-10-07) fixes the documented sign conventions:
+# chronyc printed "2.640134096 seconds slow of NTP time" and "6.208 ppm fast".
+PI_CSV = b"A29FC87B,162.159.200.123,4,1791399269.344973790,2.640070677,-0.000615063,0.000504202,6.208,1.894,0.166,0.038470995,0.001050412,65.1,Normal\n"
+
+
+def test_pi_capture_sign_conventions():
+    result = L.parse_tracking(PI_CSV, 0, 0)
+    assert result.remaining_correction_us == 2_640_071  # positive: system clock behind
+    assert result.estimated_frequency_ppb == 6_208  # positive: uncorrected clock fast
+    assert (result.root_delay_us, result.root_dispersion_us) == (38_471, 1_051)
+    assert result.root_distance_us == 20_286  # one ceiling over the exact sum
+
+
+# Retained facts use documented roundings: reference time down, frequency toward zero,
+# delay and dispersion up; they are separate from the combined distance rounding.
+@pytest.mark.parametrize(
+    "reference,frequency,delay,dispersion,expected",
+    [
+        ("1.0000019", "-0.0019", "0.0000000001", "0", (1_000_001, -1, 1, 0)),
+        ("1.9999999", "0.0019", "0", "0.0000010001", (1_999_999, 1, 0, 2)),
+        ("0", "-12.3456", "0.000002", "0.000003", (0, -12_345, 2, 3)),
+    ],
+)
+def test_retained_fact_rounding(reference, frequency, delay, dispersion, expected):
+    fields = CSV.decode().strip().split(",")
+    fields[3], fields[7], fields[10], fields[11] = reference, frequency, delay, dispersion
+    value = L.parse_tracking(",".join(fields).encode(), 0, 0)
+    assert (
+        value.reference_time_utc_us,
+        value.estimated_frequency_ppb,
+        value.root_delay_us,
+        value.root_dispersion_us,
+    ) == expected
+
+
+# Failed queries carry no retained facts, exactly like the policy facts.
+@pytest.mark.parametrize(
+    "field", ["reference_id", "reference_time_utc_us", "stratum", "root_delay_us",
+              "root_dispersion_us", "estimated_frequency_ppb"]
+)
+def test_failed_result_rejects_retained_facts(field):
+    with pytest.raises(ValueError):
+        L.ChronyTrackingResult(Q.UNAVAILABLE, 0, 0, **{field: 1})
 
 
 # Decimal formation preserves signs and rounds half-delay plus dispersion only after addition.
@@ -78,6 +132,8 @@ def test_unusable_sources(index, value):
         (11, "-1"),
         (12, "-1"),
         (4, "9223372036855"),
+        (7, "9223372036854775.808"),
+        (3, "9223372036854.775808"),
         (10, "18446744073709551615"),
         (1, "example.com"),
         (2, "17"),

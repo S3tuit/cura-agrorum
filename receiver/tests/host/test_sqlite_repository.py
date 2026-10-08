@@ -160,8 +160,9 @@ def _examples():
                 False,
                 enum.SystemTimeQuality.UNTRUSTED,
                 enum.RtcHealth.PRESENT,
+                None, None, None, None, None, None,
             ),
-            (INSTANCE, 1, 0, 10, None, 0, 0, 1),
+            (INSTANCE, 1, 0, 10, None, 0, 0, 1, *(None,) * 21),
             (INSTANCE, 1),
         ),
         (
@@ -512,6 +513,7 @@ def test_repository_rejects_integer_overflow_before_sql(database) -> None:
         False,
         enum.SystemTimeQuality.UNTRUSTED,
         enum.RtcHealth.PRESENT,
+        None, None, None, None, None, None,
     )
     connection.execute("BEGIN")
     executed = []

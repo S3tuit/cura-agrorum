@@ -19,6 +19,51 @@ def _observation(*, sequence=1):
         False,
         enum.SystemTimeQuality.UNTRUSTED,
         enum.RtcHealth.PRESENT,
+        None, None, None, None, None, None,
+    )
+
+
+def _network_observation(*, sequence=1):
+    return row.ClockObservationV1(
+        INSTANCE,
+        sequence,
+        3,
+        1_000_000,
+        1_800_000_000_000_000,
+        False,
+        enum.SystemTimeQuality.NETWORK_SYNCED,
+        enum.RtcHealth.PRESENT,
+        1_025_000,
+        999_000,
+        1_001_000,
+        11_000_000_000,
+        row.NetworkClockEvidenceV1(
+            900_000, 950_000, -355, 24_404, 9_398, 21_599, 5_867, 233,
+            0xB99DE5FE, 1_799_999_990_000_000, 3,
+        ),
+        None,
+    )
+
+
+def _rtc_observation(*, sequence=1):
+    return row.ClockObservationV1(
+        INSTANCE,
+        sequence,
+        4,
+        2_000_000,
+        1_800_000_000_500_000,
+        False,
+        enum.SystemTimeQuality.RTC_HOLDOVER,
+        enum.RtcHealth.PRESENT,
+        5_600_000,
+        1_990_000,
+        2_010_000,
+        9_000_000_000,
+        None,
+        row.RtcClockEvidenceV1(
+            b"v" * 16, 1_799_990_000_000_000, 1_799_990_000_500_000,
+            4_000_000, 10, 100_000,
+        ),
     )
 
 

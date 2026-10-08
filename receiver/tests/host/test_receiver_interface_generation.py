@@ -221,7 +221,7 @@ def test_schema_fingerprint_is_exact_schema_sql_sha256() -> None:
         hashlib.sha256(schema_bytes).digest() == generated.DATABASE_SCHEMA_FINGERPRINT
     )
     assert generated.SQLITE_APPLICATION_ID == 0x43555252
-    assert generated.DATABASE_SCHEMA_VERSION == 13
+    assert generated.DATABASE_SCHEMA_VERSION == 14
 
 
 # Requires every declared catalogue, entity table, and trigger in assembled SQL.
@@ -299,12 +299,14 @@ def test_generated_entity_binding_is_projection_only() -> None:
         step_discontinuity_boundary=True,
         system_time_quality=generated.SystemTimeQuality.UNTRUSTED,
         rtc_health=generated.RtcHealth.PRESENT,
+        error_bound_us=None, sample_started_at_monotonic_us=None, sample_finished_at_monotonic_us=None, error_budget_expires_at_monotonic_us=None, network_evidence=None, rtc_evidence=None,
     )
     values = generated_entities.clock_observation_v1_parameters(observation)
     assert values[1] == -1
     assert values[4] is None
     assert values[5] is True
-    assert values[6:] == (0, 1)
+    assert values[6:8] == (0, 1)
+    assert values[8:] == (None,) * 21
 
     connection = open_schema()
     connection.execute("PRAGMA foreign_keys = OFF")
@@ -370,6 +372,67 @@ def test_message_profile_logical_record_is_flattened_for_sql() -> None:
     assert parameters[:3] == (bytes(range(16)), 7, 11)
     assert columns[-1] == "persistence_classification_id"
     assert parameters[-1] == generated.PersistenceClassification.NOT_APPLICABLE.value
+
+
+# A nullable flattened record projects to all-NULL columns, and SQL rejects partial groups.
+def test_nullable_logical_record_is_all_or_none() -> None:
+    from tests.support.builders.persistence import _network_observation
+
+    trusted = _network_observation()
+    columns = generated_entities.CLOCK_OBSERVATION_V1_COLUMNS
+    values = generated_entities.clock_observation_v1_parameters(trusted)
+    by_column = dict(zip(columns, values, strict=True))
+    assert by_column["network_reference_id"] == 0xB99DE5FE
+    assert by_column["network_stratum"] == 3
+    rtc_columns = [c for c in columns if c.startswith(("rtc_r", "rtc_d"))]
+    assert len(rtc_columns) == 6 and all(by_column[c] is None for c in rtc_columns)
+
+    connection = open_schema()
+    connection.execute("PRAGMA foreign_keys = OFF")
+    insert = (
+        f"INSERT INTO clock_observations ({', '.join(columns)}) VALUES "
+        f"({', '.join('?' for _ in columns)})"
+    )
+    connection.execute(insert, values)
+    partial = dict(by_column, observation_sequence=2, network_stratum=None)
+    with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
+        connection.execute(insert, tuple(partial[c] for c in columns))
+    stray = dict(by_column, observation_sequence=3, rtc_drift_contribution_us=0)
+    with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
+        connection.execute(insert, tuple(stray[c] for c in columns))
+
+
+# Rejects nullable logical-record declarations that cannot express presence.
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        ("not_boolean", "nullable must be Boolean"),
+        ("all_nullable", "need a non-nullable member"),
+    ),
+)
+def test_nullable_logical_record_validation(
+    tmp_path: Path, mutation: str, message: str
+) -> None:
+    manifest = copy.deepcopy(load_entity_manifest())
+    clock = next(
+        entity
+        for entity in manifest["entities"]  # type: ignore[index]
+        if entity["name"] == "CLOCK_OBSERVATION_V1"
+    )
+    group = next(f for f in clock["fields"] if f["name"] == "rtc_evidence")
+    if mutation == "not_boolean":
+        group["nullable"] = 1
+    else:
+        record = next(
+            r
+            for r in manifest["logical_records"]  # type: ignore[index]
+            if r["name"] == "RTC_CLOCK_EVIDENCE_V1"
+        )
+        for member in record["fields"]:
+            member["nullable"] = True
+    result = validate_entity_manifest_fixture(tmp_path, manifest)
+    assert result.returncode == 2
+    assert message in result.stderr
 
 
 # Keeps queue-capacity policy out of persisted profiling and health entities.
@@ -932,6 +995,7 @@ def test_receiver_scoped_generated_rows_require_lifecycle_parent() -> None:
                     step_discontinuity_boundary=False,
                     system_time_quality=generated.SystemTimeQuality.UNTRUSTED,
                     rtc_health=generated.RtcHealth.PRESENT,
+                    error_bound_us=None, sample_started_at_monotonic_us=None, sample_finished_at_monotonic_us=None, error_budget_expires_at_monotonic_us=None, network_evidence=None, rtc_evidence=None,
                 )
             ),
         ),

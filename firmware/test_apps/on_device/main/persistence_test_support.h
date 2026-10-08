@@ -63,3 +63,10 @@ node_delivery_event_t hwtest_make_delivery_started(uint32_t cycle_sample_id,
                                                    uint32_t sample_id);
 node_delivery_event_t hwtest_make_delivery_finished(uint32_t cycle_sample_id,
                                                     uint32_t sample_id);
+/*
+ * Gives a finished event the transmit calls node_core produces when every call
+ * starts and completes: earlier calls time out and an ACK result ends the last.
+ * Timings are placeholders; compare them only where the producer is exact.
+ */
+node_delivery_event_t hwtest_with_tx_calls(node_delivery_event_t event,
+                                           uint64_t application_start_us);

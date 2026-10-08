@@ -26,6 +26,11 @@ void node_persistence_store_le32(uint8_t *output, uint32_t value) {
   output[3] = (uint8_t)(value >> 24U);
 }
 
+void node_persistence_store_le64(uint8_t *output, uint64_t value) {
+  node_persistence_store_le32(output, (uint32_t)value);
+  node_persistence_store_le32(output + 4U, (uint32_t)(value >> 32U));
+}
+
 uint16_t node_persistence_load_le16(const uint8_t *input) {
   return (uint16_t)((uint16_t)input[0] | ((uint16_t)input[1] << 8U));
 }
@@ -33,6 +38,11 @@ uint16_t node_persistence_load_le16(const uint8_t *input) {
 uint32_t node_persistence_load_le32(const uint8_t *input) {
   return (uint32_t)input[0] | ((uint32_t)input[1] << 8U) |
          ((uint32_t)input[2] << 16U) | ((uint32_t)input[3] << 24U);
+}
+
+uint64_t node_persistence_load_le64(const uint8_t *input) {
+  return (uint64_t)node_persistence_load_le32(input) |
+         ((uint64_t)node_persistence_load_le32(input + 4U) << 32U);
 }
 
 bool node_persistence_record_encode(
@@ -61,6 +71,66 @@ bool node_persistence_record_encode(
   node_persistence_store_le32(output + total_length - 4U, crc);
   *out_length = total_length;
   return true;
+}
+
+/* Stores each field only under its validity condition; see node_persistence.h. */
+static void encode_tx_call(const node_delivery_tx_call_t *call,
+                           uint8_t *slot) {
+  const bool ack = call->outcome == NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED;
+  slot[0U] = (uint8_t)((call->tx_started
+                            ? NODE_PERSISTENCE_DELIVERY_TX_STARTED_FLAG
+                            : 0U) |
+                       (call->tx_done ? NODE_PERSISTENCE_DELIVERY_TX_DONE_FLAG
+                                      : 0U));
+  slot[1U] = call->outcome;
+  node_persistence_store_le64(slot + 2U,
+                              call->tx_started ? call->set_tx_at_us : 0U);
+  node_persistence_store_le64(slot + 10U,
+                              call->tx_done ? call->tx_done_at_us : 0U);
+  node_persistence_store_le64(slot + 18U, ack ? call->ack_rx_done_at_us : 0U);
+  node_persistence_store_le16(slot + 26U,
+                              (uint16_t)(ack ? call->ack_rssi_dbm_x2 : 0));
+  node_persistence_store_le16(slot + 28U,
+                              (uint16_t)(ack ? call->ack_snr_db_x4 : 0));
+}
+
+bool node_persistence_record_encode_delivery(
+    const node_persistence_backend_t *backend,
+    const node_delivery_event_t *event,
+    uint8_t output[NODE_PERSISTENCE_RECORD_MAX_SIZE], size_t *out_length) {
+  if (event == NULL || (event->type != NODE_DELIVERY_EVENT_STARTED &&
+                        event->type != NODE_DELIVERY_EVENT_FINISHED)) {
+    return false;
+  }
+  uint8_t payload[NODE_PERSISTENCE_DELIVERY_FINISHED_PAYLOAD_SIZE] = {0};
+  node_persistence_store_le32(payload, event->cycle_sample_id);
+  node_persistence_store_le32(payload + 4U, event->sample_id);
+  node_persistence_store_le32(payload + 8U, event->message_id);
+  payload[12U] = event->domain;
+  if (event->type == NODE_DELIVERY_EVENT_STARTED) {
+    node_persistence_store_le32(payload + 13U,
+                                event->detail.started.start_offset_ms);
+    return node_persistence_record_encode(
+        backend, NODE_PERSISTENCE_RECORD_TYPE_DELIVERY_STARTED, payload,
+        NODE_PERSISTENCE_DELIVERY_STARTED_PAYLOAD_SIZE, output, out_length);
+  }
+  if (event->detail.finished.tx_call_count > NODE_DELIVERY_TX_CALL_SLOTS) {
+    return false;
+  }
+  payload[13U] = event->detail.finished.attempt_count;
+  payload[14U] = event->detail.finished.final_result;
+  node_persistence_store_le64(payload + 15U,
+                              event->detail.finished.application_start_us);
+  payload[23U] = event->detail.finished.tx_call_count;
+  for (uint8_t index = 0U; index < event->detail.finished.tx_call_count;
+       ++index) {
+    encode_tx_call(&event->detail.finished.tx_calls[index],
+                   payload + NODE_PERSISTENCE_DELIVERY_TX_CALL_OFFSET +
+                       index * NODE_PERSISTENCE_DELIVERY_TX_CALL_SIZE);
+  }
+  return node_persistence_record_encode(
+      backend, NODE_PERSISTENCE_RECORD_TYPE_DELIVERY_FINISHED, payload,
+      NODE_PERSISTENCE_DELIVERY_FINISHED_PAYLOAD_SIZE, output, out_length);
 }
 
 node_persistence_record_result_t node_persistence_record_validate_structural(
@@ -215,15 +285,82 @@ static bool validate_delivery_started_payload(const uint8_t *payload,
          domain_is_reading(payload[12U]);
 }
 
+static bool result_is_ack(uint8_t final_result) {
+  return final_result >= NODE_DELIVERY_RESULT_ACCEPTED &&
+         final_result <= NODE_DELIVERY_RESULT_MALFORMED;
+}
+
+static bool all_zero(const uint8_t *bytes, size_t length) {
+  for (size_t index = 0U; index < length; ++index) {
+    if (bytes[index] != 0U) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/*
+ * One used transmit-call slot is canonical: known flags/outcome, TX_DONE only
+ * after a start, zero for every field outside its validity condition. Only
+ * the last call may end in an ACK, and earlier calls can only have ended in
+ * an ordinary ACK timeout after TX_DONE, because nothing else retries.
+ */
+static bool validate_tx_call(const uint8_t *slot, bool last,
+                             uint8_t final_result) {
+  const uint8_t flags = slot[0U];
+  const uint8_t outcome = slot[1U];
+  const bool started = (flags & NODE_PERSISTENCE_DELIVERY_TX_STARTED_FLAG) != 0U;
+  const bool done = (flags & NODE_PERSISTENCE_DELIVERY_TX_DONE_FLAG) != 0U;
+  const bool ack = outcome == NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED;
+  if ((flags & (uint8_t)~(NODE_PERSISTENCE_DELIVERY_TX_STARTED_FLAG |
+                          NODE_PERSISTENCE_DELIVERY_TX_DONE_FLAG)) != 0U ||
+      outcome < NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED ||
+      outcome > NODE_DELIVERY_TX_OUTCOME_DEADLINE_EXPIRED ||
+      (done && !started) || (ack && !done) ||
+      (!started && !all_zero(slot + 2U, 8U)) ||
+      (!done && !all_zero(slot + 10U, 8U)) ||
+      (!ack && !all_zero(slot + 18U, 12U))) {
+    return false;
+  }
+  if (!last) {
+    return outcome == NODE_DELIVERY_TX_OUTCOME_ACK_TIMEOUT && done;
+  }
+  return ack == result_is_ack(final_result);
+}
+
 static bool validate_delivery_finished_payload(const uint8_t *payload,
                                                size_t payload_length) {
   if (payload_length != NODE_PERSISTENCE_DELIVERY_FINISHED_PAYLOAD_SIZE ||
       !domain_is_reading(payload[12U])) {
     return false;
   }
+  const uint8_t attempt_count = payload[13U];
   const uint8_t final_result = payload[14U];
-  return final_result >= NODE_DELIVERY_RESULT_ACCEPTED &&
-         final_result <= NODE_DELIVERY_RESULT_NO_ACK_ATTEMPT_LIMIT;
+  const uint8_t call_count = payload[23U];
+  if (final_result < NODE_DELIVERY_RESULT_ACCEPTED ||
+      final_result > NODE_DELIVERY_RESULT_NO_ACK_ATTEMPT_LIMIT ||
+      call_count > NODE_DELIVERY_TX_CALL_SLOTS ||
+      (call_count == 0U && result_is_ack(final_result))) {
+    return false;
+  }
+  uint8_t started_count = 0U;
+  for (uint8_t index = 0U; index < NODE_DELIVERY_TX_CALL_SLOTS; ++index) {
+    const uint8_t *slot = payload + NODE_PERSISTENCE_DELIVERY_TX_CALL_OFFSET +
+                          index * NODE_PERSISTENCE_DELIVERY_TX_CALL_SIZE;
+    if (index >= call_count) {
+      if (!all_zero(slot, NODE_PERSISTENCE_DELIVERY_TX_CALL_SIZE)) {
+        return false;
+      }
+      continue;
+    }
+    if (!validate_tx_call(slot, index + 1U == call_count, final_result)) {
+      return false;
+    }
+    if ((slot[0U] & NODE_PERSISTENCE_DELIVERY_TX_STARTED_FLAG) != 0U) {
+      started_count++;
+    }
+  }
+  return attempt_count == started_count;
 }
 
 node_persistence_record_result_t

@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "node_persistence.h"
 #include "node_persistence_backend.h"
 #include "protocol_v2_lora_schema_generated.h"
 
@@ -25,7 +26,20 @@
 #define NODE_PERSISTENCE_READING_PAYLOAD_SIZE 32U
 #define NODE_PERSISTENCE_BACKLOG_BINDING_PAYLOAD_SIZE 62U
 #define NODE_PERSISTENCE_DELIVERY_STARTED_PAYLOAD_SIZE 17U
-#define NODE_PERSISTENCE_DELIVERY_FINISHED_PAYLOAD_SIZE 15U
+/*
+ * Finished payload: identity (13), attempt_count, final_result,
+ * application_start_us u64 at 15, tx_call_count at 23, then
+ * NODE_DELIVERY_TX_CALL_SLOTS fixed slots from 24. Each slot: flags (bit0
+ * tx_started, bit1 tx_done), outcome, set_tx u64, tx_done u64, ack_rx u64,
+ * rssi i16, snr i16. Unused slots and inactive fields are all zero.
+ */
+#define NODE_PERSISTENCE_DELIVERY_TX_CALL_OFFSET 24U
+#define NODE_PERSISTENCE_DELIVERY_TX_CALL_SIZE 30U
+#define NODE_PERSISTENCE_DELIVERY_FINISHED_PAYLOAD_SIZE                        \
+  (NODE_PERSISTENCE_DELIVERY_TX_CALL_OFFSET +                                  \
+   NODE_DELIVERY_TX_CALL_SLOTS * NODE_PERSISTENCE_DELIVERY_TX_CALL_SIZE)
+#define NODE_PERSISTENCE_DELIVERY_TX_STARTED_FLAG UINT8_C(0x01)
+#define NODE_PERSISTENCE_DELIVERY_TX_DONE_FLAG UINT8_C(0x02)
 #define NODE_PERSISTENCE_DIAGNOSTIC_PREFIX_SIZE 22U
 #define NODE_PERSISTENCE_DIAGNOSTIC_MAX_PAYLOAD_SIZE 274U
 
@@ -45,12 +59,25 @@ typedef enum {
 
 void node_persistence_store_le16(uint8_t *output, uint16_t value);
 void node_persistence_store_le32(uint8_t *output, uint32_t value);
+void node_persistence_store_le64(uint8_t *output, uint64_t value);
 uint16_t node_persistence_load_le16(const uint8_t *input);
 uint32_t node_persistence_load_le32(const uint8_t *input);
+uint64_t node_persistence_load_le64(const uint8_t *input);
 
 bool node_persistence_record_encode(
     const node_persistence_backend_t *backend, uint8_t record_type,
     const uint8_t *payload, size_t payload_length,
+    uint8_t output[NODE_PERSISTENCE_RECORD_MAX_SIZE], size_t *out_length);
+
+/*
+ * Encodes one STARTED or FINISHED delivery event in canonical form. Fields
+ * outside their validity condition and unused transmit-call slots are zero.
+ * Returns false only for an unknown type or an out-of-range call count; the
+ * caller still validates the semantic content.
+ */
+bool node_persistence_record_encode_delivery(
+    const node_persistence_backend_t *backend,
+    const node_delivery_event_t *event,
     uint8_t output[NODE_PERSISTENCE_RECORD_MAX_SIZE], size_t *out_length);
 
 node_persistence_record_result_t node_persistence_record_validate_structural(

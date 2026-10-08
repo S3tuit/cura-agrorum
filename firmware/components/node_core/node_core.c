@@ -1,5 +1,6 @@
 #include "node_core.h"
 
+#include <assert.h>
 #include <limits.h>
 #include <stdatomic.h>
 #include <stddef.h>
@@ -73,6 +74,10 @@ typedef struct {
   node_delivery_final_result_t result;
   uint32_t attempt_count;
 } node_delivery_result_t;
+
+/* A call follows only a started, timed-out call, so calls never exceed it. */
+static_assert(NODE_CORE_DELIVERY_ATTEMPT_LIMIT == NODE_DELIVERY_TX_CALL_SLOTS,
+              "transmit-call evidence slots must match the retry limit");
 
 static bool cycle_metrics_are_valid(const node_cycle_metrics_t *metrics) {
   if (metrics == NULL ||
@@ -499,6 +504,9 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
 
   node_delivery_final_result_t final_result = NODE_DELIVERY_RESULT_INVALID;
   uint32_t attempt_count = 0U;
+  /* Evidence stays in RAM until the single finished append below. */
+  node_delivery_tx_call_t tx_calls[NODE_DELIVERY_TX_CALL_SLOTS];
+  uint8_t tx_call_count = 0U;
   uint64_t first_set_tx_us = 0U;
   bool first_set_tx_valid = false;
   uint64_t accepted_at_us = 0U;
@@ -513,10 +521,17 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
       break;
     }
 
+    node_delivery_tx_call_t *call = &tx_calls[tx_call_count++];
+    *call = (node_delivery_tx_call_t){0};
     sx1262_radio_tx_result_t tx_result;
     const err_curag_t tx_error = sx1262_radio_transmit_uplink(
         frame->bytes, sizeof(frame->bytes), cycle->radio_deadline_us,
         &tx_result, &diagnostic);
+    call->tx_started = tx_result.tx_started;
+    call->tx_done = tx_result.tx_done;
+    call->set_tx_at_us = tx_result.set_tx_at_us;
+    call->tx_done_at_us = tx_result.tx_done_at_us;
+    call->outcome = NODE_DELIVERY_TX_OUTCOME_LOCAL_ERROR;
     if (tx_result.tx_started) {
       attempt_count++;
       cycle->metrics.cycle_tx_attempts++;
@@ -549,6 +564,7 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
           curag_error_domain(tx_error) == CURAG_EDOM_RADIO &&
           curag_error_code(tx_error) == CURAG_ERADIO_EDEADLINE) {
         final_result = NODE_DELIVERY_RESULT_RADIO_CYCLE_DEADLINE;
+        call->outcome = NODE_DELIVERY_TX_OUTCOME_DEADLINE_EXPIRED;
       } else {
         final_result = NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR;
       }
@@ -572,8 +588,10 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
         final_result = NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR;
         receive_complete = true;
       } else if (rx_result.outcome == SX1262_RADIO_RX_DEADLINE) {
+        call->outcome = NODE_DELIVERY_TX_OUTCOME_ACK_TIMEOUT;
         if (cycle->radio_deadline_us <= ack_deadline_us) {
           final_result = NODE_DELIVERY_RESULT_RADIO_CYCLE_DEADLINE;
+          call->outcome = NODE_DELIVERY_TX_OUTCOME_DEADLINE_EXPIRED;
         } else if (attempt_count >= NODE_CORE_DELIVERY_ATTEMPT_LIMIT) {
           final_result = NODE_DELIVERY_RESULT_NO_ACK_ATTEMPT_LIMIT;
         }
@@ -590,6 +608,10 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
         if (validation.kind == ACK_VALIDATION_VALID) {
           final_result = validation.result;
           accepted_at_us = rx_result.rx_done_at_us;
+          call->outcome = NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED;
+          call->ack_rx_done_at_us = rx_result.rx_done_at_us;
+          call->ack_rssi_dbm_x2 = rx_result.rssi_dbm_x2;
+          call->ack_snr_db_x4 = rx_result.snr_db_x4;
           receive_complete = true;
         } else {
           core_diagnostic_context(validation.operation, &diagnostic);
@@ -628,8 +650,12 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
           {
               .attempt_count = (uint8_t)attempt_count,
               .final_result = final_result,
+              .application_start_us = cycle->application_start_us,
+              .tx_call_count = tx_call_count,
           },
   };
+  memcpy(finished.detail.finished.tx_calls, tx_calls,
+         tx_call_count * sizeof(tx_calls[0]));
   append_delivery_boundary(cycle, &finished);
   return (node_delivery_result_t){
       .result = final_result,

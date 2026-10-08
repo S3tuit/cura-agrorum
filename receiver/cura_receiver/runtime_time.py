@@ -18,9 +18,7 @@ from .elapsed_duration import (
     checked_absolute_us,
 )
 from .generated import receiver_enums_generated as E
-from .generated.receiver_entities_generated import (
-    ClockObservationV1,
-)
+from .generated.receiver_entities_generated import ClockObservationV1
 from .persist_queue_entities import CLOCK_OBSERVATION_V1_SPEC
 from .ports.ds3231 import (
     Ds3231ReadResult,
@@ -51,6 +49,8 @@ from .time_observations import (
     rtc_refresh_source_error_us,
     rtc_provenance_candidate,
     rtc_refresh_due_us,
+    trusted_clock_observation,
+    untrusted_clock_observation,
 )
 from .persistence_control_values import (
     CommunicatorStateCommitResult,
@@ -385,15 +385,13 @@ class RuntimeTime:
         )
         self.sample = self.schedule = None
         if self.pending_observation is None:
-            self.pending_observation = ClockObservationV1(
+            self.pending_observation = untrusted_clock_observation(
                 self.instance,
                 0,
-                self.state.generation,
-                at,
-                None,
-                step,
-                self.state.quality,
-                self.state.rtc_health,
+                generation=self.state.generation,
+                at_monotonic_us=at,
+                step_boundary=step,
+                rtc_health=self.state.rtc_health,
             )
         return self.publish_pending()
 
@@ -477,6 +475,14 @@ class RuntimeTime:
                 now, tracking_processed=tracking_processed, health=candidate.rtc_health
             )
         sequence = self._sequence()
+        observation = trusted_clock_observation(
+            self.instance,
+            sequence,
+            sample,
+            schedule,
+            generation=candidate.generation,
+            rtc_health=candidate.rtc_health,
+        )
         reservation = self.queue.try_reserve_one(CLOCK_OBSERVATION_V1_SPEC)
         if (
             self.step_state is ChronyStepState.WAITING_FOR_STABLE_TIME
@@ -497,27 +503,15 @@ class RuntimeTime:
                 tracking_processed=tracking_processed,
             )
             self.sample = self.schedule = None
-            self.pending_observation = ClockObservationV1(
+            self.pending_observation = untrusted_clock_observation(
                 self.instance,
                 sequence,
-                self.state.generation,
-                now,
-                None,
-                False,
-                self.state.quality,
-                self.state.rtc_health,
+                generation=self.state.generation,
+                at_monotonic_us=now,
+                step_boundary=False,
+                rtc_health=self.state.rtc_health,
             )
             return TimeUpdate(admission_result=reservation.status)
-        observation = ClockObservationV1(
-            self.instance,
-            sequence,
-            candidate.generation,
-            sample.monotonic_us,
-            sample.utc_us,
-            False,
-            candidate.quality,
-            candidate.rtc_health,
-        )
         reservation.reservation.publish(observation)
         self.state = candidate
         self._health_observation_pending = False

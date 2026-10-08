@@ -584,8 +584,13 @@ err_curag_t node_persistence_append_delivery_event(
 the `DELIVERY_STARTED` or `DELIVERY_FINISHED` schemas in
 [`ARCHITECTURE.md`](ARCHITECTURE.md). Finished-event validation accepts exactly
 the defined terminal results 1–8, including `NO_ACK_ATTEMPT_LIMIT = 8`;
-`INVALID = 0` and unknown values are rejected. The persisted payload remains
-15 bytes.
+`INVALID = 0` and unknown values are rejected. A finished event also carries
+`application_start_us`, `tx_call_count` (at most `NODE_DELIVERY_TX_CALL_SLOTS`,
+which `node_core` statically asserts equals its attempt limit) and one
+`node_delivery_tx_call_t` per transmit call. The private record codec
+(`node_persistence_record_encode_delivery`) stores absent fields as zero and
+the record validator accepts only histories `node_core` can produce; the
+84-byte payload is defined in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 **Purpose**
 

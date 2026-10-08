@@ -17,8 +17,10 @@ add_executable(
   test_node_core_delivery.c
   test_node_core_transitions.c
   test_node_core_finalization.c
+  test_node_core_evidence.c
   ${FIRMWARE_ROOT}/components/node_common/node_common.c
   ${FIRMWARE_ROOT}/components/node_core/node_core.c
+  ${FIRMWARE_ROOT}/components/node_persistence/node_persistence_record.c
   ${FIRMWARE_ROOT}/components/protocol_v2_lora/protocol_v2_lora_crypto.c
   ${FIRMWARE_ROOT}/components/protocol_v2_lora/protocol_v2_lora_schema_generated.c
   ${FIRMWARE_ROOT}/components/sx1262_radio/sx1262_radio_timing.c
@@ -30,6 +32,7 @@ target_include_directories(
     ${FIRMWARE_ROOT}/components/node_common/include
     ${FIRMWARE_ROOT}/components/node_core/include
     ${FIRMWARE_ROOT}/components/node_persistence/include
+    ${FIRMWARE_ROOT}/components/node_persistence/private_include
     ${FIRMWARE_ROOT}/components/node_sensors/include
     ${FIRMWARE_ROOT}/components/protocol_v2_lora/include
     ${FIRMWARE_ROOT}/components/sx1262_radio/include
@@ -112,6 +115,12 @@ set(
   sync_induced_metric_overflow_has_no_late_diagnostic
   component_diagnostics_are_copied_opaquely
   cleanup_failures_do_not_prevent_sync_or_sleep
+  tx_calls_record_timeout_then_ack
+  tx_calls_record_every_ack_status
+  tx_calls_record_complete_silence
+  tx_calls_ignore_invalid_acks
+  tx_calls_classify_failures
+  tx_calls_identify_backlog_wake
 )
 
 foreach(SCENARIO IN LISTS NODE_CORE_TEST_SCENARIOS)
@@ -158,7 +167,7 @@ target_compile_definitions(
     NODE_PERSISTENCE_PENDING_COMPACT_RETAIN_LIMIT=128
     NODE_PERSISTENCE_QUARANTINE_LOG_LIMIT=512
     NODE_PERSISTENCE_DIAGNOSTIC_LOG_LIMIT=512
-    NODE_PERSISTENCE_DELIVERY_LOG_LIMIT=512
+    NODE_PERSISTENCE_DELIVERY_LOG_LIMIT=1024
 )
 target_compile_options(
   test_node_persistence

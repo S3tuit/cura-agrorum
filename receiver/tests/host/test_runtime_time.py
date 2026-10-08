@@ -1282,8 +1282,14 @@ def test_step_publication_process_crash_restart(tmp_path, milestone, committed):
     import multiprocessing
     import shutil
     import sqlite3
-    from cura_receiver.clock_correlation import AnalysisInstance, ClockCorrelation
-    from cura_receiver.generated.receiver_entities_generated import ClockObservationV1
+    from cura_receiver.clock_correlation import (
+        AnalysisInstance,
+        ClockCorrelation,
+        clock_observation_from_row,
+    )
+    from cura_receiver.generated.receiver_entities_generated import (
+        CLOCK_OBSERVATION_V1_COLUMNS,
+    )
 
     ctx = multiprocessing.get_context("spawn")
     parent, child = ctx.Pipe()
@@ -1357,17 +1363,10 @@ def test_step_publication_process_crash_restart(tmp_path, milestone, committed):
 
         with sqlite3.connect(tmp_path / "worker.db") as db:
             rows = db.execute(
-                "SELECT receiver_instance_id, observation_sequence, clock_state_generation, "
-                "sampled_at_monotonic_us, sampled_at_utc_us, step_discontinuity_boundary, "
-                "system_time_quality_id, rtc_health_id FROM clock_observations "
+                f"SELECT {', '.join(CLOCK_OBSERVATION_V1_COLUMNS)} FROM clock_observations "
                 "ORDER BY sampled_at_monotonic_us, observation_sequence"
             ).fetchall()
-        observations = [
-            ClockObservationV1(
-                *row[:5], bool(row[5]), E.SystemTimeQuality(row[6]), E.RtcHealth(row[7])
-            )
-            for row in rows
-        ]
+        observations = [clock_observation_from_row(row) for row in rows]
         assert len(observations) == int(committed >= 1) + 1
         if committed:
             assert observations[0].step_discontinuity_boundary

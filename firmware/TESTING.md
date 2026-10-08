@@ -251,6 +251,12 @@ non-canonical or impossible call history, checks that encoding zeroes absent
 fields and unused slots, and removes a torn finished record at every byte
 boundary instead of reading it as a timeout. The RF host tests decode the new
 layout from real LittleFS images, reporting absent fields as `None`.
+An independent table covers 200 progress/outcome/terminal-result combinations
+through both the codec and public append, including ACK timeouts without
+completed TX, premature attempt-limit claims, admission-only finishes and local
+errors after uncertain TX. Invalid histories perform no storage work; recovery
+removes an impossible CRC-valid finished tail and preserves its predecessor.
+Real-image decoding rejects impossible histories without changing the image.
 
 ### Metrics, RTC and finalization
 

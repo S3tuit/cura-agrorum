@@ -738,6 +738,15 @@ earlier call that is not an `ACK_TIMEOUT` after `TX_DONE`, and an
 reverse). Encoding stores absent fields as zero, so a stale driver value can
 never be persisted.
 
+Every `ACK_TIMEOUT`, including the last call, requires `TX_DONE`.
+`NO_ACK_ATTEMPT_LIMIT` requires two completed, timed-out calls. With no call,
+only initial `AIRTIME_BUDGET_END` or `RADIO_CYCLE_DEADLINE` admission failure is
+valid. A last ordinary timeout with one call can end with either admission
+failure before the retry; with two calls it must end at the attempt limit.
+`LOCAL_ERROR` requires `LOCAL_RADIO_ERROR`. `DEADLINE_EXPIRED` requires
+`RADIO_CYCLE_DEADLINE` and either no TX start or completed TX before a truncated
+ACK wait; an uncertain/incomplete started TX is a local error instead.
+
 The numeric `final_result` mapping is the delivery-result table in the wake
 cycle section above.
 

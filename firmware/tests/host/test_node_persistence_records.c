@@ -234,6 +234,8 @@ static bool delivery_outcomes_survive_recovery_and_reject_unknown_values(void) {
       .detail.finished = {.attempt_count = 2U},
   };
   for (uint8_t result = 1U; result <= 8U; ++result) {
+    event.detail.finished.attempt_count =
+        result == NODE_DELIVERY_RESULT_AIRTIME_BUDGET_END ? 1U : 2U;
     event.detail.finished.final_result = result;
     node_persistence_test_fill_tx_calls(&event);
     TEST_ASSERT_EQ_U32(CURAG_OK,
@@ -398,6 +400,152 @@ static bool delivery_tx_calls_must_be_canonical(void) {
   preflight.detail.finished.final_result = NODE_DELIVERY_RESULT_ACCEPTED;
   TEST_ASSERT_EQ_U32(CURAG_EINVALID_ARGUMENT,
                      node_persistence_append_delivery_event(&preflight, NULL));
+  return true;
+}
+
+/* Contract histories, independent of the validator: result-mask bit N-1
+ * permits terminal result N. The earlier call, when present, completed TX
+ * and timed out. Flags 0/1/3 mean no start/uncertain TX/completed TX. */
+static bool delivery_terminal_results_require_reachable_histories(void) {
+  const struct {
+    uint8_t calls;
+    uint8_t flags;
+    uint8_t outcome;
+    uint8_t result_mask;
+  } histories[] = {
+      {0U, 0U, NODE_DELIVERY_TX_OUTCOME_INVALID, 0x30U},
+      {1U, 0U, NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED, 0U},
+      {1U, 0U, NODE_DELIVERY_TX_OUTCOME_ACK_TIMEOUT, 0U},
+      {1U, 0U, NODE_DELIVERY_TX_OUTCOME_LOCAL_ERROR, 0x40U},
+      {1U, 0U, NODE_DELIVERY_TX_OUTCOME_DEADLINE_EXPIRED, 0x20U},
+      {1U, 1U, NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED, 0U},
+      {1U, 1U, NODE_DELIVERY_TX_OUTCOME_ACK_TIMEOUT, 0U},
+      {1U, 1U, NODE_DELIVERY_TX_OUTCOME_LOCAL_ERROR, 0x40U},
+      {1U, 1U, NODE_DELIVERY_TX_OUTCOME_DEADLINE_EXPIRED, 0U},
+      {1U, 3U, NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED, 0x0fU},
+      {1U, 3U, NODE_DELIVERY_TX_OUTCOME_ACK_TIMEOUT, 0x30U},
+      {1U, 3U, NODE_DELIVERY_TX_OUTCOME_LOCAL_ERROR, 0x40U},
+      {1U, 3U, NODE_DELIVERY_TX_OUTCOME_DEADLINE_EXPIRED, 0x20U},
+      {2U, 0U, NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED, 0U},
+      {2U, 0U, NODE_DELIVERY_TX_OUTCOME_ACK_TIMEOUT, 0U},
+      {2U, 0U, NODE_DELIVERY_TX_OUTCOME_LOCAL_ERROR, 0x40U},
+      {2U, 0U, NODE_DELIVERY_TX_OUTCOME_DEADLINE_EXPIRED, 0x20U},
+      {2U, 1U, NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED, 0U},
+      {2U, 1U, NODE_DELIVERY_TX_OUTCOME_ACK_TIMEOUT, 0U},
+      {2U, 1U, NODE_DELIVERY_TX_OUTCOME_LOCAL_ERROR, 0x40U},
+      {2U, 1U, NODE_DELIVERY_TX_OUTCOME_DEADLINE_EXPIRED, 0U},
+      {2U, 3U, NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED, 0x0fU},
+      {2U, 3U, NODE_DELIVERY_TX_OUTCOME_ACK_TIMEOUT, 0x80U},
+      {2U, 3U, NODE_DELIVERY_TX_OUTCOME_LOCAL_ERROR, 0x40U},
+      {2U, 3U, NODE_DELIVERY_TX_OUTCOME_DEADLINE_EXPIRED, 0x20U},
+  };
+  for (size_t history = 0U;
+       history < sizeof(histories) / sizeof(histories[0]); ++history) {
+    for (uint8_t result = 1U; result <= 8U; ++result) {
+      node_persistence_test_reset_all();
+      node_delivery_event_t event = {
+          .type = NODE_DELIVERY_EVENT_FINISHED,
+          .cycle_sample_id = 10U,
+          .sample_id = 9U,
+          .message_id = 1002U,
+          .domain = CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK,
+          .detail.finished = {.final_result = result,
+                              .application_start_us = 41200U,
+                              .tx_call_count = histories[history].calls},
+      };
+      for (uint8_t index = 0U; index < histories[history].calls; ++index) {
+        const bool last = index + 1U == histories[history].calls;
+        const uint8_t flags = last ? histories[history].flags : 3U;
+        node_delivery_tx_call_t *call = &event.detail.finished.tx_calls[index];
+        call->tx_started = (flags & 1U) != 0U;
+        call->tx_done = (flags & 2U) != 0U;
+        call->outcome = last ? histories[history].outcome
+                            : NODE_DELIVERY_TX_OUTCOME_ACK_TIMEOUT;
+        if (call->tx_started) {
+          event.detail.finished.attempt_count++;
+          call->set_tx_at_us = UINT64_C(1000000) * (index + 1U);
+        }
+        if (call->tx_done) {
+          call->tx_done_at_us = call->set_tx_at_us + UINT64_C(182500);
+        }
+        if (call->outcome == NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED) {
+          call->ack_rx_done_at_us = call->tx_done_at_us + UINT64_C(177300);
+          call->ack_rssi_dbm_x2 = INT16_C(-96);
+        }
+      }
+      const bool valid =
+          (histories[history].result_mask & (1U << (result - 1U))) != 0U;
+      uint8_t record[NODE_PERSISTENCE_RECORD_MAX_SIZE];
+      size_t length = 0U;
+      TEST_ASSERT(node_persistence_record_encode_delivery(
+          node_persistence_backend(), &event, record, &length));
+      TEST_ASSERT_EQ_U32(
+          NODE_PERSISTENCE_RECORD_VALID,
+          node_persistence_record_validate_structural(node_persistence_backend(),
+                                                      record, length));
+      TEST_ASSERT_EQ_U32(
+          valid ? NODE_PERSISTENCE_RECORD_VALID
+                : NODE_PERSISTENCE_RECORD_INVALID_PAYLOAD,
+          node_persistence_record_validate(node_persistence_backend(),
+                                           NODE_PERSISTENCE_LOG_DELIVERY,
+                                           record, length));
+      diagn_context_t diag;
+      TEST_ASSERT_EQ_U32(valid ? CURAG_OK : CURAG_EINVALID_ARGUMENT,
+                         node_persistence_append_delivery_event(&event, &diag));
+      TEST_ASSERT_EQ_SIZE(valid ? length : SIZE_MAX,
+                          fake_backend_file_size(TEST_DELIVERY_PATH));
+      if (!valid) {
+        TEST_ASSERT_EQ_SIZE(0U, fake_backend_count(
+                                   FAKE_BACKEND_OP_LITTLEFS_MOUNT,
+                                   FAKE_BACKEND_RESOURCE_LITTLEFS));
+        TEST_ASSERT(node_persistence_test_assert_diag(
+            &diag, CURAG_OP_ENCODE, NODE_PERSISTENCE_RESOURCE_DELIVERY_LOG,
+            NODE_PERSISTENCE_STAGE_ENCODE, NODE_PERSISTENCE_BACKEND_NO_ERROR, 0));
+      }
+    }
+  }
+  return true;
+}
+
+/* A CRC-valid impossible timeout is a corrupt tail, never usable evidence. */
+static bool impossible_finished_history_is_removed_by_recovery(void) {
+  node_persistence_test_reset_all();
+  const node_delivery_event_t started = {
+      .type = NODE_DELIVERY_EVENT_STARTED,
+      .cycle_sample_id = 10U,
+      .sample_id = 9U,
+      .message_id = 1002U,
+      .domain = CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK,
+  };
+  node_delivery_event_t impossible =
+      finished_with_calls(0U, NODE_DELIVERY_RESULT_NO_ACK_ATTEMPT_LIMIT);
+  impossible.detail.finished.tx_call_count = 1U;
+  impossible.detail.finished.tx_calls[0].outcome =
+      NODE_DELIVERY_TX_OUTCOME_ACK_TIMEOUT;
+  uint8_t first[NODE_PERSISTENCE_RECORD_MAX_SIZE];
+  uint8_t second[NODE_PERSISTENCE_RECORD_MAX_SIZE];
+  size_t first_length = 0U;
+  size_t second_length = 0U;
+  TEST_ASSERT(node_persistence_record_encode_delivery(
+      node_persistence_backend(), &started, first, &first_length));
+  TEST_ASSERT(node_persistence_record_encode_delivery(
+      node_persistence_backend(), &impossible, second, &second_length));
+  TEST_ASSERT(fake_backend_write_file(TEST_DELIVERY_PATH, first, first_length));
+  TEST_ASSERT(fake_backend_append_bytes(TEST_DELIVERY_PATH, second, second_length));
+  diagn_context_t diag;
+  TEST_ASSERT_EQ_U32(CURAG_ECORRUPT_RECORD,
+                     node_persistence_append_delivery_event(&started, &diag));
+  TEST_ASSERT(node_persistence_test_assert_diag(
+      &diag, CURAG_OP_RECOVER, NODE_PERSISTENCE_RESOURCE_DELIVERY_LOG,
+      NODE_PERSISTENCE_STAGE_TRUNCATE, NODE_PERSISTENCE_BACKEND_NO_ERROR, 0));
+  node_persistence_test_snapshot_t snapshot;
+  TEST_ASSERT(node_persistence_test_snapshot(TEST_DELIVERY_PATH, &snapshot));
+  TEST_ASSERT_EQ_SIZE(first_length, snapshot.length);
+  TEST_ASSERT(memcmp(first, snapshot.bytes, first_length) == 0);
+  TEST_ASSERT_EQ_U32(CURAG_OK,
+                     node_persistence_append_delivery_event(&started, NULL));
+  TEST_ASSERT(node_persistence_test_snapshot(TEST_DELIVERY_PATH, &snapshot));
+  TEST_ASSERT(validate_records(&snapshot, NODE_PERSISTENCE_LOG_DELIVERY, 2U));
   return true;
 }
 
@@ -604,6 +752,10 @@ static const node_persistence_test_case_t CASES[] = {
      delivery_is_synced_before_each_successful_return},
     {"delivery_tx_calls_must_be_canonical",
      delivery_tx_calls_must_be_canonical},
+    {"delivery_terminal_results_require_reachable_histories",
+     delivery_terminal_results_require_reachable_histories},
+    {"impossible_finished_history_is_removed_by_recovery",
+     impossible_finished_history_is_removed_by_recovery},
     {"delivery_encoder_zeroes_inactive_fields",
      delivery_encoder_zeroes_inactive_fields},
     {"torn_finished_record_is_removed_not_reinterpreted",

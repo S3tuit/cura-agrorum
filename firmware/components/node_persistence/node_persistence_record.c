@@ -312,11 +312,14 @@ static bool validate_tx_call(const uint8_t *slot, bool last,
   const bool started = (flags & NODE_PERSISTENCE_DELIVERY_TX_STARTED_FLAG) != 0U;
   const bool done = (flags & NODE_PERSISTENCE_DELIVERY_TX_DONE_FLAG) != 0U;
   const bool ack = outcome == NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED;
+  const bool timeout = outcome == NODE_DELIVERY_TX_OUTCOME_ACK_TIMEOUT;
   if ((flags & (uint8_t)~(NODE_PERSISTENCE_DELIVERY_TX_STARTED_FLAG |
                           NODE_PERSISTENCE_DELIVERY_TX_DONE_FLAG)) != 0U ||
       outcome < NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED ||
       outcome > NODE_DELIVERY_TX_OUTCOME_DEADLINE_EXPIRED ||
-      (done && !started) || (ack && !done) ||
+      (done && !started) || ((ack || timeout) && !done) ||
+      (outcome == NODE_DELIVERY_TX_OUTCOME_DEADLINE_EXPIRED && started &&
+       !done) ||
       (!started && !all_zero(slot + 2U, 8U)) ||
       (!done && !all_zero(slot + 10U, 8U)) ||
       (!ack && !all_zero(slot + 18U, 12U))) {
@@ -360,7 +363,33 @@ static bool validate_delivery_finished_payload(const uint8_t *payload,
       started_count++;
     }
   }
-  return attempt_count == started_count;
+  if (attempt_count != started_count) {
+    return false;
+  }
+  /* No transmit call can only mean that initial admission failed. */
+  if (call_count == 0U) {
+    return final_result == NODE_DELIVERY_RESULT_AIRTIME_BUDGET_END ||
+           final_result == NODE_DELIVERY_RESULT_RADIO_CYCLE_DEADLINE;
+  }
+  const uint8_t *last = payload + NODE_PERSISTENCE_DELIVERY_TX_CALL_OFFSET +
+                        (call_count - 1U) * NODE_PERSISTENCE_DELIVERY_TX_CALL_SIZE;
+  switch (last[1U]) {
+  case NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED:
+    return result_is_ack(final_result);
+  case NODE_DELIVERY_TX_OUTCOME_LOCAL_ERROR:
+    return final_result == NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR;
+  case NODE_DELIVERY_TX_OUTCOME_DEADLINE_EXPIRED:
+    return final_result == NODE_DELIVERY_RESULT_RADIO_CYCLE_DEADLINE;
+  case NODE_DELIVERY_TX_OUTCOME_ACK_TIMEOUT:
+    /* Final silence reaches the attempt limit before any third admission. */
+    if (call_count == NODE_DELIVERY_TX_CALL_SLOTS) {
+      return final_result == NODE_DELIVERY_RESULT_NO_ACK_ATTEMPT_LIMIT;
+    }
+    return final_result == NODE_DELIVERY_RESULT_AIRTIME_BUDGET_END ||
+           final_result == NODE_DELIVERY_RESULT_RADIO_CYCLE_DEADLINE;
+  default:
+    return false;
+  }
 }
 
 node_persistence_record_result_t

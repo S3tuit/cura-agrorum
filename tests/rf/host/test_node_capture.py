@@ -86,11 +86,12 @@ def test_real_image_all_required_families_and_no_mutation(tmp_path, binaries):
 
 @pytest.mark.parametrize("outcome", range(1, 9))
 def test_delivery_outcomes_in_real_image(tmp_path, binaries, outcome):
+    attempts = 1 if outcome == 5 else 2
     image = image_from(tmp_path, binaries, {
-        "delivery.log": record(5, finished_payload(51, 42, 73, 2, 2, outcome))})
+        "delivery.log": record(5, finished_payload(51, 42, 73, 2, attempts, outcome))})
     before = image.read_bytes()
     finish, = decode_image(image, binaries[0])["logs"]["delivery.log"]
-    assert (finish["attempt_count"], finish["final_result"]) == (2, outcome)
+    assert (finish["attempt_count"], finish["final_result"]) == (attempts, outcome)
     assert image.read_bytes() == before
 
 
@@ -138,11 +139,45 @@ def test_unstarted_call_and_no_call_records(tmp_path, binaries):
 # Non-canonical slots are rejected by the production validator, never guessed.
 @pytest.mark.parametrize("offset,value", [(24, 2), (25, 1), (42, 1), (54, 1), (23, 3)])
 def test_noncanonical_transmit_calls_rejected(tmp_path, binaries, offset, value):
-    payload = bytearray(finished_payload(51, 42, 73, 2, 1, 8))
+    payload = bytearray(finished_payload(51, 42, 73, 2, 1, 5))
     payload[offset] = value
     image = image_from(tmp_path, binaries, {"delivery.log": record(5, bytes(payload))})
     with pytest.raises(ValueError, match="record"):
         decode_image(image, binaries[0])
+
+
+# Valid framing and canonical inactive fields cannot make an impossible
+# delivery history usable. In particular, silence requires completed TX,
+# and attempt-limit exhaustion requires two completed, timed-out calls.
+@pytest.mark.parametrize("attempts,result,calls", [
+    (0, 8, []),
+    (0, 7, []),
+    (0, 8, [(0, 2)]),  # Review counterexample: no TX, yet ordinary ACK timeout.
+    (0, 5, [(0, 2)]),
+    (1, 8, [(1, 2)]),
+    (1, 8, [(3, 2)]),
+    (2, 8, [(3, 2), (1, 2)]),
+    (2, 5, [(3, 2), (3, 2)]),
+    (2, 6, [(3, 2), (3, 2)]),
+    (1, 7, [(3, 2)]),
+    (1, 5, [(3, 3)]),
+    (1, 7, [(3, 4)]),
+    (1, 6, [(1, 4)]),  # A deadline after SetTx is a local radio error.
+    (1, 8, [(3, 2), (0, 4)]),
+])
+def test_impossible_delivery_histories_rejected(tmp_path, binaries, attempts, result, calls):
+    slots = b""
+    for index, (flags, outcome) in enumerate(calls):
+        start = 1_000_000 * (index + 1) if flags & 1 else 0
+        done = start + 182_500 if flags & 2 else 0
+        slots += struct.pack("<BBQQQhh", flags, outcome, start, done, 0, 0, 0)
+    payload = (struct.pack("<IIIBBBQB", 51, 42, 73, 2, attempts, result, 41_200, len(calls))
+               + slots + bytes(30 * (2 - len(calls))))
+    image = image_from(tmp_path, binaries, {"delivery.log": record(5, payload)})
+    before = image.read_bytes()
+    with pytest.raises(ValueError, match="record"):
+        decode_image(image, binaries[0])
+    assert image.read_bytes() == before
 
 
 def test_missing_is_distinct_from_empty(tmp_path, binaries):

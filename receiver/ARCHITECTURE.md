@@ -1306,9 +1306,18 @@ Any non-terminal state
 
 If DIO1 reports a new RX event immediately after recovery confirms `SetRx`, retain it with its original timestamp. Complete the preceding occurrence first; the next receive turn transitions to `RX_EVENT_PENDING` and handles the event rather than discarding it as stale.
 
+A valid isolated HeaderErr in RX or standby is an expected rejection with no
+complete packet. The owner confirms standby, clears the IRQ, restores the
+complete receive profile and confirms `SetRx`, then returns an explicit
+`HANDLED_NO_PACKET` receive event. The communicator continues receiving without
+allocating an occurrence, entering protocol ingress, sending an ACK, publishing
+a profile/diagnostic or incrementing a header-error counter. Only successful
+ordinary handling qualifies; a failure at any step enters bounded recovery and
+remains a failed receive even when that recovery succeeds.
+
 A receive failure before protocol ingress does not become an application
-acceptance merely because some or all packet bytes reached Pi memory. Header
-or CRC rejection, or a failed receive operation before ingress (including
+acceptance merely because some or all packet bytes reached Pi memory. CRC or
+mixed header/CRC rejection, or a failed receive operation before ingress (including
 IRQ clearing after a successful copy), produces `RADIO_ERROR`, no authenticated
 candidate and no ACK. Retain successfully copied bytes as receive evidence;
 never authenticate or admit that failed receive as a valid reading. After

@@ -18,7 +18,7 @@ from cura_protocol_v2_lora.receiver_group import load_receiver_group
 from cura_receiver.application import authentication_keys
 from cura_receiver.platform.linux_radio import LinuxRadioIo
 from cura_receiver.ports.radio import RadioTxAuthorization
-from cura_receiver.radio import State
+from cura_receiver.radio import State, ReceiveDisposition
 from cura_receiver.sx1262 import IRQ_TX_DONE
 from test_apps.radio_peer.ack_cases import AckCase, CASES, episode
 from test_apps.radio_peer import peer
@@ -85,9 +85,9 @@ def execute(policy, backend, radio, stop, started):
             result = peer.healthy(radio.receive(deadline_monotonic_us=deadline),
                                   State.RX_SINGLE, State.RX_EVENT_PENDING)
             packet = result.receive_event
-            if packet is None:
+            if packet is None or packet.disposition is ReceiveDisposition.HANDLED_NO_PACKET:
                 continue
-            peer.require(packet.usable_for_ingress, "unusable RF packet")
+            peer.require(packet.disposition is ReceiveDisposition.PACKET, "unusable RF packet")
             frame, at = packet.frame, packet.received_at_monotonic_us
         else:
             packet = peer.lower_receive(backend, deadline)

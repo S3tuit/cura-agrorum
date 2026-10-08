@@ -27,7 +27,7 @@ sys.path.insert(0, str(REPO / "receiver"))
 from cura_receiver.platform.linux_clocks import LinuxOsClock
 from cura_receiver.platform.linux_radio import LinuxRadioIo
 from cura_receiver.ports.radio import RadioConfiguration, RadioTxAuthorization
-from cura_receiver.radio import Radio, State
+from cura_receiver.radio import Radio, State, ReceiveDisposition
 from cura_receiver.sx1262 import Sx1262, IRQ_RX_DONE, IRQ_TX_DONE
 
 A = bytes.fromhex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435")
@@ -42,6 +42,7 @@ CASES = {
     "component.repeat_exchange": (2, 2), "component.cold_sleep": (1, 0),
     "component.initialized_sleep": (1, 0), "component.sleep_wake": (2, 2),
     "component.dio1_disconnected": (1, 0), "component.radio_absent": (0, 0),
+    "component.header_error_rearm": (2, 0),
 }
 
 
@@ -202,7 +203,8 @@ def lower_burst(backend, packet, stop):
 def execute(case, backend, radio, stop, started):
     expected_count, maximum_tx = CASES[case]
     expected = (A, U2)[:expected_count]
-    packets, transmissions = [], []
+    packets, transmissions, handled = [], [], []
+    counters_before = radio.counters if radio else None
     deadline = started + 45_000_000
     quiet_end = started + 5_000_000 if not expected_count else deadline
     while backend.clock.now_monotonic_us() < min(deadline, quiet_end):
@@ -211,7 +213,15 @@ def execute(case, backend, radio, stop, started):
             result = healthy(radio.receive(deadline_monotonic_us=min(deadline, quiet_end)),
                              State.RX_SINGLE, State.RX_EVENT_PENDING)
             packet = result.receive_event
-            if packet is None or not packet.usable_for_ingress:
+            if packet is not None and packet.disposition is ReceiveDisposition.HANDLED_NO_PACKET:
+                if case == "component.header_error_rearm":
+                    require(len(packets) == 1 and not handled, "unexpected HeaderErr ordering/count")
+                    require(packet.irq_status == 0x20 and packet.device_errors == 0 and packet.frame is None and
+                            result.state is State.RX_SINGLE and result.t6_set_rx_issued_monotonic_us is not None,
+                            "incomplete HeaderErr handling")
+                    handled.append(result)
+                continue
+            if packet is None or packet.disposition is not ReceiveDisposition.PACKET:
                 continue
             frame = packet.frame
         else:
@@ -232,7 +242,12 @@ def execute(case, backend, radio, stop, started):
             quiet_end = backend.clock.now_monotonic_us() + 4_000_000
     require(len(packets) == expected_count, "missing expected uplink")
     require(len(transmissions) == maximum_tx, "incomplete downlink sequence")
-    return dict(packets=packets, transmissions=transmissions, observation_end=backend.clock.now_monotonic_us())
+    if case == "component.header_error_rearm":
+        require(len(handled) == 1, "missing real HeaderErr stimulus")
+        require(radio.counters == counters_before, "HeaderErr changed counters or recovered")
+    return dict(packets=packets, transmissions=transmissions, handled=handled,
+                counters_before=counters_before, counters_after=radio.counters if radio else None,
+                observation_end=backend.clock.now_monotonic_us())
 
 
 def main():

@@ -35,6 +35,30 @@ def non_status(io):
     return [command.hex() for command in io.commands if command[0] != 0xC0]
 
 
+@pytest.mark.parametrize("status,terminal", [(0x52, False), (0x54, False), (0x22, True), (0x24, True)])
+def test_isolated_header_error_acceptance_is_not_rx_completion_proof(radio, status, terminal):
+    backend, io, _, _ = radio
+    io.status, io.irq = status, 0x20
+    event = backend.observe_event(2000000)
+    assert backend.validate_event(event, transmit=False) is terminal
+
+
+@pytest.mark.parametrize("status,irq,errors,code", [
+    (0x58, 0x20, 0, Error.COMMAND_STATUS), (0x5a, 0x20, 0, Error.COMMAND_STATUS),
+    (0x56, 0x20, 0, Error.COMMAND_STATUS), (0x5c, 0x20, 0, Error.COMMAND_STATUS),
+    (0x52, 0x20, 1, Error.DEVICE_ERROR), (0x24, 0x20, 1, Error.DEVICE_ERROR),
+    (0x32, 0x20, 0, Error.COMMAND_STATUS), (0x42, 0x20, 0, Error.COMMAND_STATUS),
+    (0x62, 0x20, 0, Error.COMMAND_STATUS), (0x52, 0x22, 0, Error.COMMAND_STATUS),
+    (0x52, 0x60, 0, Error.COMMAND_STATUS), (0x52, 0x42, 0, Error.COMMAND_STATUS),
+])
+def test_header_exception_preserves_command_device_and_mode_checks(radio, status, irq, errors, code):
+    backend, io, _, _ = radio
+    io.status, io.irq, io.errors = status, irq, errors
+    with pytest.raises(RadioBackendError) as caught:
+        backend.validate_event(backend.observe_event(2000000), transmit=False)
+    assert caught.value.failure.code is code
+
+
 def injected(code=Error.IO, *, outcome=Outcome.DEFINITELY_NOT_APPLIED):
     def fail(_):
         raise RadioBackendError(RadioFailure(

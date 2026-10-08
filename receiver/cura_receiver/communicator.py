@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from .elapsed_duration import checked_monotonic_deadline
 from .generated import receiver_enums_generated as E
 from .ports.radio import RadioTxAuthorization, Outcome
+from .radio import ReceiveDisposition
 from .protocol_ingress import (ProtocolIngressPacketV1, ProtocolIngressTerminalV1,
                                ProtocolIngressFinalizationV1, ProtocolIngressAdmissionV1)
 from .generated.receiver_entities_generated import MessageProfilingV1
@@ -208,6 +209,11 @@ class Communicator:
                 self._recover()
                 return ExchangeResult(self._result, radio_episodes=tuple(self._episodes), time_updates=tuple(updates))
 
+            if packet.disposition is ReceiveDisposition.HANDLED_NO_PACKET:
+                # Radio already confirmed ordinary rearming; this is no packet occurrence.
+                updates.append(self.time.expire_due())
+                return ExchangeResult(self._result, radio_episodes=tuple(self._episodes), time_updates=tuple(updates))
+
             # receive() can cross a trust deadline. The boundary must precede
             # this packet's admission, even if the consumer just freed a slot.
             updates.append(self.time.expire_due())
@@ -221,7 +227,7 @@ class Communicator:
                     discarded_unaccepted_packet=True,
                 )
 
-            if not packet.usable_for_ingress:
+            if packet.disposition is ReceiveDisposition.FAILED:
                 self.occurrence_sequence = checked_monotonic_deadline(self.occurrence_sequence, 1)
                 self._failed_receive = packet
                 self._recover()

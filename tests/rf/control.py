@@ -175,7 +175,7 @@ class Node:
                 not 0 <= command["elapsed_us"] <= 2_000_000 or not 0 < command["bytes"] <= 159):
             raise ValueError("invalid C6 command framing evidence")
         # Consume Unity separately so pytest-embedded retains its actual result.
-        self.dut.expect_unity_test_output(timeout=15)
+        self.dut.expect_unity_test_output(timeout=35 if self.case == "component.header_error_rearm" else 15)
         while True:
             value = self.event()
             if value["kind"] == "end":

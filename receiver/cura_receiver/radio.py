@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, replace
 from functools import wraps
+from enum import Enum
 import threading
 
 from .generated import receiver_enums_generated as E
@@ -44,11 +45,17 @@ def _operation(*states):
     return decorate
 
 
+class ReceiveDisposition(Enum):
+    PACKET = "packet"
+    HANDLED_NO_PACKET = "handled_no_packet"
+    FAILED = "failed"
+
+
 @dataclass(frozen=True, slots=True)
 class RadioReceiveEvent:
     edge_timestamp_ns: int
     t1_handler_started_monotonic_us: int
-    usable_for_ingress: bool = False
+    disposition: ReceiveDisposition = ReceiveDisposition.FAILED
     frame: bytes | None = None
     rssi_dbm_x2: int | None = None
     snr_db_x4: int | None = None
@@ -293,12 +300,14 @@ class Radio:
                 return self._result(receive_event=replace(receive_event, busy=self.backend.metrics))
             self.backend.standby(deadline)
             if irq & (IRQ_HEADER_ERROR | IRQ_CRC_ERROR):
-                if irq & IRQ_HEADER_ERROR:
+                if irq & IRQ_HEADER_ERROR and irq != IRQ_HEADER_ERROR:
                     self._bump("header_errors")
                 if irq & IRQ_CRC_ERROR:
                     self._bump("crc_errors")
                 self.backend.clear_irq(irq, deadline)
                 restored = self.rearm()
+                if irq == IRQ_HEADER_ERROR and restored.state is State.RX_SINGLE and not restored.episodes:
+                    receive_event = replace(receive_event, disposition=ReceiveDisposition.HANDLED_NO_PACKET)
                 return replace(restored, receive_event=replace(receive_event, busy=self.backend.metrics))
             frame, copied = self.backend.copy_packet(deadline)
             receive_event = replace(receive_event, frame=frame, t2_packet_copied_monotonic_us=copied)
@@ -307,7 +316,7 @@ class Radio:
             self.backend.finish_receive(deadline)
             self.backend.clear_irq(irq, deadline)
             self._can_ack = True
-            return self._result(receive_event=replace(receive_event, usable_for_ingress=True, busy=self.backend.metrics))
+            return self._result(receive_event=replace(receive_event, disposition=ReceiveDisposition.PACKET, busy=self.backend.metrics))
         except RadioBackendError as error:
             if receive_event is not None:
                 receive_event = replace(receive_event, busy=self.backend.metrics)

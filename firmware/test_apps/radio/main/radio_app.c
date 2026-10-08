@@ -14,6 +14,7 @@
 #include "radio_observe.h"
 #include "radio_command.h"
 #include "radio_rejection.h"
+#include "radio_header_error.h"
 #ifdef REJECTION_ENABLED
 #include "rejection_inputs.h"
 #endif
@@ -34,9 +35,9 @@
 static const char *const cases[] = {
   "component.ack_exchange", "component.ack_timeout", "component.invalid_downlinks", "component.repeat_timeout",
   "component.repeat_exchange", "component.cold_sleep", "component.initialized_sleep", "component.sleep_wake",
-  "component.dio1_disconnected", "component.radio_absent", REJECTION_CASE_NAMES
+  "component.dio1_disconnected", "component.radio_absent", "component.header_error_rearm", REJECTION_CASE_NAMES
 };
-#define COMPONENT_CASE_COUNT 10u
+#define COMPONENT_CASE_COUNT 11u
 static unsigned selected, phase;
 static char run_id[33];
 static uint32_t boot_nonce;
@@ -154,6 +155,18 @@ static void test_episode(void) {
 #else
     TEST_FAIL_MESSAGE("rejection matrix disabled without private run-bound build inputs");
 #endif
+  } else if (selected == 10) {
+    result_t *first = transmit(0, true);
+    radio_header_wait_since(first->tx.set_tx_at_us);
+    result_t *cut = new_result(true);
+    cut->payload_length = sizeof(cut->payload);
+    for (unsigned i = 0; i < sizeof(cut->payload); ++i) cut->payload[i] = i;
+    cut->before = now(); cut->deadline = cut->before + 2000000;
+    cut->tx.set_tx_at_us = radio_header_abort(cut->payload, sizeof(cut->payload));
+    cut->tx.tx_started = true; cut->after = now();
+    radio_header_wait_since(cut->tx.set_tx_at_us);
+    transmit(0x80, true);
+    TEST_ASSERT_EQUAL_UINT(3, radio_observation().starts);
   } else if (selected == 5) {
     cold_sleep(); cold_sleep();
     TEST_ASSERT_EQUAL_UINT(0, radio_observation().calls);
@@ -299,7 +312,7 @@ void app_main(void) {
   int failed = UNITY_END();
   diagn_context_t cleanup;
   err_curag_t cleanup_error = sx1262_radio_sleep(&cleanup);
-  dump_results(); radio_observation_dump();
+  dump_results(); radio_observation_dump(); radio_header_dump();
   /* Absent hardware may refuse radio cleanup; the MCU must still sleep. */
   if (cleanup_error && selected != 9) failed = 1;
   printf("RF_END {\"run\":\"%s\",\"case\":\"%s\",\"boot\":%" PRIu32

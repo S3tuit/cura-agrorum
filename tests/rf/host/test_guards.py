@@ -43,9 +43,10 @@ def test_fixture_rejects_missing_or_mismatched_facts(fixture, field, value):
 
 
 def test_budget_is_only_a_bounded_declaration():
-    assert sum(e.charge["c6_us"] for e in EPISODES.values()) == 1467986
+    assert sum(e.charge["c6_us"] for e in EPISODES.values()) == 1806752
     assert sum(e.charge["pi_us"] for e in EPISODES.values()) == 469712
-    assert len(EPISODES) == 10
+    assert len(EPISODES) == 11
+    assert EPISODES["component.header_error_rearm"].charge == {"c6_us": 338766, "pi_us": 0}
     assert EPISODES["component.radio_absent"].c6_packets == 1
 
 

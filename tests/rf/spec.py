@@ -44,6 +44,7 @@ CASES = {e.name: e for e in (
     Episode("component.sleep_wake", "nominal", 2, (23, 23), "Exchange across timer deep sleep and a fresh command"),
     Episode("component.dio1_disconnected", "dio1_disconnected", 1, (), "Bound uncertain TX when TxDone is not observed"),
     Episode("component.radio_absent", "radio_absent", 1, (), "Reserve one attempt; require initialization failure before SetTx"),
+    Episode("component.header_error_rearm", "nominal", 3, (), "Real HeaderErr/RX, ordinary rearm, next complete packet"),
     Episode("node.current.accepted", "nominal", 210, (23,) * 4, "Accept current then seeded backlog", "node", 3, 1),
     Episode("node.current.retry_later", "nominal", 210, (23,) * 3, "Retain current after RETRY_LATER", "node", 3, 1),
     Episode("node.current.unsupported", "nominal", 210, (23,) * 3, "Quarantine unsupported current", "node", 3, 1),

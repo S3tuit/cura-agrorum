@@ -109,7 +109,7 @@ See the [app's storage disclosure](../../firmware/test_apps/radio/README.md).
 
 The remaining nominal parameters are `component.ack_timeout`, `component.invalid_downlinks`,
 `component.repeat_timeout`, `component.repeat_exchange`, `component.cold_sleep`,
-`component.initialized_sleep`, `component.sleep_wake`. Comma-separated selection is explicit;
+`component.initialized_sleep`, `component.sleep_wake`, `component.header_error_rearm`. Comma-separated selection is explicit;
 there is no automatic retry or implicit “all.” ACK exchange must precede dependent
 cases, and ACK timeout must precede repeated exchanges. They may run earlier in the same
 selection or in an earlier successful nominal run in the current bench session.
@@ -136,6 +136,25 @@ with the same session path and a new output directory/run ID. Confirm the fault
 fixture explicitly. Afterward restore nominal wiring unpowered and run fresh
 ACK exchange. Do not change the physical transmitter labels between fixture states.
 Delete the session file and disposable captures when the bench session ends.
+
+### Expected HeaderErr regression
+
+`component.header_error_rearm` requires nominal wiring at both ends; attached
+sensors are not sampled. The existing component image sends a complete known
+54-byte packet, interrupts a second transmission at 18 ms from C6 SetTx HAL
+entry, and sends the next complete known packet. Starts are at least 12.2 seconds
+apart. The whole episode reserves three full C6 charges (338766 us) and no Pi TX;
+the fresh ACK-exchange prerequisite has its own reservation. The existing
+pytest flow flashes the component image before execution.
+
+The Pi uses production Radio/Sx1262/LinuxRadioIo. Independent verification
+requires actual SPI `0x52 / 0x0020 / 0` evidence, explicit `HANDLED_NO_PACKET`,
+standby -> exact IRQ clearing -> fresh complete RX profile -> confirmed SetRx,
+unchanged counters, no recovery and the next exact complete packet. A missing
+HeaderErr fails even when both complete packets arrive. Raw test capture does
+not add production telemetry. Host communicator tests establish suppression of
+packet occurrences, profiles and diagnostics; this component episode does not
+qualify the installed receiver service or identify the historical error cause.
 
 ## Component timing and cleanup
 

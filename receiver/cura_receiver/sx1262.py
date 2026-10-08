@@ -255,9 +255,11 @@ class Sx1262:
         terminal = irq in (IRQ_TX_DONE, IRQ_TIMEOUT) if transmit else (
             irq == IRQ_TIMEOUT or bool(irq) and not irq & ~(IRQ_RX_DONE | IRQ_HEADER_ERROR | IRQ_CRC_ERROR)
         )
-        if terminal and mode != 2:
+        header_in_rx = not transmit and irq == IRQ_HEADER_ERROR and mode == 5
+        if terminal and mode != 2 and not header_in_rx:
             self._error(Error.COMMAND_STATUS, Stage.READ_COMMAND, opcode=0xC0, **facts)
-        return terminal
+        # An expected header rejection in RX is handleable, not completion proof.
+        return terminal and not header_in_rx
 
     def _start_operation(self, data, deadline, *, transmit):
         """Confirm active mode, or retain a fresh edge proving immediate completion."""

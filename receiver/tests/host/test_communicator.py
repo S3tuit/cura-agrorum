@@ -14,7 +14,7 @@ from cura_receiver.ports.ds3231 import Ds3231ReadResult, Ds3231ReadStatus as DR
 from cura_receiver.ports.kernel_clock import KernelClockResult, KernelSampleStatus as KS
 from cura_receiver.ports.radio import Dio1Edge
 from cura_receiver.protocol_ingress import ProtocolIngress
-from cura_receiver.radio import Radio
+from cura_receiver.radio import Radio, ReceiveDisposition
 from cura_receiver.runtime_time import RuntimeTime
 from cura_receiver.sx1262 import Sx1262
 from cura_receiver.time_policy import TimePolicy
@@ -172,6 +172,50 @@ def test_fatal_after_confirmed_tx_done(composition):
 
 
 # Receive errors never authenticate/admit a reading, including valid copied bytes.
+@pytest.mark.parametrize("status", [0x52, 0x24])
+def test_handled_header_has_no_occurrence_profile_or_diagnostic(composition, monkeypatch, status):
+    from cura_receiver import communicator as module
+    c = composition()
+    runtime = runtime_dispatch(c)
+    counts, counters = c.communicator.queue.counts, c.radio.counters
+    def forbidden(*args, **kwargs):
+        pytest.fail("handled HeaderErr must not construct a profile or enter protocol ingress")
+    with monkeypatch.context() as guard:
+        guard.setattr(module, "MessageProfilingV1", forbidden)
+        guard.setattr(c.communicator.ingress, "begin", forbidden)
+        c.io.irq, c.io.status = 0x20, status
+        c.io.edges.append(Dio1Edge(c.clock.now_monotonic_us() * 1000, 1))
+        turn = runtime.step()
+    assert turn.exchange.radio_result.receive_event.disposition is ReceiveDisposition.HANDLED_NO_PACKET
+    assert turn.exchange.finalization is None and turn.exchange.radio_episodes == ()
+    assert c.communicator.occurrence_sequence == 0
+    assert all(c.communicator.queue.counts[i] == counts[i] for i in (0, 1, 3, 4))
+    assert c.radio.counters == counters
+    assert runtime.telemetry.diagnostic_sequence == 0
+    assert not any(command[0] in (0x0e, 0x83) for command in c.io.commands)
+    assert deliver(c).finalization.published_entity.profile.processing_result is E.ProcessingResult.ACCEPTED
+    assert c.communicator.occurrence_sequence == 1
+
+
+@pytest.mark.parametrize("opcode", [0x80, 0x02, 0x8c, 0x82])
+def test_failed_header_handling_still_profiles_and_diagnoses(composition, opcode):
+    from cura_receiver.ports.radio import RadioBackendError, RadioFailure, Error, Stage
+    c = composition()
+    runtime = runtime_dispatch(c)
+    c.io.irq, c.io.status = 0x20, 0x52
+    c.io.edges.append(Dio1Edge(c.clock.now_monotonic_us() * 1000, 1))
+    def fail_once(command):
+        del c.io.hooks[opcode]
+        raise RadioBackendError(RadioFailure(Error.IO, Stage.WRITE_COMMAND, opcode=opcode, os_errno=5))
+    c.io.hooks[opcode] = fail_once
+    turn = runtime.step()
+    assert turn.exchange.finalization.published_entity.profile.processing_result is E.ProcessingResult.RADIO_ERROR
+    assert c.radio.state is E.RadioState.RX_SINGLE
+    assert runtime.telemetry.diagnostic_sequence == 1
+    assert c.radio.counters.recovery_attempts == c.radio.counters.recovery_successes == 1
+    assert c.radio.counters.header_errors == 0
+
+
 @pytest.mark.parametrize("fault", ["crc", "header", "read_buffer", "packet_status", "clear_irq"])
 def test_failed_receive_is_profile_only(composition, fault):
     from cura_receiver.ports.radio import RadioBackendError, RadioFailure, Error, Stage

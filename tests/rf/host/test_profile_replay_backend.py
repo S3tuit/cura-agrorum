@@ -35,9 +35,10 @@ def test_profile_replay_accepts_actual_peer_backend_traces(case, monkeypatch):
         backend.arm_receive(end)
     start = clock.now_monotonic_us()
     uplinks = EXPECTED[case][0]
-    if case == "component.radio_absent": uplinks = []
+    if case == "component.header_error_rearm": uplinks = [uplinks[0], None, uplinks[2]]
+    elif case == "component.radio_absent": uplinks = []
     elif case == "component.initialized_sleep": uplinks = uplinks[:1]
-    air.incoming.extend((start + 100_000 + i * 6_000_000, bytes.fromhex(frame))
+    air.incoming.extend((start + 100_000 + i * 6_000_000, bytes.fromhex(frame) if frame is not None else None)
                         for i, frame in enumerate(uplinks))
     peer.execute(case, backend, radio, threading.Event(), start)
     if radio:

@@ -17,6 +17,7 @@ EXPECTED = {
     "component.cold_sleep": ([A], []), "component.initialized_sleep": ([A, A], []),
     "component.sleep_wake": ([A, U], [B, D]), "component.dio1_disconnected": ([A], []),
     "component.radio_absent": ([A], []),
+    "component.header_error_rearm": ([A, A, U], []),
 }
 
 
@@ -140,6 +141,63 @@ def verify_pi_profiles(trace, downlinks):
             "Pi handles not released")
 
 
+def verify_header_error(events, peer, tx):
+    """Actual command replies and fresh complete rearming, independent of Radio."""
+    cuts = [v for v in events if v.get("operation") == "header_abort"]
+    require(len(cuts) == 1, "missing C6 abort timing")
+    cut = cuts[0]
+    require(cut["argument"] == 18000 and cut["result"] == 2 and
+            cut["before"] == tx[1]["set_tx"] and
+            cut["before"] <= cut["tx_hal_after"] <= cut["abort_hal_before"] <= cut["after"] and
+            18000 <= cut["abort_hal_before"] - cut["before"] <= 18500 and
+            cut["irq"] == cut["device_errors"] == 0, "wrong C6 abort stimulus")
+    require(all(b["set_tx"] - a["set_tx"] >= 12200000 for a, b in zip(tx, tx[1:])), "C6 pacing")
+    outcome = peer["outcome"]
+    require(outcome["counters_before"] == outcome["counters_after"], "HeaderErr counters changed")
+    require(outcome["counters_after"]["recovery_attempts"] == 0, "HeaderErr used recovery")
+    handled = outcome["handled"]
+    require(len(handled) == 1, "missing handled HeaderErr result")
+    result = handled[0]
+    event = result["receive_event"]
+    require(result["state"] == "RX_SINGLE" and not result["episodes"] and
+            event["disposition"] == "HANDLED_NO_PACKET" and event["frame"] is None and
+            event["irq_status"] == 0x20 and event["device_errors"] == 0, "wrong HeaderErr disposition")
+    packets = outcome["packets"]
+    require(len(packets) == 2 and packets[0]["edge_timestamp_ns"] < event["edge_timestamp_ns"] <
+            packets[1]["edge_timestamp_ns"] and
+            event["edge_timestamp_ns"] // 1000 <= event["t1_handler_started_monotonic_us"] <=
+            result["t6_set_rx_issued_monotonic_us"] <= packets[1]["edge_timestamp_ns"] // 1000,
+            "HeaderErr/rearm/next-packet chronology")
+    trace = peer["trace"]
+    require(not any(v["operation"] == "reset" for v in trace
+                    if v.get("before", 0) >= event["t1_handler_started_monotonic_us"]), "unexpected reset recovery")
+    spi = [v for v in trace if v["operation"] == "spi"]
+    observed = [i for i, v in enumerate(spi) if v["tx"] == "12000000" and
+                len(bytes.fromhex(v.get("result", ""))) == 4 and int(v["result"][-4:], 16) == 0x20]
+    require(len(observed) == 1, "missing/extra raw HeaderErr IRQ")
+    i = observed[0]
+    require(spi[i+1]["tx"] == "17000000" and len(bytes.fromhex(spi[i+1]["result"])) == 4 and
+            int(spi[i+1]["result"][-4:], 16) == 0 and spi[i+2]["tx"] == "c000" and
+            len(bytes.fromhex(spi[i+2]["result"])) == 2 and int(spi[i+2]["result"][-2:], 16) == 0x52,
+            "wrong raw HeaderErr status/device evidence")
+    require(spi[i+3]["tx"] == "8000", "HeaderErr standby not first")
+    require(spi[i+4]["tx"] == "c000" and (int(spi[i+4]["result"][-2:], 16) >> 4) & 7 == 2,
+            "HeaderErr standby unconfirmed")
+    j = next((j for j in range(i+3, len(spi)) if spi[j]["tx"] == "020020"), None)
+    require(j is not None and not any(v["tx"].startswith(("82", "83", "1e")) for v in spi[i+3:j]),
+            "missing exact IRQ clearing or premature packet/mode operation")
+    k = next((k for k in range(j+1, len(spi)) if spi[k]["tx"].startswith(("82", "83"))), None)
+    require(k is not None and spi[k]["tx"] == "82000000" and
+            spi[k-1]["after"] <= result["t6_set_rx_issued_monotonic_us"] <= spi[k]["before"],
+            "missing correlated HeaderErr SetRx")
+    require(spi[k+1]["tx"] == "c000" and (int(spi[k+1]["result"][-2:], 16) >> 4) & 7 == 5,
+            "HeaderErr SetRx unconfirmed")
+    state = _PiProfileReplay()
+    for v in spi[j+1:k+1]:
+        state.apply(bytes.fromhex(v["tx"]))
+    state.verify(False, 255)
+
+
 def verify_case(case, events, peer, run, fixture, elf):
     require(case in EXPECTED, "unimplemented case")
     boots = [v for v in events if v["kind"] == "boot"]
@@ -174,6 +232,12 @@ def verify_case(case, events, peer, run, fixture, elf):
         require(0 < value["before"] <= value["after"] <= value["deadline"] + 50_000, "C6 TX bound")
         failed = case in {"component.dio1_disconnected", "component.radio_absent"} or case == "component.initialized_sleep" and index == 1
         if not failed:
+            if case == "component.header_error_rearm" and index == 1:
+                require(value["error"] == value["operation"] == 0 and not value["diagnostic"] and
+                        value["started"] is True and value["done"] is False and value["tx_done"] == 0,
+                        "C6 intentional interruption outcome")
+                require(value["before"] <= value["set_tx"] <= value["after"], "C6 interruption clock")
+                continue
             require(value["error"] == 0 and value["operation"] == 0 and not value["diagnostic"] and
                     value["started"] is True and value["done"] is True, "C6 TX outcome")
             require(value["before"] <= value["set_tx"] < value["tx_done"] <= value["after"], "C6 shared TX clock")
@@ -220,6 +284,9 @@ def verify_case(case, events, peer, run, fixture, elf):
     require(peer["kind"] == "complete" and peer["case"] == case and peer["run"] == run and
             peer["failure"] is None and peer["cleanup"]["safe_shutdown"] is True, "peer failed or wrong identity")
     expected_air = [] if case == "component.radio_absent" else expected_tx[:positive]
+    if case == "component.header_error_rearm":
+        expected_air = [A, U]
+        verify_header_error(events, peer, tx)
     packets = peer["outcome"]["packets"]
     require([p["frame"] for p in packets] == expected_air, "Pi copied packet mismatch")
     for packet in packets:

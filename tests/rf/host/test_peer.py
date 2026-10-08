@@ -53,7 +53,10 @@ class Air(PhysicalPort):
         self.irq = 2 if incoming else 1
         if incoming:
             _, frame = self.incoming.popleft()
-            self.buffer[:] = frame
+            if frame is None:
+                self.status, self.irq = 0x52, 0x20
+            else:
+                self.buffer[:] = frame
         else:
             self.tx_done = None
         self.sequence += 1

@@ -26,3 +26,9 @@ radio state by itself.
 
 Use [tests/rf/README.md](../../../tests/rf/README.md) and the fixture-specific
 launcher; ordinary receiver hardware targets remain Pi-local.
+
+`component.header_error_rearm` is receive-only and retains one explicit
+`HANDLED_NO_PACKET` result between two complete known packets. The peer requires
+unchanged radio counters, no recovery episodes and ordinary confirmed rearming;
+raw SPI evidence is independently checked by tests/rf/verify.py. The receive
+disposition remains internal and does not add a production profile or diagnostic.

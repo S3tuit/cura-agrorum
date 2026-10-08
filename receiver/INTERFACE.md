@@ -1189,6 +1189,14 @@ deadline (also the 250 ms host bound for TX); preserve that edge for subsequent
 owner handling. No observed edge may be in the future relative to capture time.
 The observation path does not relax ordinary command-result validation.
 
+An isolated RX `IRQ_HEADER_ERROR = 0x0020` with zero device errors and otherwise
+valid command status may be handled in RX (`mode = 5`, including `0x52`) or
+`STDBY_RC` (`mode = 2`). The RX-mode observation does not prove terminal
+completion and cannot confirm an immediate `SetRx` completion. After a trusted
+fresh edge, the receive owner confirms standby, clears the exact IRQ, restores
+the complete `UPLINK_RX_PROFILE` and confirms `SetRx`. This exception does not
+accept mixed IRQs in RX or relax command/device failure validation.
+
 An unexpected RX timeout retains `UNEXPECTED_IRQ` and requires complete RX
 restoration. A timely matching TX timeout retains `TX_TIMEOUT`, absent T5 and
 its airtime charge. Capture completion facts before fresh standby/IRQ clearing;
@@ -1198,11 +1206,21 @@ a subsequent restore failure cannot erase an already confirmed TX outcome.
 metadata is untrusted. Otherwise it is one immutable `RadioReceiveEvent` for
 both success and failure: actual `edge_timestamp_ns` and T1, optional IRQ/device
 errors, optional copied `frame` and actual T2, optional RSSI/SNR and BUSY metrics.
-`usable_for_ingress` becomes true only after the complete receive path, including
-IRQ clearing, succeeds. Copied bytes remain evidence if any subsequent operation
+Its internal `ReceiveDisposition` is `PACKET` only after the complete receive
+path, including IRQ clearing, succeeds; protocol validation remains subsequent.
+`HANDLED_NO_PACKET` identifies an isolated HeaderErr only after successful
+ordinary standby/clear/full-profile/SetRx handling. It retains the observation,
+has no copied frame and is returned in `RX_SINGLE` without recovery episodes.
+The communicator allocates no packet occurrence, invokes no ingress or ACK,
+publishes no profile or diagnostic and increments no header-error counter.
+`FAILED` retains all other existing failed-receive handling, including an actual
+failure during HeaderErr handling even if later recovery succeeds. These are
+internal dispositions, not new persisted/wire enum values.
+Copied bytes remain evidence if any subsequent operation
 fails; they do not authorize ingress. Header/CRC failures have no copied frame.
 The event is returned once with the receive result; callers retain it across
-bounded recovery before profiling. Later recovery results do not repeat it.
+bounded recovery before profiling when its disposition is `FAILED`. Later
+recovery results do not repeat it. An absent event is not a handled HeaderErr.
 
 `RadioResult.safe_shutdown` is `True` only when configured radio safety and
 successful handle release are both confirmed, `False` after an unsuccessful

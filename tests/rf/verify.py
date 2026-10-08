@@ -141,6 +141,16 @@ def verify_pi_profiles(trace, downlinks):
             "Pi handles not released")
 
 
+def _verify_pi_command_confirmation(event, mode, message):
+    """Literal GetStatus framing and ordinary command-result checks."""
+    require(event["tx"] == "c000", message)
+    reply = bytes.fromhex(event.get("result", ""))
+    require(len(reply) == 2, message)
+    status = reply[1]
+    require(not status & 0x81 and (status >> 4) & 7 == mode and
+            (status >> 1) & 7 not in (3, 4, 5, 7), message)
+
+
 def verify_header_error(events, peer, tx):
     """Actual command replies and fresh complete rearming, independent of Radio."""
     cuts = [v for v in events if v.get("operation") == "header_abort"]
@@ -181,8 +191,7 @@ def verify_header_error(events, peer, tx):
             len(bytes.fromhex(spi[i+2]["result"])) == 2 and int(spi[i+2]["result"][-2:], 16) == 0x52,
             "wrong raw HeaderErr status/device evidence")
     require(spi[i+3]["tx"] == "8000", "HeaderErr standby not first")
-    require(spi[i+4]["tx"] == "c000" and (int(spi[i+4]["result"][-2:], 16) >> 4) & 7 == 2,
-            "HeaderErr standby unconfirmed")
+    _verify_pi_command_confirmation(spi[i+4], 2, "HeaderErr standby unconfirmed")
     j = next((j for j in range(i+3, len(spi)) if spi[j]["tx"] == "020020"), None)
     require(j is not None and not any(v["tx"].startswith(("82", "83", "1e")) for v in spi[i+3:j]),
             "missing exact IRQ clearing or premature packet/mode operation")
@@ -190,8 +199,7 @@ def verify_header_error(events, peer, tx):
     require(k is not None and spi[k]["tx"] == "82000000" and
             spi[k-1]["after"] <= result["t6_set_rx_issued_monotonic_us"] <= spi[k]["before"],
             "missing correlated HeaderErr SetRx")
-    require(spi[k+1]["tx"] == "c000" and (int(spi[k+1]["result"][-2:], 16) >> 4) & 7 == 5,
-            "HeaderErr SetRx unconfirmed")
+    _verify_pi_command_confirmation(spi[k+1], 5, "HeaderErr SetRx unconfirmed")
     state = _PiProfileReplay()
     for v in spi[j+1:k+1]:
         state.apply(bytes.fromhex(v["tx"]))

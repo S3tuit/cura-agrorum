@@ -94,6 +94,38 @@ def test_reviewed_header_record():
     assert verify(*header_record())["c6_attempts"] == 3
 
 
+def confirmation_record(stage, reply):
+    events, capture = header_record()
+    spi = capture["trace"]
+    i = next(j for j, v in enumerate(spi) if v.get("result") == "d2d20020")
+    k = next(j for j in range(i+6, len(spi)) if spi[j].get("tx") == "82000000")
+    spi[i+4 if stage == "standby" else k+1]["result"] = reply
+    return events, capture
+
+
+@pytest.mark.parametrize("stage,accepted", [
+    ("standby", {0x20, 0x22, 0x24, 0x2c}),
+    ("SetRx", {0x50, 0x52, 0x54, 0x5c}),
+])
+@pytest.mark.parametrize("status", range(256))
+def test_header_confirmation_checks_complete_status_byte(stage, accepted, status):
+    # Independent literal oracle: correct mode, clear reserved bits, and no
+    # timeout/processing/execution failure or reserved command-status value.
+    events, capture = confirmation_record(stage, f"d2{status:02x}")
+    if status in accepted:
+        assert verify(events, capture)["status"] == "PASS"
+    else:
+        with pytest.raises(ValueError, match=f"HeaderErr {stage} unconfirmed"):
+            verify(events, capture)
+
+
+@pytest.mark.parametrize("stage", ["standby", "SetRx"])
+@pytest.mark.parametrize("reply", ["", "54", "d2d254", "0", "not-hex"])
+def test_header_confirmation_rejects_malformed_reply(stage, reply):
+    with pytest.raises(ValueError):
+        verify(*confirmation_record(stage, reply))
+
+
 @pytest.mark.parametrize("fault", ["irq", "status", "device", "standby", "clear", "profile", "setrx",
                                   "disposition", "recovery", "counter", "final_packet", "extra_tx",
                                   "missing_result", "abort", "pacing", "reset"])

@@ -17,6 +17,7 @@ from .persist_queue_entities import PROFILE_ONLY_V1_SPEC, ProfileOnlyUnitV1
 from .tx_airtime import TxCertainty
 from .producer_admission import ProducerAdmission
 from .persist_queue import PersistQueueInterfaceError
+from .radio_investigation import investigate
 
 
 _RECEIVING = (E.RadioState.RX_SINGLE, E.RadioState.RX_EVENT_PENDING)
@@ -229,6 +230,7 @@ class Communicator:
 
             if packet.disposition is ReceiveDisposition.FAILED:
                 self.occurrence_sequence = checked_monotonic_deadline(self.occurrence_sequence, 1)
+                investigate("occurrence", packet=packet, sequence=self.occurrence_sequence)
                 self._failed_receive = packet
                 self._recover()
                 completed = None if self.radio.state is E.RadioState.RECOVERING else self._finish_failed_receive()

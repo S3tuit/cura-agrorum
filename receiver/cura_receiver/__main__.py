@@ -19,6 +19,7 @@ from .receiver_startup import create_receiver_instance
 from .sx1262 import Sx1262
 from .stop_intent import StopIntent
 from .service_evidence import emit_service_evidence
+from . import radio_investigation
 
 
 class ServicePersistenceWorker(PersistenceWorker):
@@ -78,8 +79,10 @@ def main():
                 configuration_path=settings.configuration_path, expected_owner_uid=os.geteuid(), clock=clock,
                 policy=settings.airtime_policy, minimum_free_bytes=settings.minimum_free_bytes,
                 startup_notification=notification)
-            radio = Radio(Sx1262(LinuxRadioIo(clock), clock, clock, settings.radio),
-                stop_requested=stop.is_requested)
+            backend = Sx1262(LinuxRadioIo(clock), clock, clock, settings.radio)
+            radio_investigation.configure(backend, instance.receiver_instance_id,
+                                          os.environ.get("CURA_RADIO_INVESTIGATION_DIR"))
+            radio = Radio(backend, stop_requested=stop.is_requested)
             app = ReceiverApplication(instance=instance, settings=settings, worker=worker, clock=clock,
                 kernel=LinuxKernelClock(clock), rtc=rtc, chrony=chrony, radio=radio, stop_intent=stop)
             try:
@@ -121,6 +124,7 @@ def main():
                                       outcome='APPLICATION_TEARDOWN_FAILED'))
         return 1
     finally:
+        radio_investigation.close()
         if not startup_emitted:
             emit_service_evidence(startup_record)
 

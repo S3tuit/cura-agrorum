@@ -11,6 +11,7 @@ from .ports.radio import (BusyMetrics, Error, Outcome, RadioBackendError, RadioF
 from .radio_diagnostics import Operation, RadioEpisodeBuilder, Reason, State
 from .sx1262 import IRQ_CRC_ERROR, IRQ_HEADER_ERROR, IRQ_RX_DONE, IRQ_TIMEOUT, IRQ_TX_DONE
 from .elapsed_duration import checked_monotonic_deadline, maximum_lifetime_monotonic_us
+from .radio_investigation import investigate
 
 _TERMINAL = (State.SHUTDOWN, State.INITIALIZATION_FAILED, State.RECOVERY_EXHAUSTED, State.HARDWARE_MISSING)
 
@@ -147,6 +148,7 @@ class Radio:
     def _result(self, *, receive_event=None, episodes=()):
         result = RadioResult(self.state, receive_event, self._completed + episodes, self._t6, self.backend.metrics, self._tx, self._safe_shutdown)
         self._completed = ()
+        investigate("radio_result", result=result)
         return result
 
     def _bump(self, name):
@@ -289,6 +291,8 @@ class Radio:
             if not irq or irq & ~(IRQ_RX_DONE | IRQ_HEADER_ERROR | IRQ_CRC_ERROR):
                 failure = RadioFailure(Error.UNEXPECTED_IRQ, Stage.READ_IRQ, opcode=0x12, irq_status=irq, hardware_touched=True)
                 episode = self._builder(Operation.RECEIVE, failure)
+                if irq == 0:
+                    investigate("zero_irq", edge=edge, started=started, event=event, episode=episode)
                 try:
                     self.backend.standby(deadline)
                     self.backend.clear_irq(irq, deadline)

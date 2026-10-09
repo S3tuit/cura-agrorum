@@ -12,6 +12,7 @@ from .radio_diagnostics import radio_diagnostic
 from .time_diagnostics import time_diagnostic
 from .control_diagnostics import control_diagnostic
 from .core_diagnostics import core_diagnostic, CoreFault
+from .radio_investigation import investigate
 
 
 class EmissionSkipped(Enum):
@@ -76,6 +77,8 @@ class CommunicatorTelemetry:
         result = c.queue.try_reserve_one(DIAGNOSTIC_V1_SPEC)
         if result.status is E.AdmissionResult.RESERVED:
             result.reservation.publish(diagnostic)
+        if factory is radio_diagnostic:
+            investigate("diagnostic", episode=episode, diagnostic=diagnostic, admission=result.status)
         return result.status
 
     def radio(self, episode):

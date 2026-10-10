@@ -8,7 +8,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 import pytest
 
 from verify_ack import verify_ack_case, verify_ack_transmissions
-from verify_header_ack import verify_header_ack_rf
+from verify_header_ack import node_observations, verify_header_ack_rf
 
 base = runpy.run_path(str(Path(__file__).with_name("test_verify_ack.py")))
 KEY, NODE = base["KEY"], base["NODE"]
@@ -95,6 +95,16 @@ def transcript(retry):
     return dict(packets=packets, transmissions=transmissions), trace, dump, groups
 
 
+def retime_control_ack(dump, groups, ack_time):
+    dump["logs"]["delivery.log"][3]["tx_calls"][-1]["ack_rx_done_at_us"] = ack_time
+    ack = next(e for e in groups[1] if e["opcode"] == 0x12 and e["value"] == 2)
+    # Leave room for the TX_DONE read and SetRx at the zero-delta boundary.
+    ack.update(irq_at_us=ack_time, before_us=ack_time + 20, after_us=ack_time + 21)
+    groups[1].sort(key=lambda e: e["before_us"])
+    for index, event in enumerate(groups[1]):
+        event["index"] = index
+
+
 @pytest.mark.parametrize("retry", [False, True])
 @pytest.mark.parametrize("header_irq", [0x20, 0x22])
 def test_complete_independent_header_ack_evidence(retry, header_irq):
@@ -104,6 +114,44 @@ def test_complete_independent_header_ack_evidence(retry, header_irq):
     verify_ack_case(case, NODE, KEY, outcome["packets"], dump)
     verify_ack_transmissions(case, NODE, KEY, outcome, trace, 6)
     verify_header_ack_rf(case, outcome, trace, dump, uart_bytes(groups))
+
+
+@pytest.mark.parametrize("point", ["before_set_tx", "during_tx", "before_tx_done", "at_tx_done"])
+def test_retry_control_ack_must_follow_its_own_tx_done(point):
+    outcome, trace, dump, groups = transcript(True)
+    call = dump["logs"]["delivery.log"][3]["tx_calls"][-1]
+    ack_time = {
+        "before_set_tx": call["set_tx_at_us"] - 100_000,
+        "during_tx": call["set_tx_at_us"] + 1,
+        "before_tx_done": call["tx_done_at_us"] - 1,
+        "at_tx_done": call["tx_done_at_us"],
+    }[point]
+    retime_control_ack(dump, groups, ack_time)
+    uart = uart_bytes(groups)
+    # Matching saved/raw timestamps and a valid trace still need attempt binding.
+    node_observations(uart)
+    case = "node.current.header_error_retry"
+    verify_ack_case(case, NODE, KEY, outcome["packets"], dump)
+    verify_ack_transmissions(case, NODE, KEY, outcome, trace, 6)
+    with pytest.raises(ValueError, match="valid control ACK outside unchanged window"):
+        verify_header_ack_rf(case, outcome, trace, dump, uart)
+
+
+@pytest.mark.parametrize("retry", [False, True])
+@pytest.mark.parametrize("deadline_offset", [-1, 0, 1])
+def test_control_ack_window_deadline_is_inclusive(retry, deadline_offset):
+    outcome, trace, dump, groups = transcript(retry)
+    call = dump["logs"]["delivery.log"][3]["tx_calls"][-1]
+    window_us = 300_000 if retry else 400_000
+    retime_control_ack(dump, groups, call["tx_done_at_us"] + window_us + deadline_offset)
+    uart = uart_bytes(groups)
+    node_observations(uart)
+    case = "node.current.header_error_" + ("retry" if retry else "rearm")
+    if deadline_offset > 0:
+        with pytest.raises(ValueError, match="valid control ACK outside unchanged window"):
+            verify_header_ack_rf(case, outcome, trace, dump, uart)
+    else:
+        verify_header_ack_rf(case, outcome, trace, dump, uart)
 
 
 @pytest.mark.parametrize("damage", ["no_irq", "payload_crc", "mixed", "first_time", "wrong_attempt",

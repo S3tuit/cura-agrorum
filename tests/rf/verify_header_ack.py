@@ -102,7 +102,7 @@ def verify_header_ack_rf(case, outcome, trace, decoded, uart):
     require(any(e["opcode"] == 0x12 and e["value"] == 2 and e["irq_at_us"] == ack_time for e in groups[1]),
             "saved ACK differs from raw RX_DONE")
     require(ack_time > rejects[-1][2]["irq_at_us"] and
-            ack_time - calls[-1]["tx_done_at_us"] <= (400_000 if len(calls) == 1 else 300_000),
+            0 < ack_time - calls[-1]["tx_done_at_us"] <= (400_000 if len(calls) == 1 else 300_000),
             "valid control ACK outside unchanged window")
 
     transmissions = outcome["transmissions"]

@@ -737,7 +737,41 @@ static bool cleanup_diagnostic_is_valid_but_next_operation_is_not(void) {
   return true;
 }
 
+static bool ack_window_diagnostic_context_is_canonical(void) {
+  node_persistence_test_reset_all();
+  for (unsigned variant = 0U; variant < 9U; ++variant) {
+    diagn_context_t context = {
+        .operation = CURAG_OP_RECEIVE, .context_schema = 1U, .context_length = 14U,
+        .context = {1U, 1U, 8U, 7U, 6U, 5U, 4U, 3U, 2U, 1U, 2U, 0U, 0U, 0U},
+    };
+    node_diagnostic_event_t event = {
+        .error = curag_error_make(CURAG_EDOM_CORE, 15U), .context = &context,
+    };
+    switch (variant) {
+    case 1: context.context[0] = 0U; break;
+    case 2: context.context[0] = 3U; break;
+    case 3: context.context[1] = 2U; break;
+    case 4: context.context[10] = 0U; break;
+    case 5: context.context_length = 13U; break;
+    case 6: context.operation = CURAG_OP_DECRYPT; break;
+    case 7: event.context = NULL; break;
+    case 8: context.context[0] = 2U; context.context[1] = 0U;
+            context.context[10] = 0U; context.context[12] = 255U;
+            context.context[13] = 255U; break;
+    default: break;
+    }
+    TEST_ASSERT_EQ_U32(variant == 0U || variant == 8U ? CURAG_OK : CURAG_EINVALID_ARGUMENT,
+                       node_persistence_append_diagnostic_event(&event, NULL));
+  }
+  TEST_ASSERT_EQ_U32(CURAG_OK, node_persistence_sync_all(NULL));
+  node_persistence_test_snapshot_t snapshot;
+  TEST_ASSERT(node_persistence_test_snapshot(TEST_DIAGNOSTIC_PATH, &snapshot));
+  TEST_ASSERT(validate_records(&snapshot, NODE_PERSISTENCE_LOG_DIAGNOSTIC, 2U));
+  return true;
+}
+
 static const node_persistence_test_case_t CASES[] = {
+    {"ack_window_diagnostic_context_is_canonical", ack_window_diagnostic_context_is_canonical},
     {"delivery_outcomes_survive_recovery_and_reject_unknown_values",
      delivery_outcomes_survive_recovery_and_reject_unknown_values},
     {"pending_round_trip_is_newest_first_and_survives_restart",

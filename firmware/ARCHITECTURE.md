@@ -96,8 +96,9 @@ whose `tx_started` is false. The operation keeps one fixed RAM slot per call,
 sized by the two-attempt limit and cleared before each call, and fills it only
 from the driver's returned flags and captured event times: the software time
 just before `SetTx`, the captured `TX_DONE`, and for a valid ACK its captured
-`RX_DONE`, RSSI and SNR. No storage write occurs between `TX_DONE` and RX, during
-an ACK wait or between attempts; the slots reach flash only inside the existing
+`RX_DONE`, RSSI and SNR. This call-history evidence adds no storage writes
+between `TX_DONE` and RX, during an ACK wait or between attempts; the slots
+reach flash only inside the existing
 finished append, so evidence adds bytes but no extra synchronization. A
 budget/time preflight rejection makes no call and has no slot; the charged
 `attempt_count` still counts only calls with `tx_started`. A lost finished record
@@ -115,6 +116,23 @@ Each call ends with exactly one outcome:
 | `DEADLINE_EXPIRED` | `4` | The wake radio deadline prevented the call from starting or truncated its ACK wait |
 
 Invalid, unrelated or late packets never supply ACK time or statistics.
+
+For the pilot, the radio additionally returns per-call header/payload CRC flag
+counts and the first rejection IRQ timestamp, including before a subsequent
+local failure. The core merges these into one bounded RAM summary per ACK
+window (one window per transmission attempt), using saturating counters.
+After `DELIVERY_FINISHED`, each nonempty summary produces a core
+`EACK_WINDOW_PHY_REJECTION` diagnostic with operation `RECEIVE`, the attempt
+index, counts, observation timestamp, and whether a valid ACK ended the window.
+Its context encoding is owned by `INTERFACE.md`. Supported non-ACCEPTED ACKs
+also count as valid. Mixed CRC flags are not evidence of two packets.
+
+This evidence adds no storage work inside an ACK window or between attempts.
+CRC rejection remains clear/rearm/continue under the same deadline; real
+backend failures still end radio work. The diagnostic's envelope time is append
+time, distinct from its retained IRQ time. Detailed logging should be revisited
+for production and cannot establish the sender or historical cause of RF loss.
+
 
 Each pair records the wake's current `cycle_sample_id`, the reading's
 `sample_id`, the logical transport `message_id` and its domain. Transport

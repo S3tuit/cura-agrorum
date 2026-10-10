@@ -202,7 +202,8 @@ unobserved wake. Each next case needs explicitly empty logs again; preserve
 NVS counters when using the formatter within the same identity lifetime.
 
 Cases are `node.current.accepted`, `.retry_later`, `.unsupported`, `.malformed`,
-`.invalid_auth`, `.wrong_message`, `.domain_status`, and
+`.invalid_auth`, `.wrong_message`, `.domain_status`, `.header_error_rearm`,
+`.header_error_retry`, and
 `node.backlog.accepted`, `.retry_later`, `.unsupported`, `.malformed`.
 Use the complete prefix for each choice. Setup obtains real pending readings
 through RETRY_LATER wakes; there are no fabricated backlog files. Current cases
@@ -217,7 +218,7 @@ The final current receives RETRY_LATER to preserve remaining records.
 
 The episode declaration reports the full lease and per-transmitter maxima.
 Reserve up to 70 attempted C6 transmissions per wake (210/280 for the whole
-case, including failed reception). Pi ceilings are case-specific: 3..5 replies
+case, including failed reception). Pi ceilings are case-specific: 3..6 replies
 for current cases and 5..6 for backlog cases. The operator owns preceding history,
 rolling admission and unexpected-reset/uncertain-interval accounting. A lost
 control path does not bound an autonomous node; the operator must retain the
@@ -228,6 +229,56 @@ the disclosed Sx1262/LinuxRadioIo sequence: corrupted tag at +150 ms and valid
 ACK at +350 ms, with the existing 100 ms late-target abort. This is an RF reply
 schedule, not proof of the node's exact internal deadline. Other selected invalid
 ACKs are sent once, followed by silence for that message's remaining retries.
+
+### Node HeaderErr ACK regressions
+
+`node.current.header_error_rearm` sends two interrupted, otherwise valid
+23-byte inverted-IQ ACKs for the target reading, then completes the identical
+ACK in the same window. Expect one accepted transmission and one core diagnostic
+(error 15, operation RECEIVE, schema 1): attempt 1, header/payload counts 2/0,
+valid ACK true. `node.current.header_error_retry` sends only the two interrupted
+ACKs in window 1, then completes the same ACK for the retransmitted reading.
+Expect two attempts, first ACK_TIMEOUT then ACK_RECEIVED, and exactly one
+rejection diagnostic: attempt 1, counts 2/0, valid ACK false. The clean second
+window produces no rejection diagnostic. Existing setup, backlog drainage and
+next-wake metrics assertions still apply.
+
+Both require `CONFIG_NODE_DEEP_SLEEP_SECONDS=10`,
+`CONFIG_NODE_RF_SLEEP_OBSERVATION=y`, and `CONFIG_NODE_RF_PHY_OBSERVATION=y` in
+the sealed production build. The last option links passive test wrappers from
+`firmware/test_apps/radio/main/node_rf_observe.c`; the runner refuses an ordinary
+build for these cases. Firmware policy, cryptography and receive deadlines are
+unchanged. At sleep entry the UART includes raw GetIrqStatus data, associated
+DIO1 timestamps and SetRx/SetTx HAL brackets, followed by a count/overflow marker.
+Every wake's complete bounded trace is required. The independent verifier joins
+the two real HeaderErr observations (`0x0020`, or `0x0022` when RX_DONE is also
+set) to the saved first timestamp and requires
+rearming and the final valid RX_DONE. Saved target TX_DONE timestamps must match
+the raw IRQ trace, with each raw SetTx bound to its saved call within 1 ms.
+RX_DONE alone does not establish packet validity. Missing HeaderErr, any payload
+CRC or unrelated IRQ bit, wrong-window events, overflow or missing capture fails
+the case.
+
+The test peer prepares the complete TX profile before each target, then starts
+at Pi-local uplink RX_DONE +100/+180 ms. The same-window control ACK starts at
++260 ms. A retry's control ACK, setup, backlog and observation ACKs use +150 ms.
+SetTx more than 10 ms late fails rather than sending a catch-up packet. The
+proposed interruption is standby at 18 ms after SetTx issue, with a 20 ms upper
+bound; the verifier separately checks actual SPI timing (17.5..20 ms) and status
+confirmation. Valid ACK completion must fit the original minimum first window
+(400 ms), or the second window (300 ms). Pi and node clocks are never directly
+subtracted. Every interrupted transmission reserves a full 23-byte ACK charge:
+six Pi transmissions total, 407196 us, plus the existing 210-attempt C6 bound.
+
+Before first physical regression, qualify this reverse-direction cutoff with
+a declared finite campaign and independent raw observations. The earlier 18 ms
+C6-to-Pi result is not a Pi-to-C6 qualification. Require 30/30 actual HeaderErr
+observations at the chosen fixed cutoff with valid-ACK controls and controlled
+C6 restart coverage; retain no-event/payload-error outcomes as failures, not
+HeaderErr successes. Record the fixture, schedule, source/build identities and
+actual timing before accepting the cutoff. No failed RF episode is automatically
+retried. Host/build validation alone cannot establish RF PASS; execute and record
+those physical steps in the active workplan.
 
 Example (all paths, identity isolation and the entire declared allowance must
 be operator-confirmed; the nominal fixture file follows the component schema):

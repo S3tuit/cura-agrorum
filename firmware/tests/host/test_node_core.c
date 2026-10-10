@@ -13,7 +13,7 @@ int main(int argc, char **argv) {
   const bool passed =
       node_core_test_initialization(name) || node_core_test_delivery(name) ||
       node_core_test_transitions(name) || node_core_test_finalization(name) ||
-      node_core_test_evidence(name);
+      node_core_test_evidence(name) || node_core_test_phy(name);
   if (!passed) {
     fprintf(stderr, "FAIL %s\n", name);
     return 1;

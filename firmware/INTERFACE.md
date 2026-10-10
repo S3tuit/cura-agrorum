@@ -754,10 +754,40 @@ The controller's stable error domain is `CURAG_EDOM_CORE = 4`:
 | `12` | `CURAG_ECORE_EACK_BODY` | Authenticated ACK body is malformed |
 | `13` | `CURAG_ECORE_EACK_STATUS` | ACK status is unknown or mismatched with its domain |
 | `14` | `CURAG_ECORE_EACK_TIMESTAMP` | ACK completed after the unchanged receive/retry deadline |
+| `15` | `CURAG_ECORE_EACK_WINDOW_PHY_REJECTION` | Pilot observation of PHY rejection during an ACK window; nonfatal |
 
-Core diagnostics use the stable operation that failed and no context schema.
+Core diagnostics use the stable operation and no context schema except for the
+pilot ACK-window observation below.
 Component diagnostics are copied opaquely. Invalid ACK diagnostics do not close
 or extend the active receive interval.
+
+The pilot ACK-window diagnostic uses operation `RECEIVE` and core-local schema
+`CURAG_CORE_ACK_WINDOW_CONTEXT_V1 = 1`, with exactly 14 little-endian bytes:
+
+| Offset | Field | Encoding |
+|---:|---|---|
+| 0 | `attempt_index` | `u8`, 1 or 2 within this delivery |
+| 1 | `valid_ack_received` | `u8`, exactly 0 or 1 |
+| 2 | `first_rejection_at_us` | `u64`, first observed rejection IRQ in this wake's monotonic clock |
+| 10 | `header_crc_count` | `u16`, saturating count |
+| 12 | `payload_crc_count` | `u16`, saturating count |
+
+At least one counter is nonzero. An IRQ with both flags increments both
+counters; counts describe IRQ flag observations, not distinct packets. A valid
+ACK includes every supported authenticated, addressed, correlated status,
+including `RETRY_LATER` and rejection statuses. It does not imply acceptance.
+Cycle/message identity comes from the diagnostic envelope. Its application
+offset still describes append time; the context carries observation time.
+
+The core merges each receive call's observations once into its current attempt,
+finalizes the window in RAM, and appends one diagnostic per affected attempt
+after `DELIVERY_FINISHED`, before returning from delivery. There is no new
+storage work during ACK reception or between attempts. Zero-count windows emit
+nothing. Logging is best-effort, nonrecursive, and does not alter delivery
+outcomes, retries, deadlines, metrics or the final synchronization policy.
+Detailed logging is pilot-only policy to revisit for production; clear/rearm
+handling is already nonfatal. These observations identify neither a sender nor
+the cause of a missing ACK.
 
 Deadline and retry additions saturate at `UINT64_MAX`; subtraction-based
 boundary checks avoid unsigned wrap, and equality fits. `run_ms` saturates at
@@ -1131,6 +1161,9 @@ typedef enum {
 
 typedef struct {
     sx1262_radio_rx_outcome_t outcome;
+    uint16_t header_crc_count;
+    uint16_t payload_crc_count;
+    uint64_t first_rejection_at_us;
     uint64_t rx_done_at_us;
     int16_t rssi_dbm_x2;
     int16_t snr_db_x4;
@@ -1142,7 +1175,12 @@ typedef struct {
 These structures are in-memory API values, not serialized layouts. RSSI is
 signed dBm multiplied by two and SNR is signed dB multiplied by four, matching
 the SX1262 packet-status resolution without floating point. Packet metadata is
-valid only for `SX1262_RADIO_RX_PACKET`; every field is zero for a deadline.
+valid only for `SX1262_RADIO_RX_PACKET`; packet fields are zero otherwise.
+The two CRC counters and first rejection IRQ timestamp describe this call,
+including on a deadline or a subsequent local failure. Counters saturate at
+`UINT16_MAX`. Nonzero counts establish timestamp validity; zero counts require
+zero timestamp. Only IRQs at or before the unchanged receive deadline count.
+The result and observations reset on entry, not when packet validity is lost.
 
 All operations are blocking, single-threaded and non-reentrant. Output
 structures and a non-null `out_diag` are cleared on entry. Input pointers are
@@ -1304,8 +1342,9 @@ delays later processing. A packet completed after the deadline does not win.
 The operation selects inverted IQ and uses single-shot RX so the radio enters
 `STDBY_RC` after each reception. It snapshots the IRQ timestamp, payload and
 packet status before clearing the IRQ, then immediately rearms single-shot RX
-while time remains. PHY header and payload-CRC failures are cleared and
-rearmed internally. A returned application packet is not parsed or
+while time remains. PHY header and payload-CRC flags are counted before clearing and
+rearming internally, preserving their first IRQ timestamp even if handling
+subsequently fails. A returned application packet is not parsed or
 authenticated. After `node_core` rejects an application-invalid packet, it
 calls this operation again with the unchanged absolute deadline; an IRQ already
 pending at that deadline is examined before the clock. The radio remains

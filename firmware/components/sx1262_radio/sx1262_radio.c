@@ -388,6 +388,16 @@ static err_curag_t start_downlink_rx(uint64_t deadline_monotonic_us,
   return CURAG_OK;
 }
 
+/* Packet validity can be lost without erasing earlier IRQ observations. */
+static void clear_rx_packet(sx1262_radio_rx_result_t *result) {
+  result->outcome = SX1262_RADIO_RX_INVALID;
+  result->rx_done_at_us = 0U;
+  result->rssi_dbm_x2 = 0;
+  result->snr_db_x4 = 0;
+  result->payload_length = 0U;
+  memset(result->payload, 0, sizeof(result->payload));
+}
+
 err_curag_t
 sx1262_radio_receive_downlink_until(uint64_t deadline_monotonic_us,
                                     sx1262_radio_rx_result_t *out_result,
@@ -452,6 +462,18 @@ sx1262_radio_receive_downlink_until(uint64_t deadline_monotonic_us,
     }
     if ((irq_status &
          (SX1262_RADIO_IRQ_HEADER_ERROR | SX1262_RADIO_IRQ_CRC_ERROR)) != 0U) {
+      if (out_result->header_crc_count == 0U &&
+          out_result->payload_crc_count == 0U) {
+        out_result->first_rejection_at_us = irq_at_us;
+      }
+      if ((irq_status & SX1262_RADIO_IRQ_HEADER_ERROR) != 0U &&
+          out_result->header_crc_count < UINT16_MAX) {
+        out_result->header_crc_count++;
+      }
+      if ((irq_status & SX1262_RADIO_IRQ_CRC_ERROR) != 0U &&
+          out_result->payload_crc_count < UINT16_MAX) {
+        out_result->payload_crc_count++;
+      }
       if (sx1262_radio_backend_clear_irq(irq_status, &detail) !=
           SX1262_COMMAND_CONFIRMED) {
         return receive_backend_failure(&detail, out_diag);
@@ -502,18 +524,19 @@ sx1262_radio_receive_downlink_until(uint64_t deadline_monotonic_us,
                                          out_result->payload,
                                          (uint8_t)buffer_status.payload_length,
                                          &detail) != SX1262_COMMAND_CONFIRMED) {
+      clear_rx_packet(out_result);
       return receive_backend_failure(&detail, out_diag);
     }
 
     sx1262_radio_backend_packet_status_t packet_status = {0};
     if (sx1262_radio_backend_get_packet_status(&packet_status, &detail) !=
         SX1262_COMMAND_CONFIRMED) {
-      memset(out_result, 0, sizeof(*out_result));
+      clear_rx_packet(out_result);
       return receive_backend_failure(&detail, out_diag);
     }
     if (sx1262_radio_backend_clear_irq(irq_status, &detail) !=
         SX1262_COMMAND_CONFIRMED) {
-      memset(out_result, 0, sizeof(*out_result));
+      clear_rx_packet(out_result);
       return receive_backend_failure(&detail, out_diag);
     }
     out_result->outcome = SX1262_RADIO_RX_PACKET;
@@ -525,7 +548,7 @@ sx1262_radio_receive_downlink_until(uint64_t deadline_monotonic_us,
     if (!deadline_reached(deadline_monotonic_us)) {
       if (sx1262_radio_backend_start_single_rx(&detail) !=
           SX1262_COMMAND_CONFIRMED) {
-        memset(out_result, 0, sizeof(*out_result));
+        clear_rx_packet(out_result);
         return receive_backend_failure(&detail, out_diag);
       }
       s_radio.rx_armed = true;

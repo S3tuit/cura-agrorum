@@ -77,6 +77,7 @@ def build_identity(build):
     return dict(schema=1, node_id=node_id.hex(), files=files,
                 sleep_seconds=config.get("NODE_DEEP_SLEEP_SECONDS", 900),
                 sleep_observation=config.get("NODE_RF_SLEEP_OBSERVATION", False),
+                phy_observation=config.get("NODE_RF_PHY_OBSERVATION", False),
                 dependencies=firmware_sources(build, APP))
 
 

@@ -212,6 +212,8 @@ static bool validate_backlog_binding_payload(const uint8_t *payload,
 }
 
 static bool validate_diagnostic_context(uint16_t error_domain,
+                                        uint16_t error_code,
+                                        const uint8_t *context,
                                         uint16_t operation,
                                         uint8_t context_length,
                                         uint8_t context_schema) {
@@ -224,6 +226,15 @@ static bool validate_diagnostic_context(uint16_t error_domain,
   if (context_length != 0U && operation == CURAG_OP_NONE) {
     return false;
   }
+  /* Core ACK-window V1: canonical wire assignments from INTERFACE.md.
+   * Keep semantic validation here for both append and offline recovery. */
+  if (error_domain == CURAG_EDOM_CORE && error_code == UINT16_C(15)) {
+    return operation == CURAG_OP_RECEIVE && context_schema == 1U &&
+           context_length == 14U && context[0] >= 1U && context[0] <= 2U &&
+           context[1] <= 1U &&
+           (node_persistence_load_le16(context + 10U) != 0U ||
+            node_persistence_load_le16(context + 12U) != 0U);
+  }
   if (context_schema != UINT8_C(1)) {
     return true;
   }
@@ -235,6 +246,8 @@ static bool validate_diagnostic_context(uint16_t error_domain,
     return context_length == 14U;
   case CURAG_EDOM_SENSORS:
     return context_length == 48U;
+  case CURAG_EDOM_CORE:
+    return false; /* Schema 1 belongs only to error 15 above. */
   default:
     /* Schema numbers are scoped by domain. Preserve unknown domains. */
     return true;
@@ -270,8 +283,9 @@ static bool validate_diagnostic_payload(const uint8_t *payload,
           payload_length) {
     return false;
   }
-  return validate_diagnostic_context(error_domain, operation, context_length,
-                                     context_schema);
+  return validate_diagnostic_context(error_domain, error_code,
+                                     payload + NODE_PERSISTENCE_DIAGNOSTIC_PREFIX_SIZE,
+                                     operation, context_length, context_schema);
 }
 
 static bool domain_is_reading(uint8_t domain) {

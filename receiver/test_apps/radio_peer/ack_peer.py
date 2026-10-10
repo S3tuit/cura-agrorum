@@ -21,7 +21,7 @@ from cura_receiver.ports.radio import RadioTxAuthorization
 from cura_receiver.radio import State, ReceiveDisposition
 from cura_receiver.sx1262 import IRQ_TX_DONE
 from test_apps.radio_peer.ack_cases import AckCase, CASES, episode
-from test_apps.radio_peer import peer
+from test_apps.radio_peer import peer, header_ack
 
 
 class AckTraceIo(peer.TraceIo):
@@ -111,7 +111,11 @@ def execute(policy, backend, radio, stop, started):
             else:
                 peer.healthy(radio.rearm(), State.RX_SINGLE, State.RX_EVENT_PENDING)
         else:
-            transmissions.extend(burst(backend, packet, replies, stop))
+            if policy.plan["action"].startswith("header_error_"):
+                transmissions.extend(header_ack.send(backend, packet, replies, stop,
+                    interrupt_count=2 if len(replies) > 1 else 0))
+            else:
+                transmissions.extend(burst(backend, packet, replies, stop))
     raise TimeoutError("production wake sequence incomplete before finite lease")
 
 
@@ -130,7 +134,7 @@ def main():
     peer.require(re.fullmatch("[0-9a-f]{16}", args.node_id), "invalid node ID")
     seal = peer.verify_sources(args.manifest)
     manifest = json.loads(args.manifest.read_text())
-    for name in ("ack_peer.py", "ack_cases.py"):
+    for name in ("ack_peer.py", "ack_cases.py", "header_ack.py"):
         peer.require(f"receiver/test_apps/radio_peer/{name}" in manifest["files"], "missing ACK peer source")
     fixture = json.loads(args.fixture.read_text())
     peer.require(os.geteuid() != 0 and pwd.getpwuid(os.geteuid()).pw_name == fixture["pi_user"], "wrong peer UID")
@@ -151,7 +155,7 @@ def main():
     policy = AckCase(args.case, node_id, keys[node_id], args.sleep_seconds)
     return peer.run_session(args, fixture, seal, policy.plan["pi_max_packets"],
         lambda case, backend, radio, stop, started: execute(policy, backend, radio, stop, started),
-        lease_seconds=policy.plan["lease_seconds"], raw=args.case.endswith(".invalid_auth"), io_class=AckTraceIo,
+        lease_seconds=policy.plan["lease_seconds"], raw=args.case.endswith(".invalid_auth") or ".header_error_" in args.case, io_class=AckTraceIo,
         control=(lambda line: policy.observe_sleep(line, args.run, args.case)) if args.sleep_seconds == 10 else None)
 
 

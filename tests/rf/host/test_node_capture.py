@@ -235,3 +235,33 @@ def test_actual_c6_formatter_image(tmp_path, binaries):
     assert result['logs'] == {name: None for name in
                              ('pending.log', 'quarantine.log', 'diagnostic.log', 'delivery.log')}
     assert image.read_bytes() == raw
+
+
+@pytest.mark.parametrize("attempt,ack,header,crc", [(1, 1, 2, 0), (2, 0, 0, 65535)])
+def test_ack_window_context_round_trip(tmp_path, binaries, attempt, ack, header, crc):
+    context = struct.pack("<BBQHH", attempt, ack, 0x0102030405060708, header, crc)
+    payload = struct.pack("<HHHIIIHBB", 4, 15, 7, 800, 51, 73, 17, len(context), 1) + context
+    image = image_from(tmp_path, binaries, {"diagnostic.log": record(3, payload)})
+    result, = decode_image(image, binaries[0])["logs"]["diagnostic.log"]
+    assert result["context"] == context.hex()
+    assert result["application_offset_ms"] == 800
+    assert result["ack_window_phy"] == dict(attempt_index=attempt, valid_ack_received=bool(ack),
+        first_rejection_at_us=0x0102030405060708, header_crc_count=header, payload_crc_count=crc)
+
+
+@pytest.mark.parametrize("fault", ["attempt0", "attempt3", "ack", "zero", "length", "operation", "schema", "missing"])
+def test_noncanonical_ack_window_context_rejected(tmp_path, binaries, fault):
+    context = bytearray(struct.pack("<BBQHH", 1, 1, 500_000, 2, 0))
+    operation, schema = 17, 1
+    if fault == "attempt0": context[0] = 0
+    if fault == "attempt3": context[0] = 3
+    if fault == "ack": context[1] = 2
+    if fault == "zero": context[10] = 0
+    if fault == "length": context.pop()
+    if fault == "operation": operation = 15
+    if fault == "schema": schema = 2
+    if fault == "missing": context, schema = b"", 0
+    payload = struct.pack("<HHHIIIHBB", 4, 15, 7, 800, 51, 73, operation, len(context), schema) + context
+    image = image_from(tmp_path, binaries, {"diagnostic.log": record(3, payload)})
+    with pytest.raises(ValueError, match="record"):
+        decode_image(image, binaries[0])

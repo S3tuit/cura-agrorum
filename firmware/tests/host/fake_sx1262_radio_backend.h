@@ -39,6 +39,7 @@ typedef struct {
   int16_t snr_db_x4;
   uint8_t payload[SX1262_RADIO_MAX_PAYLOAD_SIZE];
   bool surface_even_after_deadline;
+  uint32_t extra_repeats; /* Stress bounded counters without a large script. */
 } fake_radio_irq_event_t;
 
 typedef struct {
@@ -55,6 +56,7 @@ typedef struct {
   fake_radio_failure_t failure[FAKE_RADIO_OP_COUNT];
   fake_radio_operation_t trace[FAKE_RADIO_MAX_TRACE];
   size_t trace_length;
+  bool disable_trace;
 
   sx1262_radio_profile_t initialized_profile;
   bool initialized_profile_valid;

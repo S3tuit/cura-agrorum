@@ -93,6 +93,10 @@ typedef enum {
 
 typedef struct {
   sx1262_radio_rx_outcome_t outcome;
+  /* Per-call observations survive later local failures; counts saturate. */
+  uint16_t header_crc_count;
+  uint16_t payload_crc_count;
+  uint64_t first_rejection_at_us;
   uint64_t rx_done_at_us;
   int16_t rssi_dbm_x2;
   int16_t snr_db_x4;
@@ -139,7 +143,7 @@ err_curag_t sx1262_radio_transmit_uplink(const uint8_t *payload,
  * Receives one inverted-IQ downlink under an absolute deadline.
  *
  * deadline_monotonic_us: Absolute deadline in the node monotonic clock domain.
- * out_result:            Required caller-owned packet/deadline output.
+ * out_result:            Required caller-owned packet/deadline and observation output.
  * out_diag:              Optional caller-owned diagnostic detail.
  *
  * Returns CURAG_OK for both RX_PACKET and normal RX_DEADLINE. The radio must

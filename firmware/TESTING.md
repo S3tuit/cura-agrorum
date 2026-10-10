@@ -206,6 +206,33 @@ are tested without real waiting.
   entries each begin a fresh two-attempt delivery episode without resetting the
   shared wake budgets.
 
+### Pilot ACK-window PHY observations
+
+Host radio tests exercise header and payload CRC observations, combined flags,
+repeated observations and saturation, inclusive/exclusive IRQ deadline bounds,
+per-call reset, and retention across later clear/rearm/buffer/status failures.
+Controller tests exercise per-attempt merging across invalid packets, supported
+ACK statuses, retries and exhausted attempts, and preserved observations on real
+local failures. A deliberately expensive/failing diagnostic append verifies that
+the new evidence is written after delivery, never before the retry; its failure
+is nonrecursive. Existing tests retain the exact deadline and retry guarantees.
+Persistence and offline real-LittleFS tests validate the canonical 14-byte core
+context and reject malformed records while reading existing diagnostics.
+
+Physical HeaderErr coverage is owned by `tests/rf/README.md` under the production
+node ACK procedure. The two cases exercise recovery in the same window and
+recovery after retry; they require an observed accelerated build with
+`CONFIG_NODE_RF_PHY_OBSERVATION=y`. This links passive HAL/DIO1 wrappers that
+record at most 128 events per wake and dump them only at finalized sleep entry.
+The observer adds no radio commands or injected receive outcomes. Overflow or
+missing observation invalidates the RF result. Build seals include this setting
+and actual observer sources. An ordinary build leaves it disabled.
+
+These tests qualify HeaderErr only in the tested build/fixture. They do not
+physically qualify payload CRC, the installed receiver service, production
+900-second cadence, or uninstrumented timing equivalence. The proposed 18 ms Pi
+cutoff requires reverse-direction qualification before an RF PASS is claimed.
+
 ### Delivery and diagnostic events
 
 - An entered delivery operation appends durable `DELIVERY_STARTED` before its

@@ -79,7 +79,7 @@ class AckCase:
         if h.domain == 2:
             if index != self.target_index:
                 raise ValueError("backlog after a wake-stopping ACK")
-            if self.plan["scope"] == "current" and self.plan["action"] not in ("accepted", "invalid_auth"):
+            if self.plan["scope"] == "current" and self.plan["action"] not in ("accepted", "invalid_auth", "header_error_rearm", "header_error_retry"):
                 raise ValueError("backlog after rejected/unaccepted current")
             if self.plan["scope"] == "backlog" and self.plan["action"] == "retry_later" and self.backlog_seen:
                 raise ValueError("backlog continued after RETRY_LATER")
@@ -102,6 +102,9 @@ class AckCase:
         if index == self.target_index + 1:
             self.observation_started_at = current["at"]
         if h.message_id in self.replies:
+            if (self.replies[h.message_id]["action"] == "header_error_retry" and
+                    self.attempts[h.message_id] == 2):
+                return [bytes.fromhex(self.replies[h.message_id]["frames"][0])], self.observation()
             if self.replies[h.message_id]["action"] not in ("wrong_message", "domain_status"):
                 raise ValueError("retry after terminal ACK; stop, no automatic resend")
             return [], self.observation()
@@ -113,6 +116,8 @@ class AckCase:
             action = self.plan["action"] if h.domain == 2 and len(self.backlog_seen) == 1 else "accepted"
         if action in STATUSES:
             replies = [self.ack(h.message_id, STATUSES[action])]
+        elif action in ("header_error_rearm", "header_error_retry"):
+            replies = [self.ack(h.message_id, 0)] * (3 if action == "header_error_rearm" else 2)
         elif action == "invalid_auth":
             valid = self.ack(h.message_id, 0)
             replies = [valid[:-1] + bytes([valid[-1] ^ 1]), valid]

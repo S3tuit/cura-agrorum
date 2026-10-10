@@ -32,3 +32,15 @@ launcher; ordinary receiver hardware targets remain Pi-local.
 unchanged radio counters, no recovery episodes and ordinary confirmed rearming;
 raw SPI evidence is independently checked by tests/rf/verify.py. The receive
 disposition remains internal and does not add a production profile or diagnostic.
+
+## Node HeaderErr ACK stimuli
+
+The production-node cases `node.current.header_error_rearm` and
+`node.current.header_error_retry` use the isolated lower-layer peer with
+`header_ack.py`. Both send two authenticated ACK frames interrupted during PHY
+reception; the first case then completes the same ACK in the first window,
+while the second completes it only after the node retransmits. The ordinary
+receiver service is not modified. The [RF procedure](../../../tests/rf/README.md#node-headererr-ack-regressions)
+owns timing bounds, reservations, build requirements and physical qualification.
+Pi SPI capture and passive node IRQ capture must independently corroborate the
+saved diagnostic; a timeout or payload CRC is not a HeaderErr test pass.

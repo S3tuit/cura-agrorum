@@ -46,8 +46,10 @@ static bool begin_operation(fake_radio_operation_t operation,
   assert(operation < FAKE_RADIO_OP_COUNT);
   sx1262_radio_backend_error_clear(error);
   ++g_fake_sx1262_radio.calls[operation];
-  assert(g_fake_sx1262_radio.trace_length < FAKE_RADIO_MAX_TRACE);
-  g_fake_sx1262_radio.trace[g_fake_sx1262_radio.trace_length++] = operation;
+  if (!g_fake_sx1262_radio.disable_trace) {
+    assert(g_fake_sx1262_radio.trace_length < FAKE_RADIO_MAX_TRACE);
+    g_fake_sx1262_radio.trace[g_fake_sx1262_radio.trace_length++] = operation;
+  }
   g_fake_sx1262_radio.now_us += g_fake_sx1262_radio.advance_us[operation];
   const fake_radio_failure_t *const failure =
       &g_fake_sx1262_radio.failure[operation];
@@ -175,7 +177,7 @@ bool sx1262_radio_backend_wait_dio1(uint64_t deadline_monotonic_us,
   }
 
   const size_t index = g_fake_sx1262_radio.next_irq_event;
-  const fake_radio_irq_event_t *const event =
+  fake_radio_irq_event_t *const event =
       &g_fake_sx1262_radio.irq_events[index];
   const bool already_pending = event->at_us <= g_fake_sx1262_radio.now_us;
   if (!already_pending && event->at_us > deadline_monotonic_us &&
@@ -183,7 +185,11 @@ bool sx1262_radio_backend_wait_dio1(uint64_t deadline_monotonic_us,
     g_fake_sx1262_radio.now_us = deadline_monotonic_us;
     return true;
   }
-  ++g_fake_sx1262_radio.next_irq_event;
+  if (event->extra_repeats != 0U) {
+    event->extra_repeats--;
+  } else {
+    ++g_fake_sx1262_radio.next_irq_event;
+  }
   g_fake_sx1262_radio.active_irq_event = index;
   g_fake_sx1262_radio.active_irq_event_valid = true;
   g_fake_sx1262_radio.now_us = event->at_us;

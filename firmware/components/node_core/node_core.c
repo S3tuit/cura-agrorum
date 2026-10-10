@@ -75,6 +75,32 @@ typedef struct {
   uint32_t attempt_count;
 } node_delivery_result_t;
 
+typedef struct {
+  uint64_t first_rejection_at_us;
+  uint16_t header_crc_count;
+  uint16_t payload_crc_count;
+  bool valid_ack_received;
+} node_ack_window_t;
+
+static uint16_t saturating_add_u16(uint16_t left, uint16_t right) {
+  const uint32_t sum = (uint32_t)left + right;
+  return sum > UINT16_MAX ? UINT16_MAX : (uint16_t)sum;
+}
+
+static void merge_rx_observations(node_ack_window_t *window,
+                                  const sx1262_radio_rx_result_t *received) {
+  if (received->header_crc_count == 0U && received->payload_crc_count == 0U) {
+    return;
+  }
+  if (window->header_crc_count == 0U && window->payload_crc_count == 0U) {
+    window->first_rejection_at_us = received->first_rejection_at_us;
+  }
+  window->header_crc_count = saturating_add_u16(window->header_crc_count,
+                                               received->header_crc_count);
+  window->payload_crc_count = saturating_add_u16(window->payload_crc_count,
+                                                received->payload_crc_count);
+}
+
 /* A call follows only a started, timed-out call, so calls never exceed it. */
 static_assert(NODE_CORE_DELIVERY_ATTEMPT_LIMIT == NODE_DELIVERY_TX_CALL_SLOTS,
               "transmit-call evidence slots must match the retry limit");
@@ -332,6 +358,34 @@ static void append_diagnostic(node_cycle_context_t *cycle, err_curag_t error,
   (void)node_persistence_append_diagnostic_event(&event, NULL);
 }
 
+static void append_ack_window(node_cycle_context_t *cycle,
+                               const node_ack_window_t *window,
+                               uint8_t attempt_index) {
+  if (window->header_crc_count == 0U && window->payload_crc_count == 0U) {
+    return;
+  }
+  /* Pilot-only evidence for investigating ACK reception. PHY rejections are
+   * nonfatal and never extend the receive deadline. These observations do not
+   * identify the sender or prove ACK corruption. Revisit detailed logging for
+   * production; normally discard and continue RX. Persist only after delivery. */
+  diagn_context_t context;
+  core_diagnostic_context(CURAG_OP_RECEIVE, &context);
+  context.context_schema = CURAG_CORE_ACK_WINDOW_CONTEXT_V1;
+  context.context_length = CURAG_CORE_ACK_WINDOW_CONTEXT_V1_LENGTH;
+  context.context[0] = attempt_index;
+  context.context[1] = window->valid_ack_received ? 1U : 0U;
+  for (unsigned byte = 0U; byte < 8U; ++byte) {
+    context.context[2U + byte] =
+        (uint8_t)(window->first_rejection_at_us >> (8U * byte));
+  }
+  context.context[10] = (uint8_t)window->header_crc_count;
+  context.context[11] = (uint8_t)(window->header_crc_count >> 8U);
+  context.context[12] = (uint8_t)window->payload_crc_count;
+  context.context[13] = (uint8_t)(window->payload_crc_count >> 8U);
+  append_diagnostic(cycle, core_error(CURAG_ECORE_EACK_WINDOW_PHY_REJECTION),
+                    &context);
+}
+
 static err_curag_t
 build_frame(const node_identity_t *identity, uint32_t message_id,
             cura_lora_v2_domain_t domain, const cura_lora_v2_reading_t *reading,
@@ -507,6 +561,7 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
   /* Evidence stays in RAM until the single finished append below. */
   node_delivery_tx_call_t tx_calls[NODE_DELIVERY_TX_CALL_SLOTS];
   uint8_t tx_call_count = 0U;
+  node_ack_window_t ack_windows[NODE_CORE_DELIVERY_ATTEMPT_LIMIT] = {0};
   uint64_t first_set_tx_us = 0U;
   bool first_set_tx_valid = false;
   uint64_t accepted_at_us = 0U;
@@ -578,11 +633,13 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
         ack_deadline_us < cycle->radio_deadline_us ? ack_deadline_us
                                                    : cycle->radio_deadline_us;
 
+    node_ack_window_t *window = &ack_windows[attempt_count - 1U];
     bool receive_complete = false;
     while (!receive_complete) {
       sx1262_radio_rx_result_t rx_result;
       const err_curag_t rx_error = sx1262_radio_receive_downlink_until(
           receive_deadline_us, &rx_result, &diagnostic);
+      merge_rx_observations(window, &rx_result);
       if (rx_error != CURAG_OK) {
         append_diagnostic(cycle, rx_error, &diagnostic);
         final_result = NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR;
@@ -606,6 +663,7 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
         const ack_validation_result_t validation =
             validate_ack(cycle->identity, message_id, &rx_result);
         if (validation.kind == ACK_VALIDATION_VALID) {
+          window->valid_ack_received = true;
           final_result = validation.result;
           accepted_at_us = rx_result.rx_done_at_us;
           call->outcome = NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED;
@@ -657,6 +715,9 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
   memcpy(finished.detail.finished.tx_calls, tx_calls,
          tx_call_count * sizeof(tx_calls[0]));
   append_delivery_boundary(cycle, &finished);
+  for (uint32_t index = 0U; index < attempt_count; ++index) {
+    append_ack_window(cycle, &ack_windows[index], (uint8_t)(index + 1U));
+  }
   return (node_delivery_result_t){
       .result = final_result,
       .attempt_count = attempt_count,

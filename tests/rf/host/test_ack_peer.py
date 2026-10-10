@@ -16,12 +16,12 @@ support = runpy.run_path(str(Path(__file__).with_name("test_peer.py")))
 
 
 @pytest.mark.parametrize("sleep_seconds", [900, 10])
-@pytest.mark.parametrize("action,downlinks", [("accepted", 4), ("invalid_auth", 5)])
+@pytest.mark.parametrize("action,downlinks", [("accepted", 4), ("invalid_auth", 5), ("header_error_rearm", 6), ("header_error_retry", 6)])
 def test_production_radio_peer_completes_real_scheduled_sequence(action, downlinks, sleep_seconds):
     clock = support["Clock"](monotonic_us=10000)
     io = support["Air"](clock)
     backend = Sx1262(io, clock, clock)
-    radio = None if action == "invalid_auth" else Radio(backend)
+    radio = None if action != "accepted" else Radio(backend)
     if radio:
         assert radio.initialize().state is State.RX_SINGLE
     else:
@@ -45,13 +45,15 @@ def test_production_radio_peer_completes_real_scheduled_sequence(action, downlin
               for i in range(3)]
     for message, domain, payload, at in (
         (100, 1, bodies[0], 1_000_000), (101, 1, bodies[1], 1_000_000 + interval),
-        (102, 2, bodies[0], 1_500_000 + interval), (103, 1, bodies[2], 1_000_000 + 2 * interval)):
+        (102, 2, bodies[0], 1_900_000 + interval), (103, 1, bodies[2], 1_000_000 + 2 * interval)):
         header = struct.pack("<BB8sI", 32, domain, node, message)
         nonce = struct.pack("<8sIB", node, message, domain)
         frame = header + AESCCM(key, tag_length=8).encrypt(nonce, payload, header)
         io.incoming.append((at, frame))
+        if message == 101 and action == "header_error_retry":
+            io.incoming.append((at + 502_656, frame))
     outcome = execute(policy, backend, radio, threading.Event(), clock.now_monotonic_us())
-    assert len(outcome["packets"]) == 4
+    assert len(outcome["packets"]) == (5 if action == "header_error_retry" else 4)
     assert len(outcome["transmissions"]) == downlinks
     assert len([c for c in io.commands if c[0] == 0x83]) == downlinks
     assert backend.profile == "rx"

@@ -18,6 +18,7 @@ add_executable(
   test_node_core_transitions.c
   test_node_core_finalization.c
   test_node_core_evidence.c
+  test_node_core_phy.c
   ${FIRMWARE_ROOT}/components/node_common/node_common.c
   ${FIRMWARE_ROOT}/components/node_core/node_core.c
   ${FIRMWARE_ROOT}/components/node_persistence/node_persistence_record.c
@@ -121,6 +122,10 @@ set(
   tx_calls_ignore_invalid_acks
   tx_calls_classify_failures
   tx_calls_identify_backlog_wake
+  phy_valid_statuses_and_logging_failure
+  phy_merge_calls_and_saturate
+  phy_retry_and_exhaustion
+  phy_local_failure_preserves_summary
 )
 
 foreach(SCENARIO IN LISTS NODE_CORE_TEST_SCENARIOS)
@@ -416,6 +421,14 @@ set(
   receive_snapshots_before_clear_and_rearms
   receive_deadline_keeps_rx_armed
   receive_discards_phy_errors
+  receive_discards_phy_errors_with_rx_done
+  phy_observations_deadline_and_saturation
+  phy_clear_failure
+  phy_rearm_failure
+  phy_then_buffer_failure
+  phy_then_status_failure
+  phy_then_packet_clear_failure
+  phy_then_packet_rearm_failure
   oversized_receive_is_bounded
   late_packet_is_discarded
   same_absolute_deadline_is_not_extended

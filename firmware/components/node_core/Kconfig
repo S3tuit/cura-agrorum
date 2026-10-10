@@ -11,4 +11,12 @@ config NODE_RF_SLEEP_OBSERVATION
     help
         Test builds only: emit a marker after cycle finalization and successful
         timer configuration, immediately before the terminal sleep call.
+config NODE_RF_PHY_OBSERVATION
+    bool "Capture passive PHY IRQ observations for RF qualification"
+    depends on NODE_RF_SLEEP_OBSERVATION
+    default n
+    help
+        Test builds only: link bounded passive radio wrappers and dump the
+        observed IRQ/timing data at finalized sleep entry. Overflow fails RF
+        verification. This does not inject events or change receive policy.
 endmenu

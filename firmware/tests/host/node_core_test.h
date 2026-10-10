@@ -63,3 +63,5 @@ bool node_core_test_delivery(const char *name);
 bool node_core_test_transitions(const char *name);
 bool node_core_test_finalization(const char *name);
 bool node_core_test_evidence(const char *name);
+
+bool node_core_test_phy(const char *name);

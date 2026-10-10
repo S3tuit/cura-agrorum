@@ -61,7 +61,7 @@ def decode_tx_call(payload: bytes, offset: int) -> dict:
 
 
 def decode_record(record: dict) -> dict:
-    """Decode only current RF identity/outcome fields; keep context as bytes."""
+    """Decode current RF evidence; preserve raw context alongside known fields."""
     payload = bytes.fromhex(record["payload"])
     kind = record["type"]
     result = dict(record)
@@ -92,6 +92,10 @@ def decode_record(record: dict) -> dict:
                       message_id=message if flags & 4 else None,
                       operation=operation, context_schema=schema,
                       context=payload[22:22 + length].hex())
+        if (domain, code, schema) == (4, 15, 1):
+            attempt, ack, first, header, crc = struct.unpack("<BBQHH", payload[22:22 + length])
+            result["ack_window_phy"] = dict(attempt_index=attempt, valid_ack_received=bool(ack),
+                first_rejection_at_us=first, header_crc_count=header, payload_crc_count=crc)
     else:
         raise ValueError("unsupported record type")
     return result

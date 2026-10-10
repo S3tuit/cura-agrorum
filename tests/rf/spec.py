@@ -49,6 +49,8 @@ CASES = {e.name: e for e in (
     Episode("node.current.retry_later", "nominal", 210, (23,) * 3, "Retain current after RETRY_LATER", "node", 3, 1),
     Episode("node.current.unsupported", "nominal", 210, (23,) * 3, "Quarantine unsupported current", "node", 3, 1),
     Episode("node.current.malformed", "nominal", 210, (23,) * 3, "Quarantine malformed current", "node", 3, 1),
+    Episode("node.current.header_error_rearm", "nominal", 210, (23,) * 6, "Two HeaderErr ACKs then valid ACK in one window", "node", 3, 1),
+    Episode("node.current.header_error_retry", "nominal", 210, (23,) * 6, "Two HeaderErr ACKs then valid ACK after retry", "node", 3, 1),
     Episode("node.current.invalid_auth", "nominal", 210, (23,) * 5, "Ignore corrupt ACK then accept valid ACK", "node", 3, 1),
     Episode("node.current.wrong_message", "nominal", 210, (23,) * 3, "Ignore wrong-message ACK then observe silence", "node", 3, 1),
     Episode("node.current.domain_status", "nominal", 210, (23,) * 3, "Ignore mismatched ACK domain/status", "node", 3, 1),

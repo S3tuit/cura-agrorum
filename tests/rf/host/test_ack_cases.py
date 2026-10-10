@@ -45,6 +45,14 @@ def test_real_authenticated_case_plans(case):
         expected = {"accepted": 0, "retry_later": 1, "unsupported": 2, "malformed": 3}[action]
         ack = open_frame(KEY, replies[0])
         assert (ack.header.domain, ack.plaintext_body) == (3 + expected, bytes([expected]))
+    elif action.startswith("header_error_"):
+        assert len(replies) == (3 if action == "header_error_rearm" else 2)
+        assert len(set(replies)) == 1
+        assert open_frame(KEY, replies[0]).plaintext_body == b"\0"
+        if action == "header_error_retry":
+            assert policy.receive(target, at + 500_000)[0] == [replies[0]]
+        with pytest.raises(ValueError, match="retry after terminal ACK"):
+            policy.receive(target, at + 1_000_000)
     elif action == "invalid_auth":
         from cura_receiver.protocol_v2_lora_crypto import AuthenticationError
         with pytest.raises(AuthenticationError):

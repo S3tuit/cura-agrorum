@@ -24,6 +24,7 @@ from production_node import verify_build, verify_installed, capture_storage, ide
 from spec import NODE_CASES as CASES, node_episode as episode, validate_fixture
 from transport import RemoteTransport
 from verify_ack import verify_ack_case, verify_ack_transmissions
+from verify_header_ack import verify_header_ack_rf
 from sleep_observation import sleep_count
 
 
@@ -43,6 +44,8 @@ def preflight(args):
     if not args.formatter_result.is_file() or "LittleFS format completed successfully; NVS was preserved" not in args.formatter_result.read_text():
         raise ValueError("missing successful formatter result")
     seal = verify_build(args.build)
+    if ".header_error_" in args.case and not seal.get("phy_observation", False):
+        raise ValueError("HeaderErr RF cases require sealed passive PHY observation build")
     duration = seal.get("sleep_seconds", 900)
     if duration != 10 or not seal.get("sleep_observation", False):
         raise ValueError("node requires observed accelerated10s build; production cadence requires separate validation")
@@ -155,6 +158,9 @@ def run(args):
                                   result["outcome"], result["trace"], result["attempts"])
         verified = verify_ack_case(args.case, bytes.fromhex(seal["node_id"]), key,
                                    result["outcome"]["packets"], captured)
+        if ".header_error_" in args.case:
+            verify_header_ack_rf(args.case, result["outcome"], result["trace"], captured,
+                                 (root / "c6-uart.bin").read_bytes())
         run_record["results"].append(verified)
         verified["sleep_seconds"] = plan["sleep_seconds"]
         verified["cadence_scope"] = "accelerated ACK policy" if plan["sleep_seconds"] == 10 else "production cadence"

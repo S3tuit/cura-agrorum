@@ -61,7 +61,7 @@ def component(root, elapsed, *, transactions=None):
     policy.update_time(
         AirtimeCorrelation(
             TrustedTimeSample(
-                elapsed + 100, elapsed, 1, SystemTimeQuality.NETWORK_SYNCED, 1
+                elapsed + 100, elapsed, 1, SystemTimeQuality.CHRONY_SYNCED, 1
             ),
             1,
             elapsed + 10_000_000_000,

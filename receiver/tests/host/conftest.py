@@ -123,7 +123,7 @@ def airtime_component(tmp_path):
         )
         policy.update_time(
             AirtimeCorrelation(
-                TrustedTimeSample(100, utc, 1, Q.NETWORK_SYNCED, 1), 1, 10_000_000_100
+                TrustedTimeSample(100, utc, 1, Q.CHRONY_SYNCED, 1), 1, 10_000_000_100
             ),
             rtc_health=RH.PRESENT,
         )

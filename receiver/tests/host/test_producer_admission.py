@@ -20,9 +20,9 @@ def test_two_clock_publications_in_one_poll_are_both_counted():
     chrony = FakeChronyControl()
     chrony.tracking_results.append(tracking(rt))
     result = rt.poll_chrony(chrony)
-    assert result.observation.system_time_quality is E.SystemTimeQuality.NETWORK_SYNCED
+    assert result.observation.system_time_quality is E.SystemTimeQuality.CHRONY_SYNCED
     entries = queue.claim_batch(max_entities=100).entries
-    assert [e.entity.system_time_quality for e in entries] == [E.SystemTimeQuality.UNTRUSTED, E.SystemTimeQuality.NETWORK_SYNCED]
+    assert [e.entity.system_time_quality for e in entries] == [E.SystemTimeQuality.UNTRUSTED, E.SystemTimeQuality.CHRONY_SYNCED]
     assert before[4] == (1, 0, 0)
     assert rt.queue.counts[4] == (3, 0, 0)
     assert rt.time_quality_transition_count == 3

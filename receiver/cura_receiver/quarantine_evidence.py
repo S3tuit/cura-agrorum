@@ -230,6 +230,9 @@ _ALLOWED_ENUM_MEMBERS: dict[str, dict[str, int]] = {
     "cura_receiver.generated.receiver_enums_generated.SystemTimeQuality": {
         "UNTRUSTED": 0,
         "RTC_HOLDOVER": 1,
+        "CHRONY_SYNCED": 2,
+        # Archived V1 evidence retains its original enum spelling. The live
+        # enum has no alias and new records emit CHRONY_SYNCED only.
         "NETWORK_SYNCED": 2,
     },
 }

@@ -79,7 +79,7 @@ class TrustedTimeSample:
                 "sample generation exceeds the persisted observation range"
             )
         if self.quality not in (
-            SystemTimeQuality.NETWORK_SYNCED,
+            SystemTimeQuality.CHRONY_SYNCED,
             SystemTimeQuality.RTC_HOLDOVER,
         ):
             raise ValueError("a trusted sample must have a trusted quality")
@@ -136,7 +136,7 @@ def network_observation(
             policy=policy,
         )
         if (
-            decision.candidate_quality is not SystemTimeQuality.NETWORK_SYNCED
+            decision.candidate_quality is not SystemTimeQuality.CHRONY_SYNCED
             or decision.error_bound_us is None
         ):
             return None
@@ -149,7 +149,7 @@ def network_observation(
             midpoint,
             sampled_utc_us,
             estimate.error_at(midpoint, policy),
-            SystemTimeQuality.NETWORK_SYNCED,
+            SystemTimeQuality.CHRONY_SYNCED,
             before.generation,
             SampleEvidence(
                 operation_started_at_monotonic_us,
@@ -377,14 +377,14 @@ def observation_schedule(
     expiry = _trust_expiry_us(sample, policy)
     cap = (
         policy.clock_observation_period_cap_us
-        if sample.quality is SystemTimeQuality.NETWORK_SYNCED
+        if sample.quality is SystemTimeQuality.CHRONY_SYNCED
         else policy.rtc_holdover_observation_period_cap_us
     )
     observation = checked_monotonic_deadline(sample.monotonic_us, cap)
     if expiry is not None:
         observation = min(observation, expiry)
     poll = None
-    if sample.quality is SystemTimeQuality.NETWORK_SYNCED:
+    if sample.quality is SystemTimeQuality.CHRONY_SYNCED:
         if tracking_started_at_monotonic_us is None:
             raise ValueError("network scheduling requires the supporting query start")
         checked_monotonic_elapsed(tracking_started_at_monotonic_us, sample.monotonic_us)
@@ -408,8 +408,8 @@ def rtc_refresh_source_error_us(
     try:
         if (
             sample.generation != current.generation
-            or current.quality is not SystemTimeQuality.NETWORK_SYNCED
-            or sample.quality is not SystemTimeQuality.NETWORK_SYNCED
+            or current.quality is not SystemTimeQuality.CHRONY_SYNCED
+            or sample.quality is not SystemTimeQuality.CHRONY_SYNCED
         ):
             return None
         checked_monotonic_elapsed(sample.monotonic_us, now_monotonic_us)
@@ -439,7 +439,7 @@ def rtc_refresh_due_us(
 ) -> int | None:
     """Initial stable qualifying samples are due now; subsequent caps use the last refresh."""
     if (
-        sample.quality is not SystemTimeQuality.NETWORK_SYNCED
+        sample.quality is not SystemTimeQuality.CHRONY_SYNCED
         or sample.error_bound_us > policy.network_rtc_write_error_threshold_us
         or sample.error_bound_us >= policy.receiver_utc_error_budget_us
     ):

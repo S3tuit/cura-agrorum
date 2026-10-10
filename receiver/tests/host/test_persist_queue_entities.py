@@ -75,7 +75,7 @@ def _health_request() -> ReceiverHealthRequestV1:
         radio_recovery_successes=2,
         radio_recovery_failures=1,
         radio_recovery_attempts_by_reason=(0,) * 8,
-        system_time_quality=SystemTimeQuality.NETWORK_SYNCED,
+        system_time_quality=SystemTimeQuality.CHRONY_SYNCED,
         rtc_health=RtcHealth.PRESENT,
         time_quality_transition_count=4,
         rtc_health_transition_count=5,

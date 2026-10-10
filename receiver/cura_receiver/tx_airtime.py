@@ -146,7 +146,7 @@ class TxAirtimePolicy:
         ledger = AirtimeLedger(self.policy, monotonic_us=now, rate_bound_ppm=self.rate)
         usable = (state is not None and state.airtime_snapshot is not None and evidence is not None
                   and state.last_observed_system_time_quality in
-                  (E.SystemTimeQuality.NETWORK_SYNCED, E.SystemTimeQuality.RTC_HOLDOVER))
+                  (E.SystemTimeQuality.CHRONY_SYNCED, E.SystemTimeQuality.RTC_HOLDOVER))
         if usable:
             try:
                 for name in ('rolling_window_us', 'tx_airtime_budget_us', 'entry_charge_us'):

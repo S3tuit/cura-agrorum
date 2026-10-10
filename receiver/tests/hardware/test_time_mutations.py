@@ -921,7 +921,7 @@ def execute_component(case, value):
         )
         if case == "rtc":
             update = rt.poll_chrony(chrony)
-            assert rt.state.quality is E.SystemTimeQuality.NETWORK_SYNCED, update
+            assert rt.state.quality is E.SystemTimeQuality.CHRONY_SYNCED, update
             utc = rt.sample.utc_us
             state = synthetic()
             state = replace(
@@ -1006,7 +1006,7 @@ def execute_component(case, value):
                 time.sleep(0.02)
             assert (
                 rt.step_state is SS.IDLE
-                and rt.state.quality is E.SystemTimeQuality.NETWORK_SYNCED
+                and rt.state.quality is E.SystemTimeQuality.CHRONY_SYNCED
             )
             recovery = updates[-1].observation
             from cura_receiver.clock_correlation import (

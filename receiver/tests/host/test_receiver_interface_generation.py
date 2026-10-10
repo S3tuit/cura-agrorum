@@ -165,6 +165,15 @@ def test_generated_enums_match_manifest_and_are_not_int_subclasses() -> None:
         }
 
     assert generated.SystemTimeQuality.UNTRUSTED != generated.AdmissionResult.RESERVED
+    # The rename preserves persisted numeric identities without a live alias.
+    assert {
+        name: member.value
+        for name, member in generated.SystemTimeQuality.__members__.items()
+    } == {
+        "UNTRUSTED": 0,
+        "RTC_HOLDOVER": 1,
+        "CHRONY_SYNCED": 2,
+    }
 
 
 # Pins every generated time-diagnostic status assignment.
@@ -221,7 +230,7 @@ def test_schema_fingerprint_is_exact_schema_sql_sha256() -> None:
         hashlib.sha256(schema_bytes).digest() == generated.DATABASE_SCHEMA_FINGERPRINT
     )
     assert generated.SQLITE_APPLICATION_ID == 0x43555252
-    assert generated.DATABASE_SCHEMA_VERSION == 14
+    assert generated.DATABASE_SCHEMA_VERSION == 15
 
 
 # Requires every declared catalogue, entity table, and trigger in assembled SQL.

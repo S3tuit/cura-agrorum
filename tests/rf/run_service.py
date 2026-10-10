@@ -84,7 +84,7 @@ def service_prerequisite_reasons(observed):
             clock['clock_state_generation'] < 1 or
             not observed['started'] <= clock['sampled_at_monotonic_us'] <= now or
             now - clock['sampled_at_monotonic_us'] > 60_000_000):
-        reasons.append('fresh_NETWORK_SYNCED_observation_required')
+        reasons.append('fresh_CHRONY_SYNCED_observation_required')
     if airtime is None or airtime['status'] != 'LOADED':
         reasons.append('validated_airtime_history_required')
     elif not 0 <= airtime['total_charged_us'] < airtime['budget_us']:

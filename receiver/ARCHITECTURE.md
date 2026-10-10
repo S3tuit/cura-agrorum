@@ -323,7 +323,7 @@ The receiver uses the Pi system clocks and the battery-backed DS3231 for differe
   corrections to it, so its rate is not assumed to equal physical elapsed
   time exactly.
 - Linux system UTC is sampled only while constructing a bounded
-  `NETWORK_SYNCED` monotonic/UTC `ClockObservationV1`; analysis uses those
+  `CHRONY_SYNCED` monotonic/UTC `ClockObservationV1`; analysis uses those
   observations to derive UTC for events from the same receiver instance within
   the same Linux boot without mutating event rows.
 - The DS3231 preserves UTC while the Pi is unpowered and seeds the system clock
@@ -343,7 +343,7 @@ System-time quality and RTC health are separate axes:
 
 ```text
 system_time_quality:
-    NETWORK_SYNCED
+    CHRONY_SYNCED
     RTC_HOLDOVER
     UNTRUSTED
 
@@ -353,7 +353,14 @@ rtc_health:
     INVALID
 ```
 
-This permits states such as `NETWORK_SYNCED` with a missing RTC. `NETWORK_SYNCED` is established only from the current time-synchronization service. `RTC_HOLDOVER` requires all of the following:
+This permits states such as `CHRONY_SYNCED` with a missing RTC. `CHRONY_SYNCED`
+means Linux UTC is disciplined by Chrony and the receiver currently accepts
+its synchronization state and calculated uncertainty. It does not require
+recent NTP contact: a current local Chrony estimate may qualify during network
+outages. Observation evidence retains the reference timestamp and uncertainty
+for later analysis. The numeric value remains `2`; this rename from
+`NETWORK_SYNCED` does not change trust thresholds or introduce a source-age
+cutoff. `RTC_HOLDOVER` requires all of the following:
 
 - durable provenance that network-synchronized system UTC was successfully written to the RTC;
 - a currently present and valid RTC;
@@ -390,11 +397,11 @@ trust transition is ordered:
 1. Establish that the chrony status and the kernel clock state meet the
    configured network-synchronization bounds.
 2. Process that tracking result as one atomic time-policy update, advance
-   `clock_state_generation`, transition the live quality to `NETWORK_SYNCED`
+   `clock_state_generation`, transition the live quality to `CHRONY_SYNCED`
    and publish the corresponding trusted
    `ClockObservationV1`.
 
-Entering `NETWORK_SYNCED` does not by itself authorize an RTC write. On the
+Entering `CHRONY_SYNCED` does not by itself authorize an RTC write. On the
 first stable network result after startup or a clock-step episode, and then at
 the configured three-hour RTC-refresh period, the communicator starts a refresh
 only when the fresh observation's complete network error is at or below the
@@ -431,7 +438,7 @@ projection, so all actual-stage checks remain. The refresh is ordered:
    differ from network UTC advanced to the same read midpoint by no more than
    the fixed one-second `time_sampling_margin_us`; the actual difference and
    the checked read uncertainty are charged to provenance.
-5. Recheck the episode generation, current `NETWORK_SYNCED` quality and the
+5. Recheck the episode generation, current `CHRONY_SYNCED` quality and the
    stricter source-error condition, including that the supporting tracking
    result has not reached its next required poll deadline.
 6. Durably commit the verification uncertainty, RTC drift bound and new RTC
@@ -474,7 +481,7 @@ its retry window plus final-attempt budget is included in scheduling lead time.
 Failure changes RTC health without removing separately valid network time.
 
 A clock-step command is not an RTC-refresh trigger: the communicator waits for
-the first qualifying post-step `NETWORK_SYNCED` observation. A reset between
+the first qualifying post-step `CHRONY_SYNCED` observation. A reset between
 the RTC update and the durable provenance commit, or a generation change at
 any fallible boundary, leaves a good RTC conservatively classified as
 untrusted. The reverse ordering is forbidden because it could make a later Pi
@@ -526,11 +533,11 @@ running. Three hours is the pilot's ordinary online period cap. Direct
 source, the communicator shortens the next interval when required by the
 remaining UTC-error budget.
 `UNTRUSTED` observations intentionally contain no UTC. A trusted observation
-contains UTC only when quality is `RTC_HOLDOVER` or `NETWORK_SYNCED`.
+contains UTC only when quality is `RTC_HOLDOVER` or `CHRONY_SYNCED`.
 
 The period caps limit the distance to a persisted correlation for recovery and
 later analysis; they are not the proof that UTC is accurate. A
-`NETWORK_SYNCED` observation obtains its initial error from the complete chrony
+`CHRONY_SYNCED` observation obtains its initial error from the complete chrony
 network-error calculation below, advanced from query start to the kernel
 bracket midpoint. An `RTC_HOLDOVER` observation obtains it from
 the durable verification uncertainty, RTC drift accumulated before the read,
@@ -578,7 +585,7 @@ approximately five seconds inside the one-minute target for other direct-anchor
 error. Extrapolation across many sleep cycles remains explicitly best-effort
 and is not justified by this direct-anchor budget.
 
-A `NETWORK_SYNCED` observation is sampled without a receiver/daemon lock:
+A `CHRONY_SYNCED` observation is sampled without a receiver/daemon lock:
 
 ```text
 generation_before = clock_state_generation
@@ -592,7 +599,7 @@ The sample is accepted only if both generation reads are equal, checked
 monotonic ordering holds from the supporting tracking-query start through
 `M_after`, that complete span is no greater than the fixed one-second
 `time_sampling_margin_us`, and `adjtimex()` reports no unexpected
-clock-interference condition. A `NETWORK_SYNCED` observation also requires that
+clock-interference condition. A `CHRONY_SYNCED` observation also requires that
 fresh acceptable `ChronyTrackingResult` obtained by the communicator before
 this bracket. The observation monotonic value is the bracket midpoint and its
 UTC is the system time returned by the read-only `adjtimex()` call. A bounded
@@ -635,7 +642,7 @@ this generation; it is never held across chrony, device or persistence I/O and
 cannot lock chronyd itself.
 
 Linux `adjtimex()` synchronization status is deliberately not the authority
-for `NETWORK_SYNCED`. Chronyd clears the kernel `STA_UNSYNC` flag only when its
+for `CHRONY_SYNCED`. Chronyd clears the kernel `STA_UNSYNC` flag only when its
 `rtcsync` mode is enabled, and that mode would also let the kernel copy system
 time to the RTC every 11 minutes. Because the receiver must remain the sole
 DS3231 writer, `rtcsync` stays disabled and `adjtimex()` may report
@@ -788,7 +795,7 @@ receiver service starts
      identity, database schema metadata and durable communicator state
   -> persistence thread inserts receiver_instances start row
   -> probe RTC and local time-synchronization status
-  -> establish NETWORK_SYNCED, RTC_HOLDOVER or UNTRUSTED
+  -> establish CHRONY_SYNCED, RTC_HOLDOVER or UNTRUSTED
   -> publish the initial ClockObservationV1 before later ordinary queue work
   -> prepare conservative airtime recovery, initially blocking TX
   -> initialize the SX1262
@@ -812,7 +819,7 @@ Completion of the RTC-bootstrap episode is an ordering prerequisite; success is 
 
 The bootstrap episode runs once per Linux boot, not once per receiver process. An automatic receiver restart under the same `linux_boot_id` must not copy the RTC into the system clock again. It probes current RTC health and time quality, creates a new `receiver_instance_id`, reconciles durable communicator state and proceeds from the clocks already running in that Linux boot. The bootstrap component does not read or write receiver configuration or SQLite; RTC provenance remains owned by the communicator-state model.
 
-The RTC bootstrap must complete before network time discipline is allowed to establish synchronization; alternatively, the bootstrap must detect already-synchronized system time and skip the RTC-to-system copy. This prevents a late RTC bootstrap from overwriting NTP-disciplined time. The receiver service itself must not depend on a network-online target. The local time-synchronization service may establish `NETWORK_SYNCED` asynchronously after the local bootstrap prerequisite, and the receiver does not wait for it. Offline startup therefore produces either validated `RTC_HOLDOVER` or `UNTRUSTED`, never a wait for NTP.
+The RTC bootstrap must complete before network time discipline is allowed to establish synchronization; alternatively, the bootstrap must detect already-synchronized system time and skip the RTC-to-system copy. This prevents a late RTC bootstrap from overwriting NTP-disciplined time. The receiver service itself must not depend on a network-online target. The local time-synchronization service may establish `CHRONY_SYNCED` asynchronously after the local bootstrap prerequisite, and the receiver does not wait for it. Offline startup without a qualifying Chrony estimate produces either validated `RTC_HOLDOVER` or `UNTRUSTED`, never a wait for NTP. A same-boot receiver restart can retain `CHRONY_SYNCED` if the current local estimate still qualifies.
 
 ### Chrony integration
 
@@ -914,21 +921,22 @@ All arithmetic is checked and rounded conservatively. The pilot defaults use
 a 35-second network-trust threshold and a 40-second step threshold:
 
 - at or below 35 seconds, a qualifying result may establish or retain
-  `NETWORK_SYNCED`;
+  `CHRONY_SYNCED`;
 - above 40 seconds, quality first becomes `UNTRUSTED`, its boundary
   observation is completely published to the global FIFO, and the explicit
   step procedure may run; and
 - between those thresholds, including exactly 40 seconds, current quality is
   retained. In particular, an `UNTRUSTED` or `RTC_HOLDOVER` clock does not
-  enter `NETWORK_SYNCED` in this hysteresis band, while an already
-  `NETWORK_SYNCED` clock is not made to flap.
+  enter `CHRONY_SYNCED` in this hysteresis band, while an already
+  `CHRONY_SYNCED` clock is not made to flap.
 
-An unavailable, stale, unsynchronized or otherwise invalid chrony result can
-neither establish `NETWORK_SYNCED` nor authorize a step. Loss of the current
-source also removes `NETWORK_SYNCED` according to the bounded status-poll
-policy; the receiver does not continue claiming network trust from a stale
-sample. The 40-second decision applies to the total bound above, not merely to
-chrony's remaining correction.
+An unavailable, stale, unsynchronized or otherwise invalid Chrony result can
+neither establish `CHRONY_SYNCED` nor authorize a step. Loss of qualifying
+source/synchronization status removes `CHRONY_SYNCED` according to the bounded
+status-poll policy. Here freshness applies to the local tracking query and
+kernel sample; network disconnection alone does not invalidate a qualifying
+Chrony estimate. The 40-second decision applies to the total bound above, not
+merely to Chrony's remaining correction.
 
 The communicator performs this tracking poll at most one minute after the
 previous poll initially, with a short deadline and outside the RX-to-ACK
@@ -936,8 +944,8 @@ critical path. It polls earlier when the current observation's calculated UTC
 error horizon requires a replacement first. Processing every completed result,
 including an unavailable, expired or invalid result, is one atomic time-policy
 update and advances `clock_state_generation`. A result may support
-`NETWORK_SYNCED` only until the next required poll deadline. Independent UTC
-budget expiry can therefore remove `NETWORK_SYNCED` within the 35-to-40-second
+`CHRONY_SYNCED` only until the next required poll deadline. Independent UTC
+budget expiry can therefore remove `CHRONY_SYNCED` within the 35-to-40-second
 hysteresis band without authorizing a step.
 
 RTC writes use a distinct stricter source-error threshold, initially five
@@ -949,11 +957,11 @@ when a refresh starts and still hold, with the same
 Subject to those rules:
 
 - from `RTC_HOLDOVER`, a plausible correction is slewed and quality becomes
-  `NETWORK_SYNCED` only after the configured synchronization bounds hold;
+  `CHRONY_SYNCED` only after the configured synchronization bounds hold;
 - from `UNTRUSTED`, a large pending correction may be applied by one explicit
   step while quality remains untrusted; and
 - an implausible correction observed while `RTC_HOLDOVER` or
-  `NETWORK_SYNCED` first causes an `UNTRUSTED` transition and published clock
+  `CHRONY_SYNCED` first causes an `UNTRUSTED` transition and published clock
   boundary; it may be stepped only after that exact boundary has been
   completely published to the global FIFO.
 
@@ -984,7 +992,7 @@ the step may already have happened. The communicator polls status with short
 deadlines outside the RX-to-ACK critical path. Once chrony and the kernel meet
 the network-entry bounds, including total error at or below 35 seconds, it
 publishes the first post-boundary trusted observation, which ends the
-analysis-only discontinuity gap, and enters `NETWORK_SYNCED`. Failure or total
+analysis-only discontinuity gap, and enters `CHRONY_SYNCED`. Failure or total
 deadline expiry retains `UNTRUSTED` and enters bounded backoff.
 
 The receiver uses 3,700 ppm as its conservative bound on the possible rate
@@ -2815,7 +2823,7 @@ depends on a finalizer running.
   backfill to the start only when no explicit step boundary intervenes.
 - Radio operation begins only after required local storage is usable and the bounded boot-scoped RTC-bootstrap episode has completed, whether successfully or not.
 - RTC-to-system-clock bootstrap occurs at most once per `linux_boot_id`; a receiver-process restart never repeats it and receiver startup never waits for network availability.
-- `NETWORK_SYNCED` clock observations sample Linux system UTC;
+- `CHRONY_SYNCED` clock observations sample Linux system UTC;
   `RTC_HOLDOVER` observations sample the proven DS3231 directly. Offline
   operation reads the RTC only at its bounded observation cadence, never per
   packet, and writes neither clock from the other.

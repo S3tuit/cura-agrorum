@@ -771,7 +771,7 @@ def test_scheduler_rtc_refresh_reaches_durable_verification(composition, monkeyp
                                       health_interval_us=60_000_000)
     scheduler.next_airtime = c.clock.now_monotonic_us() + 10_000_000
     initial_generation = c.airtime.owner.state.generation
-    assert c.time.state.quality is E.SystemTimeQuality.NETWORK_SYNCED
+    assert c.time.state.quality is E.SystemTimeQuality.CHRONY_SYNCED
     assert c.time.sample.error_bound_us == 1_000_000
     assert c.airtime.owner.state.rtc_provenance is None
 

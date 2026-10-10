@@ -87,7 +87,7 @@ def validate_communicator_state(
             raise ValueError("trusted snapshot quality requires UTC/error evidence")
     else:
         if state.last_observed_system_time_quality not in (
-            SystemTimeQuality.NETWORK_SYNCED, SystemTimeQuality.RTC_HOLDOVER
+            SystemTimeQuality.CHRONY_SYNCED, SystemTimeQuality.RTC_HOLDOVER
         ):
             raise ValueError("snapshot UTC requires trusted historical quality")
         _integer(snapshot.utc_us, _I64_MIN, _I64_MAX)

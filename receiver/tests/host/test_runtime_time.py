@@ -82,8 +82,8 @@ def test_scheduler_first_tracking_poll_with_advancing_clock(monkeypatch):
     turn = scheduler.run_once()
     assert turn.work is Work.TIME
     assert len(chrony.calls) == 1 and chrony.calls[0][0] == "tracking"
-    assert rt.state.quality is E.SystemTimeQuality.NETWORK_SYNCED
-    assert turn.update.observation.system_time_quality is E.SystemTimeQuality.NETWORK_SYNCED
+    assert rt.state.quality is E.SystemTimeQuality.CHRONY_SYNCED
+    assert turn.update.observation.system_time_quality is E.SystemTimeQuality.CHRONY_SYNCED
     assert rt.next_tracking_start() > clock.now_monotonic_us()
 
 
@@ -93,7 +93,7 @@ def test_network_independent_of_rtc(health):
     rt, _, kernel, _ = runtime(health=health)
     sample(rt, kernel)
     update = rt.sample_network(tracking(rt))
-    assert update.observation.system_time_quality is E.SystemTimeQuality.NETWORK_SYNCED
+    assert update.observation.system_time_quality is E.SystemTimeQuality.CHRONY_SYNCED
     assert update.failure is None and rt.state.generation == 1
     assert rt.tracking_poll_deadline == 60_001_000
 
@@ -146,7 +146,7 @@ def test_kernel_generation_aba():
     def aba():
         rt.state = advance_clock_state(
             rt.state,
-            quality=E.SystemTimeQuality.NETWORK_SYNCED,
+            quality=E.SystemTimeQuality.CHRONY_SYNCED,
             rtc_health=E.RtcHealth.PRESENT,
         )
         rt.state = advance_clock_state(
@@ -204,7 +204,7 @@ def test_step_boundary_then_wait(disposition):
     stable = rt.poll_chrony(chrony)
     assert (
         rt.step_state is SS.IDLE
-        and rt.state.quality is E.SystemTimeQuality.NETWORK_SYNCED
+        and rt.state.quality is E.SystemTimeQuality.CHRONY_SYNCED
     )
     assert (
         stable.observation.observation_sequence
@@ -315,7 +315,7 @@ def test_step_kernel_completion_deadline(disposition, completion_offset):
     assert kernel.deadlines[-1] == deadline
     if completion_offset < 0:
         assert rt.step_state is SS.IDLE
-        assert result.observation.system_time_quality is E.SystemTimeQuality.NETWORK_SYNCED
+        assert result.observation.system_time_quality is E.SystemTimeQuality.CHRONY_SYNCED
         assert (result.failure is not None) == (disposition is SD.OUTCOME_UNKNOWN)
     else:
         assert rt.step_state is SS.RETRY_BACKOFF
@@ -363,7 +363,7 @@ def test_step_deadline_during_trusted_reservation(monkeypatch, completion_offset
     assert rt.state.generation == 2  # One step transition and one tracking completion.
     if completion_offset < 0:
         assert rt.step_state is SS.IDLE and result.failure is None
-        assert result.observation.system_time_quality is E.SystemTimeQuality.NETWORK_SYNCED
+        assert result.observation.system_time_quality is E.SystemTimeQuality.CHRONY_SYNCED
     else:
         assert rt.step_state is SS.RETRY_BACKOFF
         assert result.failure.error_code is E.TimeDiagnosticErrorCode.DEADLINE
@@ -617,7 +617,7 @@ def test_online_rtc_missing_preserves_network():
     result = rt.observe_rtc(rtc)
     assert (
         result.failure.error_code is E.TimeDiagnosticErrorCode.DEADLINE
-        and rt.state.quality is E.SystemTimeQuality.NETWORK_SYNCED
+        and rt.state.quality is E.SystemTimeQuality.CHRONY_SYNCED
     )
     assert rt.state.rtc_health is E.RtcHealth.MISSING and rt.ordinary_admission_blocked
     sample(rt, kernel)
@@ -959,16 +959,16 @@ def network_oracle(previous, error, available):
     if not available or error >= 40_000_000:
         return "UNTRUSTED"
     if error <= 35_000_000:
-        return "NETWORK_SYNCED"
+        return "CHRONY_SYNCED"
     return previous
 
 
 # Reviewed primitive model examples establish entry, retention, loss and ordinary budget expiry.
 def test_network_oracle_examples():
-    assert network_oracle("UNTRUSTED", 35_000_000, True) == "NETWORK_SYNCED"
+    assert network_oracle("UNTRUSTED", 35_000_000, True) == "CHRONY_SYNCED"
     assert network_oracle("UNTRUSTED", 35_000_001, True) == "UNTRUSTED"
-    assert network_oracle("NETWORK_SYNCED", 39_999_999, True) == "NETWORK_SYNCED"
-    assert network_oracle("NETWORK_SYNCED", 40_000_000, True) == "UNTRUSTED"
+    assert network_oracle("CHRONY_SYNCED", 39_999_999, True) == "CHRONY_SYNCED"
+    assert network_oracle("CHRONY_SYNCED", 40_000_000, True) == "UNTRUSTED"
 
 
 # Generated tracking/clock schedules compare live policy with primitive expectations and prohibit accidental steps.
@@ -990,7 +990,7 @@ def test_runtime_network_sequences(inputs):
     expected = "UNTRUSTED"
     for error, available in inputs:
         next_expected = network_oracle(expected, error, available)
-        if available and (error <= 35_000_000 or expected == "NETWORK_SYNCED"):
+        if available and (error <= 35_000_000 or expected == "CHRONY_SYNCED"):
             sample(rt, kernel)
         result = rt.sample_network(
             tracking(
@@ -1092,7 +1092,7 @@ def test_prewrite_read_failure_preserves_provenance(rtc_runtime, status, duratio
     )
     assert [call[0] for call in rtc.calls] == ['read']
     assert rt.durable_state == before and rt.rtc_provenance == before.rtc_provenance
-    assert rt.state.quality is E.SystemTimeQuality.NETWORK_SYNCED
+    assert rt.state.quality is E.SystemTimeQuality.CHRONY_SYNCED
 
 
 # Recovery advances the write's UTC derivation and still makes exactly one write after durable invalidation.
@@ -1353,7 +1353,7 @@ def test_step_publication_process_crash_restart(tmp_path, milestone, committed):
             chrony = FakeChronyControl()
             chrony.tracking_results.append(tracking(rt))
             recovery = rt.poll_chrony(chrony).observation
-            assert recovery.system_time_quality is E.SystemTimeQuality.NETWORK_SYNCED
+            assert recovery.system_time_quality is E.SystemTimeQuality.CHRONY_SYNCED
             assert [kind for kind, _ in chrony.calls] == ["tracking"]
             worker.request_stop(deadline_monotonic_us=5_002_100)
             worker.join(5)
@@ -1629,4 +1629,4 @@ def test_poll_computes_initial_network_bound_once(monkeypatch):
     monkeypatch.setattr(time_policy, "network_error_bound_us", counted)
     result = rt.poll_chrony(chrony)
     assert len(calls) == 1
-    assert result.observation.system_time_quality is E.SystemTimeQuality.NETWORK_SYNCED
+    assert result.observation.system_time_quality is E.SystemTimeQuality.CHRONY_SYNCED

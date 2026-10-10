@@ -58,7 +58,7 @@ class CommunicatorScheduler:
 
     def _rtc_start_due(self):
         """Deadline for new RTC work; active episodes are ready continuations."""
-        if self.time.state.quality is not E.SystemTimeQuality.NETWORK_SYNCED:
+        if self.time.state.quality is not E.SystemTimeQuality.CHRONY_SYNCED:
             return self.time.next_rtc_read_start()
         if self.time.sample is None:
             return None
@@ -138,14 +138,14 @@ class CommunicatorScheduler:
         rtc_due = None if rtc_active else self._rtc_start_due()
         if rtc_active or (rtc_due is not None and now >= rtc_due):
             self.failure_location = (E.CorePhase.PERIODIC_TIME, E.CoreFailureStage.INVOKE_ADAPTER,
-                E.DiagnosticOperation.SYNC if t.state.quality is E.SystemTimeQuality.NETWORK_SYNCED else E.DiagnosticOperation.READ)
+                E.DiagnosticOperation.SYNC if t.state.quality is E.SystemTimeQuality.CHRONY_SYNCED else E.DiagnosticOperation.READ)
             if t.rtc_refresh_episode is not None:
                 self.failure_location = (E.CorePhase.PERIODIC_TIME, E.CoreFailureStage.INVOKE_ADAPTER,
                     t.rtc_refresh_episode.operation or E.DiagnosticOperation.SYNC)
             update = (t.advance_rtc_refresh(self.rtc, c.airtime.snapshot,
                         snapshot_receipt=c.airtime.snapshot_receipt,
                         stop_requested=self.stop_requested(), shutdown_deadline=self.shutdown_deadline())
-                      if t.rtc_refresh_episode is not None or t.state.quality is E.SystemTimeQuality.NETWORK_SYNCED
+                      if t.rtc_refresh_episode is not None or t.state.quality is E.SystemTimeQuality.CHRONY_SYNCED
                       else t.observe_rtc(self.rtc))
             return ScheduledTurn(Work.RTC, exchange, update)
         if now >= self.next_health:

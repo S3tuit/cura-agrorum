@@ -154,7 +154,7 @@ def test_network_observation_reproduces_bound_and_horizon():
     published = rt.sample_network(query).observation
     (stored,) = round_trip(published)
     assert stored == published
-    assert stored.system_time_quality is E.SystemTimeQuality.NETWORK_SYNCED
+    assert stored.system_time_quality is E.SystemTimeQuality.CHRONY_SYNCED
     assert stored.rtc_evidence is None
     assert (stored.sample_started_at_monotonic_us, stored.sample_finished_at_monotonic_us) == (
         41_000,
@@ -291,10 +291,10 @@ RTC_FACTS = row.RtcClockEvidenceV1(b"v" * 16, 0, 0, 1, 10, 0)
 @pytest.mark.parametrize(
     "network,rtc,quality",
     [
-        (None, None, E.SystemTimeQuality.NETWORK_SYNCED),
-        (NETWORK_FACTS, RTC_FACTS, E.SystemTimeQuality.NETWORK_SYNCED),
+        (None, None, E.SystemTimeQuality.CHRONY_SYNCED),
+        (NETWORK_FACTS, RTC_FACTS, E.SystemTimeQuality.CHRONY_SYNCED),
         (NETWORK_FACTS, None, E.SystemTimeQuality.RTC_HOLDOVER),
-        (None, RTC_FACTS, E.SystemTimeQuality.NETWORK_SYNCED),
+        (None, RTC_FACTS, E.SystemTimeQuality.CHRONY_SYNCED),
     ],
 )
 def test_sample_evidence_matches_its_source(network, rtc, quality):
@@ -306,7 +306,7 @@ def test_sample_evidence_matches_its_source(network, rtc, quality):
 
 # A trusted row is never published without the evidence of its bound.
 def test_trusted_publication_requires_evidence():
-    sample = TrustedTimeSample(20, UTC, 1_000, E.SystemTimeQuality.NETWORK_SYNCED, 1)
+    sample = TrustedTimeSample(20, UTC, 1_000, E.SystemTimeQuality.CHRONY_SYNCED, 1)
     schedule = observation_schedule(sample, POLICY, tracking_started_at_monotonic_us=0)
     with pytest.raises(ValueError):
         trusted_clock_observation(

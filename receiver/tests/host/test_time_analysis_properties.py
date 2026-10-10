@@ -129,7 +129,7 @@ class RecordedTimeHistory(RuleBasedStateMachine):
     )
     def network_observation(self, delta, utc, health):
         self.monotonic += delta
-        self.append(utc, False, SystemTimeQuality.NETWORK_SYNCED, health)
+        self.append(utc, False, SystemTimeQuality.CHRONY_SYNCED, health)
 
     # An unusable RTC result records ordinary quality loss; usable direct evidence records holdover.
     @rule(

@@ -57,7 +57,7 @@ class PhysicalRun:
         now = self.clock.now_monotonic_us()
         # Includes the fractional physical-time rounding error explicitly.
         sample = TrustedTimeSample(now, int(self.physical)+offset,
-                                  abs(offset)+error, Q.NETWORK_SYNCED, 1)
+                                  abs(offset)+error, Q.CHRONY_SYNCED, 1)
         self.policy.update_time(AirtimeCorrelation(sample, 1, now+10_000_000_000) if trusted else None,
                                 rtc_health=RH.PRESENT)
 

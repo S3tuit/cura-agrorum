@@ -428,12 +428,12 @@ def test_network_observation_evidence_persists(tmp_path):
             update = rt.poll_chrony(chrony)
             if update.observation is not None:
                 published.append(update.observation)
-            if rt.state.quality is E.SystemTimeQuality.NETWORK_SYNCED:
+            if rt.state.quality is E.SystemTimeQuality.CHRONY_SYNCED:
                 break
             time.sleep(1)
         trusted = [
             o for o in published
-            if o.system_time_quality is E.SystemTimeQuality.NETWORK_SYNCED
+            if o.system_time_quality is E.SystemTimeQuality.CHRONY_SYNCED
         ]
         assert trusted, "the bench Pi must be Chrony-synchronized for this check"
         owner.request_stop(deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000)

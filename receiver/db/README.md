@@ -27,6 +27,13 @@ resolved with `reconcile_database_installation()` using the original error and
 group identity. Once destination durability is confirmed, later cleanup
 failure does not recast the valid database installation as failed.
 
+Schema version 15 renames time-quality code `2` from `NETWORK_SYNCED` to
+`CHRONY_SYNCED`. Its numeric value and trust policy are unchanged, but the
+lookup label changes the schema fingerprint. Version 14 databases are not
+opened or automatically migrated by this build; the next deployment requires
+a fresh database under the existing initialization policy. Preserve historical
+databases and captures with their original labels for offline analysis.
+
 Creation requires the explicit keyword `known_empty_airtime=True` or `False`.
 Use true only when the same radio's recent history is known empty: creation seeds
 the pending token, and receiver startup atomically consumes it while installing

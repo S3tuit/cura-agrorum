@@ -642,7 +642,7 @@ arithmetic failure for TIME diagnostics without duplicating the equations.
 
 ### Host tests
 
-- **Independent quality axes:** Exercise every meaningful `SystemTimeQuality`/`RtcHealth` combination, including `NETWORK_SYNCED + MISSING`, and prove persisted last-observed values never become current startup authority.
+- **Independent quality axes:** Exercise every meaningful `SystemTimeQuality`/`RtcHealth` combination, including `CHRONY_SYNCED + MISSING`, and prove persisted last-observed values never become current startup authority.
 - **Conservative duration conversions:** Check integer equality and one-unit boundaries for minimum-wait lengthening and maximum-lifetime shortening, including the documented 3,613.32-second and 29.889-second examples.
 - **Chrony result validation:** Reject unavailable, stale, unsynchronized, unreliable, structurally invalid and arithmetic-overflow results and accept only a fresh bounded result from the configured local socket contract.
 - **Network-error arithmetic:** Verify checked conservative formation of absolute remaining correction, half root delay, root dispersion and sampling margin without cancellation from sign.

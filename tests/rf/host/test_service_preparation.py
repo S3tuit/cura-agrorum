@@ -69,7 +69,7 @@ def test_prerequisites_require_fresh_network_and_valid_history():
     assert not service_prerequisite_reasons(ready())
     for quality in (0, 1):
         observed = ready(); observed['clock']['system_time_quality_id'] = quality
-        assert 'fresh_NETWORK_SYNCED_observation_required' in service_prerequisite_reasons(observed)
+        assert 'fresh_CHRONY_SYNCED_observation_required' in service_prerequisite_reasons(observed)
     observed = ready(); observed['observed_monotonic_us'] = 80_000_000
     assert len(service_prerequisite_reasons(observed)) == 2
     observed = ready(); observed['airtime']['total_charged_us'] = 36_000_000
@@ -88,7 +88,7 @@ def test_database_observation_distinguishes_seed_and_corruption(tmp_path):
     assert observed['airtime']['status'] == 'STATE_UNAVAILABLE'
     assert observed['airtime']['condition'] == 'MISSING'
     assert observed['clock'] is None
-    assert 'fresh_NETWORK_SYNCED_observation_required' in service_prerequisite_reasons(observed)
+    assert 'fresh_CHRONY_SYNCED_observation_required' in service_prerequisite_reasons(observed)
     with sqlite3.connect(path) as db:
         db.execute('INSERT INTO communicator_state VALUES (NULL,NULL,NULL,NULL,NULL)')
     observed = database_observation(path)
@@ -121,7 +121,7 @@ def test_shared_waiter_cannot_pass_bad_preparation(tmp_path, monkeypatch, failur
     with pytest.raises(TimeoutError if failure == 'untrusted' else ValueError):
         service.wait_for_prerequisites(timeout_seconds=1)
     if failure == 'untrusted':
-        assert 'fresh_NETWORK_SYNCED_observation_required' in (tmp_path/'service-prerequisites.json').read_text()
+        assert 'fresh_CHRONY_SYNCED_observation_required' in (tmp_path/'service-prerequisites.json').read_text()
 
 
 def test_prepared_fixture_commissions_through_real_worker_without_utc(tmp_path):

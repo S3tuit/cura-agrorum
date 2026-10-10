@@ -1,7 +1,7 @@
 {
   "schema_format_version": 1,
   "application_id": 1129665106,
-  "database_schema_version": 14,
+  "database_schema_version": 15,
   "enums": [
     {
       "name": "SYSTEM_TIME_QUALITY",
@@ -13,7 +13,7 @@
       "values": [
         {"name": "UNTRUSTED", "value": 0},
         {"name": "RTC_HOLDOVER", "value": 1},
-        {"name": "NETWORK_SYNCED", "value": 2}
+        {"name": "CHRONY_SYNCED", "value": 2}
       ]
     },
     {

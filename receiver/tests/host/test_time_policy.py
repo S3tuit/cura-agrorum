@@ -119,7 +119,7 @@ def test_network_hysteresis(quality, error):
         policy=POLICY,
     )
     expected = (
-        Quality.NETWORK_SYNCED
+        Quality.CHRONY_SYNCED
         if error <= 35_000_000
         else Quality.UNTRUSTED if error > 40_000_000 else quality
     )
@@ -149,7 +149,7 @@ def test_network_hysteresis(quality, error):
 )
 def test_unusable_network_evidence(evidence):
     decision = network_tracking_decision(
-        ClockState(Quality.NETWORK_SYNCED, Health.MISSING, 5),
+        ClockState(Quality.CHRONY_SYNCED, Health.MISSING, 5),
         network_estimate(evidence),
         now_monotonic_us=300,
         required_poll_deadline_us=60_000_100,
@@ -184,7 +184,7 @@ def test_network_freshness_boundaries(now, deadline, expected):
 
 # A completed tracking input advances once even without enum changes; one combined update is atomic.
 def test_atomic_generation_updates():
-    before = ClockState(Quality.NETWORK_SYNCED, Health.PRESENT, 7)
+    before = ClockState(Quality.CHRONY_SYNCED, Health.PRESENT, 7)
     periodic = advance_clock_state(
         before, quality=before.quality, rtc_health=before.rtc_health
     )
@@ -208,7 +208,7 @@ def test_atomic_generation_updates():
 
 # An away-and-back quality transition invalidates a captured generation despite equal final quality.
 def test_quality_aba_generation():
-    before = ClockState(Quality.NETWORK_SYNCED, Health.PRESENT, 7)
+    before = ClockState(Quality.CHRONY_SYNCED, Health.PRESENT, 7)
     lost = expire_clock_trust(before)
     restored = advance_clock_state(
         lost, quality=before.quality, rtc_health=before.rtc_health
@@ -220,7 +220,7 @@ def test_quality_aba_generation():
 
 # Generation exhaustion and a trusted step-boundary request cannot silently change state.
 def test_generation_failures():
-    state = ClockState(Quality.NETWORK_SYNCED, Health.PRESENT, (1 << 63) - 1)
+    state = ClockState(Quality.CHRONY_SYNCED, Health.PRESENT, (1 << 63) - 1)
     with pytest.raises(OverflowError):
         expire_clock_trust(state)
     with pytest.raises(ValueError):
@@ -240,7 +240,7 @@ def test_skew_is_diagnostic_while_total_error_controls_admission(skew):
         ClockState(Quality.UNTRUSTED, Health.PRESENT, 0), estimate,
         now_monotonic_us=300, required_poll_deadline_us=60_000_100, policy=POLICY,
     )
-    assert decision.candidate_quality is Quality.NETWORK_SYNCED
+    assert decision.candidate_quality is Quality.CHRONY_SYNCED
     assert decision.error_bound_us == 1_000_001
 
 
@@ -253,6 +253,6 @@ def test_query_age_crosses_entry_threshold_without_a_new_initial_sum():
     aged = network_tracking_decision(state, estimate, now_monotonic_us=1_000_100,
         required_poll_deadline_us=60_000_100, policy=POLICY)
     assert first.error_bound_us == 34_999_001
-    assert first.candidate_quality is Quality.NETWORK_SYNCED
+    assert first.candidate_quality is Quality.CHRONY_SYNCED
     assert aged.error_bound_us == 35_002_714
     assert aged.candidate_quality is Quality.UNTRUSTED

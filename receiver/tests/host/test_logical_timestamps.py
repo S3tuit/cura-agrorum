@@ -138,7 +138,7 @@ def clocks(*, instances=(INSTANCE,), observations=None):
                 0,
                 0,
                 False,
-                SystemTimeQuality.NETWORK_SYNCED,
+                SystemTimeQuality.CHRONY_SYNCED,
                 RtcHealth.PRESENT,
                 None, None, None, None, None, None,
             )
@@ -253,7 +253,7 @@ def test_earliest_occurrence_across_boots():
             0,
             utc,
             False,
-            SystemTimeQuality.NETWORK_SYNCED,
+            SystemTimeQuality.CHRONY_SYNCED,
             RtcHealth.PRESENT,
             None, None, None, None, None, None,
         )
@@ -293,7 +293,7 @@ def test_step_gap_occurrence_cannot_anchor():
             20_000_000,
             20_000_000,
             False,
-            SystemTimeQuality.NETWORK_SYNCED,
+            SystemTimeQuality.CHRONY_SYNCED,
             RtcHealth.PRESENT,
             None, None, None, None, None, None,
         ),
@@ -453,7 +453,7 @@ def test_logical_timestamp_overflow():
             0,
             (1 << 63) - 2,
             False,
-            SystemTimeQuality.NETWORK_SYNCED,
+            SystemTimeQuality.CHRONY_SYNCED,
             RtcHealth.PRESENT,
             None, None, None, None, None, None,
         )

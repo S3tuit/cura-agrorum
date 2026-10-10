@@ -31,7 +31,7 @@ def _network_observation(*, sequence=1):
         1_000_000,
         1_800_000_000_000_000,
         False,
-        enum.SystemTimeQuality.NETWORK_SYNCED,
+        enum.SystemTimeQuality.CHRONY_SYNCED,
         enum.RtcHealth.PRESENT,
         1_025_000,
         999_000,

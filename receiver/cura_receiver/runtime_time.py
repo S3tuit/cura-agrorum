@@ -415,7 +415,7 @@ class RuntimeTime:
         if self.sample is None:
             return TimeUpdate()
         bounds = [self.schedule.trust_expires_at_monotonic_us]
-        if self.state.quality is E.SystemTimeQuality.NETWORK_SYNCED:
+        if self.state.quality is E.SystemTimeQuality.CHRONY_SYNCED:
             bounds.append(self.tracking_poll_deadline)
         deadline = min((v for v in bounds if v is not None), default=None)
         if deadline is not None and self.clock.now_monotonic_us() >= deadline:
@@ -434,7 +434,7 @@ class RuntimeTime:
         ):
             return None
         bounds = [self.schedule.trust_expires_at_monotonic_us]
-        if self.state.quality is E.SystemTimeQuality.NETWORK_SYNCED:
+        if self.state.quality is E.SystemTimeQuality.CHRONY_SYNCED:
             bounds.append(self.tracking_poll_deadline)
         deadline = min(
             (value for value in bounds if value is not None), default=(1 << 64) - 1
@@ -571,7 +571,7 @@ class RuntimeTime:
             required_poll_deadline_us=poll_deadline,
             policy=self.policy,
         )
-        if decision.candidate_quality is not E.SystemTimeQuality.NETWORK_SYNCED:
+        if decision.candidate_quality is not E.SystemTimeQuality.CHRONY_SYNCED:
             if tracking.status is Q.OK:
                 self._network_latch.succeeded()
             if decision.candidate_quality is E.SystemTimeQuality.RTC_HOLDOVER:
@@ -664,7 +664,7 @@ class RuntimeTime:
         if (
             result.status is R.OK
             and self.step_state is ChronyStepState.IDLE
-            and before.quality is not E.SystemTimeQuality.NETWORK_SYNCED
+            and before.quality is not E.SystemTimeQuality.CHRONY_SYNCED
         ):
             try:
                 sample = rtc_observation(
@@ -680,7 +680,7 @@ class RuntimeTime:
                 )
             except OverflowError:
                 failure = E.TimeDiagnosticErrorCode.CALCULATION_RANGE
-        if before.quality is E.SystemTimeQuality.NETWORK_SYNCED:
+        if before.quality is E.SystemTimeQuality.CHRONY_SYNCED:
             self.state = advance_clock_state(
                 before, quality=before.quality, rtc_health=health
             )
@@ -1422,7 +1422,7 @@ class RuntimeTime:
             if self._step_failure is None:
                 self._step_failure = update.failure
             update = replace(update, failure=None)
-            if self.state.quality is E.SystemTimeQuality.NETWORK_SYNCED:
+            if self.state.quality is E.SystemTimeQuality.CHRONY_SYNCED:
                 self.step_state = ChronyStepState.IDLE
                 self._retry_delay = self.settings.retry_initial_us
                 self.last_refresh_monotonic_us = None
@@ -1435,7 +1435,7 @@ class RuntimeTime:
                 ),
             )
         elif self.step_state is ChronyStepState.RETRY_BACKOFF:
-            if self.state.quality is E.SystemTimeQuality.NETWORK_SYNCED:
+            if self.state.quality is E.SystemTimeQuality.CHRONY_SYNCED:
                 self.step_state = ChronyStepState.IDLE
                 self._retry_delay = self.settings.retry_initial_us
             else:

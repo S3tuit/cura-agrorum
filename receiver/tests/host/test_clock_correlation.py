@@ -26,7 +26,7 @@ def observation(
         monotonic,
         utc,
         step,
-        Quality.UNTRUSTED if utc is None else Quality.NETWORK_SYNCED,
+        Quality.UNTRUSTED if utc is None else Quality.CHRONY_SYNCED,
         Health.PRESENT,
         None, None, None, None, None, None,
     )

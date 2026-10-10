@@ -8,6 +8,7 @@ from cura_receiver.communicator_state_persistence import CommunicatorStatePolicy
 from cura_receiver.generated.receiver_entities_generated import (
     communicator_state_v2_parameters,
 )
+from cura_receiver.generated.receiver_enums_generated import DATABASE_SCHEMA_VERSION
 from cura_receiver.persistence_control_execution import (
     ControlCommand,
     ControlRequest,
@@ -181,7 +182,7 @@ def test_invalid_text_archive_preserves_exact_values(controls, column, invalid_t
             "SELECT calculated_blob_sha256, preserved_by_receiver_instance_id, preserved_at_monotonic_us, database_schema_version "
             "FROM quarantined_communicator_states ORDER BY quarantined_state_id"
         ).fetchall()
-        == [(expected_digest, INSTANCE, 100, 14)] * 2
+        == [(expected_digest, INSTANCE, 100, DATABASE_SCHEMA_VERSION)] * 2
     )
     assert operations.load_state(command(Kind.LOAD_STATE)).state == synthetic()
 

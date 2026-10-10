@@ -140,7 +140,7 @@ elapsed time exactly. The pilot does not use `CLOCK_MONOTONIC_RAW`.
 
 `UtcUs` stores UTC rather than local civil time. A clock-observation UTC is
 canonical only when `sampled_at_utc_us` is present and that observation's
-`SystemTimeQuality` is `RTC_HOLDOVER` or `NETWORK_SYNCED`. An event UTC is
+`SystemTimeQuality` is `RTC_HOLDOVER` or `CHRONY_SYNCED`. An event UTC is
 canonical only when analysis has derived it from such an observation in the
 same `LinuxBootId` and returns the value together with the source-observation
 identity. Receiver event and lifecycle rows are not updated with that result.
@@ -479,7 +479,14 @@ serialization; construction remains ordinary Python process work.
 |---:|---|---|
 | `0` | `UNTRUSTED` | No receiver UTC source currently satisfies the trust contract |
 | `1` | `RTC_HOLDOVER` | A direct DS3231 observation with durable provenance satisfies the holdover error budget |
-| `2` | `NETWORK_SYNCED` | Current time service and system UTC satisfy the network error contract |
+| `2` | `CHRONY_SYNCED` | Chrony-disciplined Linux UTC satisfies the receiver's synchronization and uncertainty contract; recent NTP contact is not required |
+
+`CHRONY_SYNCED` retains the numeric assignment `2` previously named
+`NETWORK_SYNCED`. This is a naming change, not a new trust policy. A fresh
+local Chrony report is distinct from a fresh NTP measurement. The observation's
+Chrony reference timestamp and error evidence describe source age and
+uncertainty without introducing another quality state. Query freshness, source
+qualification, kernel-clock checks and error-budget expiry still apply.
 
 ### `RtcHealth`
 
@@ -620,7 +627,7 @@ deadline results use the `TIME` catalogue in
 [`INTERFACE_DIAGNOSTIC.md`](INTERFACE_DIAGNOSTIC.md#time-diagnostic-catalogue),
 while ordinary `MISSING` and `INVALID` states do not create diagnostics.
 Time-quality policy remains independent, so a missing RTC does not remove
-otherwise valid `NETWORK_SYNCED` time.
+otherwise valid `CHRONY_SYNCED` time.
 
 ### Write result
 
@@ -671,7 +678,7 @@ The checked `rtc_readback_difference_us` must be no greater than the fixed
 `time_sampling_margin_us`, and the actual difference is included in the exact
 `rtc_verification_uncertainty_us` equation above. Only that matching read-back,
 the episode's still-current `clock_state_generation`, current
-`NETWORK_SYNCED` quality, a still-qualifying advanced network error and a
+`CHRONY_SYNCED` quality, a still-qualifying advanced network error and a
 verification uncertainty strictly below the receiver UTC budget permit the
 next-generation communicator-state commit to record verified RTC provenance.
 Those conditions are checked again immediately before submitting the state
@@ -890,7 +897,7 @@ chronyc -n -c -h <socket-path> makestep
 `<socket-path>` is immutable adapter construction data from deployment
 configuration, not a per-call argument. The backend pins and startup-checks a
 supported chronyc output version before time quality can become
-`NETWORK_SYNCED`.
+`CHRONY_SYNCED`.
 
 The pilot permits chronyc reply sockets in `/run/chrony`. After daemon startup,
 that directory is owned by the Chrony daemon user with group `cura-receiver`
@@ -949,7 +956,7 @@ requires chrony's tracking result to report a selected usable source and a
 normal synchronized leap state; the communicator additionally applies its
 configured total-error, value and freshness bounds. This result is
 policy input, not by itself permission to label a clock observation
-`NETWORK_SYNCED`. A trusted observation must also pass the read-only
+`CHRONY_SYNCED`. A trusted observation must also pass the read-only
 `adjtimex()` sampling contract.
 
 `remaining_correction_us` is the signed correction still to be applied to Linux
@@ -1024,11 +1031,11 @@ margin; the charged margin covers that bounded response age, subprocess and
 observation-bracket latency. Absolute-value overflow and every addition are
 checked; failure invalidates the result. At or below the pilot 35,000,000 us
 trust threshold a
-qualifying sample may establish `NETWORK_SYNCED`. Above the 40,000,000 us step
+qualifying sample may establish `CHRONY_SYNCED`. Above the 40,000,000 us step
 threshold it requires an ordered `UNTRUSTED` transition before a step can be
 submitted. Between the thresholds, including exactly 40,000,000 us, the
 communicator retains current quality: it does not promote `UNTRUSTED` or
-`RTC_HOLDOVER`, and it does not demote an existing `NETWORK_SYNCED` solely for
+`RTC_HOLDOVER`, and it does not demote an existing `CHRONY_SYNCED` solely for
 that value. A stale, unselected, unsynchronized or unreliable result cannot
 establish network trust or authorize a step.
 
@@ -1040,9 +1047,9 @@ completed result, including an unavailable, expired or invalid result,
 atomically updates live time policy and advances `clock_state_generation`
 once. A qualifying result remains usable
 only until the next required poll deadline; missing that deadline removes
-`NETWORK_SYNCED` through the ordinary generation-changing transition.
+`CHRONY_SYNCED` through the ordinary generation-changing transition.
 
-The 35-second threshold governs `NETWORK_SYNCED`; it is intentionally too
+The 35-second threshold governs `CHRONY_SYNCED`; it is intentionally too
 loose for overwriting durable RTC provenance. An RTC refresh may start only
 from a fresh trusted observation whose complete network error is at or below
 `network_rtc_write_error_threshold_us` (five seconds initially). The stricter
@@ -1534,7 +1541,7 @@ rtc_evidence: RtcClockEvidenceV1 or absent
 The generated immutable logical entity crosses the queue directly. Its
 relational binder stores absent UTC as SQL `NULL` and the boundary as a Boolean
 column. UTC is absent exactly when `system_time_quality = UNTRUSTED` and
-present exactly when quality is `RTC_HOLDOVER` or `NETWORK_SYNCED`.
+present exactly when quality is `RTC_HOLDOVER` or `CHRONY_SYNCED`.
 
 `STEP_DISCONTINUITY_BOUNDARY` may be set only on the `UNTRUSTED` observation
 created for one pending explicit chrony step. Ordinary quality-loss
@@ -1558,7 +1565,7 @@ before an intentional clock step and at the configured periodic interval. A
 periodic observation retains the current `clock_state_generation`; a
 transition or step-boundary observation carries the newly advanced generation.
 
-For a `NETWORK_SYNCED` observation, `sampled_at_monotonic_us` is the midpoint
+For a `CHRONY_SYNCED` observation, `sampled_at_monotonic_us` is the midpoint
 of the bounded monotonic bracket around one read-only `adjtimex(modes = 0)`
 call, and `sampled_at_utc_us` is the system time returned by that call. The
 generation must be equal before and after the bracket, and a fresh acceptable
@@ -1609,7 +1616,7 @@ worst-case durations. If the remaining interval cannot contain that lead time,
 or if it cannot obtain and publish the replacement before the safe interval
 ends, it changes quality to `UNTRUSTED` at that calculated boundary and applies
 the pending-boundary FIFO rule. This independent UTC-budget expiry may remove
-`NETWORK_SYNCED` in chrony's 35-to-40-second hysteresis band even though the
+`CHRONY_SYNCED` in chrony's 35-to-40-second hysteresis band even though the
 tracking value alone would retain the current quality; it does not authorize a
 step unless the separate step rule does.
 
@@ -1630,7 +1637,7 @@ Presence follows `system_time_quality`:
 
 | Quality | Common fields | `network_evidence` | `rtc_evidence` |
 |---|---|---|---|
-| `NETWORK_SYNCED` | present | present | absent |
+| `CHRONY_SYNCED` | present | present | absent |
 | `RTC_HOLDOVER` | present | absent | present |
 | `UNTRUSTED` | absent | absent | absent |
 
@@ -1988,7 +1995,7 @@ step boundary cannot be established is not a command attempt.
 `rtc_write_results` is ordered as `COMPLETED`, `NOT_APPLIED`,
 `OUTCOME_UNKNOWN`. Exactly one cell advances after every returned
 `write_time()` result, and their sum is the number of RTC write attempts. Every
-such attempt must have started under `NETWORK_SYNCED` and the stricter RTC-write
+such attempt must have started under `CHRONY_SYNCED` and the stricter RTC-write
 source-error threshold; violating that precondition is an interface failure,
 not another counter category. `rtc_write_readback_verified_count` advances
 when a completed or uncertain write is read back successfully and matches the
@@ -3080,7 +3087,7 @@ zeros. The presence mask is not a relational column.
 Validity bit 0 selects the RTC-provenance block; bit 1 selects the airtime
 snapshot UTC/error pair. Bits 2 through 15 are reserved and zero. Absent snapshot
 UTC/error fields are both encoded as zero. A present pair requires snapshot
-quality `NETWORK_SYNCED` or `RTC_HOLDOVER` and error strictly below the active
+quality `CHRONY_SYNCED` or `RTC_HOLDOVER` and error strictly below the active
 UTC budget and the 40-second encoding ceiling. An absent pair requires
 `UNTRUSTED` quality. Zero UTC is a valid present timestamp. When provenance is absent, its identifier and timestamps are zero.
 Its uncertainty and drift bound are also zero. `reserved_1` is always zero.
@@ -3133,7 +3140,7 @@ All entries share a single snapshot monotonic instant and at most one UTC/error
 reference, derived from one correlation. No second UTC sample is taken for
 entries or the recovery replacement. UTC changes do not age live deadlines.
 
-Startup accepts saved/current time only with eligible NETWORK_SYNCED or
+Startup accepts saved/current time only with eligible CHRONY_SYNCED or
 RTC_HOLDOVER evidence and valid error bounds. At the correlated startup pair
 (m_b, U_b), calculate:
 
@@ -4118,6 +4125,11 @@ generic mapping, list, float, mutable-buffer, pickle, `repr` or arbitrary-
 object node. A field containing the wrong supported scalar type, wrong byte
 length or out-of-domain integer remains distinguishable and exact; an
 unsupported type fails closed instead of being coerced.
+
+For `SystemTimeQuality`, the neutral V1 decoder also accepts the historical
+member name `NETWORK_SYNCED` with value `2`, preserving that exact spelling in
+the decoded evidence. The live enum has only `CHRONY_SYNCED` for value `2`, so
+new records use the new name. Archived evidence is not rewritten.
 
 The fixed bounds are 262,144 canonical evidence bytes, 32 nested node levels,
 4,096 total nodes, 1,024 items in one tuple, 65,536 UTF-8 bytes in one string,

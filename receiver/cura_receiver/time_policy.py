@@ -280,14 +280,14 @@ def network_tracking_decision(
     if error is None:
         quality = (
             SystemTimeQuality.UNTRUSTED
-            if current.quality is SystemTimeQuality.NETWORK_SYNCED
+            if current.quality is SystemTimeQuality.CHRONY_SYNCED
             else current.quality
         )
         return NetworkDecision(quality, None, False)
     if error > policy.network_step_error_threshold_us:
         return NetworkDecision(SystemTimeQuality.UNTRUSTED, error, True)
     quality = (
-        SystemTimeQuality.NETWORK_SYNCED
+        SystemTimeQuality.CHRONY_SYNCED
         if error <= policy.network_trust_error_threshold_us
         else current.quality
     )

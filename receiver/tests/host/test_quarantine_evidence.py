@@ -105,7 +105,7 @@ def _health_request() -> ReceiverHealthRequestV1:
         radio_recovery_successes=2,
         radio_recovery_failures=1,
         radio_recovery_attempts_by_reason=(0,) * 8,
-        system_time_quality=SystemTimeQuality.NETWORK_SYNCED,
+        system_time_quality=SystemTimeQuality.CHRONY_SYNCED,
         rtc_health=RtcHealth.PRESENT,
         time_quality_transition_count=4,
         rtc_health_transition_count=5,
@@ -423,6 +423,23 @@ def test_decoder_rejects_unknown_or_contradictory_enum_assignment(
 
     with pytest.raises(QuarantineEvidenceDecodeError, match="assignment"):
         decode_quarantine_evidence_v1(encoded)
+
+
+# Historical V1 evidence stays readable with its original name and numeric ID.
+def test_historical_time_quality_spelling_decodes_without_relabelling() -> None:
+    class_name = "cura_receiver.generated.receiver_enums_generated.SystemTimeQuality"
+    encoded = _canonical_evidence_document(
+        {
+            "class": class_name,
+            "member": "NETWORK_SYNCED",
+            "tag": "enum",
+            "value": "2",
+        }
+    )
+    evidence = decode_quarantine_evidence_v1(encoded)
+    assert evidence.value == NeutralEnumV1(
+        class_name=class_name, member_name="NETWORK_SYNCED", value=2,
+    )
 
 
 # Canonical input still cannot exceed any decoder-side logical resource bound.

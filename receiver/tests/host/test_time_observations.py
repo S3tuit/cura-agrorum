@@ -36,7 +36,7 @@ from cura_receiver.time_policy import (
 from tests.support.fakes.os_clock import FakeOsClock
 
 POLICY = TimePolicy()
-STATE = ClockState(Quality.NETWORK_SYNCED, Health.PRESENT, 7)
+STATE = ClockState(Quality.CHRONY_SYNCED, Health.PRESENT, 7)
 EVIDENCE = NetworkEvidence(0, 100, True, True, 0, 0, 1000)
 PROVENANCE = RtcProvenanceV1(b"v" * 16, 500_000, 500_000, 4_000_000, 10)
 
@@ -75,7 +75,7 @@ def rtc(**overrides):
 
 def verification(**overrides):
     args = dict(
-        sample=TrustedTimeSample(0, 500_000, 1_000_000, Quality.NETWORK_SYNCED, 7),
+        sample=TrustedTimeSample(0, 500_000, 1_000_000, Quality.CHRONY_SYNCED, 7),
         current=STATE,
         verified_by_receiver_instance_id=b"v" * 16,
         episode_started_at_monotonic_us=0,
@@ -95,7 +95,7 @@ def test_network_midpoint_and_zero_utc():
     sample = network()
     facts = network_estimate(EVIDENCE).facts
     assert sample == TrustedTimeSample(
-        150, 0, 1_000_001, Quality.NETWORK_SYNCED, 7, SampleEvidence(100, 200, facts)
+        150, 0, 1_000_001, Quality.CHRONY_SYNCED, 7, SampleEvidence(100, 200, facts)
     )
     assert network(operation_finished_at_monotonic_us=201).monotonic_us == 150
 
@@ -235,7 +235,7 @@ def test_observation_and_poll_deadlines():
     zero_rate = replace(
         POLICY, chrony_max_slew_rate_ppm=0, monotonic_elapsed_rate_bound_ppm=0
     )
-    sample = TrustedTimeSample(100, 0, 1_000_000, Quality.NETWORK_SYNCED, 7)
+    sample = TrustedTimeSample(100, 0, 1_000_000, Quality.CHRONY_SYNCED, 7)
     schedule = observation_schedule(
         sample, zero_rate, tracking_started_at_monotonic_us=100
     )
@@ -261,8 +261,8 @@ def test_observation_and_poll_deadlines():
 @pytest.mark.parametrize(
     "sample",
     [
-        TrustedTimeSample(0, 0, 40_000_000, Quality.NETWORK_SYNCED, 0),
-        TrustedTimeSample((1 << 64) - 1, 0, 1_000_000, Quality.NETWORK_SYNCED, 0),
+        TrustedTimeSample(0, 0, 40_000_000, Quality.CHRONY_SYNCED, 0),
+        TrustedTimeSample((1 << 64) - 1, 0, 1_000_000, Quality.CHRONY_SYNCED, 0),
     ],
 )
 def test_schedule_rejections(sample):
@@ -272,7 +272,7 @@ def test_schedule_rejections(sample):
 
 # Fresh stable samples trigger the initial refresh; later refresh caps are bounded by trust expiry.
 def test_rtc_refresh_due_times():
-    sample = TrustedTimeSample(100, 0, 1_000_000, Quality.NETWORK_SYNCED, 7)
+    sample = TrustedTimeSample(100, 0, 1_000_000, Quality.CHRONY_SYNCED, 7)
     zero_rate = replace(
         POLICY, chrony_max_slew_rate_ppm=0, monotonic_elapsed_rate_bound_ppm=0
     )
@@ -302,7 +302,7 @@ def test_rtc_refresh_due_times():
 # F-001: refresh completion can follow its supporting sample without reversing a clock bracket.
 @pytest.mark.parametrize("completion", [99, 100, 101])
 def test_refresh_completion_relative_to_supporting_sample(completion):
-    sample = TrustedTimeSample(100, 0, 1_000_000, Quality.NETWORK_SYNCED, 7)
+    sample = TrustedTimeSample(100, 0, 1_000_000, Quality.CHRONY_SYNCED, 7)
     zero_rate = replace(
         POLICY, chrony_max_slew_rate_ppm=0, monotonic_elapsed_rate_bound_ppm=0
     )
@@ -313,7 +313,7 @@ def test_refresh_completion_relative_to_supporting_sample(completion):
 
 # The stricter five-second threshold is inclusive and expires on the first added error unit.
 def test_rtc_source_threshold():
-    sample = TrustedTimeSample(0, 500_000, 5_000_000, Quality.NETWORK_SYNCED, 7)
+    sample = TrustedTimeSample(0, 500_000, 5_000_000, Quality.CHRONY_SYNCED, 7)
     assert (
         rtc_refresh_source_error_us(
             sample,
@@ -356,7 +356,7 @@ def test_verification_exact_terms():
     [
         {
             "sample": TrustedTimeSample(
-                0, 1_500_001, 1_000_000, Quality.NETWORK_SYNCED, 7
+                0, 1_500_001, 1_000_000, Quality.CHRONY_SYNCED, 7
             )
         },
         {"current": replace(STATE, generation=9)},
@@ -377,7 +377,7 @@ def test_verification_rejections(overrides):
 
 # Read-back tolerance charges exactly the observed discrepancy at its inclusive one-second boundary.
 def test_verification_difference_equality():
-    sample = TrustedTimeSample(0, 1_500_000, 1_000_000, Quality.NETWORK_SYNCED, 7)
+    sample = TrustedTimeSample(0, 1_500_000, 1_000_000, Quality.CHRONY_SYNCED, 7)
     assert verification(sample=sample).verification_uncertainty_us == 3_500_000
 
 
@@ -402,7 +402,7 @@ def test_realtime_step_immunity():
 
 # A slow tracking/sampling episode cannot shift the next one-minute poll later than its query-start cap.
 def test_poll_cap_uses_tracking_query_start():
-    sample = TrustedTimeSample(750_000, 0, 1_000_000, Quality.NETWORK_SYNCED, 7)
+    sample = TrustedTimeSample(750_000, 0, 1_000_000, Quality.CHRONY_SYNCED, 7)
     schedule = observation_schedule(sample, POLICY, tracking_started_at_monotonic_us=0)
     assert schedule.tracking_poll_due_at_monotonic_us == 60_000_000
     with pytest.raises(ValueError):
@@ -432,7 +432,7 @@ def test_sampling_must_finish_before_trust_expiry():
 
 # A refresh cannot be due from a sample already outside a tighter configured UTC budget.
 def test_refresh_rejects_exhausted_budget():
-    sample = TrustedTimeSample(0, 0, 2_000_000, Quality.NETWORK_SYNCED, 7)
+    sample = TrustedTimeSample(0, 0, 2_000_000, Quality.CHRONY_SYNCED, 7)
     assert (
         rtc_refresh_due_us(
             sample,

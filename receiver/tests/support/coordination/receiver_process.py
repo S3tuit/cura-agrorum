@@ -69,7 +69,7 @@ def run_receiver(pipe, directory, boundary, *, trusted=False, spend=False):
             now = clock.now_monotonic_us()
             if trusted:
                 policy.update_time(AirtimeCorrelation(
-                    TrustedTimeSample(now, now, 1, E.SystemTimeQuality.NETWORK_SYNCED, 1),
+                    TrustedTimeSample(now, now, 1, E.SystemTimeQuality.CHRONY_SYNCED, 1),
                     1, now + 10_000_000_000), rtc_health=E.RtcHealth.MISSING)
             assert policy.recover(deadline_monotonic_us=now + 5_000_000).reason is AirtimeReason.STATE_READY
             initial_used = policy.total_used

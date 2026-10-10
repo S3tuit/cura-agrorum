@@ -323,7 +323,7 @@ No second full before-database copy or airtime reset is needed.
 
 Node binaries and an empty readable storage baseline are verified without
 flashing. Operator admission precedes service/node start. A new service-instance
-health row reporting RX_SINGLE, a fresh same-instance NETWORK_SYNCED observation,
+health row reporting RX_SINGLE, a fresh same-instance CHRONY_SYNCED observation,
 and production-validated airtime history with conservative budget headroom are
 required by the shared `InstalledService.wait_for_prerequisites()` check. It waits
 at most 45 seconds by default, preserves reason-specific observations in

@@ -169,9 +169,9 @@ def test_ledger_semantics(setup, charges, expected):
 
 @pytest.mark.parametrize("quality, snapshot, expected", [
     (Q.UNTRUSTED, None, Condition.NONE),
-    (Q.NETWORK_SYNCED, AirtimeSnapshotV1(0, 0), Condition.NONE),
+    (Q.CHRONY_SYNCED, AirtimeSnapshotV1(0, 0), Condition.NONE),
     (Q.RTC_HOLDOVER, AirtimeSnapshotV1(-1, 39_999_999), Condition.NONE),
-    (Q.NETWORK_SYNCED, None, Condition.CORRUPT),
+    (Q.CHRONY_SYNCED, None, Condition.CORRUPT),
     (Q.UNTRUSTED, AirtimeSnapshotV1(0, 0), Condition.CORRUPT),
     (Q.RTC_HOLDOVER, AirtimeSnapshotV1(0, 40_000_000), Condition.CORRUPT),
 ])

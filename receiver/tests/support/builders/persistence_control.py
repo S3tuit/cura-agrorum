@@ -16,7 +16,7 @@ def state(**changes):
     return replace(
         CommunicatorStateV2(
             generation=1,
-            last_observed_system_time_quality=SystemTimeQuality.NETWORK_SYNCED,
+            last_observed_system_time_quality=SystemTimeQuality.CHRONY_SYNCED,
             last_observed_rtc_health=RtcHealth.PRESENT,
             rtc_provenance=None,
             rolling_window_us=3_600_000_000,

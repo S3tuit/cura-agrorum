@@ -42,7 +42,7 @@ from tests.support.builders.persistence import (
     _profile,
 )
 from tests.support.coordination.persistence_crash import exercise_pair_crash
-from tests.hardware.conftest import _validated_destructive_test_root
+from tests.support.receiver_pytest import _validated_destructive_test_root
 
 pytestmark = pytest.mark.hardware
 

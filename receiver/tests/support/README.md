@@ -9,6 +9,11 @@ concrete repeated need. Keep a helper local to one test module until sharing it
 removes real duplication without hiding the behavior under test. Do not create
 placeholder interfaces for later receiver components.
 
+`receiver_pytest.py` owns the common pytest registration and hardware safeguards
+for installed-system and component bench suites. `receiver/conftest.py` registers
+it once. `time_components.py` supplies the shared isolated time fixtures and child
+runner used by automated time mutations and the physical DS3231 I2C fault family.
+
 ## Organization
 
 The support tree grows by responsibility when its first real consumer exists:

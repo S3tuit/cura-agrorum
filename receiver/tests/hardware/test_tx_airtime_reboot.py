@@ -14,7 +14,7 @@ from cura_receiver.generated.receiver_entities_generated import (
 from cura_receiver.platform.linux_boot_identity import read_linux_boot_id
 from cura_receiver.tx_airtime import AirtimeReason as R
 from tests.hardware.airtime_component import component, preserve, record
-from tests.hardware.conftest import _validated_destructive_test_root
+from tests.support.receiver_pytest import _validated_destructive_test_root
 
 pytestmark = [pytest.mark.hardware, pytest.mark.destructive]
 

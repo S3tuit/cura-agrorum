@@ -9,6 +9,8 @@ Experiments, datasets, analysis and deployment plans/results belong in
 [`cura-agrorum-logbook`](https://github.com/S3tuit/cura-agrorum-logbook), normally
 checked out at `../cura-agrorum-logbook`. The logbook may use public firmware
 components; production code here must not depend on the logbook.
+Concise maintained hardware/driver findings may live beside their test procedures
+in this repository; detailed dated run records remain in the logbook.
 
 ## Repository map
 

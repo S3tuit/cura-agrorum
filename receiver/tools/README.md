@@ -2,7 +2,7 @@
 
 `check_chrony.py` is the read-only deployment policy check installed as Chrony's
 `ExecStartPre`. It checks expanded configuration without waiting for network
-time; see the [trusted-operator procedure](../hardware/ds3231/README.md#3-configure-time-ownership).
+time; see the [trusted-operator procedure](../deploy/CHRONY.md).
 
 `generate.py` is a host-side build tool. It validates the receiver enum and
 entity manifests plus the handwritten SQL source, then generates the checked-in

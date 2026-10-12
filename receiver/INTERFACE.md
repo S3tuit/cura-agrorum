@@ -500,8 +500,9 @@ qualification, kernel-clock checks and error-budget expiry still apply.
 
 ## DS3231 control interface
 
-[DS3231 LIMITATION.md](hardware/ds3231/LIMITATION.md) records the platform
-findings and pilot qualification; this section owns the exact control contract.
+[DS3231 I2C findings](hardware/ds3231/tests/i2c_faults/RESULTS.md) record the
+platform findings and pilot qualification; this section owns the exact control
+contract.
 
 The runtime time component consumes the existing clock capabilities and narrow
 Chrony, kernel-sampling and RTC ports. One communicator-owned

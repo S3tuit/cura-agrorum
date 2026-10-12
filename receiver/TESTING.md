@@ -82,11 +82,22 @@ firmware/test_apps/radio/, the separate Pi component peer in
 receiver/test_apps/radio_peer/, and joint scenarios/local orchestration in
 tests/rf/. Protocol verification remains in protocol/protocol-v2-lora/tests/.
 
-Physical DS3231 bring-up also has a separate
-[operator acceptance procedure](hardware/ds3231/OPERATOR_TESTS.md), covering
+Tests requiring a particular physical fixture, operator actions or external
+measurement equipment belong beside the hardware at
+`hardware/{component}/tests/{family}/`, even when code automates their assertions.
+Keep one folder per test family, with a concise README, optional RESULTS summary,
+and required code. Maintained hardware/driver findings belong there; detailed
+dated runs belong in the sibling logbook. Installed-system tests needing no
+special bench intervention stay under `tests/`.
+
+Physical DS3231 bring-up has a separate
+[operator acceptance procedure](hardware/ds3231/tests/boot_cycle/README.md), covering
 power removal, battery retention, oscillator-stop rejection and recovery.
-It records human actions and raw device evidence across Pi power cycles and
-is not collected by pytest or any Make target. This manual hardware evidence
+The four manual boots use direct commands without capture functions or Chrony.
+They check short battery retention and kernel OSF rejection/recovery. The optional
+production-adapter assertion in the same family is collected by hardware targets;
+it requires the operator-created fault and its bound baseline/confirmation.
+This manual hardware evidence
 complements the production-adapter tests below; it does not satisfy their
 runtime policy, privilege, timeout or durable-provenance obligations.
 
@@ -95,8 +106,12 @@ The implemented layout is:
 ```text
 receiver/tests/
   host/       exhaustive deterministic and fault-injection tests
-  hardware/   target-Pi adapters, devices, deployment and timing tests
+  hardware/   installed-Pi adapters, deployment and automated system tests
   support/    reviewed builders, reference models, fakes and subprocess helpers
+receiver/hardware/{component}/tests/{family}/
+  README.md   physical preparation, execution, acceptance and restoration
+  RESULTS.md  optional concise source-bound hardware/driver findings
+  *.py        required test code and local helpers
 ```
 
 The generation and schema tests are part of the host suite. Test
@@ -167,10 +182,12 @@ name, database and storage root and must never modify pilot data. A hardware
 fixture that changes device or host state must restore it in teardown; an
 uncertain restoration is a test failure and stops dependent tests.
 
+The hardware entry points collect both `tests/hardware/` and component test
+families below `hardware/`. Shared policy in `tests/support/receiver_pytest.py`,
+registered by `receiver/conftest.py`, preserves the same marker, target, serial,
+destructive-root and runtime-skip checks for both locations.
 The hardware entry points pass the required explicit hardware option and verify
-that pytest is running on a Raspberry Pi. The hardware package initially
-contains only these safety and collection rules; component tests arrive with
-their production adapters.
+that pytest is running on a Raspberry Pi.
 
 Destructive tests additionally require a dedicated absolute directory containing
 `.cura-receiver-test-root` with the exact line
@@ -599,8 +616,8 @@ reference models and episode builders remain local.
 | Diagnostic contract | `host/test_time_diagnostics.py` and runtime cases: exact 80-byte context, operation/status/error matrix, latch suppression/reset, immutable episode trigger and caller-owned diagnostic identity/admission |
 | Real Pi component inputs | `hardware/test_runtime_time.py`: native header ABI, real clock/Chrony/RTC input brackets, safe OS failures, process restart/boot identity, supplied-provenance offline startup, effective time-writer audit |
 | Invasive Pi components | `hardware/test_time_mutations.py`: capability-free receiver child, native-helper write/read-back, durable invalidation before replacement, explicit forward/backward steps and persisted correlation gaps, positive/negative maximum slew using the laptop reference bridge |
-| Operator-created oscillator-stop fault | `hardware/test_ds3231_osf.py`: valid pre-fault baseline, confirmed RTC-04 power/cell cycle, changed boot, current OSF boot evidence and production-adapter `INVALID`/`EINVAL` capture before RTC-05 recovery; the operator run owns physical restoration |
-| Controller fault qualification | `hardware/test_time_mutations.py::test_ds3231_controller_fault`: four held-SCL/SDA read/write cases, confirmed temporary wiring, physical pad levels, actual ioctl and pending-SIGKILL evidence, bounded completion/reaping and restoration. Dedicated RTC-only fixture keeps normal Chrony running; read cleanup verifies without writing, write cleanup explicitly restores after authorized submission, and uncertain cleanup stops dependent cases. Target execution is required before claiming qualification |
+| Operator-created oscillator-stop fault | `hardware/ds3231/tests/boot_cycle/test_ds3231_osf.py`: valid pre-fault baseline, confirmed boot-3 power/cell cycle, changed boot, current OSF boot evidence and production-adapter `INVALID`/`EINVAL` capture before boot-3 recovery; the operator run owns physical restoration |
+| Controller fault qualification | `hardware/ds3231/tests/i2c_faults/test_controller_faults.py::test_ds3231_controller_fault`: four held-SCL/SDA read/write cases, confirmed temporary wiring, physical pad levels, actual ioctl and pending-SIGKILL evidence, bounded completion/reaping and restoration. Dedicated RTC-only fixture keeps normal Chrony running; read cleanup verifies without writing, write cleanup explicitly restores after authorized submission, and uncertain cleanup stops dependent cases. Target execution is required before claiming qualification |
 
 For installed-profile nominal RTC-refresh and forward/backward-step qualification,
 pass `--receiver-time-user cura-receiver` to the root-supervised fixture. Its
@@ -617,15 +634,14 @@ that input; it is not a physical RTC calibration or a complete receiver-service
 boot test. Current-process restart evidence does not prove a changed boot ID
 across reboot. Full receiver-service lifecycle/reboot integration stays with
 that owner's implementation. Physical OSF fault injection follows the existing
-[DS3231 operator procedure](hardware/ds3231/OPERATOR_TESTS.md); its earlier
+[DS3231 operator procedure](hardware/ds3231/tests/boot_cycle/README.md); its earlier
 results do not claim a run of these new adapters. The configured RTC operation
 budget is an acceptance bound; nominal reads do not establish the kernel's
 worst-case failure bound.
-The [component fault procedure](tests/hardware/RTC_FAULT_TESTS.md) defines the
-operator confirmations, temporary connections, execution order and restoration
-for these two fault families.
+The [I2C fault procedure](hardware/ds3231/tests/i2c_faults/README.md) defines its
+operator confirmations, temporary connections, execution order and restoration.
 The controller investigation and pilot qualification are summarized in
-[DS3231 LIMITATION.md](hardware/ds3231/LIMITATION.md).
+[DS3231 I2C findings](hardware/ds3231/tests/i2c_faults/RESULTS.md).
 Fault cleanup distinguishes released GPIO inputs from recovered high bus
 pads: bounded production read recovery may start with low pads after confirmed
 GPIO release; high pads and a valid read are required before any restoration

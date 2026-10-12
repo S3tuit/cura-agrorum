@@ -99,5 +99,5 @@ loss. Hardware procedures and their prerequisites are described in
 checks discoverability only and does not execute or qualify hardware:
 
 ```sh
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -c receiver/pytest.ini receiver/tests/hardware --collect-only -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -c receiver/pytest.ini receiver/tests/hardware receiver/hardware --collect-only -q
 ```

@@ -1,280 +1,223 @@
-# Receiver pilot deployment profile
+# Fresh Pi receiver deployment
 
-This directory describes the approved package/configuration inputs. Service
-artifacts and their host validation arrive with application implementation.
-Nothing here claims the Pi has been installed or qualified.
+This sequence prepares Raspberry Pi OS Trixie arm64 on the Pi 3 Model B for
+the receiver. It ends with the prerequisites for measuring the RTC operation
+bound; production service installation follows that qualification.
+Use the nominal [carrier wiring](../hardware/TEST_CARRIER.md); shut down and
+disconnect all power before changing hardware connections.
 
-The production profile uses a dedicated unprivileged `cura-receiver` user and
-group. Administrative SSH continues through `cura`. Versioned installed code
-lives under `/opt/cura-agrorum`; secrets live at
-`/etc/cura-agrorum/receiver-group.json`, owned by the receiver user with mode
-0600 beneath trusted directories. Data lives in
-`/var/lib/cura-agrorum/receiver.sqlite3`; SQLite temporary files use
-`/var/lib/cura-agrorum/tmp` on the same mounted persistent filesystem.
+## 1. Connect and update the OS
 
-Package the receiver, the protocol-owned `cura_protocol_v2_lora` loader,
-cryptography, Linux SPI/GPIO dependencies and the exact generated schema.
-Production must work without test modules or a development checkout. The
-offline initializer verifies the schema fingerprint and creates a fresh
-database for the supplied group. Archive incompatible epochs; never silently
-migrate, reinitialize or manufacture group credentials at service startup.
+From your laptop:
 
-Run the service and any manual receiver invocation through
-`python -m cura_receiver`. This entry point enforces one receiver process in
-their shared Linux network namespace before any state load or hardware access.
-A second launch exits immediately with `RECEIVER_ALREADY_RUNNING`, including
-with another database or isolated test root. Stop the existing receiver before
-a manual test; then start a fresh process to load the latest durable history.
+```bash
+ssh cura@cura-receiver
+```
 
-The process guard uses the fixed abstract UNIX socket `\0cura-agrorum.receiver`.
-There is no lock file to remove after a crash. The kernel releases it on actual
-process exit, and exec'd helpers do not retain it. Service and manual launches
-must share the same network namespace, which need not be the host namespace.
-Competing receivers in different namespaces are outside the supported scope.
-This cooperative guard does not stop unrelated tools from opening the radio,
-so component hardware testing still requires the existing exclusive-access
-procedure.
+Run the remaining commands on the Pi:
 
-When creating the database, explicitly choose its initial airtime policy through
-`initialize_database(database_path, group_id, known_empty_airtime=...)`:
+```bash
+sudo apt-get update
+sudo apt-get upgrade
+sudo apt-get install --no-install-recommends util-linux-extra
+```
 
-- `True` asserts that this radio has known-empty airtime history. It creates a
-  pending commissioning token, not a runtime airtime snapshot. On first startup,
-  the receiver commits generation one with all 18 entries empty and consumes the
-  token in the same transaction before any TX. Initial nominal headroom is 36
-  seconds; commissioning also works without trusted UTC and establishes no RTC
-  provenance.
-- `False` creates no authorization token. Use this for unknown or recent radio
-  use, including a replacement database without independent empty-history
-  evidence. Ordinary conservative recovery applies.
+`update` refreshes package indexes; `upgrade` installs updates from the configured
+repositories. `util-linux-extra` provides `hwclock` for RTC checks. The reboot
+below loads any updated kernel.
 
-The choice is required; a fresh file or software installation does not prove
-unused radio airtime. Keep the radio exclusively controlled from establishing
-empty history until startup. Ordinary upgrades preserve existing state. Never
-reuse a commissioning image after transmissions without reestablishing empty
-history. Schema epoch 13 requires the marker table; earlier epochs are archived,
-not migrated. Missing/invalid marker contents disable commissioning; existing
-communicator state and SQLite failure policies retain their normal precedence.
+## 2. Enable RTC and radio interfaces
 
-[ApplicationSettings](../cura_receiver/application_settings.py) supplies the
-explicit pilot runtime profile using existing validated component settings:
+Keep time synchronization services stopped until their configuration is in place:
 
-- 1-GiB preventive free-space reserve; WAL/FULL, foreign keys and the existing
-  250-ms SQLite busy timeout. Required configuration/data/temp mounts and
-  available capacity must be verified before radio use.
-- Queue capacity 500, 5-second worker flush, 64-entity wake and batch thresholds,
-  4-MiB checkpoint threshold, as already defined by the persistence contract.
-- One-minute health period; 10-second internal shutdown deadline, with a
-  15-second supervisor stop timeout. Restart delay 5 seconds, at most five
-  starts in 60 seconds.
-- Documented time/airtime defaults, including 3500-ppm Chrony slew,
-  3700-ppm elapsed bound and 10-ppm RTC drift assumption. Network admission
-  uses complete error plus observation age, with no separate skew cutoff;
-  RTC writes require the five-second source bound through their projected
-  operation and actual-stage checks. Full qualification of the elapsed-rate
-  envelope beyond the slew cap is [deferred](../ARCHITECTURE.md#chrony-integration).
-- RTC bootstrap makes at most three reads within five seconds, supervised by
-  a six-second timeout, once per Linux boot before Chrony. Its failure permits
-  untrusted offline startup; it never reads receiver secrets or SQLite.
+```bash
+sudo systemctl mask --now systemd-timesyncd.service chrony.service
+sudo nano /boot/firmware/config.txt
+```
 
-Use the [documented fixed helper](../INTERFACE.md#pilot-linux-backend-and-privilege-boundary)
-at `/usr/libexec/cura-agrorum/ds3231-set` and stable `/dev/rtc-ds3231` device.
-The helper is root:receiver 0750 with exactly `cap_sys_time=ep`, no setuid;
-the receiver parent has no permitted/effective/ambient capabilities. Its
-bounding set retains CAP_SYS_TIME and NoNewPrivileges is disabled so the helper
-can acquire its file capability. Pin the built helper's digest during
-installation; no fabricated digest or fallback privileged shell is allowed.
-
-Chrony uses `/run/chrony/chronyd.sock` with receiver-group access. Install the
-[existing validator and drop-in](../hardware/ds3231/README.md#3-configure-time-ownership)
-and audit competing writers. The service must require local mounts and bounded
-bootstrap completion, not Internet connectivity, and prevent suspend while
-active. GPIO/SPI/RTC permissions belong to the dedicated service identity.
-
-Before installation/bench acceptance, measure package/dependency identity,
-effective daemon arguments, helper/device permissions and database configuration.
-Verify capacity for the declared capture schedule, including health, retries,
-profiles, WAL and operating-system headroom; free space alone is not a retention
-forecast. No automatic deletion or forwarding is authorized. Test deployments
-use dedicated identities, paths and service names. Current-source staging and
-source manifests precede target tests; the final installed-service, boot,
-storage/time and RF checks remain separate deployment obligations.
-
-Production artifacts now include the receiver entry point, source-bundle builder,
-service units, sleep-inhibition authorization and a separate boot-scoped RTC copy.
-Build with `python receiver/tools/build_runtime_bundle.py <new-directory>`.
-The bundle preserves the runtime package/schema layout and includes a SHA-256
-manifest of its actual files plus the baseline Git commit. It contains no tests,
-credentials, database, workplan or pre-existing virtual environment. Install that
-reviewed tree beneath `/opt/cura-agrorum`, create its `venv`, and install
-`receiver/requirements-runtime.txt` with target-compatible dependencies. The
-crypto version is the version exercised by the host implementation; Linux
-GPIO/SPI and complete target dependency qualification remain deployment gates.
-Record installed dependency versions as part of the installation manifest.
-
-Install the two units from `systemd/`, and install `chrony-bootstrap.conf` as a
-Chrony unit drop-in alongside the existing Chrony validation drop-in. Install
-`49-cura-receiver-inhibit.rules` in the system polkit rules directory. The main
-service obtains a blocking sleep inhibitor; failure to obtain it prevents normal
-startup. Preserve the dedicated identity/device/socket permissions described
-above. No unit depends on `network-online.target`.
-
-Create the trusted deployment environment file
-`/etc/cura-agrorum/deployment.env` with `RTC_HELPER_SHA256` equal to the digest of
-the installed, reviewed native helper (64 lowercase hexadecimal characters,
-as emitted by `sha256sum`) and `RTC_KERNEL_BOUND_US` equal to the
-validated target kernel/device operation bound. Both are required inputs; no
-sample digest or unqualified bound is substituted. Bootstrap uses the same bound,
-a maximum of three reads and a five-second total episode, supervised at six
-seconds. Its root-owned `/run/cura-agrorum-rtc-bootstrap/<linux-boot-id>` claim is
-created before attempting the copy and survives unit restarts, including a failed
-or interrupted attempt. RuntimeDirectory storage disappears at reboot. Bootstrap
-never accesses receiver configuration or SQLite, and its provisional clock copy
-never establishes receiver time trust or RTC provenance.
-
-Also set the required receiver budget in that file:
+Under the active `[all]` section, ensure these settings appear once. Update
+existing entries rather than adding conflicting copies:
 
 ```ini
-CURA_RECEIVER_STARTUP_BUDGET_US=12000000
+dtparam=i2c_arm=on
+dtoverlay=i2c-rtc,ds3231
+dtparam=spi=on
 ```
 
-It is an explicit positive decimal microsecond duration, validated by both
-storage preflight and the runtime. Manual launches must export it too. The unit
-provides no fallback.
+I2C and the overlay bind the DS3231 to the kernel RTC driver. SPI exposes the
+radio interface. The [RTC installation guide](../hardware/ds3231/README.md)
+owns module-specific wiring and driver details.
 
-The 12-second value covers only the measured pilot fixture envelope; see the
-[benchmark findings](../benchmarks/startup_readiness/README.md). Startup,
-failure and shutdown records are sent only to a socket standard output, such as
-the unit's journal stream. A manual launch from a terminal, file or pipe prints
-no record, even for rejected deployment input; inspect its exit status. Record
-contents and delivery limits are in
-[`INTERFACE.md`](../INTERFACE.md#service-evidence-records).
-
-Install/order bootstrap before starting Chrony. An already-synchronized kernel
-clock makes bootstrap skip copying. Receiver restarts do not rerun the copy.
-A failed bootstrap outcome still permits Chrony and receiver startup; runtime
-RTC probing and the normal time policy determine health and trust independently.
-The service's storage preflight verifies writable data/temp directories on the
-same filesystem and the preventive reserve. It does not initialize or repair a
-database; use the existing offline database initializer with the supplied group.
-
-Installation, enabling units, changing privileges/devices/Chrony and actual
-boot/restart/RF qualification are separate later phases. These files are not
-installed by the bundle builder or by host tests.
-
-## Shared paths for isolated installation
-
-Runtime and storage preflight both read the same path environment. The shared
-loader provides production defaults when the entire path set is absent. The
-unit does not prepopulate path variables, so a partial environment-file override
-cannot silently combine test and production paths. To install a test instance,
-set all of these in its trusted deployment environment file:
-
-```ini
-CURA_RECEIVER_STARTUP_BUDGET_US=12000000
-CURA_RECEIVER_TEST_ROOT=/var/lib/cura-pilot-test
-CURA_RECEIVER_CONFIGURATION=/var/lib/cura-pilot-test/config/receiver-group.json
-CURA_RECEIVER_DATABASE=/var/lib/cura-pilot-test/data/receiver.sqlite3
-SQLITE_TMPDIR=/var/lib/cura-pilot-test/data/tmp
+```bash
+sudo reboot
 ```
 
-Use a new dedicated root/service name for the actual run. The example is not
-authorization to reuse an existing directory. Partial overrides, empty or
-relative paths, parent traversal, and test roots/paths overlapping the default
-production directories fail before device access. The optional test-root guard
-is lexical: before installation verify each real directory/file is nonsymlink,
-has the intended trusted ownership and cannot alias production storage. Group
-file validation still uses the strict protocol loader under the service UID.
+Reconnect from your laptop after boot:
 
-Both unit commands inherit these values; SQLite receives the same temporary
-directory checked by preflight. Keep the initializer's group/database arguments
-identical to those values. Update `EnvironmentFile`, `PYTHONPATH`, executable
-paths, `RequiresMountsFor` and `ReadWritePaths` in the dedicated installed unit
-to match the staged package and test roots. A path override does not update
-systemd mount/permission directives. Keep the production unit unchanged on the
-host; never replace its group or database for a test.
-
-Defaults are available for direct invocations only when all three path variables
-are absent; `CURA_RECEIVER_TEST_ROOT` requires explicit paths. RTC helper/time
-inputs, radio settings, persistence policy and service ownership remain unchanged.
-
-
-## Pilot Chrony socket permissions
-
-Pinned chronyc creates its reply socket beside `/run/chrony/chronyd.sock`.
-The Chrony drop-in starts with a private runtime directory, then grants
-`cura-receiver` group access: directory01770 and daemon socket0660, both still
-owned by the daemon user. The sticky bit protects daemon-owned entries against
-receiver unlink/rename; receiver-created reply sockets can be removed normally.
-The receiver unit permits `/run/chrony` writes and orders startup after the local
-Chrony start attempt, without requiring synchronization or Internet access.
-A missing directory is tolerated by the sandbox; unavailable Chrony remains an
-ordinary untrusted runtime input. No membership in the daemon's group is needed.
-Verify real tracking, reply-socket cleanup, rejection of daemon-socket removal
-and unrelated writes, and permission restoration after daemon restart and
-separate stop/edit/start.
-
-The drop-in explicitly sets `RuntimeDirectoryPreserve=yes`. Verify the effective
-unit manages `chrony` as a runtime directory and preserves it on every service
-stop. This keeps the directory object mounted into an already-running receiver;
-Chrony may remove and recreate `chronyd.sock` within it. Require unchanged
-directory device/inode and successful tracking after separate stop/start from
-the same receiver PID and mount namespace. An ordinary `systemctl restart`
-alone cannot qualify this lifetime boundary.
-
-Normal daemon/client exit removes their own socket entries. A killed process
-may leave an entry behind; systemd no longer removes the directory at service
-stop. Reboot clears `/run`. Do not delete, replace or run runtime-directory
-cleanup while a receiver namespace is using it. If manual cleanup requires
-recreating the directory, stop the receiver and Chrony first, then start Chrony
-and a new receiver namespace afterward.
-
-Keep the post-start ownership/mode adjustment in one command: systemd reapplies
-RuntimeDirectory ownership/mode before each separate post-start command. Socket
-mode alone is insufficient because chronyc must create its reply socket and
-the receiver sandbox must permit that directory write. Preserve the vendor's
-`!` launch prefix and verify effective startup arguments/privilege behavior.
-For deliberate missing-device tests, count the journal's five bounded starts;
-the unit can retain `Result=exit-code` instead of `start-limit-hit`.
-
-## Persistent service journal
-
-Install `systemd/60-cura-persistent.conf` as
-`/etc/systemd/journald.conf.d/60-cura-persistent.conf` (root:root, 0644).
-The receiver unit explicitly routes stdout/stderr to the journal with
-`SyslogIdentifier=cura-receiver`. The drop-in requests `Storage=persistent`,
-`SystemMaxUse=64M`, `SystemKeepFree=1G`, and `MaxRetentionSec=30day` for the
-default system journal. It affects the host journal, not just receiver records.
-Inspect vendor and local overrides before asserting the effective policy:
-
-```sh
-systemd-analyze cat-config systemd/journald.conf
-sudo systemctl restart systemd-journald
-sudo journalctl --flush
-sudo journalctl --disk-usage
-sudo journalctl --list-boots
-sudo ls -l /var/log/journal
+```bash
+ssh cura@cura-receiver
 ```
 
-Verify persistent journal files under the machine-ID directory, then retain a
-known startup record's boot/instance IDs. After an authorized orderly reboot,
-read that record with `journalctl -b BOOT_ID -u cura-receiver.service` (or the
-isolated benchmark's unit). Installation and current-boot visibility alone do
-not prove reboot retention.
+## 3. Verify the device bindings
 
-Retention limits:
+On the Pi:
 
-- `MaxRetentionSec=30day` is an upper bound. `SystemMaxUse=64M` and
-  `SystemKeepFree=1G` may rotate host journal entries away sooner.
-- A successful stream write reaches journald; it is not a durable
-  acknowledgement. Records not yet flushed to disk can be lost.
-- No power-cut durability is claimed for receiver records.
+```bash
+uname -r
+dpkg-query -W 'linux-image*'
+cat /sys/class/rtc/rtc0/name
+readlink -f /sys/class/rtc/rtc0/device
+readlink -f /sys/class/rtc/rtc0/device/driver
+ls -l /dev/rtc0 /dev/spidev0.0 /dev/gpiochip0
+systemctl is-enabled systemd-timesyncd.service chrony.service
+systemctl is-active systemd-timesyncd.service chrony.service
+```
 
-## Deferred post-pilot permissions review
+For this Pi, expect RTC name `rtc-ds1307`, I2C device `1-0068`, driver
+`/sys/bus/i2c/drivers/rtc-ds1307`, and the listed RTC/SPI/GPIO device nodes.
+Both time services should be masked and inactive; a nonzero exit status from
+these `systemctl` queries is expected. Resolve missing or unexpected devices
+before continuing.
 
-**PERM-001 — deferred, not qualified:** review permissions generally after the
-pilot, including replacing direct Chrony socket access with a narrow local
-coordinator. The pilot uses the approved shared runtime directory; this leaves
-broader Chrony command authority with the receiver identity. Revisit before
-post-pilot deployment or earlier if permission requirements change. No coordinator
-or command-level privilege isolation is implemented or claimed.
+OSF handling and short battery retention have been checked on the setup recorded
+in the [boot-cycle findings](../hardware/ds3231/tests/boot_cycle/RESULTS.md#reuse).
+Reuse that result for a matching setup. If your hardware or OS/kernel differs,
+rerun the [four-boot procedure](../hardware/ds3231/tests/boot_cycle/README.md)
+before enabling time synchronization or writing over the initial RTC state.
+
+## 4. Stage the source and prepare the test environment
+
+From the repository root on your laptop, select a commit containing these
+deployment files and the component test layout (`HEAD` below). Uncommitted
+changes are not included:
+
+```bash
+umask 077
+cura_source_tmp=$(mktemp -d /tmp/cura-pi-source.XXXXXX)
+git rev-parse HEAD > "$cura_source_tmp/source.commit"
+git archive --format=tar HEAD > "$cura_source_tmp/source.tar"
+(cd "$cura_source_tmp" && sha256sum source.tar > source.tar.sha256)
+cura_pi_stage=$(ssh cura@cura-receiver 'mktemp -d /home/cura/cura-stage.XXXXXX')
+scp "$cura_source_tmp/source.tar" "$cura_source_tmp/source.tar.sha256" \
+  "$cura_source_tmp/source.commit" "cura@cura-receiver:$cura_pi_stage/"
+printf 'Pi staging directory: %s\n' "$cura_pi_stage"
+ssh cura@cura-receiver
+```
+
+On the Pi, replace the directory below with the printed path:
+
+```bash
+cd /home/cura/cura-stage.XXXXXX
+sha256sum -c source.tar.sha256
+mkdir source
+tar -xf source.tar -C source
+cd source
+sudo apt-get install --no-install-recommends \
+  python3-venv python3-dev build-essential libcap2-bin \
+  libgpiod-dev python3-libgpiod chrony
+python3 -m venv .venv
+.venv/bin/python -m pip install \
+  -r receiver/requirements-runtime.txt -r receiver/requirements-test.txt \
+  ./protocol/protocol-v2-lora/python
+.venv/bin/python -m pip freeze > ../installed-dependencies.txt
+dpkg-query -W 'linux-image*' gcc libc6 libcap2-bin libgpiod3 \
+  python3-libgpiod chrony > ../installed-packages.txt
+cc --version > ../compiler.txt
+```
+
+Require the archive checksum check to pass before extraction. The source stage
+and receipts identify what will be measured. The compiler and `setcap` build the
+test's temporary native RTC helper. System Python/libgpiod controls the physical
+fault GPIOs; the venv supplies receiver and test dependencies. Chrony stays masked
+during installation. Keep this stage outside `/tmp` so it survives reboots.
+
+## 5. Create the service identity and configure Chrony
+
+From the staged source root on the Pi:
+
+```bash
+sudo adduser --system --group --no-create-home \
+  --home /var/lib/cura-agrorum --shell /usr/sbin/nologin cura-receiver
+sudo usermod -aG gpio,spi cura-receiver
+sudo cp -an /etc/chrony/chrony.conf /etc/chrony/chrony.conf.before-cura
+sudo install -o root -g root -m 0644 receiver/deploy/chrony.conf /etc/chrony/chrony.conf
+sudo install -D -o root -g root -m 0644 receiver/tools/check_chrony.py \
+  /usr/libexec/cura-agrorum/check-chrony.py
+sudo install -D -o root -g root -m 0644 receiver/hardware/ds3231/chrony-runtime.conf \
+  /etc/systemd/system/chrony.service.d/cura-runtime.conf
+sudo systemctl daemon-reload
+sudo systemctl unmask chrony.service
+sudo systemctl enable --now chrony.service
+chronyc -v
+sudo chronyc -h /run/chrony/chronyd.sock sources -v
+sudo chronyc -h /run/chrony/chronyd.sock tracking
+```
+
+The dedicated account owns the eventual receiver process. Create its group before
+starting the drop-in, which grants that group Chrony socket access. Chrony is the
+normal Linux clock writer; leave `systemd-timesyncd` masked. The configuration
+validator runs before each Chrony start. Require `chronyc` version 4.6.1, as used
+by the current adapter. [Chrony policy and checks](CHRONY.md) own the configuration
+rationale, effective launch, socket permissions and competing-writer audit.
+
+## 6. Initialize the RTC from verified network time
+
+Require a selected network source (`^*`), normal synchronized tracking and a
+recent reference consistent with independent UTC. Resolve poor or missing
+reference evidence before proceeding. With the receiver stopped, correct Linux
+time, wait for a small remaining correction, then write and read the RTC:
+
+```bash
+sudo chronyc -h /run/chrony/chronyd.sock makestep && \
+  sudo chronyc -h /run/chrony/chronyd.sock waitsync 30 0.1 0 2 && \
+  sudo hwclock --systohc --utc --noadjfile --rtc=/dev/rtc0 && \
+  sudo hwclock --show --verbose --utc --noadjfile --rtc=/dev/rtc0
+```
+
+Require the entire sequence to succeed. The wait checks remaining Linux clock
+correction; reference-error limits and runtime trust remain defined by the
+[time contract](../ARCHITECTURE.md#time-model). This supplies the valid, advancing
+RTC and stable Chrony state required by the controller-fault measurement.
+
+## 7. Prepare to qualify the RTC operation bound
+
+From the staged source root on the Pi:
+
+```bash
+cura_rtc_root=$(sudo mktemp -d /var/lib/cura-rtc-qualification.XXXXXX)
+sudo chmod 0755 "$cura_rtc_root"
+printf 'CURA AGRORUM RECEIVER TEST ROOT\n' | \
+  sudo tee "$cura_rtc_root/.cura-receiver-test-root" > /dev/null
+sudo chmod 0600 "$cura_rtc_root/.cura-receiver-test-root"
+printf 'RTC qualification root: %s\n' "$cura_rtc_root"
+pinctrl get 17
+pinctrl get 27
+pinctrl get 2
+pinctrl get 3
+```
+
+The root is dedicated and root-owned. Its traversal permission lets the test's
+unprivileged `cura` child reach its own session files; it grants no write access
+to other users. The sentinel distinguishes it from production data. Require the
+spare fault GPIOs to be unused inputs and the normal bus pads to be high.
+
+Stop here before fault injection. Follow the
+[I2C fault procedure](../hardware/ds3231/tests/i2c_faults/README.md) for unpowered
+shunt installation, operator confirmation, the four read/write cases and complete
+restoration. The fixture builds/pins its temporary helper and restores access;
+no production helper or receiver service needs to be running for this measurement.
+
+The [interface contract](../INTERFACE.md#pilot-linux-backend-and-privilege-boundary)
+requires a finite RTC operation bound for admission, late-result rejection and
+timed-out helper reaping. The procedure checks a **3-second acceptance limit**
+under its defined faults, including in-flight write termination. It qualifies
+that envelope; it does not derive a universal kernel worst-case bound. A successful
+normal read or the OSF boot check cannot replace this measurement.
+
+Record outcomes, maximum complete-operation durations, helper/source identity,
+hardware/wiring, kernel/packages and successful restoration in the
+[owning findings](../hardware/ds3231/tests/i2c_faults/RESULTS.md#reusing-an-adopted-operation-bound).
+Once qualified, reuse the recorded limit for an applicable matching setup. That
+document owns the conditions for remeasurement. The retained findings concern
+the earlier beta package; the current stable package's bound remains to be
+qualified before supplying `RTC_KERNEL_BOUND_US=3000000` for production.

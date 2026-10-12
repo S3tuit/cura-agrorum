@@ -51,6 +51,7 @@ HARDWARE_TEST_ARGS := \
 	--port=$(PORT)
 RECEIVER_PYTEST := $(abspath .venv/bin/python) -m pytest
 RECEIVER_PYTEST_ARGS := -c $(abspath receiver/pytest.ini)
+RECEIVER_HARDWARE_PATHS := $(abspath receiver/tests/hardware) $(abspath receiver/hardware)
 RECEIVER_TEST_ROOT ?=
 CONFIRM_RECEIVER_DESTRUCTIVE ?=
 RECEIVER_BENCHMARK_OUTPUT ?=
@@ -77,17 +78,17 @@ test-receiver-host:
 
 test-receiver-hardware:
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(RECEIVER_PYTEST) $(RECEIVER_PYTEST_ARGS) \
-		$(abspath receiver/tests/hardware) --receiver-hardware \
+		$(RECEIVER_HARDWARE_PATHS) --receiver-hardware \
 		-m 'hardware and not slow and not destructive and not rf_peer'
 
 test-receiver-hardware-slow:
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(RECEIVER_PYTEST) $(RECEIVER_PYTEST_ARGS) \
-		$(abspath receiver/tests/hardware) --receiver-hardware \
+		$(RECEIVER_HARDWARE_PATHS) --receiver-hardware \
 		-m 'hardware and slow and not destructive and not rf_peer'
 
 test-receiver-hardware-all:
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(RECEIVER_PYTEST) $(RECEIVER_PYTEST_ARGS) \
-		$(abspath receiver/tests/hardware) --receiver-hardware \
+		$(RECEIVER_HARDWARE_PATHS) --receiver-hardware \
 		-m 'hardware and not destructive and not rf_peer'
 
 test-receiver-hardware-destructive:
@@ -100,7 +101,7 @@ test-receiver-hardware-destructive:
 		exit 2; \
 	fi
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(RECEIVER_PYTEST) $(RECEIVER_PYTEST_ARGS) \
-		$(abspath receiver/tests/hardware) --receiver-hardware \
+		$(RECEIVER_HARDWARE_PATHS) --receiver-hardware \
 		--confirm-receiver-destructive \
 		--receiver-test-root="$(RECEIVER_TEST_ROOT)" \
 		-m 'hardware and destructive and not rf_peer'

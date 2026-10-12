@@ -1,6 +1,6 @@
-"""Production-adapter OSF capture after the operator's RTC-04 power/cell cycle.
+"""Production-adapter OSF capture after the operator's boot-3 power/cell cycle.
 
-The external operator run owns physical fault creation and RTC-05 recovery.
+The external operator run owns physical fault creation and boot-3 recovery.
 This case must run before recovery writes; missing confirmation fails explicitly.
 """
 
@@ -19,7 +19,7 @@ import pytest
 from cura_receiver.platform.linux_clocks import LinuxOsClock
 from cura_receiver.platform.linux_ds3231 import LinuxDs3231Control
 from cura_receiver.ports.ds3231 import Ds3231ReadStatus
-from tests.hardware.conftest import _validated_destructive_test_root
+from tests.support.receiver_pytest import _validated_destructive_test_root
 
 pytestmark = [pytest.mark.hardware, pytest.mark.destructive]
 

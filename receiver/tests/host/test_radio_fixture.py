@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from tests.hardware import radio_fixture
-from tests.hardware import conftest as hardware_config
+from tests.support import receiver_pytest as hardware_config
 
 
 @pytest.fixture

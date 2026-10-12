@@ -1,0 +1,4 @@
+# Fill with distinct attached probe ROM IDs: 16 hex digits each, not all zeroes.
+# Names assign the probes to logical channels; empty strings are unprovisioned.
+CONFIG_CURA_DS18B20_0_ROM=""
+CONFIG_CURA_DS18B20_1_ROM=""

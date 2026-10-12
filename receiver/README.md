@@ -14,10 +14,10 @@ interfaces, Python package, schema sources, generators, and tests.
 - [`TESTING.md`](TESTING.md) defines the pilot host and Raspberry Pi test
   suites, their framework, fixtures, safety boundaries, and deferred
   end-to-end RF coverage.
-- [`hardware/ds3231/README.md`](hardware/ds3231/README.md) documents DS3231
-  wiring, kernel selection and bench time configuration; its
-  [operator procedure](hardware/ds3231/OPERATOR_TESTS.md) defines physical
-  retention, oscillator-stop and recovery checks.
+- [`hardware/ds3231/README.md`](hardware/ds3231/README.md) indexes the DS3231
+  fixture, boot-cycle checks and I2C fault tests, with concise findings per family.
+  OS preparation belongs to [deployment](deploy/README.md); normal time ownership
+  and RTC initialization belong to [Chrony setup](deploy/CHRONY.md).
 - [`tests/hardware/RADIO_TESTS.md`](tests/hardware/RADIO_TESTS.md) describes
   explicit SX1262 component-fixture selection, source staging and evidence.
   The [carrier schematic](hardware/TEST_CARRIER.md#proposed-sx1262-extension)
@@ -62,6 +62,8 @@ The protocol contract remains under
   suite, and test-only support. The generation/schema tests live under
   [`tests/host/`](tests/host/); [`tests/support/README.md`](tests/support/README.md)
   defines when shared fakes, builders, models and coordination helpers are added.
+- `hardware/{component}/tests/{family}/` keeps physical-fixture procedures,
+  measurement/action tests, required code and maintained findings together.
 - `receiver-group.json` is the development receiver-group configuration.
 
 Each subdirectory README explains only the files and editing rules local to

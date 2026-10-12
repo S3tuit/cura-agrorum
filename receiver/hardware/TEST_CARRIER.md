@@ -5,7 +5,7 @@ and fixture states. The current carrier uses the recorded Raspberry Pi 3
 Model B and Adafruit DS3231 with a CR1220 battery. The operator has confirmed
 assembly of the two removable fault shunts while externally unpowered.
 Qualification results and the pilot recovery limitation are recorded in
-[DS3231 LIMITATION.md](ds3231/LIMITATION.md).
+[DS3231 I2C findings](ds3231/tests/i2c_faults/RESULTS.md).
 
 The [SX1262 extension below](#proposed-sx1262-extension) is a proposed design.
 The operator confirmed on 2026-09-16 that no radio is attached, and approved
@@ -15,11 +15,11 @@ issue. Exact readings and powered preflight are not yet recorded; this report
 does not establish electrical, production-adapter or RF acceptance.
 
 [TESTING.md](../TESTING.md) owns required coverage and execution rules.
-[The DS3231 installation guide](ds3231/README.md) owns bench OS setup,
-[OPERATOR_TESTS.md](ds3231/OPERATOR_TESTS.md) owns the physical RTC acceptance
-sequence, and [RTC_FAULT_TESTS.md](../tests/hardware/RTC_FAULT_TESTS.md) owns the
-production-adapter fault execution and restoration procedure. Result archives
-retain their original carrier/source bindings.
+[The receiver deployment guide](../deploy/README.md) owns initial OS setup,
+[boot-cycle procedure](ds3231/tests/boot_cycle/README.md) owns the physical RTC acceptance
+sequence, and [I2C fault procedure](../hardware/ds3231/tests/i2c_faults/README.md) owns the
+production-adapter controller-fault execution and restoration procedure.
+Each family's findings retain their original carrier/source bindings.
 
 ## Design rules
 
@@ -131,8 +131,9 @@ shuts down/disconnects external power and opens both shunts, returning to
 `nominal`; the carrier wiring remains assembled.
 
 For physical oscillator-stop creation, begin with the `nominal` shunt state
-and follow RTC-04's exact external-power and coin-cell sequence. Battery
-retention and recovery follow RTC-03/RTC-05. The state table does not replace
+and follow boot 3's external-power and coin-cell sequence in the
+[boot-cycle procedure](ds3231/tests/boot_cycle/README.md). Battery retention and
+recovery follow boots 2 and 4. The state table does not replace
 those procedures or authorize additional RTC writes.
 
 ## Fault-suite checks and evidence

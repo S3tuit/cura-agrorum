@@ -108,7 +108,7 @@ def test_resolution_driven_duration_examples(elapsed, low, high, sign, expected)
     ],
 )
 def test_failed_reference_evidence_is_retained(tmp_path, monkeypatch, reply):
-    from tests.hardware.test_time_mutations import measure_slew
+    from tests.support.time_components import measure_slew
     from tests.support.fakes.os_clock import FakeOsClock
     from tests.support.fakes.chrony import FakeChronyControl
 
@@ -140,7 +140,7 @@ def test_driver_retains_intervals_and_stops_at_first_decision(
     tmp_path, monkeypatch, rate, error_us, steps, expected
 ):
     from cura_receiver.ports.chrony import ChronyTrackingResult, ChronyQueryStatus
-    from tests.hardware import test_time_mutations as mutations
+    from tests.support import time_components as mutations
     from tests.support.fakes.os_clock import FakeOsClock
     from tests.support.fakes.chrony import FakeChronyControl
 

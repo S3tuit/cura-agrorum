@@ -8,8 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests import conftest as receiver_test_config
-from tests.hardware import conftest as hardware_test_config
+from tests.support import receiver_pytest as receiver_test_config
+from tests.support import receiver_pytest as hardware_test_config
 
 
 RECEIVER_ROOT = Path(__file__).resolve().parents[2]
@@ -19,10 +19,13 @@ def _run_hardware_probe(
     tmp_path: Path,
     test_source: str,
     *pytest_args: str,
+    component: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     project_root = tmp_path / "receiver_hardware_harness"
     hardware_root = project_root / "hardware"
-    hardware_root.mkdir(parents=True)
+    component_root = project_root / "components"
+    test_parent = component_root / "ds3231/tests/boot_cycle" if component else hardware_root
+    test_parent.mkdir(parents=True)
     (project_root / "raspberry_pi_model").write_text(
         "Raspberry Pi Review Probe\n",
         encoding="utf-8",
@@ -41,13 +44,14 @@ markers =
         f"""\
 from pathlib import Path
 
-from tests import conftest as receiver_config
-from tests.hardware import conftest as hardware_config
+from tests.support import receiver_pytest as receiver_config
+from tests.support import receiver_pytest as hardware_config
 
 PROJECT_ROOT = Path({str(project_root)!r})
 receiver_config.TESTS_ROOT = PROJECT_ROOT
 receiver_config.HOST_ROOT = PROJECT_ROOT / "host"
 receiver_config.HARDWARE_ROOT = PROJECT_ROOT / "hardware"
+receiver_config.COMPONENT_HARDWARE_ROOT = PROJECT_ROOT / "components"
 hardware_config.RASPBERRY_PI_MODEL = PROJECT_ROOT / "raspberry_pi_model"
 
 pytest_addoption = receiver_config.pytest_addoption
@@ -58,7 +62,7 @@ pytest_runtest_makereport = hardware_config.pytest_runtest_makereport
 """,
         encoding="utf-8",
     )
-    test_path = hardware_root / "test_probe.py"
+    test_path = test_parent / "test_probe.py"
     test_path.write_text(test_source, encoding="utf-8")
 
     environment = os.environ.copy()
@@ -84,8 +88,10 @@ pytest_runtest_makereport = hardware_config.pytest_runtest_makereport
 
 
 # Rejects an unconfirmed destructive item before a session fixture can run.
+@pytest.mark.parametrize("component", [False, True], ids=["installed-system", "component-bench"])
 def test_destructive_authorization_precedes_session_fixture_setup(
     tmp_path: Path,
+    component: bool,
 ) -> None:
     result, project_root = _run_hardware_probe(
         tmp_path,
@@ -100,23 +106,25 @@ pytestmark = [pytest.mark.hardware, pytest.mark.destructive]
 
 @pytest.fixture(scope="session", autouse=True)
 def destructive_session_fixture() -> None:
-    (Path(__file__).resolve().parents[1] / "fixture-ran").write_text("unsafe")
+    Path(__file__).with_name("fixture-ran").write_text("unsafe")
 
 
 def test_destructive_probe() -> None:
     pass
 """,
         "--receiver-hardware",
+        component=component,
     )
 
     output = result.stdout + result.stderr
     assert result.returncode == pytest.ExitCode.USAGE_ERROR
     assert "require --confirm-receiver-destructive" in output
-    assert not (project_root / "fixture-ran").exists()
+    assert not list(project_root.rglob("fixture-ran"))
 
 
 # Makes a selected hardware fixture's missing-component skip fail the run.
-def test_selected_hardware_fixture_skip_is_a_failure(tmp_path: Path) -> None:
+@pytest.mark.parametrize("component", [False, True], ids=["installed-system", "component-bench"])
+def test_selected_hardware_fixture_skip_is_a_failure(tmp_path: Path, component: bool) -> None:
     result, _project_root = _run_hardware_probe(
         tmp_path,
         """\
@@ -135,6 +143,7 @@ def test_ds3231_probe(missing_ds3231: None) -> None:
     pass
 """,
         "--receiver-hardware",
+        component=component,
     )
 
     output = result.stdout + result.stderr

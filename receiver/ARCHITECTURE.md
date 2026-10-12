@@ -335,7 +335,7 @@ The receiver uses the Pi system clocks and the battery-backed DS3231 for differe
 The DS3231 stores UTC, never local civil time.
 
 The pilot controller findings and recovery rationale are recorded in
-[DS3231 LIMITATION.md](hardware/ds3231/LIMITATION.md).
+[DS3231 I2C findings](hardware/ds3231/tests/i2c_faults/RESULTS.md).
 
 ### Time quality and RTC health
 
@@ -850,7 +850,7 @@ path used by `ExecStart` on every Chrony start. Trusted operators change its
 inputs only while Chrony is stopped and start it through that unit. This
 deliberately accepts the check/use interval without configuration snapshots or
 tamper protection. The receiver does not manage Chrony's service lifecycle.
-The [installation procedure](hardware/ds3231/README.md#3-configure-time-ownership)
+The [installation procedure](deploy/CHRONY.md)
 defines the supported launch; deployment validation checks its actual process
 arguments as well as the configuration.
 

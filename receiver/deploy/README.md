@@ -143,7 +143,7 @@ sudo cp -an /etc/chrony/chrony.conf /etc/chrony/chrony.conf.before-cura
 sudo install -o root -g root -m 0644 receiver/deploy/chrony.conf /etc/chrony/chrony.conf
 sudo install -D -o root -g root -m 0644 receiver/tools/check_chrony.py \
   /usr/libexec/cura-agrorum/check-chrony.py
-sudo install -D -o root -g root -m 0644 receiver/hardware/ds3231/chrony-runtime.conf \
+sudo install -D -o root -g root -m 0644 receiver/deploy/chrony-runtime.conf \
   /etc/systemd/system/chrony.service.d/cura-runtime.conf
 sudo systemctl daemon-reload
 sudo systemctl unmask chrony.service

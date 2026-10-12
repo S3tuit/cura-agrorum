@@ -139,7 +139,7 @@ def test_audit_rejects_changed_launch_privilege_even_with_matching_arguments(tmp
 
 
 def test_shipped_dropin_preserves_vendor_privileged_launch():
-    dropin = Path(__file__).resolve().parents[2] / "hardware/ds3231/chrony-runtime.conf"
+    dropin = Path(__file__).resolve().parents[2] / "deploy/chrony-runtime.conf"
     launch = [line for line in dropin.read_text().splitlines() if line.startswith("ExecStart=")]
     assert launch == ["ExecStart=", "ExecStart=!" + " ".join(LAUNCH)]
 
@@ -189,7 +189,7 @@ def test_audit_requires_enforced_check_and_sole_writer(tmp_path, monkeypatch, in
 
 def test_reply_socket_permissions_use_one_post_start_command():
     root = Path(__file__).resolve().parents[2]
-    dropin = (root / 'hardware/ds3231/chrony-runtime.conf').read_text()
+    dropin = (root / 'deploy/chrony-runtime.conf').read_text()
     commands = [line for line in dropin.splitlines() if line.startswith('ExecStartPost=')]
     # systemd resets RuntimeDirectory ownership/mode before every command.
     assert len(commands) == 1

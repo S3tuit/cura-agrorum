@@ -27,7 +27,6 @@ def tree_sources():
     paths.extend(REPO / name for name in ("Makefile", "firmware/TESTING.md", "firmware/INTERFACE.md",
         "firmware/ARCHITECTURE.md", "receiver/ARCHITECTURE.md", "receiver/INTERFACE.md", "receiver/TESTING.md",
         "receiver/INTERFACE_DIAGNOSTIC.md", "receiver/requirements-runtime.txt", "receiver/requirements-radio.txt", "receiver/requirements-test.txt", "receiver/pytest.ini",
-        "receiver/hardware/ds3231/chrony-runtime.conf",
         "receiver/hardware/TEST_CARRIER.md", "receiver/tests/hardware/RADIO_TESTS.md",
         "protocol/protocol-v2-lora/README.md"))
     return {str(p.relative_to(REPO)): digest(p) for p in sorted(set(paths))}

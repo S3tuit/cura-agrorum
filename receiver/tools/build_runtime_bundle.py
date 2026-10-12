@@ -17,7 +17,7 @@ def build(output):
         shutil.copytree(root / relative, output / relative,
             ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '.pytest_cache'))
     for relative in ('receiver/requirements-runtime.txt', 'receiver/requirements-radio.txt',
-                     'receiver/tools/check_chrony.py', 'receiver/hardware/ds3231/chrony-runtime.conf'):
+                     'receiver/tools/check_chrony.py'):
         destination = output / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root / relative, destination)

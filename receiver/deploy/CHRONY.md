@@ -2,8 +2,8 @@
 
 [The deployment sequence](README.md#5-create-the-service-identity-and-configure-chrony)
 owns installation commands. [chrony.conf](chrony.conf) is the tracked fresh-OS
-configuration input; it replaces the former inline example. Configure services
-while Chrony is stopped and start it through systemd afterward.
+configuration input. Configure services while Chrony is stopped and start it
+through systemd afterward.
 
 ## Configuration policy
 
@@ -14,14 +14,14 @@ configuration, effective daemon arguments and other services/timers/cron/shutdow
 hooks for competing writers. Keep `systemd-timesyncd` masked.
 
 Omit `makestep`, `initstepslew`, `rtcsync` and `rtcfile` from daemon configuration.
-An explicit operator `chronyc makestep` during setup is separate from an automatic
-step directive. `rtcsync` can enable kernel RTC writes even without an `hwclock`
+An explicit `chronyc makestep` during setup is separate from an automatic step
+directive. `rtcsync` can enable kernel RTC writes even without an `hwclock`
 service; automatic RTC writers must remain absent. The installed
 [validator](../tools/check_chrony.py) checks expanded configuration before startup.
 
 ## Effective launch and socket permissions
 
-The [drop-in](../hardware/ds3231/chrony-runtime.conf) fixes the checked
+The [drop-in](chrony-runtime.conf) fixes the checked
 `/etc/chrony/chrony.conf` path and launches `/usr/sbin/chronyd -F 1 -f ...` without
 reading `DAEMON_OPTS`. Its `!` launch prefix preserves the vendor privilege-drop
 behavior with inherited `User=_chrony`. The dedicated `cura-receiver` group must

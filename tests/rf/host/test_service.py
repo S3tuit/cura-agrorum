@@ -146,7 +146,8 @@ def test_service_template_and_current_bundle():
 
 
 @pytest.mark.parametrize('local_note', [False, True], ids=['fresh-checkout', 'local-notes'])
-def test_source_manifest_and_bundle_ignore_planning_notes_and_rf_markdown(tmp_path, monkeypatch, local_note):
+@pytest.mark.parametrize('note_suffix', ['.notes', '.notes.md'])
+def test_source_manifest_and_bundle_ignore_planning_notes_and_rf_markdown(tmp_path, monkeypatch, local_note, note_suffix):
     import inputs
     import run_service
     # Snapshot the proposed tree, including moves/additions before commit, while
@@ -164,10 +165,10 @@ def test_source_manifest_and_bundle_ignore_planning_notes_and_rf_markdown(tmp_pa
     # Use a synthetic guide so this fixture does not depend on committed names.
     guide = tmp_path / 'tests/rf/host/capture-guide.md'
     guide.write_text('capture instructions\n')
-    assert not (tmp_path / 'deployment_remaining.notes.md').exists()
+    assert not (tmp_path / f'deployment_remaining{note_suffix}').exists()
     if local_note:
-        (tmp_path / 'deployment_remaining.notes.md').write_text('local planning only\n')
-        (tmp_path / 'tests/rf/host/session.notes.md').write_text('local RF planning only\n')
+        (tmp_path / f'deployment_remaining{note_suffix}').write_text('local planning only\n')
+        (tmp_path / f'tests/rf/host/session{note_suffix}').write_text('local RF planning only\n')
     # Both manifest builders read HEAD; share metadata without creating a commit.
     git_dir = subprocess.run(['git', 'rev-parse', '--absolute-git-dir'], cwd=REPO,
                              check=True, capture_output=True, text=True).stdout.strip()
@@ -177,17 +178,17 @@ def test_source_manifest_and_bundle_ignore_planning_notes_and_rf_markdown(tmp_pa
     monkeypatch.setattr(run_service, 'REPO', tmp_path)
     staged = inputs.source_manifest()['files']
     files = run_service.package_files()
-    assert 'deployment_remaining.notes.md' not in staged
+    assert f'deployment_remaining{note_suffix}' not in staged
     assert not any(name.startswith('tests/rf/') and name.endswith('.md') for name in staged)
     assert files and all(staged.get(name) == expected for name, expected in files.items())
 
     # Adding, editing or removing RF documentation must not change staged inputs.
     (tmp_path / 'tests/rf/host/new-guide.md').write_text('new capture instructions\n')
     (tmp_path / 'tests/rf/README.md').write_text('updated RF instructions\n')
-    (tmp_path / 'receiver/tests/local.notes.md').write_text('local work in progress\n')
-    (tmp_path / 'receiver/deploy/session.notes.md').write_text('local deployment notes\n')
+    (tmp_path / f'receiver/tests/local{note_suffix}').write_text('local work in progress\n')
+    (tmp_path / f'receiver/deploy/session{note_suffix}').write_text('local deployment notes\n')
     (tmp_path / 'receiver/deploy/README.md.bak').write_text('editor backup\n')
-    (tmp_path / 'receiver/hardware/radio/tests/carrier/local.notes.md').write_text('local fixture notes\n')
+    (tmp_path / f'receiver/hardware/radio/tests/carrier/local{note_suffix}').write_text('local fixture notes\n')
     guide.unlink()
     assert inputs.source_manifest()['files'] == staged
     assert run_service.package_files() == files

@@ -16,7 +16,7 @@ def build(output):
                      'receiver/native', 'protocol/protocol-v2-lora/python/cura_protocol_v2_lora'):
         shutil.copytree(root / relative, output / relative,
             ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '.pytest_cache',
-                                          '*.notes.*', '*.bak', '*~', 'WORKPLAN*', 'REVIEW*'))
+                                          '*.notes', '*.notes.*', '*.bak', '*~', 'WORKPLAN*', 'REVIEW*'))
     for relative in ('receiver/requirements-runtime.txt', 'receiver/requirements-radio.txt',
                      'receiver/tools/check_chrony.py'):
         destination = output / relative

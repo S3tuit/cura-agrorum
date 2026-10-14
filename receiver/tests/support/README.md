@@ -83,8 +83,8 @@ eight-hour real-SQLite test asserts the one-second deferral and 61-second
 ACK-gap bounds without calling that model, so shared availability mistakes do
 not pass merely through differential agreement (review F-001).
 The Pi lifetime/restart and two-phase reboot families share
-`hardware/airtime_component.py` only after both needed the same real Linux time
-adapters and SQLite worker fixture. Existing-history rows are explicit test
+[`target/airtime_component.py`](../target/airtime_component.py) only after both
+needed the same real Linux time adapters and SQLite worker fixture. Existing-history rows are explicit test
 inputs. The reboot controller lives in `tools/test_airtime_reboot.py`, outside
 the deployed package, and uses the existing hardware/destructive interlocks.
 
@@ -96,8 +96,9 @@ local, while realtime-step tests reuse the existing `FakeOsClock`. This stage
 added no shared time model or helper. The runtime extension keeps its primitive
 network oracle, RTC episode builders and SIGKILL milestones local to
 `host/test_runtime_time.py`, using the existing real queue and SQLite worker.
-The laptop reference bridge remains in `hardware/time_reference.py`; its
-independent numerical examples are host tests, not target slew evidence.
+The laptop reference bridge remains in
+[`target/time_reference.py`](../target/time_reference.py); its independent numerical
+examples are host tests, not target slew evidence.
 
 ## Builders
 

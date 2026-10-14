@@ -43,17 +43,12 @@ Raspberry Pi 3                                  Modules
 18  GPIO24 / BUSY <----------------------------- U1.4  GP2 / BUSY
 ```
 
-With the test carrier fitted, the BUSY selector is in its nominal **1–2** position
-and both RTC fault shunts are open. These reproduce the direct connections above.
-GPIO17/GPIO27 belong only to the disconnected RTC fault branches.
-
 ## Electrical choices
 
 - Power the Pi normally. Both modules and all GPIO logic use the common **3.3 V**
   rail, with a short common ground return. The single 100 nF / 10 uF parallel
   capacitor pair sits near the radio takeoff; keep branches and SPI leads short.
-  A polarized 10 uF capacitor has its positive terminal on 3.3 V. Check split
-  breadboard rails for continuity.
+  A polarized 10 uF capacitor has its positive terminal on 3.3 V.
 - The DS3231 board's existing I2C pull-ups serve the bus. No extra 5 V connection
   is present. Fit the CR1220 with its positive side visible; leave BAT, SQW, 32K,
   and RST unconnected. Substituting another RTC module requires checking its

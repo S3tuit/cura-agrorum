@@ -65,11 +65,10 @@ entity evidence format is handwritten.
 The top-level `encodings` array owns canonical binary layouts. Each encoding
 has a stable name, one endianness, ordered root `fields`, and reusable
 fixed-size `structs`. `struct:<NAME>` embeds one structure;
-`array:<NAME>` embeds a structure sequence. An array `length` is exact, so the
-current communicator state requires exactly 64 `TX_AIRTIME_BUCKET_V1`
-elements. Omitting `length` means that a derived integer field supplies the
-encoded sequence length; the current communicator-state encoding has no such
-variable-length array.
+`array:<NAME>` embeds a structure sequence. An array `length` is exact; the
+current communicator-state fields and sizes are declared in
+[`receiver_entities.json`](receiver_entities.json). Omitting `length` means that
+a derived integer field supplies the encoded sequence length.
 
 The canonical SQL row uses `write_policy: controlled_singleton`. Generation
 therefore emits neither append-only nor immutable triggers for that table;

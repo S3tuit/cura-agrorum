@@ -1,4 +1,11 @@
-"""Single-owner health and best-effort diagnostic publication."""
+"""Single-owner health and best-effort diagnostic publication.
+
+Only the communicator allocates diagnostic identities. Packet profiles publish
+before their separate diagnostic attempt. Queue pressure and persistence outages
+are counted at the original admission attempt, never diagnosed recursively.
+Closure ends emission, including completed episodes waiting on clock admission;
+there is no alternate database or side-file diagnostic path.
+"""
 
 from enum import Enum, auto
 

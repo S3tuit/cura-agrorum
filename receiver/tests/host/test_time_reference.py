@@ -5,7 +5,7 @@ import io
 import json
 import sys
 import pytest
-from tests.hardware.time_reference import rate_interval, reference_value, slew_decision
+from tests.target.time_reference import rate_interval, reference_value, slew_decision
 
 
 # 1200 physical seconds at exactly +/-3500 ppm must yield the signed configured rate.

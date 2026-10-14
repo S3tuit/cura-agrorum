@@ -2,12 +2,13 @@
 
 These four boots check RTC reads, short battery retention, oscillator-stop flag
 (OSF) rejection and recovery. Accurate UTC is unnecessary for this check; Chrony
-is not used. Tested hardware/software and findings are in [RESULTS.md](RESULTS.md).
+is not used. This checks functional validity and short retention, not drift or
+the separate [I2C operation bound](../i2c_faults/README.md#adopted-operation-bound).
 
 Prepare the Pi using the [deployment guide](../../../../deploy/README.md).
 Keep the receiver and time synchronization services stopped throughout the run;
 no automatic RTC writer may repair the deliberately invalid state. Use the
-carrier's [nominal wiring](../../../TEST_CARRIER.md#pin-and-connector-allocation).
+carrier's [nominal wiring](../../../../HARDWARE.md).
 Run commands on the Pi, reconnecting with SSH after each boot.
 
 ## Boot 1: initialize and read
@@ -70,7 +71,7 @@ four boots verify the kernel behavior; they do not execute this adapter test.
 Its explicit hardware/destructive opt-ins and source-bound inputs are retained.
 
 On an isolated current-source stage, use a fresh root-owned marked test directory
-as described in [TESTING.md](../../../../TESTING.md#suite-layout). Before boot 3,
+as described in [the shared test guide](../../../../tests/README.md#hardware-and-destructive-runs). Before boot 3,
 create the actual adapter baseline with [prepare_baseline.py](prepare_baseline.py):
 
 ```bash
@@ -109,3 +110,14 @@ marked root. Complete boot 3 recovery and boot 4 afterward. Discard temporary
 run files after checking outcomes and restoration; keep useful findings here.
 Initialize accurate RTC time through the [deployment time procedure](../../../../deploy/CHRONY.md#initialize-rtc-time-before-deployment)
 before production startup. Detailed dated runs belong in the logbook.
+
+## Driver behavior
+
+The DS3231 driver must reject oscillator-stopped reads and clear OSF when setting
+time. Older Pi kernels lacked these behaviors; the
+[upstream correction](https://github.com/torvalds/linux/commit/a091e1ba3b68cabc9caedafc6f81d9fe9b3b2200)
+explains the requirement. The supported stable Pi package `1:6.18.50-1+rpt1`
+includes it; a beta kernel is not needed. Recheck the four boots after relevant
+hardware or OS/kernel changes, before synchronization or another writer can
+repair the deliberately invalid initial state. Do not infer controller-fault
+recovery or a complete-operation bound from OSF success.

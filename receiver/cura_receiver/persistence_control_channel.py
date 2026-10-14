@@ -1,4 +1,10 @@
-"""Synchronous in-memory control mailbox; all filesystem work stays with its worker."""
+"""Synchronous in-memory control mailbox; all filesystem work stays with its worker.
+
+Caller deadlines bound waiting, not kernel I/O or a possibly issued COMMIT.
+An unknown outcome must be reconciled through this same serialized channel:
+a later request cannot overtake the timed-out operation. Submission alone is
+not durable completion, and cancellation cannot undo an uncertain effect.
+"""
 
 from threading import TIMEOUT_MAX, current_thread
 

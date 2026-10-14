@@ -2,7 +2,8 @@
 
 These types describe ownership and composition only.  They deliberately do not
 encode, copy, coerce, or semantically validate values; producer-side validators
-belong to later receiver stages.
+belong to the components constructing them. Publication requires deep immutability
+even though Python aliases remain reachable after ownership transfers.
 """
 
 from __future__ import annotations

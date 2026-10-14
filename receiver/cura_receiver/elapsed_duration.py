@@ -1,4 +1,10 @@
-"""Checked integer clock arithmetic; policy callers decide how failures affect trust."""
+"""Checked integer clock arithmetic; policy callers decide how failures affect trust.
+
+Linux CLOCK_MONOTONIC is boot-scoped and can be frequency-corrected. Minimum
+physical waits round upward using the fast-clock bound; maximum lifetimes round
+downward using the slow-clock bound. Nominal elapsed subtraction alone is unsafe
+for airtime retention or expiry. Never compare monotonic values across boots.
+"""
 
 _UINT64_MAX = (1 << 64) - 1
 _INT64_MIN = -(1 << 63)

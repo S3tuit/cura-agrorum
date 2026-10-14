@@ -18,7 +18,7 @@ import pytest
 
 from cura_receiver.platform.linux_boot_identity import read_linux_boot_id
 from cura_receiver.tx_airtime import AirtimeReason as R, TxCertainty
-from tests.hardware.airtime_component import component, record
+from tests.target.airtime_component import component, record
 
 pytestmark = pytest.mark.hardware
 
@@ -105,7 +105,7 @@ def test_target_process_restart_airtime_baseline(tmp_path):
             [
                 sys.executable,
                 "-m",
-                "tests.hardware.test_tx_airtime",
+                "tests.target.test_tx_airtime",
                 str(tmp_path),
                 phase,
             ],

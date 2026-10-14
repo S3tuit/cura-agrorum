@@ -7,7 +7,7 @@ import pytest
 RECEIVER_ROOT = Path(__file__).resolve().parents[2]
 TESTS_ROOT = RECEIVER_ROOT / "tests"
 HOST_ROOT = TESTS_ROOT / "host"
-HARDWARE_ROOT = TESTS_ROOT / "hardware"
+TARGET_ROOT = TESTS_ROOT / "target"
 COMPONENT_HARDWARE_ROOT = RECEIVER_ROOT / "hardware"
 
 
@@ -55,11 +55,11 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         marker_names = {marker.name for marker in item.iter_markers()}
         in_host = path.is_relative_to(HOST_ROOT)
         in_component = path.is_relative_to(COMPONENT_HARDWARE_ROOT) and "tests" in path.relative_to(COMPONENT_HARDWARE_ROOT).parts[:-1]
-        in_hardware = path.is_relative_to(HARDWARE_ROOT) or in_component
+        in_hardware = path.is_relative_to(TARGET_ROOT) or in_component
 
         if not in_host and not in_hardware:
             violations.append(
-                f"{item.nodeid}: receiver test is outside host/, hardware/, or hardware component tests/"
+                f"{item.nodeid}: receiver test is outside tests/host/, tests/target/, or hardware component tests/"
             )
             continue
         if in_hardware and "hardware" not in marker_names:
@@ -150,7 +150,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
 
     radio_items = [item for item in hardware_items if item.get_closest_marker("radio")]
     if radio_items:
-        from tests.hardware.radio_fixture import validate_selection
+        from hardware.radio.tests.carrier.radio_fixture import validate_selection
         if any(item.get_closest_marker("radio_fault") for item in radio_items):
             raise pytest.UsageError("radio_fault gate tests are deferred; the manual carrier cannot run them")
         held_items = [item for item in radio_items if item.get_closest_marker("radio_busy_held")]

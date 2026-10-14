@@ -36,6 +36,9 @@ def test_production_histories_against_physical_oracle(airtime_component, seed):
         run.check()
 
 
+# Lost threshold saves followed by repeated trusted restarts and untrusted fallback
+# once admitted 609 ACKs in one rolling hour. Replay the same requests against the
+# current policy; the independent physical-history oracle checks the actual bound.
 def test_lost_save_restart_requests_against_production(airtime_component):
     data = json.loads((Path(__file__).parents[1]/'support/data/airtime_regression_requests.json').read_text())
     assert data['result']['contract_violated']

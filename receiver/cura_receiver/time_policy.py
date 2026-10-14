@@ -1,4 +1,10 @@
-"""Pure time decisions over supplied evidence; no service, device or queue operations."""
+"""Pure time decisions over supplied evidence; no service, device or queue operations.
+
+CHRONY_SYNCED describes a bounded Chrony-disciplined Linux clock, not proof of a
+recent NTP reply. RTC health is an independent axis. Trust uses source error plus
+sample age/bracket and drift, with a fixed margin that must never expand to admit
+a late sample. Observational tracking fields do not silently enter that policy.
+"""
 
 from __future__ import annotations
 

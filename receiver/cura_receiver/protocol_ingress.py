@@ -484,7 +484,15 @@ class ProtocolIngressFinalizationV1:
 
 
 class ProtocolIngress:
-    """Own ordered protocol processing between copied bytes and radio actions."""
+    """Own ordered protocol processing between copied bytes and radio actions.
+
+    Acceptance reserves a measurement/profile pair in RAM before selecting its
+    ACK; it does not wait for SQLite. Transport retries remain distinct physical
+    occurrences, and persistence owns duplicate classification. After acceptance
+    or a response attempt, completion publishes the reserved unit with the actual
+    terminal radio facts even on failure. Silent rejection profiles may wait for
+    RX rearm before attempting admission.
+    """
 
     def __init__(
         self,

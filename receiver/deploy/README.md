@@ -2,7 +2,7 @@
 
 This sequence installs the receiver on a fresh Raspberry Pi OS Trixie arm64
 on the Pi 3 Model B, through service startup and receipt of C6 readings.
-Use the nominal [carrier wiring](../hardware/TEST_CARRIER.md); shut down and
+Use the nominal [carrier wiring](../HARDWARE.md); shut down and
 disconnect all power before changing hardware connections.
 Use Bash on each host and resolve errors before continuing. Retain the laptop
 and Pi staging paths when reconnecting. Steps 8 onward create a new installation;
@@ -81,11 +81,10 @@ Both time services should be masked and inactive; a nonzero exit status from
 these `systemctl` queries is expected. Resolve missing or unexpected devices
 before continuing.
 
-OSF handling and short battery retention have been checked on the setup recorded
-in the [boot-cycle findings](../hardware/ds3231/tests/boot_cycle/RESULTS.md#reuse).
-Reuse that result for a matching setup. If your hardware or OS/kernel differs,
-rerun the [four-boot procedure](../hardware/ds3231/tests/boot_cycle/README.md)
-before enabling time synchronization or writing over the initial RTC state.
+Check OSF handling and short battery retention with the
+[four-boot procedure](../hardware/ds3231/tests/boot_cycle/README.md) after relevant
+hardware or OS/kernel changes, before synchronization or another RTC writer can
+repair the initial state. Its driver notes explain the required OSF behavior.
 
 ## 4. Stage the source and prepare the test environment
 
@@ -178,20 +177,20 @@ sudo chronyc -h /run/chrony/chronyd.sock makestep && \
 
 Require the entire sequence to succeed. The wait checks remaining Linux clock
 correction; reference-error limits and runtime trust remain defined by the
-[time contract](../ARCHITECTURE.md#time-model). This supplies the valid, advancing
+[time contract](../ARCHITECTURE.md#time-and-timestamps). This supplies the valid, advancing
 RTC and stable Chrony state required by the controller-fault measurement.
 
 ## 7. Select the qualified RTC operation bound
 
-For a setup matching the [recorded qualification](../hardware/ds3231/tests/i2c_faults/RESULTS.md#2026-10-12-stable-package-qualification),
+For a setup matching the [adopted operation bound](../hardware/ds3231/tests/i2c_faults/README.md#adopted-operation-bound),
 reuse `RTC_KERNEL_BOUND_US=3000000`.
-The [findings](../hardware/ds3231/tests/i2c_faults/RESULTS.md#reusing-an-adopted-operation-bound)
+The [component procedure](../hardware/ds3231/tests/i2c_faults/README.md#adopted-operation-bound)
 own applicability and remeasurement triggers. When they require a new measurement,
 stop here and complete the [I2C fault procedure](../hardware/ds3231/tests/i2c_faults/README.md),
 including restoration to nominal wiring, before continuing.
 
 The bound covers complete reads, writes and termination of an in-flight write.
-The [interface contract](../INTERFACE.md#recovery-and-scheduling) uses it for
+The [runtime time owner](../cura_receiver/runtime_time.py) uses it for
 operation admission, late-result rejection and helper reaping. A normal read or
 the OSF check does not qualify it.
 
@@ -296,8 +295,8 @@ read as the service user.
 
 The native helper receives only `cap_sys_time=ep`; the receiver stays
 unprivileged. Require exactly that capability and compare its digest/build with
-the [RTC qualification](../hardware/ds3231/tests/i2c_faults/RESULTS.md#2026-10-12-stable-package-qualification)
-before reusing the bound. The [helper contract](../INTERFACE.md#pilot-linux-backend-and-privilege-boundary)
+the [RTC operation-bound applicability](../hardware/ds3231/tests/i2c_faults/README.md#adopted-operation-bound)
+before reusing the bound. The [Linux RTC adapter](../cura_receiver/platform/linux_ds3231.py)
 owns privilege and protocol checks. Do not execute the helper as a version check;
 a valid argument writes the RTC.
 
@@ -332,7 +331,7 @@ initializer verifies the packaged schema and refuses an existing database.
 history. Change it to `True` only with independent evidence of known-empty radio
 airtime history and exclusive radio control through first startup;
 a fresh OS/database alone does not establish that. The
-[airtime contract](../INTERFACE.md#initial-airtime-commissioning) owns commissioning
+[commissioning implementation](../cura_receiver/airtime_commissioning.py) owns commissioning
 and durable history. With conservative recovery, initial ACK transmission may
 remain inhibited while the airtime budget recovers. Resolve any initializer
 failure before starting the service; retain the original private group backup.
@@ -461,4 +460,4 @@ Require the provisioned node ID and advancing samples. `flags` determines which
 sensor values are valid; the [reading format](../../protocol/protocol-v2-lora/README.md#reading-payload)
 owns its interpretation. Stored readings confirm receiver ingestion, while C6
 delivery reports establish whether it received ACKs. Detailed installed-system
-and RF qualification remain owned by [TESTING.md](../TESTING.md).
+and RF qualification remain owned by [the test guide](../tests/README.md).

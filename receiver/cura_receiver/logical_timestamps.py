@@ -1,4 +1,11 @@
-"""Logical reading timestamps from immutable history; no output-storage operations."""
+"""Logical reading timestamps from immutable history; no output-storage operations.
+
+Choose the earliest eligible accepted current-reading occurrence with derivable
+UTC as a direct anchor. Otherwise use the reachable direct anchor with the fewest
+valid consecutive-sample hops, preferring the newer sample on a tie. Conflict or
+unauthenticated occurrences cannot anchor readings. Preserve already materialized
+timestamps even if later history provides a closer anchor.
+"""
 
 from __future__ import annotations
 

@@ -82,7 +82,7 @@ def _wait_due(owner):
 
 @pytest.fixture
 def bounded_storage(request):
-    from tests.hardware.storage_fixture import bounded_storage as supervised_storage
+    from tests.target.storage_fixture import bounded_storage as supervised_storage
 
     root = _validated_destructive_test_root(
         request.config.getoption("receiver_test_root")

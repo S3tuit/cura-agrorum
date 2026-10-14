@@ -158,7 +158,7 @@ def main():
         "pytest",
         "-c",
         args.pi_stage + "/receiver/pytest.ini",
-        args.pi_stage + "/receiver/tests/hardware/test_time_mutations.py",
+        args.pi_stage + "/receiver/tests/target/test_time_mutations.py",
         "--receiver-hardware",
         "--confirm-receiver-destructive",
         "--receiver-test-root=" + args.pi_test_root,

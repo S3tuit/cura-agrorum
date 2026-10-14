@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.hardware import radio_fixture
+from hardware.radio.tests.carrier import radio_fixture
 from tests.support import receiver_pytest as hardware_config
 
 
@@ -143,13 +143,15 @@ def test_evidence_binds_manual_fixture(selection):
     assert fixture["schema"] == 2 and fixture["fixture_state"] == "radio_nominal"
     manifest = json.loads((root / "sources.json").read_text())
     repo = Path(__file__).resolve().parents[3]
-    for name in ("receiver/hardware/TEST_CARRIER.md", "receiver/tests/hardware/RADIO_TESTS.md"):
+    for name in ("receiver/HARDWARE.md", "receiver/hardware/radio/tests/carrier/README.md",
+                 "receiver/hardware/radio/tests/carrier/radio_fixture.py",
+                 "receiver/hardware/radio/tests/carrier/test_radio.py", "receiver/conftest.py"):
         assert manifest[name] == radio_fixture.hashlib.sha256((repo / name).read_bytes()).hexdigest()
 
 
 # The real owner over its physical fake cannot turn expected startup failure into safe cleanup.
 def test_held_case_teardown_stops_with_restoration_evidence(tmp_path, monkeypatch):
-    from tests.hardware import test_radio as hardware_radio
+    from hardware.radio.tests.carrier import test_radio as hardware_radio
     from cura_receiver.ports.radio import RadioConfiguration
     from cura_receiver.radio import State
     from tests.support.fakes.os_clock import FakeOsClock

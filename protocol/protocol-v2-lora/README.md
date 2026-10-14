@@ -809,7 +809,7 @@ stored before the chrony step command. Analysis assigns no UTC to events from
 that boundary through, but excluding, the first later trusted observation, and
 never uses that later observation to extrapolate backward across the boundary.
 See
-[`receiver/INTERFACE.md`](../../receiver/INTERFACE.md#clock-observations-and-utc-assignment).
+[receiver clock correlation](../../receiver/cura_receiver/clock_correlation.py).
 
 `PersistQueue` preallocates 500 generic circular slots and admits by entity
 count only. It stores an opaque reference to each complete immutable typed
@@ -955,7 +955,7 @@ IRQ. A definite failure before SetTx uses `SET_TX_FAILED`; T4 remains absent
 if SetTx was never attempted. `UNKNOWN_INTERRUPTED` remains the exceptional
 terminal-instance path. These are receiver profiling results, not ACK domains
 or changes to the radio frame encoding; exact values belong to
-[`receiver/INTERFACE.md`](../../receiver/INTERFACE.md#acktxresult).
+[receiver enum assignments](../../receiver/schemas/receiver_enums.json).
 
 When an ACK is constructed, its exact 23-byte frame is stored in `ack_frame`
 whether or not transmission succeeds. Separating `processing_result`,

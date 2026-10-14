@@ -25,16 +25,17 @@ in this repository; detailed dated run records remain in the logbook.
 
 Start with the documents for the component you are changing:
 
-| Subject | Authoritative documents |
+| Subject | Owner |
 | --- | --- |
 | Runtime behavior and component ownership | [Firmware architecture](firmware/ARCHITECTURE.md), [receiver architecture](receiver/ARCHITECTURE.md) |
-| Component interfaces and stored data | [Firmware interfaces](firmware/INTERFACE.md), [receiver interfaces](receiver/INTERFACE.md) |
+| Component interfaces and stored data | [Firmware interfaces](firmware/INTERFACE.md), [receiver code](receiver/cura_receiver/) and [schemas](receiver/schemas/) |
 | Wire encoding and authentication | [LoRa protocol](protocol/protocol-v2-lora/README.md) |
-| Receiver diagnostic definitions | [Diagnostic interface](receiver/INTERFACE_DIAGNOSTIC.md) |
-| Test scope, procedures and coverage | [Firmware testing](firmware/TESTING.md), [receiver testing](receiver/TESTING.md), [joint RF verification](tests/rf/README.md) |
+| Receiver diagnostic definitions | [Enum catalogues](receiver/schemas/receiver_enums.json) and [domain codecs](receiver/cura_receiver/radio_diagnostics.py) |
+| Test scope, procedures and coverage | [Firmware testing](firmware/TESTING.md), [receiver testing](receiver/tests/README.md), [joint RF verification](tests/rf/README.md) |
 
-These documents own their rules; local READMEs explain navigation, setup and
-editing instructions. Generated files implement their schema/generator inputs.
+Receiver behavior is documented beside its owning code; the architecture explains
+fundamental choices. Generated files project their schema/generator inputs. The
+[receiver hardware guide](receiver/HARDWARE.md) owns the production schematic.
 
 ## Development and tests
 

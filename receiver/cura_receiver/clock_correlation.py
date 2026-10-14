@@ -79,6 +79,12 @@ class ClockCorrelation:
     Invalid history raises an input error. An event without an eligible, representable
     UTC has no result. Correlation follows the recorded segment boundaries asserted by
     trusted publication; per-observation error evidence is retained but not used here.
+
+    Ordinary untrusted intervals may be backfilled by the first later trusted
+    observation from the same instance. A clock-step boundary forbids that
+    backfill and leaves a gap. Equal-microsecond observations precede events;
+    sharing a Linux boot never permits correlation across receiver instances.
+    Results retain their source observation and never rewrite stored events.
     """
 
     def __init__(

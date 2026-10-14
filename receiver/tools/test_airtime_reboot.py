@@ -129,7 +129,7 @@ print(json.dumps(dict(boot=pathlib.Path('/proc/sys/kernel/random/boot_id').read_
             "pytest",
             "-c",
             "receiver/pytest.ini",
-            "receiver/tests/hardware/test_tx_airtime_reboot.py",
+            "receiver/tests/target/test_tx_airtime_reboot.py",
             "--receiver-hardware",
             "--confirm-receiver-destructive",
             "--receiver-test-root=" + self.args.remote_test_root,

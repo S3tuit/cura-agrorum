@@ -5,7 +5,7 @@ Run from the repository root:
   PYTHONPATH=receiver .venv/bin/python -m tests.support.models.tx_airtime_adversarial
   PYTHONPATH=receiver .venv/bin/python -m tests.support.models.tx_airtime_adversarial --trials 3000 --seed 7
 
-Goal: find a violation of receiver/INTERFACE.md's airtime recovery contract:
+Goal: find a violation of the airtime recovery invariant in cura_receiver.tx_airtime:
 any run in which the ledger (live entries x 2 s) is lower than charged airtime that is
 really still inside the protected window, or in which real airtime in a rolling
 physical hour exceeds 36 s.

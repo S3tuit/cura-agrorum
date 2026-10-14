@@ -56,7 +56,7 @@ from cura_receiver.runtime_time import (
 from cura_receiver.elapsed_duration import maximum_lifetime_monotonic_us
 from cura_receiver.time_policy import TimePolicy
 from tests.support.receiver_pytest import _validated_destructive_test_root
-from tests.hardware.time_reference import (
+from tests.target.time_reference import (
     SLEW_MAX_US,
     SLEW_COMPONENT_TIMEOUT_S,
     rate_interval,

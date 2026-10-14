@@ -1,13 +1,12 @@
 """service.reading_delivery accepts actual SQLite snapshots and rejects incomplete evidence."""
 from copy import deepcopy
-import io
 import json
 import os
 from pathlib import Path
 import sqlite3
 import struct
 import subprocess
-import tarfile
+import shutil
 
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 import pytest
@@ -150,10 +149,18 @@ def test_service_template_and_current_bundle():
 def test_source_manifest_and_bundle_ignore_planning_notes_and_rf_markdown(tmp_path, monkeypatch, local_note):
     import inputs
     import run_service
-    # Git's archive contains only committed files, unlike the developer's tree.
-    archive = subprocess.run(['git', 'archive', 'HEAD'], cwd=REPO, check=True, capture_output=True).stdout
-    with tarfile.open(fileobj=io.BytesIO(archive)) as source:
-        source.extractall(tmp_path, filter='data')
+    # Snapshot the proposed tree, including moves/additions before commit, while
+    # excluding ignored workspace artifacts as a fresh checkout would.
+    names = subprocess.check_output(
+        ['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], cwd=REPO,
+    ).decode().split('\0')
+    for name in set(filter(None, names)):
+        source = REPO / name
+        if not source.is_file():
+            continue  # A deletion in the proposed tree.
+        destination = tmp_path / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
     # Use a synthetic guide so this fixture does not depend on committed names.
     guide = tmp_path / 'tests/rf/host/capture-guide.md'
     guide.write_text('capture instructions\n')
@@ -177,12 +184,19 @@ def test_source_manifest_and_bundle_ignore_planning_notes_and_rf_markdown(tmp_pa
     # Adding, editing or removing RF documentation must not change staged inputs.
     (tmp_path / 'tests/rf/host/new-guide.md').write_text('new capture instructions\n')
     (tmp_path / 'tests/rf/README.md').write_text('updated RF instructions\n')
+    (tmp_path / 'receiver/tests/local.notes.md').write_text('local work in progress\n')
+    (tmp_path / 'receiver/deploy/session.notes.md').write_text('local deployment notes\n')
+    (tmp_path / 'receiver/deploy/README.md.bak').write_text('editor backup\n')
+    (tmp_path / 'receiver/hardware/radio/tests/carrier/local.notes.md').write_text('local fixture notes\n')
     guide.unlink()
     assert inputs.source_manifest()['files'] == staged
+    assert run_service.package_files() == files
 
     # Executable changes and contracts outside tests/rf remain source-bound.
     for name in ('tests/rf/run.py', 'receiver/tests/support/README.md',
-                 'receiver/ARCHITECTURE.md', 'firmware/ARCHITECTURE.md',
+                 'receiver/ARCHITECTURE.md', 'receiver/HARDWARE.md', 'receiver/conftest.py',
+                 'receiver/hardware/radio/tests/carrier/radio_fixture.py',
+                 'receiver/hardware/radio/tests/carrier/test_radio.py', 'firmware/ARCHITECTURE.md',
                  'protocol/protocol-v2-lora/README.md'):
         path = tmp_path / name
         path.write_text(path.read_text() + '\n# changed input\n')

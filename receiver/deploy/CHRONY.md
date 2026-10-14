@@ -55,8 +55,16 @@ separate stop/start. Restart alone does not qualify that lifetime boundary.
 Never delete or recreate the directory while the receiver uses it. If cleanup
 requires recreation, stop both services, then start Chrony and a new receiver
 namespace. Ordinary exits remove their socket entries; killed processes may
-leave entries until safe cleanup or reboot. The permission redesign remains
-PERM-001 in [the time architecture](../ARCHITECTURE.md#chrony-integration).
+leave entries until safe cleanup or reboot. Unix-socket access grants broad Chrony control. The fixed receiver adapter limits
+normal calls to tracking and step, but is not an OS command-level privilege
+boundary. Stronger isolation would require a separately privileged coordinator.
+
+Under the actual receiver UID and sandbox, also check reply-socket cleanup,
+rejection of unlink/rename of daemon-owned entries, and rejection of writes outside
+allowed paths. During separate stop/start, require unavailable tracking while
+stopped and successful tracking after permissions recover, from the same receiver
+PID and mount namespace. Preserve configuration and restore both services after
+these invasive checks.
 
 ## Initialize RTC time before deployment
 
@@ -70,7 +78,7 @@ reference error. Require a successful RTC write and read-back.
 
 The boot-cycle check establishes validity/recovery without establishing accurate
 UTC. Production time trust, error bounds and durable RTC provenance remain owned
-by [ARCHITECTURE.md](../ARCHITECTURE.md#time-model) and
-[INTERFACE.md](../INTERFACE.md#ds3231-control-interface). Trusted operators keep
+by [RuntimeTime](../cura_receiver/runtime_time.py) and the
+[RTC port](../cura_receiver/ports/ds3231.py). Trusted operators keep
 configuration unchanged while the service runs; the receiver does not manage
 Chrony's service lifecycle or make configuration snapshots.

@@ -156,3 +156,20 @@ interface merely to make a test convenient.
 Normal persistence tests use real temporary SQLite files. Fake SQL behavior or
 a fake filesystem must not replace constraints and durability behavior that the
 real schema can exercise.
+
+## Airtime model runs
+
+For longer independent exploration than the host suite defaults, from the
+repository root:
+
+```sh
+PYTHONPATH=receiver .venv/bin/python -m tests.support.models.tx_airtime --trials 1000 --steps 500
+PYTHONPATH=receiver .venv/bin/python -m tests.support.models.tx_airtime_adversarial --trials 1000 --hours 48
+```
+
+These models assume one active owner, conservative charges, bounded monotonic
+rate, and the normal TX-completion envelope. Generated histories sample those
+assumptions; they do not measure physical power loss, RTC drift, late SPI execution,
+or missed RF packets. The replay fixture in
+[`data/airtime_regression_requests.json`](data/airtime_regression_requests.json)
+keeps the lost-save/restart failure lesson with the executable input.

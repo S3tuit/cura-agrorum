@@ -2,34 +2,52 @@
 
 These cases use the production Linux adapter, command backend and owner.
 They do not run receiver end-to-end orchestration, spend durable airtime or
-submit `SetTx`. The [coverage map](../RADIO_COVERAGE.md) relates cases to
-implementation and explains the held-BUSY cleanup lesson.
+submit `SetTx`. Cases and assertions live in [test_radio.py](test_radio.py).
 RF-peer, gated recovery and instrument-dependent assertions remain separate.
 
-Follow the [carrier schematic](../../hardware/TEST_CARRIER.md#proposed-sx1262-extension)
+Follow the [carrier schematic](../../../../HARDWARE.md)
 for the Waveshare EU868 board without a Pico. The operator must confirm the
 actual board/revision, wiring, supply and inactive RESET/NSS levels. Stop the
 receiver service and other users of the same GPIO/SPI devices. Run as the
 actual non-root receiver service user, with its deployed device permissions.
 Do not use root to turn a permission failure into a pass.
-The approved supply is one shared rail from Pi physical pin 1 (3.3 V) and one
-ground rail from physical pin 6. Both modules use these rails, with one 100 nF
-and one 10 uF capacitor in parallel across them. Keep both RTC fault shunts
-open. The radio keeps its 10 kohm RESET and CS pull-ups to the same 3.3 V rail.
+Keep both RTC fault shunts open; use the nominal production supply and wiring.
 
-The approved peer is the real C6 radio application, coordinated from laptop
+The RF peer is the C6 radio application, coordinated from laptop
 tests/rf/ with a separate Pi component process in
 receiver/test_apps/radio_peer/. Reuse the production Pi radio components where
 their fixed profile and state contract applies; deliberate alternative-profile
 cases identify the lower layer they exercise. Joint RF commands are documented
-in [tests/rf](../../../tests/rf/README.md). Independent waveform/timestamp qualification and
+in [tests/rf](../../../../../tests/rf/README.md). Independent waveform/timestamp qualification and
 controlled BUSY-gate recovery retain their separate deferred status.
 
-The available multimeter can support supply/static-level checks; it cannot qualify BUSY, DIO1, CS or
-RESET waveforms, kernel timestamp accuracy or RF airtime. Those obligations
-remain pending. The finite RX-timeout case below is a functional IRQ/rearm
+A multimeter supports supply/static-level checks; waveform and timestamp
+measurements require an independent instrument. The finite RX-timeout case below is a functional IRQ/rearm
 check, not independent timestamp or timing acceptance. TX-adjacent physical
 teardown and alternating RF profile acceptance remain with the peer stage.
+
+## BUSY selector
+
+This test-only overlay replaces the production BUSY wire with one three-pin
+header and exactly one removable shunt:
+
+```text
+module U1.4 / BUSY ------------ selector pin 1
+Pi pin 18 / GPIO24 input <----- selector pin 2
++3V3 rail -------------------- selector pin 3
+```
+
+Use 1–2 for nominal operation or 2–3 to hold the Pi input HIGH while isolating
+the radio output. Never fit both positions: that would tie a driven output to
+3.3 V. Change the shunt only after shutdown and external power removal. Keep
+all other production wiring fitted. The manual selector uses no GPIO5 or gate.
+The held case cannot restore standby or exercise recovery in the same instance;
+it requires unpowered restoration and a fresh nominal run.
+
+For independent waveform work, expose high-impedance measurement points for
+3.3 V, ground, raw BUSY, observed BUSY, DIO1, NSS, and RESET. Raw BUSY measures
+the radio; the forced signal measures the fixture. Instruments must not drive
+these signals.
 
 ## Stage current sources
 
@@ -42,13 +60,14 @@ SHA-256, copy it, verify the identical SHA-256 on the Pi, and only then extract
 and run from that new directory. Retain the archive hash and exact command
 line beside the results. Do not assume any existing Pi checkout is current.
 After execution, copy captures into ignored
-`receiver/tests/hardware/raw/radio/` on the development machine and verify
+`receiver/hardware/radio/tests/carrier/raw/` on the development machine and verify
 their hashes against the Pi originals. After verification and diagnosis, put
 useful lessons in the owning code or documentation and discard the captures.
 
 Run these two blocks in the same **local Bash terminal**. Avoid editing the
 source trees while packaging. `git ls-files` supplies tracked and nonignored
-untracked paths; `tar` reads their current working-tree contents. Git-ignored
+untracked paths; the filter drops working-tree deletions, and `tar` reads current
+contents. Git-ignored
 local identities/notes and the explicit output exclusions are not packaged.
 The radio cases require no receiver-group identity or keys.
 
@@ -58,7 +77,9 @@ cd $HOME/devspace/cura-agrorum
 radio_stage=$(mktemp -d /tmp/cura-radio-stage.XXXXXXXX)
 
 git ls-files -z --cached --others --exclude-standard -- \
-  receiver/ protocol/protocol-v2-lora/ > "$radio_stage/candidate-files.nul"
+  receiver/ protocol/protocol-v2-lora/ |
+  python3 -c 'import os, sys; sys.stdout.buffer.write(b"".join(p+b"\0" for p in sys.stdin.buffer.read().split(b"\0") if p and os.path.isfile(p)))' \
+  > "$radio_stage/candidate-files.nul"
 
 package_command=(tar
   --exclude=results --exclude=evidence --exclude=test-results
@@ -190,8 +211,8 @@ declared by `fixture_state`, changed and checked with external power removed:
 | `radio_busy_held` | 2-3 | Pi GPIO24 to shared 3.3 V; radio BUSY disconnected |
 
 Never join the radio's BUSY output to 3.3 V. All other radio wiring remains
-fitted. Schema 1 and the former `busy_fault_gate_fitted` field are rejected;
-they describe a different selector connection and cannot authorize this one.
+fitted. Only schema 2 and the fields above are accepted. Extra fields cannot authorize
+a different selector or controlled fault gate.
 
 From the staged `src/`, save the nominal operator JSON as
 `../results/fixture-nominal.json`. Run the following in Bash. It creates a fresh
@@ -207,7 +228,7 @@ printf 'Evidence: %s\n' "$run"
 (cd .. && sha256sum --check SHA256SUMS) > "$run/archive-check.log"
 cp ../SHA256SUMS "$run/"
 command=(env PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest
-  -c receiver/pytest.ini receiver/tests/hardware/test_radio.py
+  -c receiver/pytest.ini receiver/hardware/radio/tests/carrier/test_radio.py
   --receiver-hardware -m 'radio and not destructive'
   --receiver-radio-fixture "$run/../fixture-nominal.json"
   --receiver-radio-evidence "$run/nominal-new"
@@ -257,7 +278,7 @@ printf 'Evidence: %s\n' "$run"
 cp ../SHA256SUMS "$run/"
 printf 'CURA AGRORUM RECEIVER TEST ROOT\n' > "$run/.cura-receiver-test-root"
 command=(env PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest
-  -c receiver/pytest.ini receiver/tests/hardware/test_radio.py
+  -c receiver/pytest.ini receiver/hardware/radio/tests/carrier/test_radio.py
   --receiver-hardware -m radio_busy_held
   --confirm-receiver-destructive
   --receiver-test-root "$run"

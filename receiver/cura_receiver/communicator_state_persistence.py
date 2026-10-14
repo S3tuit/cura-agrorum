@@ -1,4 +1,10 @@
-"""Handwritten validation of durable communicator snapshots, without live policy."""
+"""Handwritten validation of durable communicator snapshots, without live policy.
+
+Classify in order: SQL envelope/digest, protected version, supported structure,
+then deployment policy. Thus corrupt bytes cannot masquerade as an unsupported
+version or policy mismatch. Recovery archives rejected SQL values atomically
+with replacement; generated layouts define encodings, not recovery decisions.
+"""
 
 from __future__ import annotations
 

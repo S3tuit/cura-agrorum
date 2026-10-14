@@ -50,7 +50,7 @@ python /path/to/changed/receiver/benchmarks/checkpoint_scheduling/run.py \
 ```
 
 Run target persistence checks for the changed source separately, selecting
-`receiver/tests/hardware/test_persistence_worker.py` with `--receiver-hardware`
+`receiver/tests/target/test_persistence_worker.py` with `--receiver-hardware`
 and initially excluding its `slow` cases. The timer/stall test uses a
 one-second interval as a fixture parameter; the comparison above uses the
 production five-second default.

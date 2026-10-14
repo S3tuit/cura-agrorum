@@ -12,7 +12,7 @@ from cura_receiver.radio import Radio, State
 from cura_receiver.ports.radio import Error, Stage
 from cura_receiver.radio_diagnostics import Operation, Severity
 from cura_receiver.sx1262 import Sx1262
-from tests.hardware.radio_fixture import create_evidence
+from hardware.radio.tests.carrier.radio_fixture import create_evidence
 
 pytestmark = [pytest.mark.hardware, pytest.mark.radio]
 

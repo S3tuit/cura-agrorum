@@ -9,7 +9,7 @@ import sys
 import pytest
 
 from tools import check_chrony as check
-from tests.hardware import test_runtime_time as fixture
+from tests.target import test_runtime_time as fixture
 
 CONFIG = """pool 2.debian.pool.ntp.org iburst
 leapsecmode slew

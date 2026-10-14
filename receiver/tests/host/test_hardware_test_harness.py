@@ -22,7 +22,7 @@ def _run_hardware_probe(
     component: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     project_root = tmp_path / "receiver_hardware_harness"
-    hardware_root = project_root / "hardware"
+    hardware_root = project_root / "target"
     component_root = project_root / "components"
     test_parent = component_root / "ds3231/tests/boot_cycle" if component else hardware_root
     test_parent.mkdir(parents=True)
@@ -50,7 +50,7 @@ from tests.support import receiver_pytest as hardware_config
 PROJECT_ROOT = Path({str(project_root)!r})
 receiver_config.TESTS_ROOT = PROJECT_ROOT
 receiver_config.HOST_ROOT = PROJECT_ROOT / "host"
-receiver_config.HARDWARE_ROOT = PROJECT_ROOT / "hardware"
+receiver_config.TARGET_ROOT = PROJECT_ROOT / "target"
 receiver_config.COMPONENT_HARDWARE_ROOT = PROJECT_ROOT / "components"
 hardware_config.RASPBERRY_PI_MODEL = PROJECT_ROOT / "raspberry_pi_model"
 

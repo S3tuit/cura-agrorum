@@ -527,7 +527,7 @@ def test_open_configuration_and_active_low_reset(device):
 # Run the actual manual hardware case through Linux/SX1262/owner code at the dependency seam.
 @pytest.mark.parametrize("release_fails", [False, True])
 def test_manual_hardware_case_keeps_fault_and_cleanup_evidence(device, tmp_path, monkeypatch, release_fails):
-    from tests.hardware import test_radio as hardware_radio
+    from hardware.radio.tests.carrier import test_radio as hardware_radio
     from tests.support.fakes.radio_io import Wait
 
     _, deps, clock = device

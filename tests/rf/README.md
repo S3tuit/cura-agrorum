@@ -15,7 +15,7 @@ SSH. The C6 component app lives in `firmware/test_apps/radio/`; the Pi peer in
 `receiver/test_apps/radio_peer/` reuses production radio components.
 
 Receiver production code and hardware operations run on Pi. Ordinary Pi-local
-tests remain in receiver/tests/hardware/; protocol verification remains in
+tests remain in receiver/tests/target/; protocol verification remains in
 protocol/protocol-v2-lora/tests/. A component peer does not establish full
 receiver acceptance.
 
@@ -53,7 +53,7 @@ without JP_REF_ENABLE/R5/R6/R7/R8 and the nominal Pi carrier without
 JP_RTC_SCL_FAULT/JP_RTC_SDA_FAULT. These removed fault/reference branches remain
 disconnected; all other nominal schematic requirements apply. See
 [firmware sequencing and sensor scope](../../firmware/TESTING.md#pilot-production-fixture-and-configuration-sequencing)
-and [installed Pi qualification](../../receiver/TESTING.md#pilot-production-fixture-and-installed-qualification).
+and [installed Pi qualification](../../receiver/tests/README.md#hardware-and-destructive-runs).
 Use the declared sensor configuration and selected nominal assertions. Independent
 same-acquisition sensor-to-packet checks belong to the existing sensor-carrier
 integration tests; contributors rerun them when relevant to the selected hardware/software changes.

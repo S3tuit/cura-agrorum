@@ -1,7 +1,7 @@
 # RF operating envelope
 
 Controlled tests use the documented [C6 carrier](../../firmware/test_apps/on_device/SENSOR_CARRIER.md)
-and [Pi carrier](../../receiver/hardware/TEST_CARRIER.md), including their declared
+and [Pi carrier](../../receiver/HARDWARE.md), including their declared
 component fault fixtures. The configured profile is 868.1 MHz, intended +14 dBm,
 SF7/BW125/CR4/5, explicit header, CRC, eight-symbol preamble, private sync word
 and direction-specific IQ. The [firmware assessment](../../firmware/TESTING.md#sx1262_radio-first-rf-operating-envelope)

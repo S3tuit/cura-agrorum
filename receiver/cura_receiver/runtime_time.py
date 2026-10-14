@@ -1,4 +1,11 @@
-"""Communicator-owned time state; callers schedule operations outside radio work."""
+"""Communicator-owned time state; callers schedule operations outside radio work.
+
+Live clock generation guards trust across every yielding action. Durable state
+generation instead serializes the complete RTC/airtime snapshot. An RTC refresh
+first invalidates old durable provenance, writes once, verifies by read-back,
+then persists the new proof; uncertainty at any stage cannot authorize trust.
+Offline holdover reads never refresh the RTC by writing the same clock back.
+"""
 
 from dataclasses import dataclass, replace
 from enum import Enum, auto

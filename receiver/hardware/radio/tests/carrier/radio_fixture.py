@@ -57,17 +57,18 @@ def validate_selection(config, *, required_state=None):
 def create_evidence(config):
     value, configuration, root = validate_selection(config)
     root.mkdir(mode=0o700)
-    repo = Path(__file__).resolve().parents[3]
+    repo = Path(__file__).resolve().parents[5]
     paths = [* (repo / "receiver/cura_receiver").rglob("*.py"),
              * (repo / "receiver/tests").rglob("*.py"),
+             * (repo / "receiver/hardware").rglob("*.py"),
              * (repo / "protocol/protocol-v2-lora/python").rglob("*.py")]
     paths += [repo / "receiver/requirements-radio.txt", repo / "receiver/requirements-test.txt"]
     paths += [repo / "receiver" / name for name in (
-        "ARCHITECTURE.md", "INTERFACE.md", "INTERFACE_DIAGNOSTIC.md", "TESTING.md",
-        "pytest.ini", "schemas/receiver_enums.json", "schemas/receiver_entities.json", "db/schema.sql",
+        "ARCHITECTURE.md", "HARDWARE.md", "tests/README.md",
+        "conftest.py", "pytest.ini", "schemas/receiver_enums.json", "schemas/receiver_entities.json", "db/schema.sql",
     )]
     paths.append(repo / "protocol/protocol-v2-lora/README.md")
-    paths += [repo / "receiver/hardware/TEST_CARRIER.md", repo / "receiver/tests/hardware/RADIO_TESTS.md"]
+    paths.append(repo / "receiver/hardware/radio/tests/carrier/README.md")
     manifest = {str(path.relative_to(repo)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(paths)}
     (root / "sources.json").write_text(json.dumps(manifest, indent=2) + "\n")
     (root / "fixture.json").write_text(json.dumps(value, indent=2) + "\n")

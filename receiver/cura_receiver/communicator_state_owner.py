@@ -85,6 +85,13 @@ class CommunicatorStateOwner:
 
     Initial state must come from acknowledged persistence. Baseline creation
     and recovery remain the caller's policy, outside this coordinator.
+
+    An unknown commit retains both complete states and blocks new mutations.
+    Reconciliation compares canonical bytes, not just generations; unexpected
+    contents remain a conflict. RTC and airtime share this owner so neither can
+    overwrite the other's state. A caller retains its particular receipt across
+    later generations instead of inferring that request's outcome from the latest
+    state. Resolving a receipt does not by itself establish current RTC trust.
     """
 
     def __init__(

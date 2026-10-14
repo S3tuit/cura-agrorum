@@ -115,6 +115,13 @@ class ChronyStepResult:
 
 
 class ChronyControl(Protocol):
+    """Observe or request a local correction; neither operation proves UTC trust.
+
+    SUBMITTED confirms command acceptance, not an observed clock step. Timeout
+    after possible submission remains unknown, so the caller fences correlation
+    before the command and independently checks fresh tracking/kernel samples.
+    """
+
     def read_tracking(self, *, deadline_monotonic_us: int) -> ChronyTrackingResult: ...
     def apply_pending_correction_by_step(
         self, *, deadline_monotonic_us: int

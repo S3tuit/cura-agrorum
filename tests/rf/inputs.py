@@ -15,19 +15,18 @@ def tree_sources():
     paths = []
     for name in ("firmware/components", "firmware/test_apps/radio/main", "receiver/cura_receiver",
                  "receiver/test_apps/radio_peer", "receiver/tests", "receiver/schemas", "receiver/db",
-                 "receiver/deploy", "receiver/native", "receiver/tools",
+                 "receiver/deploy", "receiver/native", "receiver/tools", "receiver/hardware",
                  "protocol/protocol-v2-lora/python", "tests/rf"):
         # RF guides and local Markdown notes are not source-staging inputs.
         paths.extend(p for p in (REPO / name).rglob("*") if p.is_file() and
-                     (name != "tests/rf" or p.suffix != ".md") and
+                     (name != "tests/rf" or p.suffix != ".md") and not p.match("*.notes.*") and
                      not any(part in {"__pycache__", "runs", "raw", ".pytest_cache"} for part in p.parts) and
                      (p.name.startswith("Kconfig") or p.suffix in {".c", ".h", ".py", ".md", ".txt", ".cmake", ".yml", ".json", ".ini", ".sql", ".service", ".conf", ".rules"}) and
                      not p.name.startswith(("WORKPLAN", "REVIEW")))
     paths.extend(APP / name for name in ("CMakeLists.txt", "sdkconfig.defaults", "partitions.csv", "dependencies.lock"))
     paths.extend(REPO / name for name in ("Makefile", "firmware/TESTING.md", "firmware/INTERFACE.md",
-        "firmware/ARCHITECTURE.md", "receiver/ARCHITECTURE.md", "receiver/INTERFACE.md", "receiver/TESTING.md",
-        "receiver/INTERFACE_DIAGNOSTIC.md", "receiver/requirements-runtime.txt", "receiver/requirements-radio.txt", "receiver/requirements-test.txt", "receiver/pytest.ini",
-        "receiver/hardware/TEST_CARRIER.md", "receiver/tests/hardware/RADIO_TESTS.md",
+        "firmware/ARCHITECTURE.md", "receiver/ARCHITECTURE.md", "receiver/HARDWARE.md",
+        "receiver/conftest.py", "receiver/requirements-runtime.txt", "receiver/requirements-radio.txt", "receiver/requirements-test.txt", "receiver/pytest.ini",
         "protocol/protocol-v2-lora/README.md"))
     return {str(p.relative_to(REPO)): digest(p) for p in sorted(set(paths))}
 

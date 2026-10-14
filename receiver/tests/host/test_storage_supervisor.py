@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.hardware import storage_fixture as fixture
+from tests.target import storage_fixture as fixture
 
 
 def _scripted_child(pipe, parent, account, mount, check, events):

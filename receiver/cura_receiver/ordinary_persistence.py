@@ -3,6 +3,12 @@
 The caller is the sole persistence owner. It completes startup before calling
 ``enable_admission`` and drives attempts at safe boundaries. This component
 never starts a thread or waits for work.
+
+Freeze derived values before the first commit attempt. An unknown outcome keeps
+the lease and those exact values until every stored column reconciles; replay
+must not resample health or reclassify a committed reading. A mismatching durable
+identity is a correctness failure, not a row to overwrite or quarantine. Only
+item-local defects permit poison isolation; global storage failures retain work.
 """
 
 from __future__ import annotations

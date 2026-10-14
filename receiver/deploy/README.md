@@ -181,6 +181,10 @@ RTC and stable Chrony state required by the controller-fault measurement.
 
 ## 7. Prepare to qualify the RTC operation bound
 
+For a setup matching the [recorded qualification](../hardware/ds3231/tests/i2c_faults/RESULTS.md#2026-10-12-stable-package-qualification),
+reuse `RTC_KERNEL_BOUND_US=3000000` and skip the measurement preparation below.
+Prepare a new measurement when the qualification does not apply.
+
 From the staged source root on the Pi:
 
 ```bash
@@ -217,7 +221,8 @@ normal read or the OSF boot check cannot replace this measurement.
 Record outcomes, maximum complete-operation durations, helper/source identity,
 hardware/wiring, kernel/packages and successful restoration in the
 [owning findings](../hardware/ds3231/tests/i2c_faults/RESULTS.md#reusing-an-adopted-operation-bound).
-Once qualified, reuse the recorded limit for an applicable matching setup. That
-document owns the conditions for remeasurement. The retained findings concern
-the earlier beta package; the current stable package's bound remains to be
-qualified before supplying `RTC_KERNEL_BOUND_US=3000000` for production.
+The 2026-10-12 [stable-package qualification](../hardware/ds3231/tests/i2c_faults/RESULTS.md#2026-10-12-stable-package-qualification)
+supports `RTC_KERNEL_BOUND_US=3000000` for its applicable matching setup. Reuse
+that value when the setup matches; the findings own the conditions for
+remeasurement. Complete a new qualification before supplying a bound for a
+different setup.

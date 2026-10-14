@@ -1,10 +1,10 @@
 # DS3231 I2C fault findings
 
-These findings concern the previously investigated Pi 3/Adafruit DS3231 carrier,
-stock `rtc-ds1307` RTC driver and bcm2835 I2C controller. The kernel was
+The earlier findings below concern the Pi 3/Adafruit DS3231 carrier,
+stock `rtc-ds1307` RTC driver and bcm2835 I2C controller. That kernel was
 `6.18.50+rpt-rpi-v8`, package `1:6.18.50-1+rpt1~beta1`, Raspberry Pi Linux commit
 `cff533aec2fa601846766b32ff57204e0a61bed7`. This is the retained controller
-investigation summary, not a new run on the current stable package.
+investigation summary, not the stable-package qualification recorded below.
 
 ## Observed behavior
 
@@ -78,12 +78,45 @@ previously removed; this summary preserves the useful findings and their limits.
 
 ## Reusing an adopted operation bound
 
-The current stable package's operation bound remains unqualified by this report.
-After all four cases and complete restoration pass, record the adopted acceptance
-limit, maximum complete-operation durations, hardware/wiring, kernel/packages,
-source identity and native helper build/digest. Reuse that result for an applicable
-matching setup, including another installation of it. Review applicability and
-rerun after relevant controller/RTC/wiring, kernel/driver or helper/adapter build
-changes. Three seconds is the tested procedure's candidate envelope; an ordinary
-read or a passing OSF test does not qualify it. The measured maximum alone is
-not a universal kernel worst-case guarantee.
+Use `RTC_KERNEL_BOUND_US=3000000` for the applicable stable setup qualified below.
+Reuse that result for a matching setup, including another installation of it.
+Review applicability and rerun after relevant controller/RTC/wiring, kernel/driver
+or helper/adapter build changes. An ordinary read or a passing OSF test does not
+qualify this limit. The measured maximum alone is not a universal kernel
+worst-case guarantee.
+
+## 2026-10-12 stable-package qualification
+
+Four fault cases passed, followed by operator-confirmed unpowered removal of both
+shunts, successful RTC-to-Linux initialization on a new boot without OSF, qualified
+network-time restoration, and nine safe time component checks. Adopt the 3-second
+complete-operation envelope for this setup.
+
+| Fault | Complete operation (seconds) | Observation |
+| --- | ---: | --- |
+| SCL-low read | 1.030318 | `IO_ERROR`, errno 110; no trusted UTC |
+| SDA-low read | 0.002974 | `INVALID`, errno 22; no trusted UTC |
+| SCL-low write | 2.069414 | `OUTCOME_UNKNOWN` / `DEADLINE_EXCEEDED`; pending SIGKILL observed inside the helper's write ioctl; helper reaped before fault release |
+| SDA-low write | 0.004914 | `COMPLETED`; contents verified only through restoration read-back |
+
+Maximum complete operation: **2,069,414 us**. All four receipts and restoration
+results were independently verified. Read recovery after SCL release required
+four attempts for the read case and three for the write case; transient controller
+failures remain observable. This run does not qualify a driver repair or guarantee
+a fixed recovery count.
+
+Tested configuration: Raspberry Pi 3 Model B Rev 1.2, recorded Adafruit DS3231 and
+CR1220, GPIO17→SCL/GPIO3 and GPIO27→SDA/GPIO2 fault wiring, Debian 13.7 Trixie arm64,
+stock `rtc-ds1307`/`i2c-bcm2835`, stable kernel/package
+`6.18.50+rpt-rpi-v8` / `1:6.18.50-1+rpt1`. GCC 14.2.0, compiler build
+`Debian 14.2.0-19`, Chrony 4.6.1. Native helper digest:
+`1937c12800cfc8990c55719c087ba0f03c727a2e86809ae84069aba2d87b8096`.
+
+Source baseline was `511fc76e289efb2767f1b27dd41683a3f81cc5ad` plus the current
+Chrony drop-in relocation. The exact 288-file current-source snapshot has archive
+SHA-256 `482d6f014d3e64e226d014f6e48f2a4173981243e7de28f0b7c80a93ef93c4e5`.
+The [logbook record](https://github.com/S3tuit/cura-agrorum-logbook/tree/main/experiments/2026-10-ds3231-operation-bound)
+(local sibling `../cura-agrorum-logbook/experiments/2026-10-ds3231-operation-bound`)
+retains source, packages/dependencies, operator confirmations, raw receipts and
+the verifier. One execution per fault case establishes this specified envelope;
+no statistical tail, RTC accuracy/drift, installed-service or RF claim is made.

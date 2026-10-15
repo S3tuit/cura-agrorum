@@ -7,6 +7,15 @@
 #include "node_persistence_backend.h"
 #include "protocol_v2_lora_schema_generated.h"
 
+/*
+ * Canonical little-endian framing, never native structure bytes:
+ * magic u32 | version u8 | type u8 | payload_length u16 | payload |
+ * total_length u16 | CRC32 u32. CRC-32/ISO-HDLC covers everything before CRC,
+ * including both lengths. The footer permits newest-first traversal; bounded
+ * sizes and matching header/footer/CRC must be checked before trusting a tail.
+ * CRC protects stored plaintext before authentication, not against an attacker.
+ */
+
 #define NODE_PERSISTENCE_RECORD_MAGIC UINT32_C(0x756fec23)
 #define NODE_PERSISTENCE_RECORD_FORMAT_VERSION UINT8_C(2)
 

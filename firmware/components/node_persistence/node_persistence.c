@@ -17,6 +17,10 @@
 #define DELIVERY_LOG_PATH NODE_PERSISTENCE_MOUNT_PATH "/delivery.log"
 #define PERSISTENCE_RECORD_TYPE_OFFSET 5U
 
+/* Logical quotas leave LittleFS room for copy-on-write and pending compaction.
+ * Only pending reclaims space, retaining whole newest reading/binding items.
+ * Other full logs reject new records; they never evict historical records.
+ */
 #ifndef NODE_PERSISTENCE_PENDING_LOG_LIMIT
 #define NODE_PERSISTENCE_PENDING_LOG_LIMIT (UINT64_C(512) * UINT64_C(1024))
 #endif
@@ -356,6 +360,9 @@ pending_binding_matches_preceding_reading(const tail_record_t *binding,
   return CURAG_OK;
 }
 
+/* Repair at most one record-sized suffix and report its loss before a caller
+ * retries. Never guess a boundary, format storage, or bury torn bytes by append.
+ */
 static err_curag_t recover_tail(node_persistence_log_kind_t log_kind,
                                 tail_record_t *out_tail,
                                 diagn_context_t *out_diag) {
@@ -575,6 +582,9 @@ static err_curag_t validate_file_forward(node_persistence_log_kind_t log_kind,
   return CURAG_OK;
 }
 
+/* pending.log stays authoritative until rename. A temporary copy has no
+ * generation/manifest proving it newer, so it must never be promoted as recovery.
+ */
 static err_curag_t cleanup_stale_pending_compact(diagn_context_t *out_diag) {
   bool compact_exists = false;
   uint64_t compact_size = 0U;

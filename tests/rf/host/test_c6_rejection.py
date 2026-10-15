@@ -13,7 +13,7 @@ from rejection_vectors import matrix, C6_CASES
 from cura_protocol_v2_lora.receiver_group import load_receiver_group
 from provisioning_common import derive_node_key
 
-MAIN = REPO / 'firmware/test_apps/radio/main'
+MAIN = REPO / 'firmware/hardware/radio/tests/component/main'
 PROTOCOL = REPO / 'firmware/components/protocol_v2_lora'
 
 
@@ -154,7 +154,8 @@ endfunction()
 function(target_compile_definitions)
 endfunction()
 set(COMPONENT_LIB ignored)
-''' + f'set(REJECTION_INPUT_DIR "{root}")\ninclude("{MAIN / "CMakeLists.txt"}")\n')
+''' + f'set(CURA_FIRMWARE_DIR "{REPO / "firmware"}")\n'
+        + f'set(REJECTION_INPUT_DIR "{root}")\ninclude("{MAIN / "CMakeLists.txt"}")\n')
     result = subprocess.run(['cmake', '-P', str(script)], capture_output=True, text=True)
     assert (result.returncode == 0) == (damage is None), result.stderr
-    if damage: assert 'prepare a fresh bundle' in result.stderr
+    if damage: assert 'prepare a fresh bundle' in ' '.join(result.stderr.split())

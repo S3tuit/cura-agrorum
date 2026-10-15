@@ -18,8 +18,8 @@ CONFIG_RTC_CLK_SRC_INT_RC=y
 # Storage records do not use filesystem modification timestamps.
 # CONFIG_LITTLEFS_USE_MTIME is not set
 
-# Approved nominal sensor/radio carrier (SENSOR_CARRIER.md). Component defaults
-# remain provisional for other boards; production must select its real wiring.
+# Nominal DevKitM-1 sensor/radio wiring (HARDWARE.md). Component Kconfig defaults
+# differ for other boards; check the resolved configuration against real wiring.
 CONFIG_CURA_I2C_SDA_GPIO=21
 CONFIG_CURA_I2C_SCL_GPIO=22
 CONFIG_CURA_SX1262_SCLK_GPIO=6
@@ -30,5 +30,6 @@ CONFIG_CURA_SX1262_RESET_GPIO=18
 CONFIG_CURA_SX1262_BUSY_GPIO=19
 CONFIG_CURA_SX1262_DIO1_GPIO=20
 
-# Production cycle includes the nested LittleFS persistence call path.
+# Nested LittleFS persistence exhausted the 3584-byte main-task default.
+# Keep production's stack large enough for the real wake/backlog call path.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

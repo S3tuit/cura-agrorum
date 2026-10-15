@@ -11,7 +11,7 @@ commands. Preparation-only rejection vectors are marked separately; see
 [rejection packet preparation](#rejection-packet-preparation) for their build inputs.
 
 Laptop pytest controls the C6 through its UART and a separate Pi process through
-SSH. The C6 component app lives in `firmware/test_apps/radio/`; the Pi peer in
+SSH. The C6 component app lives in `firmware/hardware/radio/tests/component/`; the Pi peer in
 `receiver/test_apps/radio_peer/` reuses production radio components.
 
 Receiver production code and hardware operations run on Pi. Ordinary Pi-local
@@ -52,7 +52,7 @@ The approved production qualification assembly is the nominal C6 carrier
 without JP_REF_ENABLE/R5/R6/R7/R8 and the nominal Pi carrier without
 JP_RTC_SCL_FAULT/JP_RTC_SDA_FAULT. These removed fault/reference branches remain
 disconnected; all other nominal schematic requirements apply. See
-[firmware sequencing and sensor scope](../../firmware/TESTING.md#pilot-production-fixture-and-configuration-sequencing)
+[firmware build and provisioning](../../firmware/deploy/README.md)
 and [installed Pi qualification](../../receiver/tests/README.md#hardware-and-destructive-runs).
 Use the declared sensor configuration and selected nominal assertions. Independent
 same-acquisition sensor-to-packet checks belong to the existing sensor-carrier
@@ -105,7 +105,7 @@ the actual flash ranges and binds the factory MAC with a no-reset probe before
 requesting the DUT; the identity probe leaves the MCU in its bootloader and cannot
 start an old autonomous image. The runner rejects erase-all, NVS erase,
 forced/encrypted/alternate-port flashing and stale builds.
-See the [app's storage disclosure](../../firmware/test_apps/radio/README.md).
+See the [app's storage disclosure](../../firmware/hardware/radio/tests/component/README.md).
 
 The remaining nominal parameters are `component.ack_timeout`, `component.invalid_downlinks`,
 `component.repeat_timeout`, `component.repeat_exchange`, `component.cold_sleep`,
@@ -159,9 +159,9 @@ qualify the installed receiver service or identify the historical error cause.
 ## Component timing and cleanup
 
 For the initial `component.ack_exchange` session, allow at most ten attempts per
-transmitter with at least 60 seconds between its starts, as specified by the
-[firmware envelope](../../firmware/TESTING.md#sx1262_radio-first-rf-operating-envelope).
-Admit every other selected case as a whole, using its declared reservation.
+transmitter with at least 60 seconds between its starts. Admit every other
+selected case as a whole, using its declared reservation and the
+[RF operating envelope](OPERATING_ENVELOPE.md).
 
 The C6 uses a two-second TX deadline and a three-second RX window. The invalid
 downlink burst keeps the original RX deadline. Pi replies target RX_DONE +250 ms;
@@ -246,7 +246,7 @@ next-wake metrics assertions still apply.
 Both require `CONFIG_NODE_DEEP_SLEEP_SECONDS=10`,
 `CONFIG_NODE_RF_SLEEP_OBSERVATION=y`, and `CONFIG_NODE_RF_PHY_OBSERVATION=y` in
 the sealed production build. The last option links passive test wrappers from
-`firmware/test_apps/radio/main/node_rf_observe.c`; the runner refuses an ordinary
+`firmware/hardware/radio/tests/component/main/node_rf_observe.c`; the runner refuses an ordinary
 build for these cases. Firmware policy, cryptography and receive deadlines are
 unchanged. At sleep entry the UART includes raw GetIrqStatus data, associated
 DIO1 timestamps and SetRx/SetTx HAL brackets, followed by a count/overflow marker.
@@ -422,7 +422,7 @@ optional C6 image in the configured ESP-IDF environment:
 ```sh
 .venv/bin/python tests/rf/prepare_rejection_inputs.py \
   --output /tmp/new-rejection-inputs --run RUN_ID
-CCACHE_DISABLE=1 idf.py -C firmware/test_apps/radio -B /tmp/new-rejection-build \
+CCACHE_DISABLE=1 idf.py -C firmware/hardware/radio/tests/component -B /tmp/new-rejection-build \
   -D REJECTION_INPUT_DIR=/tmp/new-rejection-inputs build
 ```
 
@@ -461,8 +461,11 @@ For before/after receiver and node snapshots, use the
 capture preparation, report commands and the limits of the observed counts.
 
 Production-node cases capture the full LittleFS storage image only after the
-complete observation sequence, as specified in
-[firmware testing](../../firmware/TESTING.md#offline-production-node-evidence-capture).
+complete observation sequence. Entering the ROM bootloader ends that sequence;
+leave the node stopped afterward. Bind the unchanged image to the actual DUT,
+binary partition table, build/configuration and run. Read only storage: do not
+erase, restore counters, boot maintenance firmware, or repair/mount the device
+filesystem. Capture/stop failures require investigation before another run.
 Decode an already captured image without device access:
 
 ```sh

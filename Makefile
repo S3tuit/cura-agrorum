@@ -14,8 +14,8 @@ RF_TEST_PYTHON := $(abspath .venv/bin/python)
         test-rf-component-dio1_disconnected test-rf-component-radio_absent
 
 test-rf-build:
-	idf.py -C firmware/test_apps/radio build
-	$(RF_TEST_PYTHON) tests/rf/inputs.py --seal-build firmware/test_apps/radio/build
+	idf.py -C firmware/hardware/radio/tests/component build
+	$(RF_TEST_PYTHON) tests/rf/inputs.py --seal-build firmware/hardware/radio/tests/component/build
 
 test-rf-host:
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(RF_TEST_PYTHON) -m pytest -c tests/rf/pytest.ini tests/rf/host
@@ -39,7 +39,7 @@ test-rf-component-dio1_disconnected:
 test-rf-component-radio_absent:
 	$(RF_TEST_PYTHON) tests/rf/run.py --fixture-state radio_absent $(RF_ARGS)
 
-HARDWARE_TEST_APP := $(abspath firmware/test_apps/on_device)
+HARDWARE_TEST_APP := $(abspath firmware/tests/target)
 HARDWARE_TEST_BUILD := $(HARDWARE_TEST_APP)/build
 HARDWARE_TEST_PYTEST := $(abspath .venv/bin/python) -m pytest
 HARDWARE_TEST_ARGS := \

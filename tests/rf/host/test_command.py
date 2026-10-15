@@ -21,7 +21,7 @@ class Command(ctypes.Structure):
 
 @pytest.fixture(scope="module")
 def library(tmp_path_factory):
-    source = Path(__file__).resolve().parents[3] / "firmware/test_apps/radio/main/radio_command.c"
+    source = Path(__file__).resolve().parents[3] / "firmware/hardware/radio/tests/component/main/radio_command.c"
     library = tmp_path_factory.mktemp("command") / "command.so"
     subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-shared", "-fPIC",
                     str(source), "-o", str(library)], check=True)

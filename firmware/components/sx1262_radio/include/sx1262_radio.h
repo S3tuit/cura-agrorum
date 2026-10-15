@@ -12,7 +12,7 @@ extern "C" {
 
 #define SX1262_RADIO_MAX_PAYLOAD_SIZE 255U
 
-/* Fixed LoRa v2 pilot PHY profile. */
+/* Fixed LoRa v2 PHY profile. */
 #define SX1262_RADIO_FREQUENCY_HZ UINT32_C(868100000)
 #define SX1262_RADIO_TX_POWER_DBM INT8_C(14)
 #define SX1262_RADIO_SPREADING_FACTOR UINT8_C(7)
@@ -78,6 +78,10 @@ typedef enum {
   CURAG_RADIO_STAGE_CAPTURE_TIME = 18,
 } curag_radio_stage_t;
 
+/* Blocking, single-threaded operations borrow inputs and clear outputs/optional
+ * diagnostics on entry. TX progress survives failure: tx_started conservatively
+ * counts an uncertain SetTx; tx_done alone validates tx_done_at_us.
+ */
 typedef struct {
   bool tx_started;
   bool tx_done;
@@ -105,7 +109,7 @@ typedef struct {
 } sx1262_radio_rx_result_t;
 
 /*
- * Returns the modeled LoRa time-on-air for the fixed pilot profile.
+ * Returns the modeled LoRa time-on-air for the fixed profile.
  * Frequency does not enter the calculation because it does not affect LoRa
  * symbol duration. Invalid payload lengths return UINT64_MAX.
  */
@@ -148,6 +152,10 @@ err_curag_t sx1262_radio_transmit_uplink(const uint8_t *payload,
  *
  * Returns CURAG_OK for both RX_PACKET and normal RX_DEADLINE. The radio must
  * already be READY following a successful transmit.
+ * Captured IRQ time wins over delayed task processing, including equality with
+ * the deadline. Invalid application packets must be retried under that SAME
+ * deadline. PHY rejections are counted/cleared/rearmed internally. Packet fields
+ * are valid only for RX_PACKET; CRC observations survive later local failure.
  */
 err_curag_t
 sx1262_radio_receive_downlink_until(uint64_t deadline_monotonic_us,
@@ -162,6 +170,8 @@ sx1262_radio_receive_downlink_until(uint64_t deadline_monotonic_us,
  * The operation is an idempotent no-op before hardware is touched and after a
  * successful sleep. A returned error is diagnostic only; callers must still
  * put the MCU to sleep.
+ * Successful sleep forbids further TX/RX until boot; failed cleanup can be
+ * retried. It never initializes untouched hardware merely to shut it down.
  */
 err_curag_t sx1262_radio_sleep(diagn_context_t *out_diag);
 

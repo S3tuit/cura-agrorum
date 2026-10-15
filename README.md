@@ -16,7 +16,7 @@ in this repository; detailed dated run records remain in the logbook.
 
 | Path | Responsibility |
 | --- | --- |
-| [`firmware/`](firmware/) | ESP-IDF node application, wake-cycle controller, persistence, sensors, radio and platform components. |
+| [`firmware/`](firmware/README.md) | ESP-IDF node application, wake-cycle controller, persistence, sensors, radio and platform components. |
 | [`receiver/`](receiver/README.md) | Raspberry Pi receiver application, radio/clock integration, authenticated ingestion and durable SQLite storage. |
 | [`protocol/protocol-v2-lora/`](protocol/protocol-v2-lora/README.md) | LoRa wire contract, schemas, generated C/Python codecs, provisioning and cross-language tests. |
 | [`tests/rf/`](tests/rf/README.md) | Joint node/receiver RF procedures, runners, host verification and offline capture analysis. |
@@ -28,14 +28,15 @@ Start with the documents for the component you are changing:
 | Subject | Owner |
 | --- | --- |
 | Runtime behavior and component ownership | [Firmware architecture](firmware/ARCHITECTURE.md), [receiver architecture](receiver/ARCHITECTURE.md) |
-| Component interfaces and stored data | [Firmware interfaces](firmware/INTERFACE.md), [receiver code](receiver/cura_receiver/) and [schemas](receiver/schemas/) |
+| Component interfaces and stored data | [Firmware components](firmware/components/), [receiver code](receiver/cura_receiver/) and [schemas](receiver/schemas/) |
 | Wire encoding and authentication | [LoRa protocol](protocol/protocol-v2-lora/README.md) |
 | Receiver diagnostic definitions | [Enum catalogues](receiver/schemas/receiver_enums.json) and [domain codecs](receiver/cura_receiver/radio_diagnostics.py) |
-| Test scope, procedures and coverage | [Firmware testing](firmware/TESTING.md), [receiver testing](receiver/tests/README.md), [joint RF verification](tests/rf/README.md) |
+| Test commands and procedures | [Firmware testing](firmware/tests/README.md), [receiver testing](receiver/tests/README.md), [joint RF verification](tests/rf/README.md) |
 
-Receiver behavior is documented beside its owning code; the architecture explains
-fundamental choices. Generated files project their schema/generator inputs. The
-[receiver hardware guide](receiver/HARDWARE.md) owns the production schematic.
+Behavior is documented beside its owning code; architecture guides explain
+fundamental choices. Generated files project their schema/generator inputs.
+[Firmware hardware](firmware/HARDWARE.md) and [receiver hardware](receiver/HARDWARE.md)
+own their production schematics.
 
 ## Development and tests
 
@@ -43,7 +44,7 @@ Run host checks from the repository root after preparing the linked prerequisite
 
 | Scope | Entry point | Setup and details |
 | --- | --- | --- |
-| Native firmware | `make test-host` | [Firmware host tests](firmware/TESTING.md#philosophy-and-build) |
+| Native firmware | `make test-host` | [Firmware host tests](firmware/tests/README.md#host-commands) |
 | Receiver | `make test-receiver-host` | [Python environment](receiver/README.md#python-setup) |
 | RF tooling | `make test-rf-host` | [RF host checks](tests/rf/README.md#host-checks) |
 | Protocol | `.venv/bin/python -m pytest protocol/protocol-v2-lora/tests` | [Protocol test prerequisites](protocol/protocol-v2-lora/tests/README.md#running) |

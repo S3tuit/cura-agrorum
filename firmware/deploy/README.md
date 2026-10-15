@@ -1,7 +1,7 @@
 # Fresh ESP32-C6 deployment
 
 This sequence provisions a fresh receiver group and node identity, builds for
-the nominal [carrier wiring](../test_apps/on_device/SENSOR_CARRIER.md), and resets
+the nominal [carrier wiring](../HARDWARE.md), and resets
 the C6 before installation. Ordinary firmware updates retain the existing
 identity, counters and storage; do not use this reset sequence for them.
 

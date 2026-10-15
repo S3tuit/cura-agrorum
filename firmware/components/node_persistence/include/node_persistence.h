@@ -6,6 +6,19 @@
 #include "node_common.h"
 #include "protocol_v2_lora_schema_generated.h"
 
+/*
+ * Single-threaded, wake-local storage owner. Inputs are borrowed for the call;
+ * outputs are valid on success only. Optional diagnostics are cleared on entry
+ * and preserve the failure site's operation/resource/status; NULL discards only
+ * that detail. NVS and LittleFS initialize independently on demand and cache
+ * initialization failure until the next boot.
+ *
+ * Every append first validates its tail. Bounded recovery may durably discard
+ * an unusable suffix, then return the corruption/unsupported error WITHOUT
+ * performing the requested operation. An unprovable boundary preserves bytes.
+ * A failed write/sync may have persisted data; failure is not a rollback.
+ */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -201,7 +214,13 @@ typedef struct {
 err_curag_t node_persistence_claim_sample_id(uint32_t *out_sample_id,
                                              diagn_context_t *out_diag);
 
-/* Claims and durably advances the identity/key-lifetime message counter. */
+/*
+ * Claims and commits the independent identity/key-lifetime message counter.
+ * Both counters may skip after an ambiguous commit but must never wrap/reuse.
+ * Missing storage cannot be distinguished from a fresh identity: counter loss,
+ * rollback or exhaustion requires replacing identity/key and clearing all
+ * node-local NVS, LittleFS and retained RTC state before further transmission.
+ */
 err_curag_t node_persistence_claim_message_id(uint32_t *out_message_id,
                                               diagn_context_t *out_diag);
 
@@ -217,7 +236,11 @@ err_curag_t
 node_persistence_append_pending_reading(const cura_lora_v2_reading_t *reading,
                                         diagn_context_t *out_diag);
 
-/* Durably binds the newest unbound reading to one exact backlog frame. */
+/*
+ * Durably binds the newest unbound reading to one exact backlog frame. A caller
+ * may transmit only after success; later wakes reuse the returned bytes and ID.
+ * The reading and its optional binding form one item for removal/compaction.
+ */
 err_curag_t node_persistence_bind_newest_backlog_frame(
     uint32_t expected_sample_id, uint32_t message_id,
     const cura_lora_v2_authenticated_reading_frame_t *frame,
@@ -237,17 +260,28 @@ node_persistence_peek_most_recent_pending(node_pending_reading_t *out_pending,
 err_curag_t node_persistence_remove_newest_reading(uint32_t expected_sample_id,
                                                    diagn_context_t *out_diag);
 
-/* Durably appends a permanently rejected reading to quarantine.log. */
+/*
+ * Durably appends a rejected reading to quarantine.log without touching pending.
+ * Quarantine and pending removal are independent: reset between them can leave
+ * duplicates. node_core owns the choice to remove even after quarantine fails.
+ */
 err_curag_t
 node_persistence_quarantine_reading(const cura_lora_v2_reading_t *reading,
                                     diagn_context_t *out_diag);
 
-/* Buffers one ordinary diagnostic record for final synchronization. */
+/*
+ * Buffers an ordinary diagnostic until sync_all; success is not durability.
+ * Never include keys. Failure must not be recursively logged or alter delivery.
+ */
 err_curag_t
 node_persistence_append_diagnostic_event(const node_diagnostic_event_t *event,
                                          diagn_context_t *out_diag);
 
-/* Durably appends one DELIVERY_STARTED or DELIVERY_FINISHED event. */
+/*
+ * Durably appends one DELIVERY_STARTED or DELIVERY_FINISHED event. These bracket
+ * controller delivery, not proof of TX: a missing finish leaves the outcome
+ * unknown. Logging failure must not cancel TX or change an authenticated result.
+ */
 err_curag_t
 node_persistence_append_delivery_event(const node_delivery_event_t *event,
                                        diagn_context_t *out_diag);

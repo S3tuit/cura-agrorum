@@ -882,7 +882,10 @@ static void run_claimed_cycle(node_cycle_context_t *cycle,
     current_persisted = true;
   } else {
     append_diagnostic(cycle, append_result, &diagnostic);
-    /* Continue volatile; deep sleep may discard an unaccepted reading. */
+    /* Continue from RAM; deep sleep may discard an unaccepted reading. An
+     * ambiguous append may also have persisted this item, so suppress backlog
+     * access for this wake to avoid immediately selecting it again.
+     */
   }
   if (run_ms_overflow) {
     core_diagnostic_context(CURAG_OP_VALIDATE, &diagnostic);

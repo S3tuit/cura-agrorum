@@ -14,11 +14,11 @@ from provisioning_common import (generate_receiver_group, generate_unique_node_i
 from rejection_vectors import matrix, C6_CASES
 
 BOUND_SOURCES = (
-    'firmware/test_apps/radio/main/radio_rejection.c',
-    'firmware/test_apps/radio/main/radio_rejection.h',
-    'firmware/test_apps/radio/main/radio_app.c',
-    'firmware/test_apps/radio/main/radio_command.c',
-    'firmware/test_apps/radio/main/radio_command.h',
+    'firmware/hardware/radio/tests/component/main/radio_rejection.c',
+    'firmware/hardware/radio/tests/component/main/radio_rejection.h',
+    'firmware/hardware/radio/tests/component/main/radio_app.c',
+    'firmware/hardware/radio/tests/component/main/radio_command.c',
+    'firmware/hardware/radio/tests/component/main/radio_command.h',
     'firmware/components/protocol_v2_lora/protocol_v2_lora_crypto.c',
     'firmware/components/protocol_v2_lora/protocol_v2_lora_schema_generated.c',
     'firmware/components/protocol_v2_lora/include/protocol_v2_lora_crypto.h',

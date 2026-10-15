@@ -46,7 +46,7 @@ the same actual storage partition offset/size and compatible LittleFS settings.
 The production backend intentionally does not format on mount failure, so
 flashing only production code after a full erase is insufficient. For RF tests,
 retain the successful formatter result and verify the initialized storage with
-the read-only capture procedure in `../../TESTING.md`. Keep the production
+the [read-only capture procedure](../../../tests/rf/README.md#captures). Keep the production
 image stopped until the operator's fixture and airtime readiness are confirmed.
 
 Build and flash from this directory:

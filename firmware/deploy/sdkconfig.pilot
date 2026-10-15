@@ -1,4 +1,4 @@
-# Nominal SENSOR_CARRIER production wiring. Load after sdkconfig.defaults.
+# Nominal production wiring from firmware/HARDWARE.md. Load after sdkconfig.defaults.
 # Actual DS ROMs belong in a separate local configuration input.
 CONFIG_CURA_SOIL_0_GPIO=0
 CONFIG_CURA_SOIL_1_GPIO=1

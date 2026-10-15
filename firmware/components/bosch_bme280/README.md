@@ -11,7 +11,7 @@ scripted transport callbacks, and `test_node_sensors_bme280.c` compiles the actu
 adapter and driver against ESP-IDF/time boundary fakes. They run through
 `CCACHE_DISABLE=1 make test-host`, with the existing CTest/sanitizer infrastructure.
 The fork README points back here. Updating a driver pin requires rerunning these
-regressions and the affected firmware/fixture checks in `firmware/TESTING.md`.
+regressions and the affected [firmware/fixture checks](../../tests/README.md).
 The fork contains no second test runner. A standalone reproducer is deferred
 until the first upstream bug report is prepared; this does not defer regressions.
 
@@ -25,7 +25,7 @@ before publication, set `CURA_BME280_SOURCE_DIR` explicitly when configuring:
 ```sh
 CURA_BME280_SOURCE_DIR=/home/s3tuit/devspace/BME280_SensorAPI CCACHE_DISABLE=1 make test-host
 source ~/esp/esp-idf/export.sh
-idf.py -C firmware/test_apps/sensor_carrier \
+idf.py -C firmware/hardware/sensors/tests/carrier \
   -DCURA_BME280_SOURCE_DIR=/home/s3tuit/devspace/BME280_SensorAPI build
 ```
 

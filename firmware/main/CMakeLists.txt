@@ -7,7 +7,7 @@ idf_component_register(
 )
 
 if(CONFIG_NODE_RF_PHY_OBSERVATION)
-    target_sources(${COMPONENT_LIB} PRIVATE "../test_apps/radio/main/node_rf_observe.c")
+    target_sources(${COMPONENT_LIB} PRIVATE "../hardware/radio/tests/component/main/node_rf_observe.c")
     target_include_directories(${COMPONENT_LIB} PRIVATE
         "../components/sx1262_radio/private_include"
         "../components/sx1262_radio/vendor/semtech_sx126x_driver")

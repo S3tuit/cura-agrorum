@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.22)
+set(IDF_TARGET "esp32c6")
+get_filename_component(CURA_FIRMWARE_DIR "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
+set(EXTRA_COMPONENT_DIRS "${CURA_FIRMWARE_DIR}/components")
+set(COMPONENTS main)
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+project(cura_radio_component)

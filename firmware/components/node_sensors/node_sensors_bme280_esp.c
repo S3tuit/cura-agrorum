@@ -16,8 +16,20 @@
 #error "node_sensors requires the reviewed Bosch double compensation path"
 #endif
 
-/* INTERFACE.md: BME280 backend contract. These are admission budgets, not
- * preemption of an in-flight ESP-IDF operation. See TESTING.md's wait ledger.
+/* Exclusive synchronous ownership of I2C0 for this wake. Retain allocated
+ * resources and latch the first failure rather than retry/reallocate. Forced
+ * mode uses x1 on all channels; accept data only after actual register checks
+ * confirm completion, sleep and those settings. Recovery cannot erase failure.
+ *
+ * These budgets admit work but cannot preempt an in-flight ESP-IDF operation.
+ * The 20 ms transfer argument applies to multiple internal waits, not the whole
+ * call; bus clear, tick rounding and scheduling can extend it further. Late
+ * success is rejected. Setup/teardown mutex waits assume exclusive ownership.
+ * Recheck SDK waits when changing IDF, ownership or transfer sizes (reads <=26
+ * bytes, writes <=20, within the C6 FIFO). Host fakes do not bound physical I2C.
+ *
+ * The x1 conversion guard is 1250 + 2300 + (2300+575) + (2300+575) us from
+ * Bosch's datasheet. An initially clear measuring bit alone proves no freshness.
  */
 #define TRANSFER_MS 20
 #define INITIALIZE_US INT64_C(500000)

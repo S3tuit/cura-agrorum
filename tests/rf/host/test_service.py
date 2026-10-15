@@ -7,6 +7,8 @@ import sqlite3
 import struct
 import subprocess
 import shutil
+import tarfile
+from types import SimpleNamespace
 
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 import pytest
@@ -150,6 +152,9 @@ def test_service_template_and_current_bundle():
 def test_source_manifest_and_bundle_ignore_planning_notes_and_rf_markdown(tmp_path, monkeypatch, local_note, note_suffix):
     import inputs
     import run_service
+    import transport
+    repo = tmp_path / 'checkout.notes'
+    repo.mkdir()
     # Snapshot the proposed tree, including moves/additions before commit, while
     # excluding ignored workspace artifacts as a fresh checkout would.
     names = subprocess.check_output(
@@ -159,47 +164,79 @@ def test_source_manifest_and_bundle_ignore_planning_notes_and_rf_markdown(tmp_pa
         source = REPO / name
         if not source.is_file():
             continue  # A deletion in the proposed tree.
-        destination = tmp_path / name
+        destination = repo / name
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
     # Use a synthetic guide so this fixture does not depend on committed names.
-    guide = tmp_path / 'tests/rf/host/capture-guide.md'
+    guide = repo / 'tests/rf/host/capture-guide.md'
     guide.write_text('capture instructions\n')
-    assert not (tmp_path / f'deployment_remaining{note_suffix}').exists()
+    assert not (repo / f'deployment_remaining{note_suffix}').exists()
     if local_note:
-        (tmp_path / f'deployment_remaining{note_suffix}').write_text('local planning only\n')
-        (tmp_path / f'tests/rf/host/session{note_suffix}').write_text('local RF planning only\n')
+        (repo / f'deployment_remaining{note_suffix}').write_text('local planning only\n')
+        (repo / f'tests/rf/host/session{note_suffix}').write_text('local RF planning only\n')
     # Both manifest builders read HEAD; share metadata without creating a commit.
     git_dir = subprocess.run(['git', 'rev-parse', '--absolute-git-dir'], cwd=REPO,
                              check=True, capture_output=True, text=True).stdout.strip()
-    (tmp_path / '.git').write_text(f'gitdir: {git_dir}\n')
-    monkeypatch.setattr(inputs, 'REPO', tmp_path)
-    monkeypatch.setattr(inputs, 'APP', tmp_path / 'firmware/test_apps/radio')
-    monkeypatch.setattr(run_service, 'REPO', tmp_path)
-    staged = inputs.source_manifest()['files']
+    (repo / '.git').write_text(f'gitdir: {git_dir}\n')
+    monkeypatch.setattr(inputs, 'REPO', repo)
+    monkeypatch.setattr(inputs, 'APP', repo / 'firmware/hardware/radio/tests/component')
+    monkeypatch.setattr(run_service, 'REPO', repo)
+    monkeypatch.setattr(transport, 'REPO', repo)
+    manifest = inputs.source_manifest()
+    staged = manifest['files']
     files = run_service.package_files()
     assert f'deployment_remaining{note_suffix}' not in staged
     assert not any(name.startswith('tests/rf/') and name.endswith('.md') for name in staged)
     assert files and all(staged.get(name) == expected for name, expected in files.items())
 
     # Adding, editing or removing RF documentation must not change staged inputs.
-    (tmp_path / 'tests/rf/host/new-guide.md').write_text('new capture instructions\n')
-    (tmp_path / 'tests/rf/README.md').write_text('updated RF instructions\n')
-    (tmp_path / f'receiver/tests/local{note_suffix}').write_text('local work in progress\n')
-    (tmp_path / f'receiver/deploy/session{note_suffix}').write_text('local deployment notes\n')
-    (tmp_path / 'receiver/deploy/README.md.bak').write_text('editor backup\n')
-    (tmp_path / f'receiver/hardware/radio/tests/carrier/local{note_suffix}').write_text('local fixture notes\n')
+    (repo / 'tests/rf/host/new-guide.md').write_text('new capture instructions\n')
+    (repo / 'tests/rf/README.md').write_text('updated RF instructions\n')
+    (repo / f'receiver/tests/local{note_suffix}').write_text('local work in progress\n')
+    (repo / f'receiver/deploy/session{note_suffix}').write_text('local deployment notes\n')
+    (repo / 'receiver/deploy/README.md.bak').write_text('editor backup\n')
+    (repo / f'receiver/hardware/radio/tests/carrier/local{note_suffix}').write_text('local fixture notes\n')
     guide.unlink()
+    notes = [repo / name for name in (
+        'firmware/hardware/radio/tests/component/main/session.notes/saved.c',
+        'tests/rf/session.notes.d/measurements.json',
+        f'receiver/cura_receiver/session{note_suffix}/saved.py',
+        'firmware/components/node_core/scratch.notes.c')]
+    fixture = {key: key for key in ('c6_dut', 'pi_board_id', 'c6_transmitter', 'pi_transmitter')}
+    identity = inputs.session_identity(manifest, {}, fixture)
+    for contents in ('temporary session data\n', 'changed session data\n'):
+        for path in notes:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(contents)
+        current = inputs.source_manifest()
+        assert current == manifest
+        assert inputs.session_identity(current, {}, fixture) == identity
+
+    # Inspect the real archive boundary; only network operations are stubbed.
+    stage = tmp_path / 'stage'
+    stage.mkdir()
+    remote = transport.RemoteTransport('example.invalid', 'test', '0' * 32, stage)
+    with monkeypatch.context() as network:
+        network.setattr(remote, 'command', lambda *a, **kw: None)
+        network.setattr(transport.subprocess, 'run', lambda *a, **kw:
+                       SimpleNamespace(returncode=0, stdout='', stderr=''))
+        remote.stage(current, fixture)
+    with tarfile.open(stage / 'source.tar.gz') as archive:
+        assert set(archive.getnames()) == set(staged) | {'source-manifest.json', 'rf-fixture.json'}
+        assert not any(str(path.relative_to(repo)) in archive.getnames() for path in notes)
+    for path in notes:
+        path.unlink()
     assert inputs.source_manifest()['files'] == staged
     assert run_service.package_files() == files
 
     # Executable changes and contracts outside tests/rf remain source-bound.
-    for name in ('tests/rf/run.py', 'receiver/tests/support/README.md',
+    for name in ('tests/rf/run.py', 'firmware/hardware/radio/tests/component/main/radio_app.c',
+                 'receiver/tests/support/README.md',
                  'receiver/ARCHITECTURE.md', 'receiver/HARDWARE.md', 'receiver/conftest.py',
                  'receiver/hardware/radio/tests/carrier/radio_fixture.py',
                  'receiver/hardware/radio/tests/carrier/test_radio.py', 'firmware/ARCHITECTURE.md',
                  'protocol/protocol-v2-lora/README.md'):
-        path = tmp_path / name
+        path = repo / name
         path.write_text(path.read_text() + '\n# changed input\n')
         changed = inputs.source_manifest()['files']
         assert changed.keys() == staged.keys()

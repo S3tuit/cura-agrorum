@@ -226,7 +226,7 @@ static bool validate_diagnostic_context(uint16_t error_domain,
   if (context_length != 0U && operation == CURAG_OP_NONE) {
     return false;
   }
-  /* Core ACK-window V1: canonical wire assignments from INTERFACE.md.
+  /* Core ACK-window V1: assignments documented beside node_core.h's schema.
    * Keep semantic validation here for both append and offline recovery. */
   if (error_domain == CURAG_EDOM_CORE && error_code == UINT16_C(15)) {
     return operation == CURAG_OP_RECEIVE && context_schema == 1U &&

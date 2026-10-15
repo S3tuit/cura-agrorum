@@ -18,6 +18,11 @@ typedef enum {
 
 #define NODE_SENSOR_VALIDITY_ALL UINT8_C(0x1f)
 
+/* Validity is authoritative: zero may be a valid measurement. The enclosure
+ * group is atomic across all three fields. Validity certifies acquisition and
+ * representability, not physical plausibility; this value is never serialized
+ * as native structure bytes.
+ */
 typedef struct {
   uint16_t soil_0_mv;
   uint16_t soil_1_mv;
@@ -63,6 +68,10 @@ typedef enum {
  * independent successful groups are preserved. The shared switched rail is
  * always driven off before this function returns after it may have been
  * enabled.
+ * Outputs are cleared on entry; a nonzero result preserves valid groups. Power
+ * failure takes precedence over cleanup, then partial/complete acquisition.
+ * Diagnostics retain independent group failures. BME acquisition follows rail
+ * release and its failure is latched until reset; it uses the always-on rail.
  */
 err_curag_t node_sensors_sample_all(node_sensor_sample_t *out_sample,
                                     diagn_context_t *out_diag);

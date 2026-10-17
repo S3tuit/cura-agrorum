@@ -143,6 +143,8 @@ def _health() -> row.ReceiverHealthV1:
         sqlite_database_size_bytes=3000,
         sqlite_wal_size_bytes=0,
         ntp_offset_us=None,
+        storage_device_write_bytes=4096,
+        receiver_process_write_bytes=73,
     )
 
 
@@ -322,6 +324,8 @@ def _examples():
                 3000,
                 0,
                 None,
+                4096,
+                73,
             ),
             (INSTANCE, 1),
         ),

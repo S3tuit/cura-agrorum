@@ -339,9 +339,14 @@ failure before starting the service; retain the original private group backup.
 ## 12. Configure and enable the services
 
 Use the bound selected in step 7 (`3000000` for the matching qualification).
-On the Pi:
+For write-volume collection, identify the whole native-slot microSD with
+`lsblk -d -o NAME,TYPE,MODEL,SIZE`. Set `cura_microsd_device` below to that name
+and verify that its sysfs card type is `SD`; stop and correct the selection if
+it is not. `mmcblk0` is an example, not a discovery rule. On the Pi:
 
 ```bash
+cura_microsd_device=mmcblk0
+cat "/sys/block/$cura_microsd_device/device/type"
 cura_rtc_bound_us=3000000
 cura_helper_sha=$(sudo sha256sum /usr/libexec/cura-agrorum/ds3231-set | cut -d ' ' -f 1)
 sudo install -o root -g root -m 0600 /dev/null /etc/cura-agrorum/deployment.env
@@ -349,6 +354,7 @@ sudo tee /etc/cura-agrorum/deployment.env > /dev/null <<EOF
 RTC_HELPER_SHA256=$cura_helper_sha
 RTC_KERNEL_BOUND_US=$cura_rtc_bound_us
 CURA_RECEIVER_STARTUP_BUDGET_US=12000000
+CURA_RECEIVER_MICROSD_DEVICE=$cura_microsd_device
 EOF
 sudo install -D -o root -g root -m 0644 \
   /opt/cura-agrorum/receiver/deploy/49-cura-receiver-inhibit.rules \
@@ -435,6 +441,54 @@ Match `instance` to this boot's successful startup record. On the healthy,
 network-synchronized setup, expect `RX_SINGLE`, `CHRONY_SYNCED`, `PRESENT` and
 `AVAILABLE`; brief radio activity can produce another transient radio state.
 Missing/stale rows or persistent degraded states require investigation.
+
+### Storage write observations
+
+The [write-counter contract](../README.md#storage-write-observations) requires
+schema version 16 and a fresh database; existing field data cannot supply these
+measurements retrospectively. Record the deployed source revision, selected
+whole-card name, receiver instance ID and first counter sample time in the
+deployment record. Start a separate collection interval after this update.
+
+Using the card selected in step 12, check source visibility under the service
+account, then inspect health rows written by the actual receiver service:
+
+```bash
+sudo -u cura-receiver cat "/sys/block/$cura_microsd_device/device/type"
+sudo -u cura-receiver cat "/sys/block/$cura_microsd_device/stat"
+sudo -u cura-receiver sqlite3 -readonly -header -column \
+  /var/lib/cura-agrorum/receiver.sqlite3 <<'SQL'
+SELECT lower(hex(receiver_instance_id)) AS instance, health_sequence,
+       persistence_sampled_at_monotonic_us,
+       storage_device_write_bytes, receiver_process_write_bytes
+FROM receiver_health
+WHERE receiver_instance_id = (
+    SELECT receiver_instance_id FROM receiver_instances ORDER BY instance_ordinal DESC LIMIT 1
+)
+ORDER BY persistence_sampled_at_monotonic_us DESC, health_sequence DESC LIMIT 5;
+SQL
+```
+
+Require non-null counters for the intended collection setup; zero is valid.
+The card value must be a multiple of 512. Missing device telemetry can mean an
+unset/unsupported selection, a failed initial binding or a later read/parse/range
+failure. Correct an initial binding failure before starting a new receiver
+instance; an instance never reselects a device. A source failure does not itself
+close persistence admission. A separate probe reading `/proc/self/io` observes
+the probe process, so use the service's stored health rows to check receiver
+process accounting.
+
+For analysis, compare valid samples within one `receiver_instance_id`, using
+increasing `persistence_sampled_at_monotonic_us` and nondecreasing counters.
+The byte delta divided by the actual elapsed seconds gives an average write
+rate. Reject intervals spanning known device reattachment/reinitialization;
+an unobserved reset cannot always be detected from values alone. Deployment
+records must state any fixed-card/no-reinitialization assumption. Counter
+overflow handling belongs to analysis. Process and card counters have different
+accounting semantics; their difference is not an exact attribution to other
+programs.
+
+### Reading ingestion
 
 With the matching [C6 firmware](../../firmware/deploy/README.md#5-flash-production-firmware)
 running, allow a sample and persistence flush, then inspect recent readings:

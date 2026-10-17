@@ -71,6 +71,7 @@ class PersistenceWorker(Thread):
         minimum_free_bytes: int = 0,
         transactions=None,
         host_observations=None,
+        microsd_device: str | None = None,
         flush_interval_us: int = 5_000_000,
         wake_threshold_entities: int = 64,
         batch_limit_entities: int = 64,
@@ -111,6 +112,7 @@ class PersistenceWorker(Thread):
             self._checkpoint,
         )
         self._host_observations = host_observations
+        self._microsd_device = microsd_device
         self._wake = Event()
         self.queue = PersistQueue(wake_event=self._wake)
         self._scheduler_lock = Lock()
@@ -260,6 +262,7 @@ class PersistenceWorker(Thread):
                     transactions=self._transactions,
                     checkpoint_maintenance=self._checkpoint,
                     host_observations=self._host_observations,
+                    microsd_device=self._microsd_device,
                     minimum_free_bytes=self._minimum_free_bytes,
                 )
                 self._controls = PersistenceControlOperations(

@@ -23,7 +23,7 @@ from .receiver_enums_generated import (
     SystemTimeQuality,
 )
 
-RECEIVER_ENTITY_MANIFEST_SHA256 = 'c527ac22325552273d7777134d4cd11031d01f18908a27508a2388c748401a82'
+RECEIVER_ENTITY_MANIFEST_SHA256 = '4022252a9edca8e782801d73baf82d1977351991635c16604015f59f7388c03e'
 
 __all__ = [
     "RECEIVER_ENTITY_MANIFEST_SHA256",
@@ -209,6 +209,8 @@ RECEIVER_HEALTH_V1_COLUMNS = (
     'sqlite_database_size_bytes',
     'sqlite_wal_size_bytes',
     'ntp_offset_us',
+    'storage_device_write_bytes',
+    'receiver_process_write_bytes',
 )
 
 MESSAGE_PROFILE_ROW_V1_TABLE = 'message_profiles'
@@ -523,6 +525,8 @@ class ReceiverHealthV1:
     sqlite_database_size_bytes: int | None
     sqlite_wal_size_bytes: int | None
     ntp_offset_us: int | None
+    storage_device_write_bytes: int | None
+    receiver_process_write_bytes: int | None
 
 def receiver_health_v1_parameters(entity: ReceiverHealthV1) -> tuple[object, ...]:
     if len(entity.radio_recovery_attempts_by_reason) != 8:
@@ -623,6 +627,8 @@ def receiver_health_v1_parameters(entity: ReceiverHealthV1) -> tuple[object, ...
         entity.sqlite_database_size_bytes,
         entity.sqlite_wal_size_bytes,
         entity.ntp_offset_us,
+        entity.storage_device_write_bytes,
+        entity.receiver_process_write_bytes,
     )
 
 @dataclass(frozen=True, slots=True)

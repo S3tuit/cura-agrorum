@@ -13,6 +13,8 @@ class HostObservations:
     sqlite_database_size_bytes: int | None = None
     sqlite_wal_size_bytes: int | None = None
     ntp_offset_us: int | None = None
+    storage_device_write_bytes: int | None = None
+    receiver_process_write_bytes: int | None = None
 
     def __post_init__(self) -> None:
         limits = {
@@ -23,6 +25,8 @@ class HostObservations:
             "sqlite_database_size_bytes": (0, (1 << 63) - 1),
             "sqlite_wal_size_bytes": (0, (1 << 63) - 1),
             "ntp_offset_us": (-(1 << 63), (1 << 63) - 1),
+            "storage_device_write_bytes": (0, (1 << 63) - 1),
+            "receiver_process_write_bytes": (0, (1 << 63) - 1),
         }
         for name, (minimum, maximum) in limits.items():
             value = getattr(self, name)

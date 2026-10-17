@@ -215,7 +215,8 @@ def test_nonreading_rows_are_exact(setup):
 
 
 # Health is sampled even before a failing BEGIN, then the exact row survives elapsed time and retry.
-def test_health_frozen_before_first_transaction(setup):
+@pytest.mark.parametrize("device,process", [(4096, 0), (None, 73), (4096, None)])
+def test_health_frozen_before_first_transaction(setup, device, process):
     from cura_receiver.persist_queue_entities import RECEIVER_HEALTH_REQUEST_V1_SPEC
     from cura_receiver.ports.host_observations import HostObservations
 
@@ -227,7 +228,12 @@ def test_health_frozen_before_first_transaction(setup):
         def sample(self):
             self.calls += 1
             assert not connection.in_transaction
-            return HostObservations(linux_load_1m_milli=1250, sqlite_wal_size_bytes=0)
+            return HostObservations(
+                linux_load_1m_milli=1250,
+                sqlite_wal_size_bytes=0,
+                storage_device_write_bytes=device,
+                receiver_process_write_bytes=process,
+            )
 
     class FailBeginOnce(SqliteTransactions):
         failed = False
@@ -294,9 +300,74 @@ def test_health_frozen_before_first_transaction(setup):
         None,
         0,
         None,
+        device,
+        process,
     )
     assert actual == expected
     assert request == _health_request()
+
+
+# Nullable counters and both signed-64-bit endpoints survive generated binders and real SQLite.
+@pytest.mark.parametrize("device,process", [
+    (None, None), (0, 0), ((1 << 63) - 1, (1 << 63) - 1),
+    (None, 73), (4096, None),
+])
+def test_health_write_counter_sqlite_values(setup, device, process):
+    from cura_receiver.persist_queue_entities import RECEIVER_HEALTH_REQUEST_V1_SPEC
+    from cura_receiver.ports.host_observations import HostObservations
+
+    _, connection, queue, _, create = setup
+
+    class Host:
+        def sample(self):
+            return HostObservations(
+                storage_device_write_bytes=device, receiver_process_write_bytes=process
+            )
+
+    persistence = create(host_observations=Host())
+    persistence.enable_admission()
+    _publish(queue, _health_request(), RECEIVER_HEALTH_REQUEST_V1_SPEC)
+    assert persistence.attempt(max_entities=1).acknowledged_entities == 1
+    assert connection.execute(
+        "SELECT storage_device_write_bytes, receiver_process_write_bytes, "
+        "typeof(storage_device_write_bytes), typeof(receiver_process_write_bytes) "
+        "FROM receiver_health"
+    ).fetchone() == (
+        device, process,
+        "null" if device is None else "integer",
+        "null" if process is None else "integer",
+    )
+
+
+# A lost reply must preserve absence, even if the counter would be available on another sample.
+@pytest.mark.parametrize("missing", ["storage_device_write_bytes", "receiver_process_write_bytes"])
+def test_missing_write_counter_frozen_across_unknown_commit(setup, missing):
+    from cura_receiver.persist_queue_entities import RECEIVER_HEALTH_REQUEST_V1_SPEC
+    from cura_receiver.ports.host_observations import HostObservations
+
+    _, connection, queue, clock, create = setup
+
+    class Host:
+        calls = 0
+
+        def sample(self):
+            self.calls += 1
+            values = dict(storage_device_write_bytes=4096, receiver_process_write_bytes=73)
+            if self.calls == 1:
+                values[missing] = None
+            return HostObservations(**values)
+
+    host = Host()
+    persistence = create(_LoseOneCommitReply(), host_observations=host)
+    persistence.enable_admission()
+    _publish(queue, _health_request(), RECEIVER_HEALTH_REQUEST_V1_SPEC)
+    assert persistence.attempt(max_entities=1).outcome is Outcome.OUTCOME_UNKNOWN
+    before = connection.execute("SELECT * FROM receiver_health").fetchall()
+    clock.advance_elapsed_us(1_000_000)
+    assert persistence.attempt(max_entities=1).acknowledged_entities == 1
+    assert connection.execute("SELECT * FROM receiver_health").fetchall() == before
+    assert host.calls == 1
+    assert connection.execute(f"SELECT {missing} FROM receiver_health").fetchone() == (None,)
 
 
 # Every clock u64 remains an exact SQLite INTEGER at INT64_MAX, with overflow retaining work.
@@ -590,7 +661,11 @@ def test_exact_reconciliation_for_every_identity(setup, kind):
 
         def sample(self):
             self.calls += 1
-            return HostObservations(memory_available_bytes=self.calls)
+            return HostObservations(
+                memory_available_bytes=self.calls,
+                storage_device_write_bytes=self.calls * 512,
+                receiver_process_write_bytes=self.calls,
+            )
 
     host = Host()
     persistence = create(_LoseOneCommitReply(), host_observations=host)

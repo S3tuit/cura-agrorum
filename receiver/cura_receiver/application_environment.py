@@ -29,7 +29,8 @@ def settings_from_environment(environment):
     if not isinstance(budget, str) or re.fullmatch(r"[0-9]+", budget) is None:
         raise ValueError("a positive decimal persistence startup budget is required")
     try:
-        settings = ApplicationSettings(persistence_startup_budget_us=int(budget))
+        settings = ApplicationSettings(persistence_startup_budget_us=int(budget),
+            microsd_device=environment.get("CURA_RECEIVER_MICROSD_DEVICE"))
     except (ValueError, OverflowError):
         raise ValueError("invalid persistence startup budget") from None
     present = [name in environment for name in PATH_VARIABLES]

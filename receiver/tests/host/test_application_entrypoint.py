@@ -29,7 +29,8 @@ def test_valid_cli_passes_exact_digest_bytes_through_successful_composition(monk
     digest = bytes(range(32))
     monkeypatch.setattr('sys.argv', ['receiver', '--rtc-helper-sha256', digest.hex(),
                                    '--rtc-kernel-bound-us', '3000000'])
-    monkeypatch.setattr(entry.os, 'environ', {'CURA_RECEIVER_STARTUP_BUDGET_US': '12000000'})
+    monkeypatch.setattr(entry.os, 'environ', {'CURA_RECEIVER_STARTUP_BUDGET_US': '12000000',
+                                           'CURA_RECEIVER_MICROSD_DEVICE': 'mmcblk7'})
     claimed = Mock()
     monkeypatch.setattr(entry, 'claim_receiver_process', claimed)
     clock = SimpleNamespace(now_monotonic_us=lambda: 0)
@@ -72,6 +73,7 @@ def test_valid_cli_passes_exact_digest_bytes_through_successful_composition(monk
     assert entry.Radio.call_args.kwargs['stop_requested'] == stop.is_requested
     waiter.__exit__.assert_called_once_with(None, None, None)
     assert entry.os.environ['SQLITE_TMPDIR'] == '/var/lib/cura-agrorum/tmp'
+    assert entry.ServicePersistenceWorker.call_args.kwargs['microsd_device'] == 'mmcblk7'
 
 
 @pytest.mark.parametrize('error,message', [

@@ -27,12 +27,15 @@ resolved with `reconcile_database_installation()` using the original error and
 group identity. Once destination durability is confirmed, later cleanup
 failure does not recast the valid database installation as failed.
 
-Schema version 15 renames time-quality code `2` from `NETWORK_SYNCED` to
-`CHRONY_SYNCED`. Its numeric value and trust policy are unchanged, but the
-lookup label changes the schema fingerprint. Version 14 databases are not
-opened or automatically migrated by this build; the next deployment requires
-a fresh database under the existing initialization policy. Preserve historical
-databases and captures with their original labels for offline analysis.
+Schema version 16 adds the nullable whole-microSD and receiver-process write
+counters to `receiver_health`. Earlier databases are not opened or migrated by
+this build; deployment requires a fresh database under the existing
+initialization policy. Preserve historical databases and their WAL/SHM context
+before installing a new database; do not overwrite the old field history.
+
+Version 15 renamed time-quality code `2` from `NETWORK_SYNCED` to
+`CHRONY_SYNCED`, preserving its numeric value and trust policy. Preserve
+historical captures with their original labels for offline analysis.
 
 Creation requires the explicit keyword `known_empty_airtime=True` or `False`.
 Use true only when the same radio's recent history is known empty: creation seeds
@@ -75,9 +78,11 @@ missing required SQL access is incompatible storage even if metadata matches.
 
 The handle binds the live connection, canonical path, configured group and file
 identity. Ordinary persistence takes this single handle; it never accepts a
-separate database path beside a connection. Storage checks, health observations
-and same-file reopen follow that binding. A replaced file requires offline
-operator maintenance and a new startup context.
+separate database path beside a connection. Storage checks, database/filesystem
+health observations and same-file reopen follow that binding. The microSD write
+counter has its own explicit device selection, independent of the database path.
+A replaced database file requires offline operator maintenance and a new startup
+context.
 
 Runtime connections disable automatic and close-time checkpoints so closing
 a rejected connection preserves WAL evidence and later worker scheduling owns

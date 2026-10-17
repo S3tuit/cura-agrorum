@@ -77,6 +77,7 @@ def main():
             worker = ServicePersistenceWorker(instance=instance, database_path=settings.database_path,
                 configuration_path=settings.configuration_path, expected_owner_uid=os.geteuid(), clock=clock,
                 policy=settings.airtime_policy, minimum_free_bytes=settings.minimum_free_bytes,
+                microsd_device=settings.microsd_device,
                 startup_notification=notification)
             radio = Radio(Sx1262(LinuxRadioIo(clock), clock, clock, settings.radio),
                 stop_requested=stop.is_requested)

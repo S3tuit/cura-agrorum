@@ -230,7 +230,7 @@ def test_schema_fingerprint_is_exact_schema_sql_sha256() -> None:
         hashlib.sha256(schema_bytes).digest() == generated.DATABASE_SCHEMA_FINGERPRINT
     )
     assert generated.SQLITE_APPLICATION_ID == 0x43555252
-    assert generated.DATABASE_SCHEMA_VERSION == 15
+    assert generated.DATABASE_SCHEMA_VERSION == 16
 
 
 # Requires every declared catalogue, entity table, and trigger in assembled SQL.
@@ -1137,8 +1137,8 @@ def test_receiver_health_binding_expands_only_exact_array_shapes() -> None:
     )
     health = generated_entities.ReceiverHealthV1(**values)
     parameters = generated_entities.receiver_health_v1_parameters(health)
-    assert len(parameters) == 73
-    assert len(generated_entities.RECEIVER_HEALTH_V1_COLUMNS) == 73
+    assert len(parameters) == 75
+    assert len(generated_entities.RECEIVER_HEALTH_V1_COLUMNS) == 75
 
     wrong_shape = replace(health, chrony_step_command_results=(0,) * 2)
     with pytest.raises(ValueError, match="chrony_step_command_results"):

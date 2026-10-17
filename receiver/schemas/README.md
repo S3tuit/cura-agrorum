@@ -62,6 +62,10 @@ validators reuse generated logical records and enums but remain outside this
 manifest. Normal queue handoff has no entity codec; only the separate poisoned-
 entity evidence format is handwritten.
 
+The nullable `ReceiverHealthV1` write counters use the existing `u64` SQL mapping
+with bounds `0..2^63-1`. Their source, availability and sampling semantics are
+owned by [storage write observations](../README.md#storage-write-observations).
+
 The top-level `encodings` array owns canonical binary layouts. Each encoding
 has a stable name, one endianness, ordered root `fields`, and reusable
 fixed-size `structs`. `struct:<NAME>` embeds one structure;

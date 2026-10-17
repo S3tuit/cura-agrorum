@@ -30,6 +30,17 @@ def test_startup_budget_override_is_independent_of_runtime_controls():
     assert settings.time_settings.control_budget_us == 1_000_000
 
 
+# Telemetry selection is independent of storage paths and never a startup prerequisite.
+@pytest.mark.parametrize("device", [None, "mmcblk7", "mmcblk7p1", "sda", "", "../mmcblk0"])
+def test_optional_microsd_selection_reaches_settings_without_storage_access(device):
+    environment = {"CURA_RECEIVER_STARTUP_BUDGET_US": "12000000"}
+    if device is not None:
+        environment["CURA_RECEIVER_MICROSD_DEVICE"] = device
+    settings = settings_from_environment(environment)
+    assert settings.microsd_device == device
+    assert settings.database_path == ApplicationSettings(persistence_startup_budget_us=12_000_000).database_path
+
+
 def isolated_environment(root):
     return {
         "CURA_RECEIVER_STARTUP_BUDGET_US": "12000000",

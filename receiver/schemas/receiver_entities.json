@@ -828,7 +828,9 @@
           "type": "u64",
           "nullable": true
         },
-        {"name": "ntp_offset_us", "type": "i64", "nullable": true}
+        {"name": "ntp_offset_us", "type": "i64", "nullable": true},
+        {"name": "storage_device_write_bytes", "type": "u64", "nullable": true},
+        {"name": "receiver_process_write_bytes", "type": "u64", "nullable": true}
       ],
       "foreign_keys": [
         {

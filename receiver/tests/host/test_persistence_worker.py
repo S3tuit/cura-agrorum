@@ -39,6 +39,52 @@ def stop_worker(worker):
     assert not worker.is_alive()
 
 
+# Real worker composition binds the selected card and samples both counters on its owner thread.
+def test_worker_microsd_selection_and_counter_ownership(worker_files, monkeypatch):
+    from pathlib import Path
+    from cura_receiver.persist_queue_entities import RECEIVER_HEALTH_REQUEST_V1_SPEC
+    from cura_receiver.sqlite_transactions import SqliteTransactions
+    from tests.support.builders.persistence import _health_request
+
+    committed = Event()
+    reads = []
+    real_read = Path.read_text
+    files = {
+        "/sys/block/mmcblk7/device/type": "SD\n",
+        "/sys/block/mmcblk7/stat": "1 2 3 4 5 6 7 8 9 10 11\n",
+        "/proc/self/io": "write_bytes: 73\n",
+    }
+
+    def read(path, *args, **kwargs):
+        if str(path) in files:
+            reads.append((str(path), current_thread()))
+            return files[str(path)]
+        return real_read(path, *args, **kwargs)
+
+    class ObserveCommit(SqliteTransactions):
+        def commit(self, connection):
+            super().commit(connection)
+            if connection.execute("SELECT count(*) FROM receiver_health").fetchone()[0]:
+                committed.set()
+
+    monkeypatch.setattr(Path, "read_text", read)
+    worker = create_worker(worker_files, microsd_device="mmcblk7",
+        wake_threshold_entities=1, transactions=ObserveCommit())
+    worker.start()
+    try:
+        assert worker.wait_started(deadline_monotonic_us=5_000_100).state_load is not None
+        reservation = worker.queue.try_reserve_one(RECEIVER_HEALTH_REQUEST_V1_SPEC)
+        reservation.reservation.publish(_health_request())
+        assert committed.wait(5)
+        with sqlite3.connect(worker_files[0]) as observer:
+            assert observer.execute(
+                "SELECT storage_device_write_bytes, receiver_process_write_bytes FROM receiver_health"
+            ).fetchone() == (3584, 73)
+        assert reads == [(path, worker) for path in files]
+    finally:
+        stop_worker(worker)
+
+
 # Configuration I/O, database opening, state loading and admission occur on the persistence owner.
 def test_worker_startup_ownership(worker_files, monkeypatch):
     import cura_receiver.receiver_configuration as configuration

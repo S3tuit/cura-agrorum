@@ -148,7 +148,7 @@ def test_target_mixed_ordinary_workload(tmp_path, batch_size):
             (n, bytes.fromhex("00000101") + bytes(124)) for n in range(1, 25)
         ]
         health = connection.execute(
-            "SELECT communicator_sampled_at_monotonic_us,linux_load_1m_milli,cpu_temperature_milli_c,memory_available_bytes,sqlite_filesystem_available_bytes,sqlite_database_size_bytes,sqlite_wal_size_bytes FROM receiver_health ORDER BY health_sequence"
+            "SELECT communicator_sampled_at_monotonic_us,linux_load_1m_milli,cpu_temperature_milli_c,memory_available_bytes,sqlite_filesystem_available_bytes,sqlite_database_size_bytes,sqlite_wal_size_bytes,storage_device_write_bytes,receiver_process_write_bytes FROM receiver_health ORDER BY health_sequence"
         ).fetchall()
         assert health == [
             (
@@ -159,6 +159,8 @@ def test_target_mixed_ordinary_workload(tmp_path, batch_size):
                 o.sqlite_filesystem_available_bytes,
                 o.sqlite_database_size_bytes,
                 o.sqlite_wal_size_bytes,
+                o.storage_device_write_bytes,
+                o.receiver_process_write_bytes,
             )
             for o in observations
         ]

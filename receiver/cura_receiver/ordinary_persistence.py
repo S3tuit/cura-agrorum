@@ -152,6 +152,7 @@ class OrdinaryPersistence:
         transactions: SqliteTransactions | None = None,
         checkpoint_maintenance=None,
         host_observations: HostObservationSource | None = None,
+        microsd_device: str | None = None,
         minimum_free_bytes: int = 0,
         monotonic_rate_bound_ppm: int = MONOTONIC_ELAPSED_RATE_BOUND_PPM,
     ) -> None:
@@ -200,7 +201,7 @@ class OrdinaryPersistence:
         self._host = (
             host_observations
             if host_observations is not None
-            else LinuxHostObservations(database.path)
+            else LinuxHostObservations(database.path, microsd_device=microsd_device)
         )
         self._suspected = {}
         self._isolation_attempts = {}

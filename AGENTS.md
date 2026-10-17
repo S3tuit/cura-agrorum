@@ -1,5 +1,32 @@
 # Agent instructions
 
+## Documentation
+
+- Explain what is difficult to infer: design reasons, invariants, surprising
+  constraints and failure consequences. Do not paraphrase self-explanatory code
+  or script behavior.
+- Put local behavior explanations beside the owning function, class or module.
+  Keep them concise; do not move whole specifications into giant docstrings.
+- Give each fact one authoritative home. Link to schemas, configuration, code
+  and existing procedures instead of copying field lists, defaults or behavior.
+- Create documents for a concrete reader and task, such as navigation, setup,
+  hardware assembly or operator maintenance. A directory does not automatically
+  need a README. Delete documents that no longer serve a reader or tool.
+- Describe the current system and the reasons for its choices. Preserve useful
+  failure lessons; remove implementation chronology, completed plans and
+  "new versus old" narratives.
+- Keep session material in ignored `.notes.md` files and temporary test outputs.
+  Never make them necessary to build, test or understand the system.
+- Keep deployment records in `../cura-agrorum-logbook/`, not here.
+- Keep lasting lessons beside the relevant code, regression test or procedure.
+  Do not create permanent pass ledgers.
+- Update or remove affected documentation and repair references in the same
+  change as its owner. Ask of each paragraph: what decision or task does this
+  help with that the nearby code does not already make clear?
+- Documentation grows by default, so push against it. Prefer rewriting an
+  existing paragraph over appending a new one. When a document keeps growing,
+  check whether it still serves one reader and task.
+
 ## Workplans
 
 Triggered when I say "use a workplan".

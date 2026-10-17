@@ -2231,6 +2231,8 @@ def render_entity_column(field: dict[str, Any], column: str) -> str:
 
 
 def render_append_only_triggers(row: dict[str, Any]) -> list[str]:
+    # Reject conflicts before insertion: REPLACE can delete an existing row
+    # without firing DELETE triggers when recursive triggers are disabled.
     table = row["table"]
     primary_key_predicate = " AND ".join(
         f"{column} IS NEW.{column}" for column in row["primary_key"]

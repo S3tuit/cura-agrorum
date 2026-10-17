@@ -17,7 +17,7 @@ authentication, and node/receiver interoperability.
 | [`cura_receiver/`](cura_receiver/) | Handwritten runtime: `application.py` composes communicator and persistence; component modules document non-obvious behavior. |
 | [`cura_receiver/ports/`](cura_receiver/ports/) and [`platform/`](cura_receiver/platform/) | Narrow device/OS capabilities and their Linux adapters. |
 | [`schemas/`](schemas/) | Editable enum assignments, entity layouts, and relational mappings. |
-| [`db/`](db/) | Handwritten `schema_source.sql`, generated `schema.sql`, and database maintenance instructions. |
+| [`db/`](db/) | Handwritten `schema_source.sql` and generated `schema.sql`. |
 | [`tools/`](tools/) | Generation, database initialization, packaging, and test controllers. |
 | [`cura_receiver/generated/`](cura_receiver/generated/) | Checked-in generated Python projections; edit their sources and regenerate. |
 | [`native/`](native/) | Production capability-limited RTC write helper. |
@@ -29,7 +29,7 @@ authentication, and node/receiver interoperability.
 `receiver-group.json` is the development configuration. Installed deployments use
 explicit private configuration and database paths. Schema versions and fingerprints
 come from the generated sources; runtime requires an exact match and performs no
-automatic migration. Follow [database maintenance](db/README.md) for a fresh schema
+automatic migration. Follow [database maintenance](deploy/README.md#database-maintenance) for a fresh schema
 or restoration.
 
 ## Python setup

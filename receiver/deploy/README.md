@@ -444,11 +444,10 @@ Missing/stale rows or persistent degraded states require investigation.
 
 ### Storage write observations
 
-The [write-counter contract](../README.md#storage-write-observations) requires
-schema version 16 and a fresh database; existing field data cannot supply these
-measurements retrospectively. Record the deployed source revision, selected
-whole-card name, receiver instance ID and first counter sample time in the
-deployment record. Start a separate collection interval after this update.
+The [Linux host adapter](../cura_receiver/platform/linux_host_observations.py)
+owns counter sources and availability. Record the deployed source revision,
+selected whole-card name, receiver instance ID and first counter sample time in
+the deployment record. Begin a separate collection interval when that setup changes.
 
 Using the card selected in step 12, check source visibility under the service
 account, then inspect health rows written by the actual receiver service:
@@ -515,3 +514,60 @@ sensor values are valid; the [reading format](../../protocol/protocol-v2-lora/RE
 owns its interpretation. Stored readings confirm receiver ingestion, while C6
 delivery reports establish whether it received ACKs. Detailed installed-system
 and RF qualification remain owned by [the test guide](../tests/README.md).
+
+## Database maintenance
+
+Ordinary redeployment preserves the database. Runtime requires the installed
+schema version and fingerprint exactly and performs no migration. If a schema
+change requires a fresh database, stop all users, preserve the complete existing
+database/WAL/SHM set, and follow [database initialization](#11-initialize-the-group-bound-database)
+at an absent destination. Do not overwrite field history to install a new schema.
+
+A commissioning image must not be restored or reused after transmissions without
+establishing empty radio history again. Restoring an older database does not
+restore the physical radio's past airtime allowance. Follow the initialization
+step's known-empty-history requirements whenever commissioning a fresh database.
+
+### Last-resort operator restoration
+
+Restoring a backup is an operator action. Ordinary persistence never chooses or
+installs a backup automatically. Normal same-file retry/revalidation remains
+available for transient storage faults; replacing history requires this offline
+workflow:
+
+1. Record the original failure codes, time, receiver/source revision and relevant
+   logs. Stop the receiver and all other users of its database. Pending RAM queue
+   entries are lost when the process stops; a radio ACK does not guarantee their
+   persistence. Confirm that no process can reopen these files during maintenance.
+2. Preserve the **complete** original database, `-wal` and `-shm` file set. Do not
+   use SQL writes, checkpointing, salvage or integrity repair on these originals.
+   A damaged portion cannot reliably be isolated from the surviving context.
+   From the repository root, an optional best-effort raw capture is:
+
+   ```sh
+   python3 receiver/tools/capture_database_evidence.py /path/receiver.db /external/incidents/new-incident --note 'Original failure codes, time, source revision and log location'
+   ```
+
+   The destination must be new and its parent must exist. Prefer storage outside
+   the affected filesystem. The command does not open SQLite or restore anything;
+   it attempts each file independently and reports missing/failed/partial copies.
+   Missing WAL/SHM files can be normal. Review `capture.json` and the printed
+   report; command completion alone does not prove that evidence was captured.
+   Capture errors do not replace the original storage failure or prevent the
+   operator from continuing recovery. Retain the original file set even when
+   capture fails.
+3. Move the stopped original file set together to a separate incident location
+   without overwriting it. Install an operator-selected, consistent backup as a
+   new active file set, with the configured group/schema and correct ownership.
+   Never mix a restored database with the damaged database's WAL/SHM. Keep backup
+   sources intact. If originals cannot be moved aside, use a new active location;
+   do not overwrite the only remaining evidence to make room for restoration.
+4. Restart through normal startup with a new receiver instance and an empty
+   volatile queue. Validation must succeed before admission resumes. An existing
+   handle rejects a replacement file even after an operator recovery request.
+   All history missing from the chosen backup is lost, including previously
+   committed work and acknowledged entries. No replay or storage-generation
+   mechanism reconstructs that history.
+
+Keep the incident evidence for investigation even after service resumes, so
+successful restoration does not conceal a recurring code or storage defect.

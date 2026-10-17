@@ -70,6 +70,12 @@ def initialize_database(
     installation from non-fatal temporary-name cleanup still pending.
     ``known_empty_airtime`` explicitly asserts unused radio history when true;
     false preserves conservative startup for unknown history.
+
+    If destination-directory sync fails after linking, preserve both paths and
+    pass the original DatabaseInstallationUncertainError and group identity to
+    reconcile_database_installation(); retrying creation cannot resolve it.
+    Once installation is durable, pending temporary-name cleanup does not make
+    the installed database invalid.
     """
 
     if type(known_empty_airtime) is not bool:

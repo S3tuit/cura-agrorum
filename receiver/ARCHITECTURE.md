@@ -79,7 +79,7 @@ SQLite uses WAL and `synchronous=FULL`, exact schema/group validation, and a sin
 owner. Batches amortize write cost; explicit checkpoints avoid surprise checkpoint
 work at connection close or arbitrary commit boundaries. See
 [`checkpoint_maintenance.py`](cura_receiver/checkpoint_maintenance.py) for commit
-coverage and scheduling, and [database maintenance](db/README.md) for creation and
+coverage and scheduling, and [database maintenance](deploy/README.md#database-maintenance) for creation and
 restore procedures. Runtime never creates, migrates, or silently replaces a database.
 
 [Ordinary persistence](cura_receiver/ordinary_persistence.py) freezes derived values

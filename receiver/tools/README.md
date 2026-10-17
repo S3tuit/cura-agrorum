@@ -21,6 +21,6 @@ database. It never regenerates schemas or enum assignments on the Pi.
 
 `capture_database_evidence.py` is an operator-only best-effort raw copy tool.
 Use it after stopping all database users, as described in the
-[last-resort restoration workflow](../db/README.md#last-resort-operator-restoration).
+[last-resort restoration workflow](../deploy/README.md#last-resort-operator-restoration).
 It preserves the full database/WAL/SHM context in a new incident directory and
 reports capture errors; it never opens SQLite, repairs storage or restores a backup.

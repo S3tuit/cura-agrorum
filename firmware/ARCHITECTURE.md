@@ -1,6 +1,6 @@
 # Firmware architecture
 
-The ESP32-C6 node samples sensors, persists a reading, delivers it over LoRa v2,
+The XIAO ESP32S3 node samples sensors, persists a reading, delivers it over LoRa v2,
 drains recent backlog when delivery succeeds, and sleeps. Start with
 [README.md](README.md) for commands and navigation, [HARDWARE.md](HARDWARE.md) for
 wiring, and the [protocol](../protocol/protocol-v2-lora/README.md) for wire behavior.
@@ -42,7 +42,8 @@ no public singleton reset API is needed for production or tests.
    Removal failure stops radio work. Drain newest pending readings while limits
    allow; an unbound reading receives a new message ID and durable backlog-frame
    binding before TX. Later wakes reuse a bound frame verbatim.
-6. Release sensor power, put touched radio hardware into cold sleep, write
+6. Release sensor power, put touched radio hardware into cold sleep and disable
+   its RF path, write
    remaining diagnostics and perform one final persistence sync. Cleanup failures
    are best-effort diagnostics and do not prevent terminal MCU sleep.
 7. Measure total awake time and commit representable RTC metrics, writing their
@@ -117,7 +118,11 @@ settings, completion and sleep. Failure is latched for the wake with its origina
 status. Admission budgets reject late SDK results but cannot preempt them.
 
 The radio owns SPI, BUSY/DIO1 and a fixed normal-IQ uplink/inverted-IQ downlink
-profile. Core and its IRQ backend share `esp_timer_get_time()`; no UTC clock is
+profile. GPIO38 enables both TX and RX independently of DIO2 direction
+selection. Cleanup attempts to disable and hold that pad low even if a BUSY/SPI
+failure prevents confirmed cold sleep; the original command error is preserved.
+Electrical profile choices belong to [HARDWARE.md](HARDWARE.md#radio-circuit).
+Core and its IRQ backend share `esp_timer_get_time()`; no UTC clock is
 needed. The backend applies the Semtech TX-clamp workaround and checks command
 status. Driver pins/licenses remain with the [Semtech vendor sources](components/sx1262_radio/vendor/semtech_sx126x_driver/README.cura.md)
 and [Bosch source resolver](components/bosch_bme280/README.md).
@@ -125,9 +130,17 @@ and [Bosch source resolver](components/bosch_bme280/README.md).
 Sleep is terminal to core, including when a host fake returns. If timer setup
 fails, the ESP adapter logs to the console, waits without spinning and restarts;
 it does not reopen persistence after final sync. Intentional restart attempts
-sensor force-off and proceeds even if that attempt fails. The production main
-task stack includes the nested LittleFS call path; its rationale is beside
+sensor force-off and proceeds even if that attempt fails. Execution uses one core and native USB Serial/JTAG, with no PSRAM dependency.
+The shared [board guard](cmake/xiao_board.cmake) rejects a UART console that could
+drive the D7 sensor gate. IRQ timestamp access is protected against torn 64-bit
+reads on the 32-bit MCU. The production main task stack includes the nested LittleFS call path; its rationale is beside
 [sdkconfig.defaults](sdkconfig.defaults).
+
+RF-observation builds add a host receipt after finalization and timer setup.
+The final planned wake parks for ROM capture; receipt failure also stays terminal
+until reset. These test-only waits occur after retained awake metrics are fixed
+and do not qualify production cadence. The [RF procedure](../tests/rf/README.md#accelerated-rf-execution)
+owns this control/evidence boundary; ordinary production has no host dependency.
 
 ## Current limits
 

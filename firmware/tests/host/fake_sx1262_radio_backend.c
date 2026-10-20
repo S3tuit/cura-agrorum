@@ -92,6 +92,10 @@ sx1262_radio_backend_set_standby(sx1262_radio_backend_error_t *error) {
   return begin_command(FAKE_RADIO_OP_STANDBY, error);
 }
 
+bool sx1262_radio_backend_disable_rf_path(sx1262_radio_backend_error_t *error) {
+  return begin_operation(FAKE_RADIO_OP_DISABLE_RF_PATH, error);
+}
+
 sx1262_radio_backend_call_result_t
 sx1262_radio_backend_set_packet_params(uint8_t payload_length, bool inverted_iq,
                                        sx1262_radio_backend_error_t *error) {

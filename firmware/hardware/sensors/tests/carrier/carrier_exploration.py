@@ -8,6 +8,7 @@ from pytest_embedded.unity import UNITY_SUMMARY_LINE_REGEX
 
 from carrier_guided import IncompleteCase, confirm
 from carrier_runner import check_uart, uart_identity
+from carrier_evidence import require_acquisition_stages
 
 
 OPERATIONS = {'gate-on', 'gate-off', 'acquire', 'final-cleanup',
@@ -25,7 +26,7 @@ class Exploration:
         self._uart_identity = None
 
     def _port_identity(self):
-        return uart_identity(self.evidence.data['metadata'].get('port'))
+        return uart_identity(self.evidence.data['metadata'].get('port'), self.dut)
 
     def bind(self, dut):
         self.dut = dut
@@ -61,7 +62,7 @@ class Exploration:
             raise RuntimeError('UART disconnected or reader stopped during exploration') from exc
         try:
             match = self.dut.expect(
-                [rb'CARRIER_BOOT ', UNITY_SUMMARY_LINE_REGEX, rb'CARRIER_HOLD_INCOMPLETE ',
+                [rb'CURAG_USB_READY ', rb'CARRIER_BOOT ', UNITY_SUMMARY_LINE_REGEX, rb'CARRIER_HOLD_INCOMPLETE ',
                  rb'CARRIER_HOLD_END ', rb'Guru Meditation Error', rb'task_wdt:'], timeout=0)
         except pexpect.TIMEOUT:
             return
@@ -115,5 +116,7 @@ class Exploration:
                     'deep-sleep': ['transition-on', 'deep-sleep']}
         if self.holds != expected[self.operation]:
             raise IncompleteCase('exploration did not complete every requested observation phase')
+        if self.operation == 'acquire':
+            require_acquisition_stages(self.evidence.data['events'])
         self.evidence.finish('exploration_complete_not_acceptance')
         raise IncompleteCase('exploration recorded; this is not an acceptance result')

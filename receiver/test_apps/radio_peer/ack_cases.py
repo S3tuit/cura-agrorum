@@ -40,7 +40,7 @@ class AckCase:
         return seal_frame(self.key, header, bytes([status]))
 
     def receive(self, frame, received_at):
-        if self.packet_count >= self.plan["c6_max_packets"]:
+        if self.packet_count >= self.plan["node_max_packets"]:
             raise ValueError("uplink episode ceiling exceeded")
         opened = open_frame(self.key, frame)
         h = opened.header

@@ -45,5 +45,5 @@ direct_dependencies:
 - espressif/onewire_bus
 - joltwallet/littlefs
 manifest_hash: ba2e80af8fe78dd8fb8a54f10c103770db8bf3e0074118dab11acffa55c0f72d
-target: esp32c6
+target: esp32s3
 version: 3.0.0

@@ -22,7 +22,7 @@ void esp_rom_output_tx_one_char(char byte);
 void esp_rom_output_tx_wait_idle(int port);
 ''',
         'esp_system_console.h': 'void esp_system_console_put_char(char byte);\n',
-        'freertos/FreeRTOS.h': '',
+        'freertos/FreeRTOS.h': 'typedef unsigned TickType_t;\n#define pdMS_TO_TICKS(ms) ((ms) / 10)\n',
         'freertos/task.h': 'void vTaskDelay(unsigned ticks);\n',
     }
     for name, contents in headers.items():
@@ -80,8 +80,8 @@ int main(int argc, char **argv) {
     subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
                     '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-g',
                     '-I', str(root), str(harness), str(boundary), str(unity),
-                    str(APP/'main/carrier_console.c'), '-Wl,--wrap=unity_gets',
-                    '-Wl,--wrap=esp_rom_output_rx_one_char', '-o', str(binary)],
+                    str(APP.parents[3]/'tests/support/unity_console.c'), '-Wl,--wrap=unity_gets',
+                    '-Wl,--wrap=unity_putc', '-Wl,--wrap=esp_rom_output_rx_one_char', '-o', str(binary)],
                    check=True, capture_output=True, text=True)
     return binary
 

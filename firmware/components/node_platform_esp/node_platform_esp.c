@@ -17,6 +17,10 @@
 #include "protocol_v2_lora_schema_generated.h"
 #include "node_sensors.h"
 
+#if defined(CONFIG_NODE_RF_SLEEP_OBSERVATION) || defined(CURA_RF_COMPONENT_TEST)
+#include "rf_console.h"
+#endif
+
 #ifdef CONFIG_NODE_RF_PHY_OBSERVATION
 void node_rf_observe_dump(void);
 #endif
@@ -119,9 +123,11 @@ static void enter_deep_sleep_for(void *context, uint64_t duration_us) {
 #ifdef CONFIG_NODE_RF_PHY_OBSERVATION
     node_rf_observe_dump();
 #endif
-#ifdef CONFIG_NODE_RF_SLEEP_OBSERVATION
-    printf("RF_NODE_SLEEP duration_us=%" PRIu64 "\n", duration_us);
-    fflush(stdout);
+#if defined(CONFIG_NODE_RF_SLEEP_OBSERVATION) && !defined(CURA_RF_COMPONENT_TEST)
+    rf_console_printf("RF_NODE_SLEEP duration_us=%" PRIu64 "\n", duration_us);
+#endif
+#if defined(CONFIG_NODE_RF_SLEEP_OBSERVATION) || defined(CURA_RF_COMPONENT_TEST)
+    rf_console_prepare_sleep();
 #endif
     esp_deep_sleep_start();
     abort();

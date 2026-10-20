@@ -14,12 +14,12 @@ from test_runner import build_dir, scripted_dut
 
 @pytest.mark.parametrize('fixture', ['missing_ds0', 'missing_ds1', 'missing_bme280'])
 @pytest.mark.parametrize('operation', sorted(runner.OPERATIONS))
-def test_missing_fixture_only_selects_acquire_or_reading(fixture, operation):
-    if operation in {'acquire', 'reading'}:
-        runner.validate_selection(operation, fixture, 'R12 fitted', True)
+def test_missing_fixture_only_selects_acquire(fixture, operation):
+    if operation == 'acquire':
+        runner.validate_selection(operation, fixture, True)
     else:
         with pytest.raises(ValueError):
-            runner.validate_selection(operation, fixture, 'R12 fitted', True)
+            runner.validate_selection(operation, fixture, True)
 
 
 @pytest.mark.parametrize('fixture', ['missing_ds0', 'missing_ds1', 'missing_bme280'])
@@ -40,9 +40,10 @@ def test_declared_preflight_fresh_boot_and_exact_acquisition(scripted_dut, tmp_p
         runner.run_operation(dut, build, 'acquire', lambda *a: None, fixture=fixture, evidence=evidence)
     if outcome == 'PASS':
         run()
-        assert state.commands == ['', '2', '', '5', 'auto']
+        assert state.commands == ['', '2', '', '5', 'auto', '', '7']
         assert [c.name for c in dut.testsuite.testcases] == [
-            f'carrier {fixture} preflight', f'carrier {fixture} acquisition and sample-return hold']
+            f'carrier {fixture} preflight', f'carrier {fixture} acquisition and sample-return hold',
+            f'carrier {fixture} core reading']
         events = json.loads(evidence.path.read_text())['events']
         assert survivor in next(e for e in events if e['kind'] == 'preflight')['serial']
         assert state.sample_serial in next(e for e in events if e['kind'] == 'observation_ready')['serial']
@@ -51,7 +52,7 @@ def test_declared_preflight_fresh_boot_and_exact_acquisition(scripted_dut, tmp_p
             run()
         assert not any(e['kind'] == 'software_completed' for e in evidence.data['events'])
     preflight_failed = phase == 'preflight' and outcome != 'PASS'
-    assert state.resets == (0 if preflight_failed else 1)
+    assert state.resets == (0 if preflight_failed else 2 if outcome == 'PASS' else 1)
     assert state.commands.count('5') == (0 if preflight_failed else 1)
 
 
@@ -105,6 +106,8 @@ def test_missing_fixture_meter_acceptance_keeps_existing_limits(tmp_path, monkey
     monkeypatch.setattr(guided, 'ask', ask)
     if outcome == 'good':
         procedure.hold('sample-return', b'', 195)
+        evidence.add('stage_completed', stage='acquisition')
+        evidence.add('stage_completed', stage='core')
         procedure.complete()
         assert evidence.data['status'] == 'accepted'
     else:

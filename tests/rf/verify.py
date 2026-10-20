@@ -154,14 +154,14 @@ def _verify_pi_command_confirmation(event, mode, message):
 def verify_header_error(events, peer, tx):
     """Actual command replies and fresh complete rearming, independent of Radio."""
     cuts = [v for v in events if v.get("operation") == "header_abort"]
-    require(len(cuts) == 1, "missing C6 abort timing")
+    require(len(cuts) == 1, "missing S3 abort timing")
     cut = cuts[0]
     require(cut["argument"] == 18000 and cut["result"] == 2 and
             cut["before"] == tx[1]["set_tx"] and
             cut["before"] <= cut["tx_hal_after"] <= cut["abort_hal_before"] <= cut["after"] and
             18000 <= cut["abort_hal_before"] - cut["before"] <= 18500 and
-            cut["irq"] == cut["device_errors"] == 0, "wrong C6 abort stimulus")
-    require(all(b["set_tx"] - a["set_tx"] >= 12200000 for a, b in zip(tx, tx[1:])), "C6 pacing")
+            cut["irq"] == cut["device_errors"] == 0, "wrong S3 abort stimulus")
+    require(all(b["set_tx"] - a["set_tx"] >= 12200000 for a, b in zip(tx, tx[1:])), "S3 pacing")
     outcome = peer["outcome"]
     require(outcome["counters_before"] == outcome["counters_after"], "HeaderErr counters changed")
     require(outcome["counters_after"]["recovery_attempts"] == 0, "HeaderErr used recovery")
@@ -216,11 +216,11 @@ def verify_case(case, events, peer, run, fixture, elf):
     require(len(commands) == phases and all(v["boot"] == b["boot"] and
             0 <= v["elapsed_us"] <= 2_000_000 and 0 < v["bytes"] <= 159
             for v, b in zip(commands, begins)), "invalid command framing evidence")
-    require(not any(v["kind"] == "reject" for v in events), "C6 rejected command")
+    require(not any(v["kind"] == "reject" for v in events), "S3 rejected command")
     require(len(boots) == phases + 1 and len(begins) == len(ends) == phases, "incomplete wake/phase evidence")
     require(len({v["boot"] for v in boots}) == len(boots), "reused boot nonce")
     for index, boot in enumerate(boots):
-        require(boot["dut"] == fixture["c6_dut"] and boot["elf"] == elf, "wrong C6 source/device")
+        require(boot["dut"] == fixture["node_dut"] and boot["elf"] == elf, "wrong S3 source/device")
         if index:
             require(boot["reset"] == 8 and boot["previous_boot"] == boots[index-1]["boot"] and
                     boot["previous_run"] == run and boot["previous_case"] == case, "missing actual deep sleep")
@@ -228,28 +228,28 @@ def verify_case(case, events, peer, run, fixture, elf):
         for value in (begin, end):
             require(value["run"] == run and value["case"] == case and value["phase"] == index and
                     value["boot"] == boots[index]["boot"], "phase identity mismatch")
-        require(end["failed"] == 0, "C6 Unity failed")
-        require(end["cleanup_error"] == 0 or case == "component.radio_absent", "C6 cleanup failed")
+        require(end["failed"] == 0, "S3 Unity failed")
+        require(end["cleanup_error"] == 0 or case == "component.radio_absent", "S3 cleanup failed")
     results = [v for v in events if v["kind"] == "result"]
     tx = [v for v in results if v["tx"]]
     rx = [v for v in results if not v["tx"]]
     expected_tx, expected_rx = EXPECTED[case]
-    require([v["payload"] for v in tx] == expected_tx, "wrong or missing C6 TX calls")
-    require([v["payload"] for v in rx] == expected_rx, "wrong or missing C6 RX results")
+    require([v["payload"] for v in tx] == expected_tx, "wrong or missing S3 TX calls")
+    require([v["payload"] for v in rx] == expected_rx, "wrong or missing S3 RX results")
     for index, value in enumerate(tx):
-        require(0 < value["before"] <= value["after"] <= value["deadline"] + 50_000, "C6 TX bound")
+        require(0 < value["before"] <= value["after"] <= value["deadline"] + 50_000, "S3 TX bound")
         failed = case in {"component.dio1_disconnected", "component.radio_absent"} or case == "component.initialized_sleep" and index == 1
         if not failed:
             if case == "component.header_error_rearm" and index == 1:
                 require(value["error"] == value["operation"] == 0 and not value["diagnostic"] and
                         value["started"] is True and value["done"] is False and value["tx_done"] == 0,
-                        "C6 intentional interruption outcome")
-                require(value["before"] <= value["set_tx"] <= value["after"], "C6 interruption clock")
+                        "S3 intentional interruption outcome")
+                require(value["before"] <= value["set_tx"] <= value["after"], "S3 interruption clock")
                 continue
             require(value["error"] == 0 and value["operation"] == 0 and not value["diagnostic"] and
-                    value["started"] is True and value["done"] is True, "C6 TX outcome")
-            require(value["before"] <= value["set_tx"] < value["tx_done"] <= value["after"], "C6 shared TX clock")
-            require(102656 <= value["tx_done"] - value["set_tx"] <= 112922, "C6 TX airtime")
+                    value["started"] is True and value["done"] is True, "S3 TX outcome")
+            require(value["before"] <= value["set_tx"] < value["tx_done"] <= value["after"], "S3 shared TX clock")
+            require(102656 <= value["tx_done"] - value["set_tx"] <= 112922, "S3 TX airtime")
         else:
             require(value["error"] != 0 and value["done"] is False, "missing expected TX fault")
             if case == "component.dio1_disconnected":
@@ -262,24 +262,24 @@ def verify_case(case, events, peer, run, fixture, elf):
             else:
                 require(value["started"] is False and value["error"] == 0x20002, "post-sleep invalid state")
     for value in rx:
-        require(value["error"] == value["operation"] == 0 and not value["diagnostic"], "C6 RX error")
+        require(value["error"] == value["operation"] == 0 and not value["diagnostic"], "S3 RX error")
         if value["payload"]:
             require(value["rx_outcome"] == 1 and value["before"] <= value["rx_done"] <= value["deadline"] and
                     value["rx_done"] <= value["after"] and -255 <= value["rssi"] <= 0 and
-                    -128 <= value["snr"] <= 127, "C6 RX packet/clock metadata")
+                    -128 <= value["snr"] <= 127, "S3 RX packet/clock metadata")
         else:
             require(value["rx_outcome"] == 2 and value["rx_done"] == value["rssi"] == value["snr"] == 0,
                     "nonzero deadline packet fields")
             require(value["deadline"] <= value["after"] <= value["deadline"] +
-                    ((value["deadline"] - value["before"]) * 15 + 99) // 100, "C6 RX deadline extension")
+                    ((value["deadline"] - value["before"]) * 15 + 99) // 100, "S3 RX deadline extension")
     if case == "component.invalid_downlinks":
         require(len({v["deadline"] for v in rx}) == 1, "invalid packets extended RX deadline")
     trace = [v for v in events if v["kind"] == "trace"]
     starts = [v for v in trace if v["operation"] == "start_tx"]
     positive = len(tx) - int(case in {"component.initialized_sleep", "component.radio_absent"})
-    require(len(starts) == positive and all(v["result"] == 2 for v in starts), "C6 SetTx facts")
+    require(len(starts) == positive and all(v["result"] == 2 for v in starts), "S3 SetTx facts")
     initializes = [v for v in trace if v["operation"] == "initialize"]
-    require(len(initializes) == phases, "C6 initialization count")
+    require(len(initializes) == phases, "S3 initialization count")
     require(all(v["result"] == int(case != "component.radio_absent") for v in initializes), "initialization outcome")
     sleep_calls = [v for v in trace if v["operation"] == "set_sleep_cold"]
     require(case == "component.radio_absent" or len(sleep_calls) == phases and all(v["result"] == 2 for v in sleep_calls),
@@ -317,7 +317,7 @@ def verify_case(case, events, peer, run, fixture, elf):
         for value in peer["outcome"]["transmissions"]:
             require(value["tx"]["ack_tx_result"] == "TX_DONE" and value["t6_set_rx_issued_monotonic_us"] is not None and
                     value["t6_set_rx_issued_monotonic_us"] >= value["tx"]["t5_tx_done_monotonic_us"], "Pi profile restoration")
-    return dict(case=case, status="PASS", scope="raw_component", c6_attempts=len(starts), pi_attempts=len(pi_tx))
+    return dict(case=case, status="PASS", scope="raw_component", node_attempts=len(starts), pi_attempts=len(pi_tx))
 
 
 def verify_run(root):
@@ -332,7 +332,7 @@ def verify_run(root):
     require([v["case"] for v in run["results"]] == run["selected"], "requested/result selections differ")
     for case in run["selected"]:
         path = root / case
-        events = json.loads((path / "c6-events.json").read_text())
+        events = json.loads((path / "node-events.json").read_text())
         pi = [json.loads(line) for line in (path / "pi.jsonl").read_text().splitlines()]
         require([v["kind"] for v in pi] == ["ready", "armed", "complete"], "missing/extra Pi events")
         require(len({(v["pid"], v["boot"], v["source"], v["run"], v["case"]) for v in pi}) == 1 and
@@ -350,7 +350,7 @@ def verify_retained(root):
         require(record["status"] == "PASS" and record["pytest_exit"] == 0 and
                 record["peer_exit"]["exit"] == 0, "failed retained execution")
         captures = record["capture"]
-        events = json.loads((root / captures["c6"]).read_text())
+        events = json.loads((root / captures["node"]).read_text())
         peer = [json.loads(line) for line in (root / captures["pi"]).read_text().splitlines()]
         require([v["kind"] for v in peer] == ["ready", "armed", "complete"], "incomplete retained peer")
         require(len({(v["pid"], v["boot"], v["source"], v["run"], v["case"]) for v in peer}) == 1 and

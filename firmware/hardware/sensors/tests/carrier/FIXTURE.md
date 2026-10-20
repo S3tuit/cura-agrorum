@@ -3,18 +3,18 @@
 Start from [firmware/HARDWARE.md](../../../../HARDWARE.md), the owner of nominal
 wiring, component values and pin assignments. This guide owns test-only
 connections and physical observations; [README.md](README.md) owns commands.
-Use the board's UART USB connection and confirm the DUT and actual fixture before
+Use the XIAO's native USB-C connection and confirm the DUT and actual fixture before
 each operation. Remove power before touching connectors, shunts or reference leads.
 
 ## Test-only reference inputs
 
 Add inline removable links to both soil outputs and injection points before the
-existing ADC series resistors. Keep R3/C4 and R4/C5 close to the C6 header.
+existing ADC series resistors. Keep R3/C4 and R4/C5 close to the XIAO pads.
 
 ```text
-J_SOIL0.2 ---- JP_SOIL0 ----+---- R3 ---- GPIO0 / TP_ADC0
+J_SOIL0.2 ---- JP_SOIL0 ----+---- R3 ---- GPIO1 / TP_ADC0
 J_INJECT0 -----------------+
-J_SOIL1.2 ---- JP_SOIL1 ----+---- R4 ---- GPIO1 / TP_ADC1
+J_SOIL1.2 ---- JP_SOIL1 ----+---- R4 ---- GPIO2 / TP_ADC1
 J_INJECT1 -----------------+
 
 +3V3_DUT ---- JP_REF_ENABLE ----+---- R5 10 k ----+---- J_VREF_A (~1.185 V)
@@ -81,10 +81,11 @@ the untouched off-state after software reset. For held reset, keep EN asserted
 while measuring, then release only at the prompt. For deep sleep, the test
 enables the rail before terminal sleep without a timer wake: enter off readings
 within 600 seconds and attest YES while the MCU is still asleep. Only then press
-EN when prompted. UART loss, an early boot, missing readings or missing
-attestation cannot pass. Reset/boot has a 30-second active deadline within the
+EN when prompted. Expected native USB disappearance is handled by the
+identity-bound transport. A substituted device, stopped reader, early boot,
+missing reading or missing attestation cannot pass. Reset/boot has a 30-second active deadline within the
 615-second overall observation/boot ceiling. This checks default-off and steady
-voltage during sleep; the bare-C6 suite separately checks timer wakeup.
+voltage during sleep; the bare-S3 suite separately checks timer wakeup.
 
 If TP_SW remains above 0.1 V after settling, keep the failure and investigate
 separately. Keep permanent R12 fitted without adding a parallel load or removing

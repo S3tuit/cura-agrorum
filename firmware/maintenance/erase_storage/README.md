@@ -49,6 +49,11 @@ retain the successful formatter result and verify the initialized storage with
 the [read-only capture procedure](../../../tests/rf/README.md#captures). Keep the production
 image stopped until the operator's fixture and airtime readiness are confirmed.
 
+This image targets the XIAO ESP32S3 with 8 MB flash and the native USB console.
+It starts formatting autonomously after its warning delay. USB disappears on
+terminal deep sleep; retain the success line before that transition. Select
+the same board again if its ttyACM number changes.
+
 Build and flash from this directory:
 
 ```bash

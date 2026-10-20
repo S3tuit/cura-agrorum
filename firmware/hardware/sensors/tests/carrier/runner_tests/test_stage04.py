@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 from test_runner import build_dir, scripted_dut  # Local fixtures have a second real use.
 import carrier_runner as runner
-from carrier_evidence import Evidence
+from carrier_evidence import Evidence, fixture_manifest
 from carrier_guided import (IncompleteCase, measured_volts, validate_reference,
                             validate_identity, validate_electrical, prior_position)
 
@@ -52,7 +52,7 @@ def test_electrical_limits_and_missing_points():
 
 
 def test_pair_cannot_accept_missing_or_wrong_image_a(tmp_path):
-    metadata = dict(operation='ds-identity', fixture='nominal', carrier_revision='r1',
+    metadata = dict(operation='ds-identity', fixture='nominal', fixture_sha256=fixture_manifest(),
                     expected_dut='001122334455', elf_sha256='one', config_sha256='config',
                     rom0='rom0', rom1='rom1')
     evidence = Evidence(tmp_path/'a.json', metadata, {})

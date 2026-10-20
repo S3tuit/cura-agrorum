@@ -1,6 +1,6 @@
 """Independent raw IRQ, interrupted-TX and persistent-window reconciliation.
 
-No peer policy imports. Pi and C6 clocks are checked only within their domains.
+No peer policy imports. Pi and S3 clocks are checked only within their domains.
 """
 import json
 import re

@@ -12,7 +12,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pexpect
 from pytest_embedded.unity import UNITY_SUMMARY_LINE_REGEX
-from carrier_reading import FIXTURES as READING_FIXTURES, validate_reading
+from carrier_reading import validate_reading
+from carrier_evidence import require_acquisition_stages
 
 
 APP = Path(__file__).resolve().parent
@@ -21,7 +22,8 @@ HOLD_SECONDS = 75
 GUIDED_HOLD_SECONDS = 195
 ACK_HOLDS = {"acquire", "gate-on", "gate-off", "final-cleanup"}
 SLEEP_DEADLINE_SECONDS = 615
-ACQUISITIONS = {"bme-sleep", "acquire", "repeat", "final-cleanup", "ds-identity", "adc-reference", "reading"}
+COMBINED_ACQUISITIONS = {"acquire", "adc-reference"}
+ACQUISITIONS = {"bme-sleep", "repeat", "final-cleanup", "ds-identity", *COMBINED_ACQUISITIONS}
 OPERATIONS = {"discover", "gate-on", "gate-off", *ACQUISITIONS,
               "reset", "held-reset", "deep-sleep"}
 MISSING_FIXTURES = {"missing_ds0", "missing_ds1", "missing_bme280"}
@@ -36,36 +38,32 @@ CASES = {
     "final-cleanup": "carrier final cleanup hold",
     "ds-identity": "carrier nominal acquisition and sample-return hold",
     "adc-reference": "carrier reference acquisition and sample-return hold",
-    "reading": "carrier nominal core reading",
+    "core-reading": "carrier nominal core reading",  # Internal second stage.
     "reset": "carrier production restart cleanup",
     "held-reset": "carrier enabled rail held reset",
     "deep-sleep": "carrier enabled rail deep sleep",
 }
 GPIO_SETTINGS = {
-    "soil0": ("CURA_SOIL_0_GPIO", 0),
-    "soil1": ("CURA_SOIL_1_GPIO", 1),
-    "gate": ("CURA_SENSOR_POWER_GATE_GPIO", 2),
-    "onewire": ("CURA_DS18B20_GPIO", 3),
-    "sda": ("CURA_I2C_SDA_GPIO", 21),
-    "scl": ("CURA_I2C_SCL_GPIO", 22),
+    "soil0": ("CURA_SOIL_0_GPIO", 1),
+    "soil1": ("CURA_SOIL_1_GPIO", 2),
+    "gate": ("CURA_SENSOR_POWER_GATE_GPIO", 44),
+    "onewire": ("CURA_DS18B20_GPIO", 4),
+    "sda": ("CURA_I2C_SDA_GPIO", 5),
+    "scl": ("CURA_I2C_SCL_GPIO", 6),
     "stabilization_ms": ("CURA_SENSOR_POWER_STABILIZATION_MS", 200),
 }
 
 
-def validate_selection(operation, fixture, revision, ready):
+def validate_selection(operation, fixture, ready):
     if operation not in OPERATIONS:
         raise ValueError("select an implemented --sensor-operation")
     if operation == "discover":
         if fixture is not None:
             raise ValueError("discovery is setup; omit --sensor-fixture")
-    elif operation == "reading" and fixture in READING_FIXTURES:
-        pass
     elif operation == "acquire" and fixture in MISSING_FIXTURES:
         pass
     elif fixture != ("adc_reference" if operation == "adc-reference" else "nominal"):
         raise ValueError("operation and --sensor-fixture do not match")
-    if not revision or not revision.strip():
-        raise ValueError("record --carrier-revision for this assembled carrier")
     if not ready:
         raise ValueError("confirm the DUT and wiring are ready with --sensor-fixture-ready")
 
@@ -85,8 +83,8 @@ def load_build(build_dir: Path, operation: str) -> Build:
     if description.get("project_name") != "cura_sensor_carrier":
         raise ValueError("build is not the sensor-carrier app")
     expected = {key: value for key, value in GPIO_SETTINGS.values()}
-    expected.update(IDF_TARGET="esp32c6", ESP_CONSOLE_UART_DEFAULT=True,
-                    ESP_CONSOLE_UART_NUM=0, ESP_CONSOLE_UART_BAUDRATE=115200)
+    expected.update(IDF_TARGET="esp32s3", ESP_CONSOLE_USB_SERIAL_JTAG=True,
+                    FREERTOS_UNICORE=True, ESPTOOLPY_FLASHSIZE="8MB")
     for key, value in expected.items():
         if config.get(key) != value:
             raise ValueError(f"resolved CONFIG_{key} must be {value!r}; rebuild after menuconfig")
@@ -120,7 +118,11 @@ def remaining(deadline):
     return seconds
 
 
-def uart_identity(port):
+def uart_identity(port, dut=None):
+    usb = getattr(getattr(dut, "serial", None), "_cura_usb", None)
+    if usb is not None:
+        usb.check_health()
+        return usb.identity
     if not port:
         return None
     info = Path(port).stat()
@@ -130,7 +132,7 @@ def uart_identity(port):
 
 
 def check_uart(dut, port, identity):
-    if uart_identity(port) != identity:
+    if uart_identity(port, dut) != identity:
         raise OSError('UART device was replaced')
     reader = getattr(getattr(dut, 'serial', None), '_redirect_thread', None)
     if reader is not None and not reader.is_alive():
@@ -163,9 +165,7 @@ def boot_menu(dut, build, *, reset=False, expected_dut=None, deadline=None, boot
 
 def select_case(menu, operation, fixture="nominal"):
     name = CASES[operation]
-    if operation == "reading":
-        if fixture not in READING_FIXTURES:
-            raise ValueError("select a declared reading fixture")
+    if operation == "core-reading":
         name = f"carrier {fixture} core reading"
     elif fixture in MISSING_FIXTURES:
         if operation not in {"preflight", "acquire"}:
@@ -196,6 +196,8 @@ def execute_case(dut, case, operation, *, repeat_count=100, evidence=None, on_ho
         # Write once: retries could enqueue a second sampling operation.
         dut.write(str(case.index))
         guided_ack = on_hold is not None and operation in ACK_HOLDS
+        # ADC-reference starts a fixed automatic hold directly; waiting for a
+        # mode prompt would consume its sample/READY records and time out.
         if operation in ACK_HOLDS | {"ds-identity"}:
             required_marker(dut, "CARRIER_HOLD_MODE", deadline)
             dut.write("exploration" if exploration else "guided" if guided_ack else "auto")
@@ -247,7 +249,7 @@ def execute_case(dut, case, operation, *, repeat_count=100, evidence=None, on_ho
             dut.expect_unity_test_output(timeout=remaining(deadline), extra_before=prefix)
         else:
             dut.expect_unity_test_output(timeout=remaining(deadline))
-            if operation == "reading":
+            if operation == "core-reading":
                 serial = dut.pexpect_proc.before
                 if evidence:
                     evidence.add("core_reading_output", case=case.name,
@@ -265,11 +267,26 @@ def execute_case(dut, case, operation, *, repeat_count=100, evidence=None, on_ho
 
 def run_operation(dut, build, operation, record, *, fixture="nominal", expected_dut=None,
                   repeat_count=100, evidence=None, guided=None):
+    if operation not in OPERATIONS:
+        raise ValueError("select an implemented --sensor-operation")
+    combined = operation in COMBINED_ACQUISITIONS
+    completed = []
+
+    def complete_stage(stage):
+        event = dict(kind='stage_completed', stage=stage)
+        completed.append(event)
+        if evidence:
+            evidence.add('stage_completed', stage=stage)
+
     identity, menu = boot_menu(dut, build, expected_dut=expected_dut)
     record("dut_identity", identity)
     exploring = bool(getattr(guided, 'exploration', False))
     if exploring:
         guided.bind(dut)
+    if combined:
+        # Discover both stages before touching the fixture; a missing core
+        # case cannot turn a component-only run into completed qualification.
+        select_case(menu, "core-reading", fixture)
     if operation in ACQUISITIONS or (not exploring and operation in {"reset", "held-reset", "deep-sleep"}):
         # Verify both selections before doing preflight work on the carrier.
         select_case(menu, operation, fixture)
@@ -286,12 +303,25 @@ def run_operation(dut, build, operation, record, *, fixture="nominal", expected_
     observed = execute_case(dut, select_case(menu, operation, fixture), operation,
                  repeat_count=repeat_count, evidence=evidence,
                  on_hold=guided.hold if guided else None, exploration=exploring, fixture=fixture)
-    if operation == "reading" and guided:
-        guided.reading_result(observed)
+    if combined:
+        if guided and operation == 'adc-reference':
+            guided.acquisition_result()
+        complete_stage('acquisition')
+        # Preserve the untouched sample-return observation before core-owned
+        # cleanup. A fresh core boot also keeps manual holds out of its budget.
+        identity, menu = boot_menu(dut, build, reset=True, expected_dut=identity)
+        core_case = select_case(menu, "core-reading", fixture)
+        if guided and operation == 'adc-reference':
+            guided.before_sample(stage='core')
+        observed = execute_case(dut, core_case, "core-reading", fixture=fixture, evidence=evidence)
+        if guided and operation == 'adc-reference':
+            guided.core_result(observed)
+        complete_stage('core')
+        require_acquisition_stages(completed)
     if evidence:
         evidence.add("software_completed", operation=operation)
     record("operation_completed", operation)
-    record("electrical_acceptance", "not_assigned" if operation == "reading" else "pending_operator_measurements")
+    record("electrical_acceptance", "pending_operator_measurements")
 
 
 def select_stage(dut, case, stage, deadline):

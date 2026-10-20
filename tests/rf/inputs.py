@@ -13,7 +13,7 @@ APP = REPO / "firmware/hardware/radio/tests/component"
 
 def tree_sources():
     paths = []
-    for name in ("firmware/components", "firmware/hardware/radio/tests/component/main", "receiver/cura_receiver",
+    for name in ("firmware/components", "firmware/cmake", "firmware/tests/support", "firmware/hardware/radio/tests/component/main", "receiver/cura_receiver",
                  "receiver/test_apps/radio_peer", "receiver/tests", "receiver/schemas", "receiver/db",
                  "receiver/deploy", "receiver/native", "receiver/tools", "receiver/hardware",
                  "protocol/protocol-v2-lora/python", "tests/rf"):
@@ -84,7 +84,7 @@ def check_flash(build, application="cura_radio_component"):
     args = json.loads((build / "flasher_args.json").read_text())
     expected = {"0x0": "bootloader/bootloader.bin", "0x8000": "partition_table/partition-table.bin",
                 "0x10000": application + ".bin"}
-    if args["flash_files"] != expected or args["extra_esptool_args"]["chip"] != "esp32c6":
+    if args["flash_files"] != expected or args["extra_esptool_args"]["chip"] != "esp32s3":
         raise ValueError("unapproved flash files or target")
     limits = {"0x0": 0x8000, "0x8000": 0x1000, "0x10000": 0x100000}
     for offset, name in expected.items():
@@ -104,11 +104,13 @@ def check_flash(build, application="cura_radio_component"):
                       (0, 0, 0x10000, 0x100000, "factory", 0), (1, 131, 0x110000, 0x2e0000, "storage", 0)]:
         raise ValueError("binary partition table differs from reviewed physical layout")
     config = json.loads((build / "config/sdkconfig.json").read_text())
-    pins = dict(SCLK=6, MOSI=7, MISO=14, CS=23, RESET=18, BUSY=19, DIO1=20)
+    pins = dict(SCLK=7, MOSI=9, MISO=8, CS=41, RESET=42, BUSY=40, DIO1=39, RF_ENABLE=38)
     if any(config.get(f"CURA_SX1262_{name}_GPIO") != pin for name, pin in pins.items()):
-        raise ValueError("resolved C6 radio pins differ")
-    if config.get("ESP_CONSOLE_UART_NUM") != 0 or config.get("ESP_CONSOLE_UART_BAUDRATE") != 115200:
-        raise ValueError("wrong resolved UART console")
+        raise ValueError("resolved S3 radio pins differ")
+    if (config.get("ESP_CONSOLE_USB_SERIAL_JTAG") is not True or
+            config.get("FREERTOS_UNICORE") is not True or
+            config.get("ESPTOOLPY_FLASHSIZE") != "8MB"):
+        raise ValueError("wrong resolved S3 USB console/core/flash configuration")
     return {name: digest(build / name) for name in (*expected.values(), application + ".elf",
               "flasher_args.json", "config/sdkconfig.json", "compile_commands.json", "project_description.json")}
 
@@ -141,7 +143,7 @@ def session_identity(manifest, seal, fixture):
     return dict(source=hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest(),
                 build=hashlib.sha256(json.dumps(seal, sort_keys=True).encode()).hexdigest(),
                 devices={key: fixture[key] for key in
-                         ("c6_dut", "pi_board_id", "c6_transmitter", "pi_transmitter")})
+                         ("node_dut", "pi_board_id", "node_transmitter", "pi_transmitter")})
 
 
 def start_session(path, identity, selected):
@@ -179,7 +181,7 @@ def start_session(path, identity, selected):
 
 def finish_session(path, state, passed, run):
     # Failed/interrupted runs and all fault runs require nominal requalification.
-    if run["status"] == "PASS" and run["fixture"]["c6_fixture"] == "nominal":
+    if run["status"] == "PASS" and run["fixture"]["node_fixture"] == "nominal":
         state["passed"] = sorted((passed | set(run["selected"])) &
                                  {"component.ack_exchange", "component.ack_timeout"})
     write_json(path, state)

@@ -229,7 +229,7 @@ def test_actual_c6_formatter_image(tmp_path, binaries):
     raw = gzip.decompress(compressed)
     assert len(raw) == binding['image_bytes'] == 2944 * 1024
     assert hashlib.sha256(raw).hexdigest() == binding['image_sha256']
-    image = tmp_path / 'actual-c6.bin'
+    image = tmp_path / 'actual-node.bin'
     image.write_bytes(raw)
     result = decode_image(image, binaries[0])
     assert result['logs'] == {name: None for name in

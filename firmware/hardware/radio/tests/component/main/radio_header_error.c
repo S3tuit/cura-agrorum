@@ -1,3 +1,4 @@
+#include "rf_console.h"
 /* Local timing and fixed storage; no sensor sampling or production injection API. */
 #include "radio_header_error.h"
 #include "sx1262_radio_backend.h"
@@ -67,7 +68,7 @@ uint64_t radio_header_abort(const uint8_t *payload, size_t length) {
 
 void radio_header_dump(void) {
   if (!timing.tx_before) return;
-  printf("RF_TRACE {\"operation\":\"header_abort\",\"before\":%" PRIu64
+  rf_console_printf("RF_TRACE {\"operation\":\"header_abort\",\"before\":%" PRIu64
          ",\"after\":%" PRIu64 ",\"argument\":18000,\"result\":2,"
          "\"tx_hal_after\":%" PRIu64 ",\"abort_hal_before\":%" PRIu64
          ",\"irq\":%u,\"device_errors\":%u}\n",

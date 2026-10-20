@@ -51,7 +51,10 @@ int main(int argc, char **argv) {
     subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
                     '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-g',
                     '-I', str(root), '-I', str(runner.APP / 'main'), str(harness),
-                    str(runner.APP / 'main/carrier_hold.c'), '-o', str(binary)],
+                    str(runner.APP / 'main/carrier_hold.c'),
+                    '-I', str(runner.APP / 'runner_tests/native'),
+                    str(runner.APP / 'runner_tests/native/unity_output.c'),
+                    str(runner.APP / 'main/carrier_output.c'), '-o', str(binary)],
                    check=True, capture_output=True, text=True)
     return binary
 

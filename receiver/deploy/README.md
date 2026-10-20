@@ -1,7 +1,7 @@
 # Fresh Pi receiver deployment
 
 This sequence installs the receiver on a fresh Raspberry Pi OS Trixie arm64
-on the Pi 3 Model B, through service startup and receipt of C6 readings.
+on the Pi 3 Model B, through service startup and receipt of S3 readings.
 Use the nominal [carrier wiring](../HARDWARE.md); shut down and
 disconnect all power before changing hardware connections.
 Use Bash on each host and resolve errors before continuing. Retain the laptop
@@ -198,7 +198,7 @@ the OSF check does not qualify it.
 
 On your laptop, from the repository root, set `$cura_pi_stage` to the path printed
 in step 4 and `$cura_group` to the private `receiver-group.json` retained from
-[C6 provisioning](../../firmware/deploy/README.md#2-provision-and-install-the-node-identity):
+[S3 provisioning](../../firmware/deploy/README.md#2-provision-and-install-the-node-identity):
 
 ```bash
 set -e -o pipefail
@@ -222,7 +222,7 @@ git worktree remove "$cura_runtime_tmp/source"
 The detached worktree uses the same committed source as step 4. The builder
 requires Git metadata and produces the runtime, schema, deployment artifacts and
 `SOURCE_MANIFEST.json`; the extracted Pi source has no Git metadata. Transfer the
-existing group separately so the Pi accepts the provisioned C6 identities.
+existing group separately so the Pi accepts the provisioned S3 identities.
 `set -e -o pipefail` stops this shell on a failed command or pipeline.
 
 ## 9. Install runtime, credentials and storage
@@ -489,7 +489,7 @@ programs.
 
 ### Reading ingestion
 
-With the matching [C6 firmware](../../firmware/deploy/README.md#5-flash-production-firmware)
+With the matching [S3 firmware](../../firmware/deploy/README.md#5-flash-production-firmware)
 running, allow a sample and persistence flush, then inspect recent readings:
 
 ```bash
@@ -511,7 +511,7 @@ SQL
 
 Require the provisioned node ID and advancing samples. `flags` determines which
 sensor values are valid; the [reading format](../../protocol/protocol-v2-lora/README.md#reading-payload)
-owns its interpretation. Stored readings confirm receiver ingestion, while C6
+owns its interpretation. Stored readings confirm receiver ingestion, while S3
 delivery reports establish whether it received ACKs. Detailed installed-system
 and RF qualification remain owned by [the test guide](../tests/README.md).
 

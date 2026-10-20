@@ -15,7 +15,7 @@ def observer_binary(tmp_path_factory):
 typedef int esp_err_t;
 #define ESP_OK 0
 #define ESP_ERR_INVALID_STATE 259
-#define CONFIG_CURA_SENSOR_POWER_GATE_GPIO 2
+#define CONFIG_CURA_SENSOR_POWER_GATE_GPIO 44
 typedef int gpio_num_t;
 typedef int i2c_port_t;
 struct bme280_dev { int unused; };
@@ -169,11 +169,11 @@ int main(int argc, char **argv) {
     }
     __wrap_node_sensors_power_gate_off(); __wrap_node_sensors_power_gate_off();
     if (scenario == 7) __wrap_onewire_new_bus_rmt(NULL, NULL, NULL);
-    if (scenario == 8) __wrap_gpio_set_level(2, 0);
+    if (scenario == 8) __wrap_gpio_set_level(44, 0);
     assert(carrier_observer_cleanup_valid(2) == (scenario == 6));
     return 0;
   }
-  __wrap_node_sensors_power_gate_on(); __wrap_gpio_set_level(2, 0);
+  __wrap_node_sensors_power_gate_on(); __wrap_gpio_set_level(44, 0);
   __wrap_node_sensors_backend_delay_ms(scenario == 10 ? 201 : 200);
   const adc_oneshot_unit_init_cfg_t adc_config = {.unit_id = ADC_UNIT_1};
   const adc_oneshot_chan_cfg_t channel_config = {
@@ -233,9 +233,11 @@ int main(int argc, char **argv) {
 }
 ''')
     binary = root / 'observer'
+    idf = Path(os.environ.get('IDF_PATH', Path.home() / 'esp/esp-idf'))
     subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
                     '-Wno-unused-parameter', '-fsanitize=address,undefined',
                     '-fno-omit-frame-pointer', '-g', '-I', str(root), '-I', str(APP / 'main'),
+                    '-I', str(idf / 'components/esp_common/include'),
                     str(harness), '-o', str(binary)], check=True, capture_output=True, text=True)
     return binary
 
@@ -247,3 +249,13 @@ int main(int argc, char **argv) {
     'wrong_average', 'bme_before_off', 'off_failed', 'missing_ds0', 'missing_ds1', 'read_only_bme', 'missing_bme', 'bme_raw_forwarding'])
 def test_observer_evidence_and_forwarding(observer_binary, scenario):
     subprocess.run([str(observer_binary), str(scenario)], check=True, capture_output=True, text=True)
+
+
+def test_global_rom_delay_observer_uses_iram_section(observer_binary):
+    # The IDF flash driver invokes this wrapper while the flash cache is off.
+    # Exercise the real IDF placement attribute, rather than defining it away.
+    table = subprocess.run(['objdump', '-t', str(observer_binary)], check=True,
+                           capture_output=True, text=True).stdout
+    symbol = next(line.split() for line in table.splitlines()
+                  if line.endswith(' __wrap_esp_rom_delay_us'))
+    assert symbol[3].startswith('.iram1.'), symbol

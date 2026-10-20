@@ -1,3 +1,4 @@
+#include "rf_console.h"
 /* App-local passive interposition. No logging or substituted hardware results
  * inside a production operation; fixed storage and no public singleton API. */
 #include "radio_observe.h"
@@ -24,7 +25,7 @@ radio_observation_t radio_observation(void) { return observed; }
 void radio_observation_dump(void) {
   for (unsigned i = 0; i < observed.calls && i < 128; ++i) {
     const event_t *e = &events[i];
-    printf("RF_TRACE {\"operation\":\"%s\",\"before\":%" PRIu64
+    rf_console_printf("RF_TRACE {\"operation\":\"%s\",\"before\":%" PRIu64
            ",\"after\":%" PRIu64 ",\"argument\":%u,\"result\":%u}\n",
            e->name, e->before, e->after, e->argument, e->result);
   }

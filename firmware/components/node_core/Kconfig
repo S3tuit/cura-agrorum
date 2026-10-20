@@ -6,11 +6,13 @@ config NODE_DEEP_SLEEP_SECONDS
     help
         Production uses 900 seconds. Accelerated RF qualification uses 10.
 config NODE_RF_SLEEP_OBSERVATION
-    bool "Emit RF test sleep-entry observation"
+    bool "Enable host-controlled RF test finalization"
     default n
     help
         Test builds only: emit a marker after cycle finalization and successful
-        timer configuration, immediately before the terminal sleep call.
+        timer configuration, then require a nonce-bound host receipt before
+        sleep. The final planned wake parks for ROM stop/capture. Missing
+        receipt parks until reset; ordinary production leaves this disabled.
 config NODE_RF_PHY_OBSERVATION
     bool "Capture passive PHY IRQ observations for RF qualification"
     depends on NODE_RF_SLEEP_OBSERVATION

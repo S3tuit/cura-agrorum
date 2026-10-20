@@ -10,6 +10,9 @@ typedef enum {
   FAKE_ESP_GPIO_CONFIG,
   FAKE_ESP_GPIO_SET_DIRECTION,
   FAKE_ESP_GPIO_SET_PULL_MODE,
+  FAKE_ESP_GPIO_HOLD_EN,
+  FAKE_ESP_GPIO_HOLD_DIS,
+  FAKE_ESP_GPIO_SLEEP_HOLD,
 } fake_esp_gpio_operation_t;
 
 typedef struct {

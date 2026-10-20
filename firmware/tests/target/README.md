@@ -1,10 +1,10 @@
-# Bare-C6 software integration tests
+# Bare-S3 software integration tests
 
 This receiver-free ESP-IDF application runs the on-device `node_persistence`
 Unity matrix, the complete bare-board RTC suite, six `node_core` integration
 scenarios, and the production `node_platform_esp` clock, randomness, software
-reset and timer-deep-sleep smoke tests. It requires only an
-ESP32-C6-DEVKITM-1-N4; no receiver, radio module, sensor or power circuit is
+reset and timer-deep-sleep smoke tests. It requires only a
+XIAO ESP32S3; no receiver, radio module, sensor or power circuit is
 accessed.
 
 The core cases link production controller, persistence, protocol codec/crypto
@@ -43,10 +43,10 @@ counters; this procedure does not authorize erasing other boards or live storage
 
 ## Connection
 
-Connect the board through the USB-C connector labelled `UART`, which normally
-appears as `/dev/ttyUSB0`. Do not use the connector labelled `USB`: the native
-USB device disconnects while the ESP32 resets or enters deep sleep, but the test
-runner requires a continuously enumerated serial ingress.
+Connect the XIAO USB-C port, normally `/dev/ttyACM0`. The
+[shared native USB transport](../README.md#native-usb-across-reset-and-sleep)
+handles disappearance during reset/deep sleep and the test-image boot barrier.
+Keep the selected board on the same USB socket; re-enumeration itself is expected.
 
 Install the host runner and activate ESP-IDF once per shell:
 
@@ -55,13 +55,20 @@ Install the host runner and activate ESP-IDF once per shell:
 source ~/esp/esp-idf/export.sh
 ```
 
+This project owns `firmware/tests/target/build/` and
+`firmware/tests/target/sdkconfig`, independently of the production and sensor
+projects. When changing target, back up this project's ignored `build/`,
+`sdkconfig` and `sdkconfig.old` outside its directory before rebuilding.
+From the repository root, `make test-hardware-build` regenerates its
+configuration from the S3 defaults and builds without accessing the board.
+
 After recording the [destructive authorization](#destructive-test-storage),
 run one of:
 
 ```sh
-make test-hardware PORT=/dev/ttyUSB0       # fast cases only
-make test-hardware-slow PORT=/dev/ttyUSB0  # slow cases only
-make test-hardware-all PORT=/dev/ttyUSB0   # every case
+make test-hardware PORT=/dev/ttyACM0       # fast cases only
+make test-hardware-slow PORT=/dev/ttyACM0  # slow cases only
+make test-hardware-all PORT=/dev/ttyACM0   # every case
 ```
 
 The fast set includes the ordinary persistence matrix, all six receiver-free

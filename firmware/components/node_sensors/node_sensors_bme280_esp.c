@@ -26,7 +26,7 @@
  * call; bus clear, tick rounding and scheduling can extend it further. Late
  * success is rejected. Setup/teardown mutex waits assume exclusive ownership.
  * Recheck SDK waits when changing IDF, ownership or transfer sizes (reads <=26
- * bytes, writes <=20, within the C6 FIFO). Host fakes do not bound physical I2C.
+ * bytes, writes <=20, within the S3 FIFO). Host fakes do not bound physical I2C.
  *
  * The x1 conversion guard is 1250 + 2300 + (2300+575) + (2300+575) us from
  * Bosch's datasheet. An initially clear measuring bit alone proves no freshness.

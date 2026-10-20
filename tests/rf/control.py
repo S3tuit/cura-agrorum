@@ -1,4 +1,4 @@
-"""Bounded SSH/process control and C6 UART event collection; no RF timing here."""
+"""Bounded SSH/process control and S3 UART event collection; no RF timing here."""
 from __future__ import annotations
 import json
 from pathlib import Path
@@ -11,16 +11,17 @@ import threading
 
 from capture import write_json
 from transport import RemoteTransport
+from finalization import Finalization
 
 
 def verify_uart_identity(fixture, root):
     """Identify in the ROM/stub and leave it there; never boot the previous app."""
-    command = [sys.executable, "-m", "esptool", "--chip", "esp32c6", "--port", fixture["c6_uart"],
+    command = [sys.executable, "-m", "esptool", "--chip", "esp32s3", "--port", fixture["node_uart"],
                "--after", "no-reset", "read-mac"]
     result = subprocess.run(command, capture_output=True, text=True, timeout=20)
     write_json(Path(root) / "uart-identity.json", dict(command=command, exit=result.returncode,
                stdout=result.stdout, stderr=result.stderr))
-    mac = ":".join(fixture["c6_dut"][i:i+2] for i in range(0, 12, 2))
+    mac = ":".join(fixture["node_dut"][i:i+2] for i in range(0, 12, 2))
     if result.returncode or not re.search(r"^(?:BASE )?MAC:\s+" + re.escape(mac) + r"\s*$", result.stdout, re.M):
         raise ValueError("UART factory MAC mismatch before flash")
 
@@ -146,20 +147,20 @@ class Node:
         match = self.dut.expect(rb"RF_(BOOT|BEGIN|COMMAND|REJECT|RESULT|TRACE|END) (\{[^\r\n]*\})\r?\n", timeout=timeout)
         value = dict(kind=match.group(1).decode().lower(), **json.loads(match.group(2)))
         self.events.append(value)
-        write_json(self.root / "c6-events.json", self.events)
+        write_json(self.root / "node-events.json", self.events)
         if value["kind"] == "reject":
-            raise RuntimeError(f"C6 rejected command (boot {value.get('boot')}): {value.get('reason')}; no resend")
+            raise RuntimeError(f"S3 rejected command (boot {value.get('boot')}): {value.get('reason')}; no resend")
         return value
 
     def booted(self, previous=None):
         value = self.event()
-        if value["kind"] != "boot" or value["dut"] != self.fixture["c6_dut"] or value["elf"] != self.elf:
-            raise ValueError("unexpected C6 boot/image/DUT")
+        if value["kind"] != "boot" or value["dut"] != self.fixture["node_dut"] or value["elf"] != self.elf:
+            raise ValueError("unexpected S3 boot/image/DUT")
         if previous is not None and (value["reset"] != 8 or value["previous_boot"] != previous or
                                     value["previous_run"] != self.run or value["previous_case"] != self.case):
-            raise ValueError("C6 did not complete the selected deep-sleep progression")
+            raise ValueError("S3 did not complete the selected deep-sleep progression")
         if previous == value["boot"]:
-            raise ValueError("C6 boot nonce did not change")
+            raise ValueError("S3 boot nonce did not change")
         self.dut.expect_exact("RF_READY", timeout=3)
         self.boot = value["boot"]
         return value
@@ -169,11 +170,17 @@ class Node:
         self.dut.write(f"RUN {self.run} {self.case} {boot} {phase}")
         value = self.event()
         if value != dict(kind="begin", run=self.run, case=self.case, boot=boot, phase=phase):
-            raise ValueError("wrong C6 command identity")
+            raise ValueError("wrong S3 command identity")
         command = self.event()
         if (command["kind"] != "command" or command["boot"] != boot or
                 not 0 <= command["elapsed_us"] <= 2_000_000 or not 0 < command["bytes"] <= 159):
-            raise ValueError("invalid C6 command framing evidence")
+            raise ValueError("invalid S3 command framing evidence")
+        # Arm only after the main parser retained the complete END and SLEEP
+        # records. Repeated nonce greetings cover loss of the first receipt.
+        armed = threading.Event()
+        usb = self.dut.serial._cura_usb
+        receipt = Finalization(lambda: (1, "SLEEP") if armed.is_set() else None, usb.write)
+        usb.on_data = receipt.feed
         # Consume Unity separately so pytest-embedded retains its actual result.
         self.dut.expect_unity_test_output(timeout=35 if self.case == "component.header_error_rearm" else 15)
         while True:
@@ -181,14 +188,19 @@ class Node:
             if value["kind"] == "end":
                 if any(value.get(key) != expected for key, expected in
                        (("run", self.run), ("case", self.case), ("boot", boot), ("phase", phase))):
-                    raise ValueError("wrong C6 completion identity")
+                    raise ValueError("wrong S3 completion identity")
                 break
             if value["kind"] not in {"result", "trace"}:
-                raise ValueError("unexpected reset or event during C6 case")
-        self.dut.expect_exact("RF_SLEEP", timeout=3)
+                raise ValueError("unexpected reset or event during S3 case")
+        self.dut.expect(rb"RF_SLEEP\r?\n", timeout=3)
+        armed.set()
         wake = self.booted(previous=boot)
+        usb.check_health()
+        if receipt.action != "SLEEP":
+            raise ValueError("missing RF evidence receipt before wake")
+        usb.on_data = None
         if value["failed"] or (value["cleanup_error"] and self.case != "component.radio_absent"):
-            raise RuntimeError("C6 assertion or cleanup failure")
+            raise RuntimeError("S3 assertion or cleanup failure")
         if phase == 0 and self.case == "component.sleep_wake" and wake["continuation"] != 1:
             raise ValueError("missing sleep/wake continuation")
         return value

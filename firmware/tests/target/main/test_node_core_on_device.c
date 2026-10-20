@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -335,6 +336,13 @@ static void backlog_stage_3(void) {
       finished_event(1U, 0U, 2U, CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK, 1U,
                      NODE_DELIVERY_RESULT_ACCEPTED),
   };
+  static_assert(
+      NODE_PERSISTENCE_DELIVERY_LOG_LIMIT >=
+          sizeof(events) / sizeof(events[0]) / 2U *
+              (NODE_PERSISTENCE_DELIVERY_STARTED_PAYLOAD_SIZE +
+               NODE_PERSISTENCE_DELIVERY_FINISHED_PAYLOAD_SIZE +
+               2U * NODE_PERSISTENCE_RECORD_OVERHEAD),
+      "test delivery quota must fit the complete core backlog history");
   assert_delivery_log(events, 6U);
   core_hwtest_finish_case();
 }

@@ -6,6 +6,11 @@ idf_component_register(
     WHOLE_ARCHIVE
 )
 
+if(CONFIG_NODE_RF_SLEEP_OBSERVATION)
+    target_sources(${COMPONENT_LIB} PRIVATE "../tests/support/rf_console.c")
+    target_include_directories(${COMPONENT_LIB} PRIVATE "../tests/support")
+endif()
+
 if(CONFIG_NODE_RF_PHY_OBSERVATION)
     target_sources(${COMPONENT_LIB} PRIVATE "../hardware/radio/tests/component/main/node_rf_observe.c")
     target_include_directories(${COMPONENT_LIB} PRIVATE

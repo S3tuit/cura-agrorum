@@ -46,7 +46,7 @@ def record():
 
 
 def check(events, peer):
-    return verify_case("component.ack_exchange", events, peer, "a"*32, {"c6_dut": "cc8da2fc0224"}, "image")
+    return verify_case("component.ack_exchange", events, peer, "a"*32, {"node_dut": "cc8da2fc0224"}, "image")
 
 
 def test_reviewed_nominal_record():

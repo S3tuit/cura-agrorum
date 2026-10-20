@@ -25,10 +25,6 @@ _CASE = runner.UnittestMenuCase(
         {"index": 2, "name": "rtc_repeated_round_trip_stage_2"},
     ],
 )
-_SUBMENU = (
-    '\t(1)\t"rtc_repeated_round_trip_stage_1"\r\n'
-    '\t(2)\t"rtc_repeated_round_trip_stage_2"\r\n'
-)
 _RESULT = "1 Tests 0 Failures 0 Ignored"
 
 
@@ -43,8 +39,15 @@ class DelayedSubmenuDut:
 
     confirm_write = runner.IdfDut.confirm_write
 
-    def __init__(self, delayed_selection):
+    def __init__(self, delayed_selection, *, case=_CASE, platform=False):
         self.delayed_selection = delayed_selection
+        self.case = case
+        self.platform = platform
+        self.expected_selections = ["1", "2"] if platform else ["1"] + ["2"] * 20
+        self.submenu = ''.join(
+            f'\t({stage["index"]})\t"{stage["name"]}"\r\n'
+            for stage in case.subcases
+        )
         self.serial = SimpleNamespace(hard_reset=self.hard_reset)
         self.reset_count = 0
         self.selections = []
@@ -58,30 +61,34 @@ class DelayedSubmenuDut:
 
     def write(self, value):
         if self.state == "main_menu":
-            assert value == str(_CASE.index)
-            self.output += f"Running {_CASE.name}...\r\n"
+            assert value == str(self.case.index)
+            self.output += f"Running {self.case.name}...\r\n"
             if len(self.selections) == self.delayed_selection:
                 self.state = "printing_submenu"
             else:
-                self.output += _SUBMENU
+                self.output += self.submenu
                 self.state = "stage_selection"
         elif self.state == "printing_submenu":
             self.discarded.append(value)
         else:
             assert self.state == "stage_selection"
-            assert value == ("1" if not self.selections else "2")
+            assert value == self.expected_selections[len(self.selections)]
             self.selections.append(value)
-            if len(self.selections) <= 20:
+            if len(self.selections) < len(self.expected_selections):
+                if self.platform:
+                    self.output += runner.PLATFORM_DEEP_SLEEP_START_MARKER
                 self.output += runner.UNITY_READY_PROMPT
                 self.state = "main_menu"
             else:
+                if self.platform:
+                    self.output += runner.PLATFORM_DEEP_SLEEP_END_MARKER
                 self.output += _RESULT
                 self.state = "finished"
 
     def expect_exact(self, pattern, *, timeout):
         assert timeout > 0
         if pattern not in self.output and self.state == "printing_submenu":
-            self.output += _SUBMENU
+            self.output += self.submenu
             self.state = "stage_selection"
         if pattern not in self.output:
             raise pexpect.TIMEOUT(
@@ -106,3 +113,20 @@ def test_repeated_rtc_completes_with_delayed_submenu(delayed_selection):
     assert dut.discarded == []
     assert dut.result_reads == 1
     assert dut.state == "finished"
+
+
+@pytest.mark.parametrize("delayed_selection", [None, 0, 1])
+def test_platform_sleep_waits_for_complete_submenu(monkeypatch, delayed_selection):
+    case = runner.UnittestMenuCase(
+        index=36, name=runner.PLATFORM_DEEP_SLEEP_CASE, type="multi_stage",
+        keywords=[], groups=["node_platform", "slow"], attributes={},
+        subcases=[{"index": 1, "name": "platform_deep_sleep_stage_1"},
+                  {"index": 2, "name": "platform_deep_sleep_stage_2"}],
+    )
+    dut = DelayedSubmenuDut(delayed_selection, case=case, platform=True)
+    times = iter([10., 70.])
+    monkeypatch.setattr(runner.time, "monotonic", lambda: next(times))
+    runner._run_platform_deep_sleep_case(dut, case, timeout=300)
+    assert dut.selections == ["1", "2"]
+    assert dut.discarded == []
+    assert dut.result_reads == 1

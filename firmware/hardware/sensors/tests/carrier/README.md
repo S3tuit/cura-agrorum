@@ -1,20 +1,24 @@
 # Sensor carrier tests
 
-This ESP32-C6-DEVKITM-1-N4 app runs production sensor drivers through ESP-IDF
-Unity and pytest-embedded. The `reading` operation also checks production core,
-codec/crypto and real test-partition persistence against the same acquisition.
-The [bare-C6 tests](../../../../tests/target/README.md) use fake external I/O.
+This XIAO ESP32S3 app runs production sensor drivers through ESP-IDF
+Unity and pytest-embedded. `acquire` and `adc-reference` also check production
+core, codec/crypto and real test-partition persistence against their core acquisition.
+The [bare-S3 tests](../../../../tests/target/README.md) use fake external I/O.
 
 Read the [fixture and measurement procedure](FIXTURE.md) before running hardware
 cases. [firmware/HARDWARE.md](../../../../HARDWARE.md) owns nominal wiring. Use
-the UART USB connector, identify the actual board/port, and confirm fixture
-readiness for each invocation. Change wiring only with power removed. Include
-permanent R12 and the actual I2C pull-up selection in the carrier revision label.
+the XIAO native USB-C connector, identify the actual board/port, and confirm fixture
+readiness for each invocation. Change wiring only with power removed.
+The [USB transport](../../../../tests/README.md#native-usb-across-reset-and-sleep)
+reconnects across sleep/reset; an unexpected boot still fails an electrical hold.
+Establish the [soil input envelope](../../../../HARDWARE.md#soil-inputs) before
+connecting either probe output. Previous-board calibration does not qualify S3 ADC readings.
 
 ## Destructive test storage
 
-The `reading` operation erases NVS and formats LittleFS before and after each
-case. Its test partition labels occupy the **same physical flash ranges** as
+The core stage of `acquire` and `adc-reference` erases NVS and formats LittleFS
+before and after its case, including during acquisition exploration. The test
+partition labels occupy the **same physical flash ranges** as
 production storage; they do not preserve a previously installed node's state:
 
 | Test / production label | Physical range, end exclusive |
@@ -22,11 +26,11 @@ production storage; they do not preserve a previously installed node's state:
 | `nvs_test` / `nvs` | `0x9000` through `0xf000` |
 | `storage_test` / `storage` | `0x110000` through `0x3f0000` |
 
-Before running `reading`, treat all prior node-local counters, pending readings
-and logs as disposable. A warning is printed immediately before the first
+Before running either combined operation, treat all prior node-local counters,
+pending readings and logs as disposable. A warning is printed immediately before the first
 erase. Avoiding whole-flash erasure does **not** preserve these partitions.
 
-Each reading case creates a fresh disposable test node ID/key, used only for
+Each core case creates a fresh disposable test node ID/key, used only for
 local frame validation and never in production. If the board previously held
 a production identity, erasing its counters ends that identity lifetime:
 **provision a new production node ID and key before any production transmission**.
@@ -38,6 +42,11 @@ previous production identity safe to reuse.
 ## Build and inspect configuration
 
 Run from the repository root in one Bash shell:
+
+If this app was previously configured for another target, move its ignored
+`build/`, `sdkconfig` and `sdkconfig.old` to a backup outside the app first.
+ESP-IDF rejects a C6 CMake cache even with S3 sources; defaults cannot replace
+the resolved target or probe IDs. Build discovery from the empty ROM defaults.
 
 ```sh
 source ~/esp/esp-idf/export.sh
@@ -54,22 +63,51 @@ optional matching local checkout. Rebuild before sealing after source/configurat
 changes; never seal a stale image to bypass a mismatch.
 
 Inspect the resolved configuration against the nominal schematic. The app requires
-its fixed sensor pins, 200 ms stabilization and UART0 at 115200. Build defaults
+its fixed sensor pins, 200 ms stabilization, native USB console, one core and
+8 MB flash. Use a fresh configuration when changing target; save only reviewed
+probe ROM settings from any previous configuration. Build defaults
 leave both DS ROMs unprovisioned; discovery works, acquisition requires two distinct
 attached ROMs. Set them in the app's ignored sdkconfig through `menuconfig`, then
-rebuild and seal. Only `reading` accesses persistent storage; no operation loads
-a production identity or requires whole-flash erasure.
+rebuild and seal. Only `acquire` and `adc-reference` access persistent storage;
+no operation loads a production identity or requires whole-flash erasure.
 
 ## Session setup
 
-After identifying the DUT and confirming readiness, enter its actual UART port,
-12-hex-digit factory MAC, and assembled fixture revision. This helper creates
-ignored session/run directories and prints each result path:
+After identifying the DUT and confirming readiness, enter its actual native USB port
+and 12-hex-digit factory MAC. Each run automatically records SHA-256 hashes of
+[FIXTURE.md](FIXTURE.md) and [firmware/HARDWARE.md](../../../../HARDWARE.md) as
+`fixture_sha256` metadata. These describe the fixture definition; readiness still
+confirms the actual assembly. Documentation changes do not require a firmware
+rebuild, but paired A/B runs must use identical document contents. This helper
+creates ignored session/run directories and prints each result path:
+
+For a first flash, the installed board firmware can expose its own USB CDC
+interface instead of native Serial/JTAG. If esptool cannot connect or the runner
+rejects the USB VID/PID, unplug USB and hold BOOT while reconnecting it, then
+release BOOT. See [Seeed's download-mode procedure](https://wiki.seeedstudio.com/xiao_esp32s3_with_micropython/#connect-the-xiao-esp32s3-on-your-pc).
+Select the re-enumerated `303a:1001` port. Read its factory
+MAC without leaving download mode, then remove the colons for `SENSOR_DUT`:
 
 ```sh
-read -r -p 'UART port: ' SENSOR_PORT
+.venv/bin/python -m esptool --chip esp32s3 --port /dev/ttyACM0 \
+    --before no-reset --after no-reset --no-stub read-mac
+```
+
+If the first flash succeeds but the console stays at `waiting for download`,
+restart from ROM with the supported watchdog reset (no erase or flash):
+
+```sh
+.venv/bin/python -m esptool --chip esp32s3 --port /dev/ttyACM0 \
+    --before no-reset --after watchdog-reset --no-stub read-mac
+```
+
+Wait for USB to reappear and reselect the same USB serial number/location;
+its ttyACM number may change. Then rerun discovery with the current port.
+
+
+```sh
+read -r -p 'Native USB port: ' SENSOR_PORT
 read -r -p 'DUT factory MAC (12 hex digits, no separators): ' SENSOR_DUT
-read -r -p 'Carrier revision, R12 and I2C pull-ups: ' SENSOR_CARRIER_REVISION
 SENSOR_CARRIER_SESSION=$(mktemp -d "$SENSOR_APP/build/session-$(date +%Y%m%dT%H%M%S%z)-XXXXXX")
 sensor_carrier() {
     local run_dir
@@ -82,8 +120,8 @@ sensor_carrier() {
     printf 'Results: %s\n' "$run_dir"
     .venv/bin/python -m pytest "$SENSOR_APP/pytest_sensor_carrier.py" \
         --embedded-services=esp,idf --app-path="$SENSOR_APP" --build-dir=build \
-        --target=esp32c6 --port="$SENSOR_PORT" --sensor-dut="$SENSOR_DUT" \
-        --carrier-revision="$SENSOR_CARRIER_REVISION" --sensor-fixture-ready \
+        --target=esp32s3 --port="$SENSOR_PORT" --sensor-dut="$SENSOR_DUT" \
+        --sensor-fixture-ready \
         --root-logdir="$run_dir" --junitxml="$run_dir/report.xml" \
         -o junit_family=xunit1 -s "$@"
 }
@@ -134,9 +172,12 @@ sensor_carrier --sensor-operation gate-on --sensor-fixture nominal --sensor-guid
 sensor_carrier --sensor-operation gate-off --sensor-fixture nominal --sensor-guided
 ```
 
-`acquire` observes the untouched sample-return hold; `final-cleanup` checks two
-force-off calls in a separate boot before its own hold. Omitting `--sensor-guided`
-runs software checks and leaves electrical acceptance pending. The fixture guide
+`acquire` observes the untouched sample-return hold, then resets automatically
+for the [core-reading stage](#production-core-reading-mapping) on the same fixture.
+Both stages must pass. Review [destructive test storage](#destructive-test-storage)
+before running it. `final-cleanup` checks two force-off calls in a separate boot
+before its own hold. Omitting `--sensor-guided` runs both software stages and
+leaves electrical acceptance pending. The fixture guide
 owns [measurement limits and hold timing](FIXTURE.md#dc-measurement-procedure).
 Enter fresh volts as named, space-separated points, for example:
 
@@ -167,8 +208,9 @@ sensor_carrier --sensor-operation acquire --sensor-fixture missing_ds1 --sensor-
 sensor_carrier --sensor-operation acquire --sensor-fixture missing_bme280 --sensor-guided
 ```
 
-The checks require the exact partial result/diagnostic and preserve unaffected
-groups. Missing BME invalidates all three enclosure fields together. After each
+Both acquisition stages require the exact partial result/diagnostic and preserve
+unaffected groups in the sample, frame and stored body. Missing BME invalidates
+all three enclosure fields together. After each
 fault sequence, restore nominal unpowered, confirm readiness, and rerun guided
 nominal acquisition; after BME restoration, also run `bme-sleep`. Software success
 alone does not complete the electrical observation.
@@ -211,57 +253,43 @@ sensor_carrier --sensor-operation adc-reference --sensor-fixture adc_reference \
 SENSOR_ADC_A="$SENSOR_CARRIER_LAST_RUN/carrier-evidence.json"
 ```
 
-At the prompt, enter fresh TP_3V3, TP_ADC0 and TP_ADC1 readings within 180 seconds,
-following the fixture's settling and comparison rules. Entry starts acquisition.
-A retains its sample-return hold and exits incomplete until B. Remove power,
-exchange reference leads, confirm position B, and measure all points afresh:
+Each position runs component acquisition and its untouched 60-second sample-return
+hold, then resets automatically for the core-reading stage. Before **each** acquisition, enter fresh
+TP_3V3, TP_ADC0 and TP_ADC1 readings within 180 seconds, following the fixture's
+settling and comparison rules. The first measurements cannot qualify the second
+acquisition. Keep the same reference routing across the automatic reset.
+Review [destructive test storage](#destructive-test-storage) before running A.
+
+A exits incomplete only after both stages pass; completing the pair requires B.
+Remove power, exchange reference leads, confirm position B, and repeat both
+fresh measurement sets:
 
 ```sh
 sensor_carrier --sensor-operation adc-reference --sensor-fixture adc_reference \
     --sensor-guided --sensor-position B --sensor-prior-evidence="$SENSOR_ADC_A"
 ```
 
-Keep A's JSON unchanged while B uses its ID/hash and measurements. Both positions
-must pass on the same DUT/image/configuration. Restore nominal unpowered:
+Keep A's JSON unchanged while B uses its ID/hash and both stage comparisons.
+Each position must pass both stages on the same DUT/image/configuration;
+component-only A receipts cannot qualify B. Restore nominal unpowered:
 remove injection leads, open JP_REF_ENABLE, and restore both soil shunts/connectors.
 
 ## Production core reading mapping
 
-Review [destructive test storage](#destructive-test-storage) first. `reading`
-uses a disposable identity and the real persistence path, comparing the sample,
-opened frame and pending reading body. Its radio adapter emits no RF; its
-returning sleep observer checks the normal sleep request without entering sleep.
-It has no electrical sample-return hold.
+This is the automatic second stage of `acquire` and `adc-reference`. A fresh boot
+keeps core-owned final cleanup after the untouched sample-return observation and
+keeps manual hold time outside the core radio deadline. It takes a new real
+sample, uses a disposable identity and the real persistence path, then compares
+that sample with the opened frame and the pending reading recovered from flash.
+The two stages sample independently; their values need not be identical.
 
-Run nominal, each needed missing-device fixture, ADC A/B, and restored nominal
-as separate wiring steps. The command pattern is:
-
-```sh
-sensor_carrier --sensor-operation reading --sensor-fixture nominal
-```
-
-Use `missing_ds0`, `missing_ds1` or `missing_bme280` only with that fixture ready.
-For reference integration, use the separate pair below after setting up A:
-
-```sh
-sensor_carrier --sensor-operation reading --sensor-fixture adc_reference \
-    --sensor-guided --sensor-position A
-SENSOR_READING_A="$SENSOR_CARRIER_LAST_RUN/carrier-evidence.json"
-```
-
-After the expected incomplete A result, remove power and set up B:
-
-```sh
-sensor_carrier --sensor-operation reading --sensor-fixture adc_reference \
-    --sensor-guided --sensor-position B --sensor-prior-evidence="$SENSOR_READING_A"
-```
-
-A component `adc-reference` result cannot substitute for a `reading` A result.
-Restore nominal unpowered and repeat nominal reading. The checks in
+The radio adapter captures the frame without RF. A returning sleep observer
+checks the normal sleep request without entering sleep. This stage has no
+electrical hold. The checks in
 [carrier_checks.c](main/carrier_checks.c) and [carrier_reading.py](carrier_reading.py)
-own exact values, flags and diagnostics; the runner requires the same acquisition
-in the frame and persisted body. Its unguided completion label leaves electrical
-acceptance pending because this operation has no assigned electrical hold.
+own exact values, flags and diagnostics; the runner requires the same core
+acquisition in the frame and persisted body. A run completes only after both
+ordered stages pass. Unguided acquisition leaves electrical acceptance pending.
 
 ## Reset, held reset and deep sleep
 

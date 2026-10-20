@@ -5,7 +5,7 @@
 		benchmark-receiver-protocol-ingress \
 		benchmark-receiver-protocol-ingress-load
 
-PORT ?= /dev/ttyUSB0
+PORT ?= /dev/ttyACM0
 .DEFAULT_GOAL := test-host
 RF_ARGS ?=
 RF_TEST_PYTHON := $(abspath .venv/bin/python)
@@ -47,7 +47,7 @@ HARDWARE_TEST_ARGS := \
 	--embedded-services=esp,idf \
 	--app-path=$(HARDWARE_TEST_APP) \
 	--build-dir=$(HARDWARE_TEST_BUILD) \
-	--target=esp32c6 \
+	--target=esp32s3 \
 	--port=$(PORT)
 RECEIVER_PYTEST := $(abspath .venv/bin/python) -m pytest
 RECEIVER_PYTEST_ARGS := -c $(abspath receiver/pytest.ini)

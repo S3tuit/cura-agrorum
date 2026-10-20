@@ -3,6 +3,7 @@ idf_component_register(SRCS "radio_app.c" "radio_observe.c" "radio_command.c" "r
                   esp_system esp_timer freertos protocol_v2_lora
     WHOLE_ARCHIVE)
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
+target_compile_definitions(${COMPONENT_LIB} PRIVATE CURA_RF_UNITY_OUTPUT=1)
 target_include_directories(${COMPONENT_LIB} PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}"
     "${CURA_FIRMWARE_DIR}/components/sx1262_radio/private_include"
@@ -41,3 +42,13 @@ if(DEFINED REJECTION_INPUT_DIR AND NOT "${REJECTION_INPUT_DIR}" STREQUAL "")
     target_include_directories(${COMPONENT_LIB} PRIVATE "${REJECTION_INPUT_DIR}")
     target_compile_definitions(${COMPONENT_LIB} PRIVATE REJECTION_ENABLED=1)
 endif()
+
+# Shared console handshake and stock Unity input yielding for native USB.
+target_sources(${COMPONENT_LIB} PRIVATE
+    "${CURA_FIRMWARE_DIR}/tests/support/rf_console.c"
+    "${CURA_FIRMWARE_DIR}/tests/support/usb_console_test_support.c"
+    "${CURA_FIRMWARE_DIR}/tests/support/unity_console.c")
+target_include_directories(${COMPONENT_LIB} PRIVATE "${CURA_FIRMWARE_DIR}/tests/support")
+foreach(symbol unity_gets unity_putc esp_rom_output_rx_one_char)
+    target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=${symbol}")
+endforeach()

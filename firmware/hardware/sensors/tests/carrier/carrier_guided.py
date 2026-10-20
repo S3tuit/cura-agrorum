@@ -13,6 +13,7 @@ from pytest_embedded.unity import UNITY_SUMMARY_LINE_REGEX
 
 from carrier_runner import GUIDED_HOLD_SECONDS, MISSING_FIXTURES, check_uart, uart_identity
 from carrier_reading import parse_sample
+from carrier_evidence import ACQUISITION_STAGES, require_acquisition_stages
 
 
 class IncompleteCase(RuntimeError):
@@ -99,6 +100,16 @@ def validate_reference(sample, measurements, position):
         raise AssertionError('measured references must follow A/B routing and have disjoint 75 mV intervals')
 
 
+def validate_reference_stages(stages, position):
+    if not isinstance(stages, dict) or set(stages) != set(ACQUISITION_STAGES):
+        raise ValueError('ADC position requires acquisition and core reference comparisons')
+    for stage in ACQUISITION_STAGES:
+        result = stages[stage]
+        if not isinstance(result, dict) or set(result) != {'sample', 'volts'}:
+            raise ValueError(f'incomplete ADC reference comparison: {stage}')
+        validate_reference(result['sample'], result['volts'], position)
+
+
 def validate_electrical(name, readings):
     v = {key: Decimal(value) for key, value in readings.items()}
     required = {'TP_3V3', 'TP_GATE', 'TP_SW', 'TP_DQ'}
@@ -132,15 +143,21 @@ def prior_position(path, metadata, position):
         raise ValueError('exploration cannot supply position-A acceptance evidence')
     if prior.get('schema') != 1 or prior.get('status') != 'position_A_complete_sequence_incomplete':
         raise ValueError('prior evidence is not a completed position A')
-    for key in ('operation', 'fixture', 'carrier_revision', 'expected_dut',
+    if not metadata.get('fixture_sha256'):
+        raise ValueError('position A/B mismatch: fixture_sha256 is missing')
+    for key in ('operation', 'fixture', 'fixture_sha256', 'expected_dut',
                 'elf_sha256', 'config_sha256', 'rom0', 'rom1'):
-        if prior.get('metadata', {}).get(key) != metadata.get(key):
+        if key not in metadata or prior.get('metadata', {}).get(key) != metadata[key]:
             raise ValueError(f'position A/B mismatch: {key}')
     events = [event for event in prior.get('events', []) if event['kind'] == 'position_result']
     if len(events) != 1 or events[0].get('position') != 'A':
         raise ValueError('prior position results missing/duplicated')
     if not any(e['kind'] == 'software_completed' for e in prior['events']):
         raise ValueError('position A lacks passing software completion')
+    if metadata['operation'] == 'adc-reference':
+        # Old component-only ADC receipts cannot qualify a combined B run.
+        require_acquisition_stages(prior['events'])
+        validate_reference_stages(events[0].get('stages'), 'A')
     return dict(event=events[0], run_id=prior['run_id'], sha256=hashlib.sha256(raw).hexdigest())
 
 
@@ -148,12 +165,13 @@ class Guided:
     def __init__(self, evidence, operation, position, prior):
         self.evidence = evidence
         self.operation = operation
-        self.reference = operation == 'adc-reference' or (
-            operation == 'reading' and evidence.data['metadata'].get('fixture') == 'adc_reference')
+        self.reference = operation == 'adc-reference'
         self.position = position
         self.prior = prior
         self.warmed = None
         self.measurements = None
+        self.reference_stage = None
+        self.reference_stages = {}
         self.sample = None
         self.holds = []
 
@@ -205,7 +223,7 @@ class Guided:
               flush=True)
         self.evidence.add('wiring_confirmation', position=self.position)
 
-    def before_sample(self):
+    def before_sample(self, *, stage='acquisition'):
         if self.operation == 'ds-identity':
             if self.prior:
                 self.warmed = self.prior['event']['warmed_channel']
@@ -220,7 +238,9 @@ class Guided:
             self.evidence.add('thermal_setup', warmed_channel=self.warmed, warmed_rom=rom)
 
         elif self.reference:
-            confirm('At this fresh acquisition boot, allow at least 5 seconds of reference settling. '
+            if stage not in ACQUISITION_STAGES or stage in self.reference_stages:
+                raise ValueError('unexpected or repeated ADC reference stage')
+            confirm(f'At this fresh {stage} boot, allow at least 5 seconds of reference settling. '
                     'Measure TP_3V3, TP_ADC0 and TP_ADC1 now; each display must be stable for three updates. '
                     'Do not change wiring or power after these measurements.')
             self.measurements = measured_volts(ask(
@@ -228,7 +248,8 @@ class Guided:
                 'acquisition starts on complete input.', deadline=time.monotonic() + GUIDED_HOLD_SECONDS - 15),
                 {'TP_3V3', 'TP_ADC0', 'TP_ADC1'})
             self.evidence.add('reference_measurements', position=self.position, volts=self.measurements,
-                              settling_seconds=5, stable_updates=3)
+                              stage=stage, settling_seconds=5, stable_updates=3)
+            self.reference_stage = stage
 
     def hold(self, name, serial, deadline):
         if self.operation in {'ds-identity', 'adc-reference'}:
@@ -237,11 +258,22 @@ class Guided:
         if self.operation not in {'ds-identity', 'adc-reference'}:
             self.measure_hold(name, deadline)
 
-    def reading_result(self, observed):
-        if not self.reference:
-            raise ValueError('guided reading is assigned only to ADC reference')
-        self.sample = observed['sample']
-        self.evidence.add('sample', sample=self.sample, source='core_reading')
+    def _reference_result(self, stage, sample):
+        if not self.reference or self.reference_stage != stage or self.measurements is None:
+            raise IncompleteCase(f'fresh reference measurements required for {stage}')
+        validate_reference(sample, self.measurements, self.position)
+        result = dict(sample=sample, volts=self.measurements)
+        self.reference_stages[stage] = result
+        self.evidence.add('reference_stage', stage=stage, **result)
+        # A second real acquisition needs its own fresh measurements.
+        self.measurements = None
+        self.reference_stage = None
+
+    def acquisition_result(self):
+        self._reference_result('acquisition', self.sample)
+
+    def core_result(self, observed):
+        self._reference_result('core', observed['sample'])
 
     def measure_hold(self, name, deadline, *, check_state=None):
         # 15 s is transport/result margin, never extra meter-observation time.
@@ -274,12 +306,12 @@ class Guided:
 
     def deep_sleep(self, dut, started, deadline):
         port = self.evidence.data['metadata'].get('port')
-        identity = uart_identity(port)
+        identity = uart_identity(port, dut)
 
         def check_state():
             try:
                 check_uart(dut, port, identity)
-                match = dut.expect([rb'ESP-ROM:', rb'CARRIER_BOOT ', UNITY_SUMMARY_LINE_REGEX,
+                match = dut.expect([rb'ESP-ROM:', rb'CURAG_USB_READY ', rb'CARRIER_BOOT ', UNITY_SUMMARY_LINE_REGEX,
                                     rb'Guru Meditation Error', rb'task_wdt:'], timeout=0)
             except pexpect.TIMEOUT:
                 return
@@ -324,6 +356,8 @@ class Guided:
                     'held-reset': ['transition-on', 'held-reset']}
         if self.operation in expected and self.holds != expected[self.operation]:
             raise IncompleteCase('not all required electrical stages were measured')
+        if self.operation in {'acquire', 'adc-reference'}:
+            require_acquisition_stages(self.evidence.data['events'])
         if self.operation == 'deep-sleep':
             kinds = {event['kind'] for event in self.evidence.data['events']}
             if not {'deep_sleep_attestation', 'deep_sleep_operator_reset'} <= kinds:
@@ -333,11 +367,11 @@ class Guided:
             self.evidence.add('position_result', position=self.position,
                               warmed_channel=self.warmed, sample=self.sample)
         elif self.reference:
-            validate_reference(self.sample, self.measurements, self.position)
+            validate_reference_stages(self.reference_stages, self.position)
             if self.prior:
-                validate_reference(self.prior['event']['sample'], self.prior['event']['volts'], 'A')
+                validate_reference_stages(self.prior['event']['stages'], 'A')
             self.evidence.add('position_result', position=self.position,
-                              sample=self.sample, volts=self.measurements)
+                              stages=self.reference_stages)
         if self.operation == 'ds-identity' or self.reference:
             if self.position == 'A':
                 self.evidence.finish('position_A_complete_sequence_incomplete')

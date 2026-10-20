@@ -1,10 +1,14 @@
-import json
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tests/support"))
+from usb_console import attach_usb_console, usb_identity
+
+import json
 
 import pytest
 
-from carrier_runner import APP, MISSING_FIXTURES, load_build, run_operation
-from carrier_evidence import Evidence, verify_build
+from carrier_runner import APP, OPERATIONS, MISSING_FIXTURES, load_build, run_operation
+from carrier_evidence import Evidence, fixture_manifest, verify_build
 from carrier_guided import Guided, IncompleteCase, prior_position
 from carrier_exploration import Exploration, OPERATIONS as EXPLORATION_OPERATIONS
 
@@ -12,6 +16,8 @@ from carrier_exploration import Exploration, OPERATIONS as EXPLORATION_OPERATION
 def test_sensor_carrier(request, record_property):
     config = request.config
     operation = config.getoption("sensor_operation")
+    if operation not in OPERATIONS:
+        raise pytest.UsageError("select an implemented --sensor-operation")
     fixture = config.getoption("sensor_fixture")
     exploration = config.getoption("exploration")
     if exploration and (operation not in EXPLORATION_OPERATIONS or
@@ -23,8 +29,8 @@ def test_sensor_carrier(request, record_property):
     # Validate before requesting dut: its fixture opens and flashes hardware.
     if Path(config.getoption("app_path") or "").resolve() != APP:
         raise pytest.UsageError(f"--app-path must be {APP}")
-    if config.getoption("target") != "esp32c6":
-        raise pytest.UsageError("--target=esp32c6 is required")
+    if config.getoption("target") != "esp32s3":
+        raise pytest.UsageError("--target=esp32s3 is required")
     if set((config.getoption("embedded_services") or "").split(",")) != {"esp", "idf"}:
         raise pytest.UsageError("--embedded-services=esp,idf is required")
     if config.getoption("erase_all") or config.getoption("skip_autoflash"):
@@ -51,7 +57,7 @@ def test_sensor_carrier(request, record_property):
         "expected_dut": expected_dut,
         "requested_count": count if operation == "repeat" else 1,
         "fixture": fixture or "discovery_setup",
-        "carrier_revision": config.getoption("carrier_revision"),
+        "fixture_sha256": fixture_manifest(),
         "port": port,
         "elf_sha256": build.elf_sha256,
         "config_sha256": build.config_sha256,
@@ -60,17 +66,14 @@ def test_sensor_carrier(request, record_property):
         "rom1": build.boot_values["rom1"],
     }
     for key, value in metadata.items():
-        record_property(key, value)
+        record_property(key, json.dumps(value, sort_keys=True) if isinstance(value, dict) else value)
     print("CARRIER_RUN " + json.dumps(metadata, sort_keys=True), flush=True)
     root_logdir = config.getoption("root_logdir")
     if not root_logdir:
         raise pytest.UsageError("--root-logdir must identify a new run directory")
-    paired = operation in {"ds-identity", "adc-reference"} or (
-        operation == "reading" and fixture == "adc_reference")
+    paired = operation in {"ds-identity", "adc-reference"}
     position = config.getoption("sensor_position")
     guided_requested = config.getoption("sensor_guided")
-    if operation == "reading" and guided_requested and not paired:
-        raise pytest.UsageError("guided reading is assigned only to adc_reference A/B")
     if (paired or operation in {"reset", "held-reset", "deep-sleep"}) and not (guided_requested or exploration):
         raise pytest.UsageError("this operation requires --sensor-guided and live operator input")
     if not paired and (position or config.getoption("sensor_prior_evidence")):
@@ -88,7 +91,10 @@ def test_sensor_carrier(request, record_property):
     try:
         if guided:
             guided.wiring()
+        usb_identity(port)
         dut = request.getfixturevalue("dut")
+        attach_usb_console(dut, reconnect_timeout=(
+            None if exploration and operation in {"deep-sleep", "held-reset"} else 650))
         run_operation(dut, build, operation, record_property, expected_dut=expected_dut,
                       fixture=fixture, repeat_count=count, evidence=evidence, guided=guided)
         if guided:

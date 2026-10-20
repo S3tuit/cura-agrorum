@@ -11,6 +11,7 @@ from pytest_embedded.log import PexpectProcess
 from pytest_embedded_idf.dut import IdfDut
 
 import carrier_runner as runner
+from reading_fixture import serial_reading
 from pytest_sensor_carrier import test_sensor_carrier as run_hardware_test
 
 
@@ -18,8 +19,8 @@ from pytest_sensor_carrier import test_sensor_carrier as run_hardware_test
 def build_dir(tmp_path):
     (tmp_path / "config").mkdir()
     config = {key: value for key, value in runner.GPIO_SETTINGS.values()}
-    config.update(IDF_TARGET="esp32c6", ESP_CONSOLE_UART_DEFAULT=True,
-                  ESP_CONSOLE_UART_NUM=0, ESP_CONSOLE_UART_BAUDRATE=115200,
+    config.update(IDF_TARGET="esp32s3", ESP_CONSOLE_USB_SERIAL_JTAG=True,
+                  FREERTOS_UNICORE=True, ESPTOOLPY_FLASHSIZE="8MB",
                   CURA_DS18B20_0_ROM="1122334455667728",
                   CURA_DS18B20_1_ROM="8877665544332228")
     (tmp_path / "config/sdkconfig.json").write_text(json.dumps(config))
@@ -46,7 +47,7 @@ def change_config(build_dir, **updates):
 def test_bad_acquisition_config_rejected_before_dut_fixture(build_dir, updates):
     change_config(build_dir, **updates)
     options = dict(sensor_operation="acquire", app_path=str(runner.APP),
-                   target="esp32c6", embedded_services="esp,idf", erase_all=False,
+                   target="esp32s3", embedded_services="esp,idf", erase_all=False,
                    skip_autoflash=False, count=1, port="/dev/null", build_dir=str(build_dir))
     def forbidden_fixture(name):
         pytest.fail(f"configuration rejection must precede requesting {name}")
@@ -62,17 +63,16 @@ def test_discovery_allows_unprovisioned_build(build_dir):
     assert runner.load_build(build_dir, "discover").boot_values["rom0"] == "0" * 16
 
 
-@pytest.mark.parametrize("operation,fixture,revision,ready", [
-    (None, None, "rev1", True),
-    ("acquire", None, "rev1", True),
-    ("repeat", "missing_ds0", "rev1", True),
-    ("discover", "nominal", "rev1", True),
-    ("discover", None, "", True),
-    ("gate-on", "nominal", "rev1", False),
+@pytest.mark.parametrize("operation,fixture,ready", [
+    (None, None, True),
+    ("acquire", None, True),
+    ("repeat", "missing_ds0", True),
+    ("discover", "nominal", True),
+    ("gate-on", "nominal", False),
 ])
-def test_incomplete_or_mismatched_selection_fails(operation, fixture, revision, ready):
+def test_incomplete_or_mismatched_selection_fails(operation, fixture, ready):
     with pytest.raises(ValueError):
-        runner.validate_selection(operation, fixture, revision, ready)
+        runner.validate_selection(operation, fixture, ready)
 
 
 @pytest.fixture
@@ -87,7 +87,8 @@ def scripted_dut(build_dir, tmp_path, monkeypatch):
               str(tmp_path / "serial.log"), "runner-test")
     state = SimpleNamespace(commands=[], resets=0, preflight="PASS", sample="PASS",
                             omit_end=False, omit_ready=False, empty_menu=False,
-                            elf=build.elf_sha256, fixture="nominal", inventory="", sample_serial="")
+                            elf=build.elf_sha256, fixture="nominal", inventory="", sample_serial="",
+                            core="PASS", core_serial=None, omit_core=False)
 
     def feed(text):
         os.write(write_fd, text.encode())
@@ -107,29 +108,45 @@ def scripted_dut(build_dir, tmp_path, monkeypatch):
              f"-----------------------\n1 Tests {int(outcome == 'FAIL')} Failures "
              f"{int(outcome == 'IGNORE')} Ignored\n{'FAIL' if outcome == 'FAIL' else 'OK'}\n")
 
+    def acquisition_hold(mode):
+        if state.omit_ready:
+            return
+        feed(state.sample_serial)
+        duration = {'auto': '60', 'guided': '180', 'exploration': 'unlimited'}[mode]
+        feed(f"CARRIER_HOLD_READY sample-return seconds={duration}\n")
+        if mode == 'auto' and not state.omit_end:
+            feed("CARRIER_HOLD_END sample-return\n")
+            result(f"carrier {"reference" if state.fixture == "adc_reference" else state.fixture} acquisition and sample-return hold", state.sample)
+
     def write(command):
         state.commands.append(command)
         if command == "":
             feed("Here's the test menu, pick your combo:\n")
             if not state.empty_menu:
                 feed('(1)\t"carrier setup discovery" [sensor_carrier]\n'
-                     f'(2)\t"carrier {state.fixture} preflight" [sensor_carrier]\n'
+                     f'(2)\t"carrier {"nominal" if state.fixture == "adc_reference" else state.fixture} preflight" [sensor_carrier]\n'
                      '(3)\t"carrier production gate-on hold" [sensor_carrier]\n'
                      '(4)\t"carrier production gate-off hold" [sensor_carrier]\n'
-                     f'(5)\t"carrier {state.fixture} acquisition and sample-return hold" [sensor_carrier]\n')
+                     f'(5)\t"carrier {"reference" if state.fixture == "adc_reference" else state.fixture} acquisition and sample-return hold" [sensor_carrier]\n')
             feed("Enter test for running.\n")
         elif command == "2":
             feed(state.inventory)
-            result(f"carrier {state.fixture} preflight", state.preflight)
+            result(f"carrier {"nominal" if state.fixture == "adc_reference" else state.fixture} preflight", state.preflight)
+        elif command == "7":
+            feed((state.core_serial if state.core_serial is not None else serial_reading(state.fixture)).decode())
+            result(f"carrier {state.fixture} core reading", state.core)
         elif command == "5":
-            feed("CARRIER_HOLD_MODE\n")
-        elif command == "auto":
-            if state.omit_ready:
-                return
-            feed(state.sample_serial)
-            feed("CARRIER_HOLD_READY sample-return seconds=60\n")
+            if state.fixture == 'adc_reference':
+                acquisition_hold('auto')
+            else:
+                feed("CARRIER_HOLD_MODE\n")
+        elif command in {"auto", "guided", "exploration"}:
+            assert state.fixture != 'adc_reference', 'reference hold does not read a mode command'
+            acquisition_hold(command)
+        elif command == 'CARRIER_HOLD_ACK sample-return':
+            feed('CARRIER_HOLD_ACKED sample-return elapsed_us=11000000\n')
             if not state.omit_end:
-                feed("CARRIER_HOLD_END sample-return\n")
+                feed('CARRIER_HOLD_END sample-return\n')
                 result(f"carrier {state.fixture} acquisition and sample-return hold", state.sample)
 
     original_write = write
@@ -145,6 +162,8 @@ def scripted_dut(build_dir, tmp_path, monkeypatch):
     def feed(text):
         if text == "Enter test for running.\n" and not state.empty_menu:
             original_feed('(6)\t"carrier BME280 sleep observation" [sensor_carrier]\n')
+            if not state.omit_core:
+                original_feed(f'(7)\t"carrier {state.fixture} core reading" [sensor_carrier]\n')
         original_feed(text)
 
     state.boot = boot
@@ -168,12 +187,12 @@ def run(script):
     runner.run_operation(dut, build, "acquire", lambda *args: None)
 
 
-def test_acquisition_preflight_then_fresh_boot_then_exactly_one_sample(scripted_dut):
+def test_acquisition_preflight_hold_then_fresh_core_boot(scripted_dut):
     run(scripted_dut)
     dut, _, state = scripted_dut
-    assert state.commands == ["", "2", "", "5", "auto"]
-    assert state.resets == 1
-    assert [case.result for case in dut.testsuite.testcases] == ["PASS", "PASS"]
+    assert state.commands == ["", "2", "", "5", "auto", "", "7"]
+    assert state.resets == 2
+    assert [case.result for case in dut.testsuite.testcases] == ["PASS", "PASS", "PASS"]
 
 
 @pytest.mark.parametrize("outcome", ["FAIL", "IGNORE", "ZERO"])

@@ -18,6 +18,7 @@ idf_component_register(
       nvs_flash
       esp_partition
       esp_hw_support
+      esp_timer
       freertos
       joltwallet__littlefs
     WHOLE_ARCHIVE)
@@ -33,3 +34,12 @@ target_include_directories(
     ${COMPONENT_LIB}
     PRIVATE "${CURA_FIRMWARE_DIR}/components/node_persistence/private_include"
             "${CURA_FIRMWARE_DIR}/tests/support")
+
+# Shared console handshake and stock Unity input yielding for native USB.
+target_sources(${COMPONENT_LIB} PRIVATE
+    "${CURA_FIRMWARE_DIR}/tests/support/usb_console_test_support.c"
+    "${CURA_FIRMWARE_DIR}/tests/support/unity_console.c")
+target_include_directories(${COMPONENT_LIB} PRIVATE "${CURA_FIRMWARE_DIR}/tests/support")
+foreach(symbol unity_gets unity_putc esp_rom_output_rx_one_char)
+    target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=${symbol}")
+endforeach()

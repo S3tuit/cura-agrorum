@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "test_app_main.c" "test_sensor_carrier.c" "carrier_checks.c" "carrier_bme_preflight.c" "carrier_observer.c" "carrier_hold.c" "carrier_console.c" "carrier_core.c"
+    SRCS "test_app_main.c" "test_sensor_carrier.c" "carrier_checks.c" "carrier_bme_preflight.c" "carrier_observer.c" "carrier_hold.c" "carrier_core.c" "carrier_output.c"
          "${CURA_FIRMWARE_DIR}/tests/support/persistence_test_support.c"
     PRIV_REQUIRES unity node_sensors node_platform_esp esp_app_format esp_hw_support
                   onewire_bus ds18b20 bosch_bme280 esp_driver_i2c esp_adc esp_driver_gpio esp_timer freertos
@@ -27,6 +27,12 @@ foreach(symbol node_sensors_sample_all node_sensors_power_gate_on node_sensors_p
         ds18b20_del_device bme280_init node_sensors_backend_sample_bme280
         i2c_new_master_bus i2c_master_bus_add_device i2c_master_transmit
         i2c_master_transmit_receive bme280_get_sensor_data onewire_bus_write_bytes onewire_bus_read_bytes
-        unity_gets esp_rom_output_rx_one_char)
+        unity_gets unity_putc esp_rom_output_rx_one_char)
     target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=${symbol}")
 endforeach()
+
+# Shared console handshake and stock Unity input yielding for native USB.
+target_sources(${COMPONENT_LIB} PRIVATE
+    "${CURA_FIRMWARE_DIR}/tests/support/usb_console_test_support.c"
+    "${CURA_FIRMWARE_DIR}/tests/support/unity_console.c")
+target_include_directories(${COMPONENT_LIB} PRIVATE "${CURA_FIRMWARE_DIR}/tests/support")

@@ -1,12 +1,12 @@
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "node_platform_esp.h"
 #include "protocol_v2_lora_schema_generated.h"
 #include "unity.h"
+#include "usb_console_test_support.h"
 
 #define IMMEDIATE_CLOCK_READS 4096U
 #define DELAYED_CLOCK_READS 8U
@@ -62,8 +62,12 @@ static void platform_deep_sleep_stage_1(void) {
   TEST_ASSERT_NOT_NULL(ports);
   TEST_ASSERT_NOT_NULL(ports->system.enter_deep_sleep_for);
 
-  puts(PLATFORM_DEEP_SLEEP_START_MARKER);
-  fflush(stdout);
+  /* Stay on Unity's output path: stdio's separate USB timeout can drop bytes
+   * after ROM writes. The nonce ACK then proves the host reader received the
+   * timing marker before USB disconnect discards unread tty bytes. */
+  UnityPrint(PLATFORM_DEEP_SLEEP_START_MARKER);
+  UNITY_PRINT_EOL();
+  TEST_ASSERT_TRUE(hwtest_usb_console_ready());
   ports->system.enter_deep_sleep_for(ports->system.context,
                                      PLATFORM_DEEP_SLEEP_DURATION_US);
   TEST_FAIL_MESSAGE("deep-sleep adapter returned");
@@ -74,8 +78,8 @@ static void platform_deep_sleep_stage_2(void) {
   TEST_ASSERT_NOT_NULL(ports);
   TEST_ASSERT_NOT_NULL(ports->system.get_reset_reason);
 
-  puts(PLATFORM_DEEP_SLEEP_END_MARKER);
-  fflush(stdout);
+  UnityPrint(PLATFORM_DEEP_SLEEP_END_MARKER);
+  UNITY_PRINT_EOL();
   TEST_ASSERT_EQUAL_UINT8(
       CURA_LORA_V2_RESET_REASON_ESP_RST_DEEPSLEEP,
       ports->system.get_reset_reason(ports->system.context));

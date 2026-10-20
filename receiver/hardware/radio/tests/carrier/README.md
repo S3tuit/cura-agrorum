@@ -13,7 +13,7 @@ actual non-root receiver service user, with its deployed device permissions.
 Do not use root to turn a permission failure into a pass.
 Keep both RTC fault shunts open; use the nominal production supply and wiring.
 
-The RF peer is the C6 radio application, coordinated from laptop
+The RF peer is the S3 radio application, coordinated from laptop
 tests/rf/ with a separate Pi component process in
 receiver/test_apps/radio_peer/. Reuse the production Pi radio components where
 their fixed profile and state contract applies; deliberate alternative-profile

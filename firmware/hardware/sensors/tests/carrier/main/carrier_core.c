@@ -1,3 +1,4 @@
+#include "carrier_output.h"
 #include "carrier_core.h"
 
 #include <inttypes.h>
@@ -111,9 +112,9 @@ static void observe_terminal(void *context, uint64_t duration_us) {
 }
 
 static void print_body(const char *name, const uint8_t *body) {
-  printf(" %s=", name);
+  carrier_output_printf(" %s=", name);
   for (size_t index = 0; index < CURA_LORA_V2_READING_BODY_SIZE; ++index) {
-    printf("%02x", body[index]);
+    carrier_output_printf("%02x", body[index]);
   }
 }
 
@@ -122,11 +123,10 @@ void carrier_core_run(const uint64_t roms[2], unsigned ds_mask, bool bme_present
   /* Test labels overlap production flash. Erasing them destroys any prior
    * production counters and logs; the disposable identity below cannot protect
    * that earlier lifetime. Production reuse requires a new node ID AND key. */
-  puts("CARRIER_STORAGE_ERASE WARNING: reading erases nvs_test and storage_test "
+  carrier_output_puts("CARRIER_STORAGE_ERASE WARNING: core stage erases nvs_test and storage_test "
        "before and after this case, including any prior production counters "
        "and logs. Before production reuse, provision a NEW node ID AND key; "
        "never restore the old identity or counter backup.");
-  fflush(stdout);
   hwtest_erase_state();
   memset(out, 0, sizeof(*out));
   memset(&s_cycle, 0, sizeof(s_cycle));
@@ -191,11 +191,11 @@ void carrier_core_run(const uint64_t roms[2], unsigned ds_mask, bool bme_present
       pending.bytes, pending.length, out->pending_body));
   TEST_ASSERT_EQUAL_HEX8_ARRAY(out->body, out->pending_body, sizeof(out->body));
 
-  printf("CARRIER_READING samples=%u tx_calls=%u rx_calls=%u terminal_calls=%u"
+  carrier_output_printf("CARRIER_READING samples=%u tx_calls=%u rx_calls=%u terminal_calls=%u"
          " sleep_us=%" PRIu64, s_cycle.samples, s_cycle.tx_calls,
          s_cycle.rx_calls, s_cycle.terminal_calls, s_cycle.sleep_us);
   print_body("body", out->body);
   print_body("pending_body", out->pending_body);
-  putchar('\n');
+  carrier_output_puts("");
   hwtest_finish_case();
 }

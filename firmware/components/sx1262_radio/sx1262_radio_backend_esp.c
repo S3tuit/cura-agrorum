@@ -15,6 +15,7 @@
 #include "freertos/task.h"
 #include "sx126x.h"
 #include "sx126x_hal.h"
+#include "sx1262_radio_rf_path.h"
 
 #define RADIO_SPI_HOST SPI2_HOST
 #define RADIO_SPI_CLOCK_HZ 8000000
@@ -68,6 +69,7 @@ typedef struct {
 } sx1262_radio_esp_context_t;
 
 static sx1262_radio_esp_context_t s_backend;
+static portMUX_TYPE s_dio1_lock = portMUX_INITIALIZER_UNLOCKED;
 
 static void set_semantic_failure(uint16_t error_code, curag_radio_stage_t stage,
                                  uint8_t command_opcode) {
@@ -153,7 +155,9 @@ static bool spi_transfer(const uint8_t *transmit, uint8_t *receive,
 
 static void IRAM_ATTR dio1_isr(void *argument) {
   sx1262_radio_esp_context_t *const context = argument;
+  portENTER_CRITICAL_ISR(&s_dio1_lock);
   context->dio1_at_us = (uint64_t)esp_timer_get_time();
+  portEXIT_CRITICAL_ISR(&s_dio1_lock);
   BaseType_t higher_priority_woken = pdFALSE;
   xSemaphoreGiveFromISR(context->dio1_semaphore, &higher_priority_woken);
   if (higher_priority_woken == pdTRUE) {
@@ -165,10 +169,16 @@ static void discard_stale_dio1_event(void) {
   /* Only a new arm discards stale state; IRQ acknowledgement must not. */
   while (xSemaphoreTake(s_backend.dio1_semaphore, 0U) == pdTRUE) {
   }
+  portENTER_CRITICAL(&s_dio1_lock);
   s_backend.dio1_at_us = 0U;
+  portEXIT_CRITICAL(&s_dio1_lock);
 }
 
 static bool configure_gpio(sx1262_radio_backend_error_t *error) {
+  s_backend.hardware_touched = true;
+  if (!sx1262_radio_backend_disable_rf_path(error)) {
+    return false;
+  }
   gpio_config_t reset_config = {
       .pin_bit_mask = UINT64_C(1) << CONFIG_CURA_SX1262_RESET_GPIO,
       .mode = GPIO_MODE_OUTPUT,
@@ -282,7 +292,7 @@ static bool profile_is_supported(const sx1262_radio_profile_t *profile) {
          profile->coding_rate_denominator ==
              SX1262_RADIO_CODING_RATE_DENOMINATOR &&
          profile->sync_word == SX1262_RADIO_SYNC_WORD &&
-         profile->tcxo_voltage == (uint8_t)SX126X_TCXO_CTRL_1_7V &&
+         profile->tcxo_voltage == (uint8_t)SX126X_TCXO_CTRL_3_0V &&
          profile->dcdc_regulator && profile->dio2_rf_switch &&
          profile->dio3_tcxo;
 }
@@ -525,7 +535,9 @@ bool sx1262_radio_backend_initialize(const sx1262_radio_profile_t *profile,
   prepare_driver_call(CURAG_RADIO_STAGE_WRITE_COMMAND,
                       SX1262_OPCODE_SET_REGULATOR_MODE);
   if (finalize_driver_call(
-          sx126x_set_reg_mode(&s_backend, SX126X_REG_MODE_DCDC),
+          sx126x_set_reg_mode(&s_backend, profile->dcdc_regulator
+                                            ? SX126X_REG_MODE_DCDC
+                                            : SX126X_REG_MODE_LDO),
           CURAG_RADIO_STAGE_WRITE_COMMAND, SX1262_OPCODE_SET_REGULATOR_MODE,
           error) != SX1262_COMMAND_CONFIRMED) {
     return false;
@@ -630,6 +642,23 @@ bool sx1262_radio_backend_initialize(const sx1262_radio_profile_t *profile,
         (uint8_t)(s_backend.last_failure.flags |
                   CURAG_RADIO_CONTEXT_DEVICE_ERRORS_VALID);
     s_backend.last_failure.device_errors = device_errors;
+    copy_last_failure(error);
+    return false;
+  }
+  const esp_err_t rf_status = sx1262_radio_rf_path_on();
+  if (rf_status != ESP_OK) {
+    set_esp_failure(rf_status, CURAG_RADIO_STAGE_CONFIGURE_GPIO, 0U);
+    copy_last_failure(error);
+    return false;
+  }
+  return true;
+}
+
+bool sx1262_radio_backend_disable_rf_path(sx1262_radio_backend_error_t *error) {
+  sx1262_radio_backend_error_clear(error);
+  const esp_err_t status = sx1262_radio_rf_path_off();
+  if (status != ESP_OK) {
+    set_esp_failure(status, CURAG_RADIO_STAGE_CONFIGURE_GPIO, 0U);
     copy_last_failure(error);
     return false;
   }
@@ -739,7 +768,9 @@ bool sx1262_radio_backend_wait_dio1(uint64_t deadline_monotonic_us,
     /* Pending ISR time wins even when the task resumes at the deadline. */
     if (xSemaphoreTake(s_backend.dio1_semaphore, 0U) == pdTRUE) {
       *out_observed = true;
+      portENTER_CRITICAL(&s_dio1_lock);
       *out_irq_at_us = s_backend.dio1_at_us;
+      portEXIT_CRITICAL(&s_dio1_lock);
       return true;
     }
     const uint64_t now = sx1262_radio_backend_monotonic_us();
@@ -760,7 +791,9 @@ bool sx1262_radio_backend_wait_dio1(uint64_t deadline_monotonic_us,
     }
     if (xSemaphoreTake(s_backend.dio1_semaphore, wait_ticks) == pdTRUE) {
       *out_observed = true;
+      portENTER_CRITICAL(&s_dio1_lock);
       *out_irq_at_us = s_backend.dio1_at_us;
+      portEXIT_CRITICAL(&s_dio1_lock);
       return true;
     }
   }

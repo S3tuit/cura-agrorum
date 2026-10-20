@@ -12,8 +12,15 @@ def carrier_source_tree(tmp_path, monkeypatch):
              'sdkconfig.defaults', 'sdkconfig', 'partitions.csv', 'main/carrier_core.c',
              'managed_components/joltwallet__littlefs/src/littlefs/lfs.c')]
     paths += [repo / name for name in (
+        'firmware/HARDWARE.md',
+        'firmware/hardware/sensors/tests/carrier/FIXTURE.md',
+        'firmware/cmake/xiao_board.cmake',
         'firmware/tests/support/persistence_test_support.c',
         'firmware/tests/support/persistence_test_support.h',
+        'firmware/tests/support/unity_console.c',
+        'firmware/tests/support/usb_console.py',
+        'firmware/tests/support/usb_console_test_support.c',
+        'firmware/tests/support/usb_console_test_support.h',
         'firmware/components/node_core/node_core.c',
         'firmware/components/node_persistence/node_persistence_backend_esp.c',
         'firmware/components/protocol_v2_lora/protocol_v2_lora_crypto.c',

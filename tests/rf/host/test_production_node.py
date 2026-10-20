@@ -5,10 +5,15 @@ import pytest
 
 from production_node import identify, verify_installed, capture_storage, STORAGE_SIZE
 
+@pytest.fixture(autouse=True)
+def native_usb_admission(monkeypatch):
+    monkeypatch.setattr("production_node.usb_identity", lambda port: None)
+
+
 
 def test_readonly_capture_binds_complete_image_and_never_restarts(tmp_path, monkeypatch):
     commands = []
-    fixture = dict(c6_uart="/dev/ttyUSB0", c6_dut="cc8da2fc0224")
+    fixture = dict(node_uart="/dev/ttyACM0", node_dut="cc8da2fc0224")
 
     def invoke(command, **kwargs):
         commands.append(command)
@@ -30,8 +35,8 @@ def test_readonly_capture_binds_complete_image_and_never_restarts(tmp_path, monk
 
 def test_wrong_physical_identity_stops_before_read(tmp_path, monkeypatch):
     monkeypatch.setattr("production_node.esptool", lambda *_: SimpleNamespace(stdout="MAC: 00:00:00:00:00:01\n"))
-    with pytest.raises(ValueError, match="wrong C6"):
-        identify(dict(c6_dut="cc8da2fc0224"), tmp_path, "mac")
+    with pytest.raises(ValueError, match="wrong S3"):
+        identify(dict(node_dut="cc8da2fc0224"), tmp_path, "mac")
 
 
 def test_changed_source_rejects_before_uart(tmp_path, monkeypatch):
@@ -43,48 +48,28 @@ def test_changed_source_rejects_before_uart(tmp_path, monkeypatch):
         verify_installed({}, tmp_path, tmp_path)
 
 
-def test_uart_holds_reset_until_explicit_start(tmp_path, monkeypatch):
-    import time
+def test_usb_rom_admission_precedes_capture_and_explicit_native_reset(tmp_path, monkeypatch):
+    import sys
     import serial
-    from esptool.targets.esp32c6 import ESP32C6ROM
+    from esptool.targets.esp32s3 import ESP32S3ROM
     from production_node import NodeUART
-
-    class Port:
-        def __init__(self, **kwargs):
-            self.dtr = self.rts = True
-            self.opened = False
-            self.releases = 0
-
-        def open(self):
-            self.opened = True
-            # Opening must not release EN on the reviewed reset circuit.
-            assert self.dtr is False and self.rts is True
-
-        def read(self, size):
-            time.sleep(.001)
-            return b""
-
-        def isOpen(self):
-            return self.opened
-
-        def setRTS(self, value):
-            if self.rts and not value and not self.dtr:
-                self.releases += 1
-            self.rts = value
-
-        def setDTR(self, value):
-            self.dtr = value
-
-        def close(self):
-            self.opened = False
-
-    monkeypatch.setattr(serial, "Serial", Port)
-    monkeypatch.setattr(ESP32C6ROM, "uses_hardware_flow_control", lambda self: False)
-    node = NodeUART("reviewed-uart", tmp_path)
+    sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parents[3] / 'firmware/tests/support/runner_tests'))
+    from test_usb_console import Port, info
+    probes = []
+    monkeypatch.setattr(serial, 'Serial', Port)
+    monkeypatch.setattr('usb_console.list_ports.comports', lambda: [info()])
+    monkeypatch.setattr(ESP32S3ROM, 'connect', lambda self, **kw: probes.append(kw))
+    monkeypatch.setattr(ESP32S3ROM, 'write_reg', lambda self, *args: probes.append(args))
+    monkeypatch.setattr(ESP32S3ROM, 'uses_hardware_flow_control', lambda self: False)
+    monkeypatch.setattr('esptool.reset.time.sleep', lambda _: None)
+    node = NodeUART('/dev/ttyACM0', tmp_path)
     try:
-        assert node.port.releases == 0 and node.port.rts is True
-        node.start()  # Exercise the real esptool reset sequence on the fake pins.
-        assert node.port.releases == 1
-        assert node.port.rts is False and node.port.dtr is False
+        assert probes == [dict(mode='no-reset', attempts=1),
+                          (ESP32S3ROM.RTC_CNTL_OPTION1_REG, 0,
+                           ESP32S3ROM.RTC_CNTL_FORCE_DOWNLOAD_BOOT_MASK)]
+        assert node.port.lines == []
+        node.start()  # The real esptool native USB reset sequence on fake lines.
+        assert [line for line in node.port.lines if line[0] == 'RTS'] == [('RTS', True), ('RTS', False)]
+        assert all(value is False for name, value in node.port.lines if name == 'DTR')
     finally:
         node.close()

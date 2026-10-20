@@ -46,7 +46,7 @@ ordinary receiver tests do not load pytest-embedded.
 - [`support/`](support/README.md): shared builders, independent models, fakes, and
   coordination helpers. Production code never imports test support.
 
-[Joint RF tests](../../tests/rf/README.md) coordinate Pi/C6 behavior; protocol
+[Joint RF tests](../../tests/rf/README.md) coordinate Pi/S3 behavior; protocol
 codec tests remain in [`protocol-v2-lora/tests/`](../../protocol/protocol-v2-lora/tests/).
 Test source and assertions describe individual cases; this guide does not duplicate
 that inventory. Use reviewed vectors/independent oracles, not the production

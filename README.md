@@ -1,6 +1,6 @@
 # Cura Agrorum
 
-Cura Agrorum collects soil and enclosure measurements using an ESP32-C6 sensor
+Cura Agrorum collects soil and enclosure measurements using an XIAO ESP32S3 sensor
 node and a Raspberry Pi receiver connected over authenticated EU868 LoRa.
 This repository owns the production firmware, receiver, wire protocol and their
 test procedures. Testing policy is in the firmware and receiver testing guides.

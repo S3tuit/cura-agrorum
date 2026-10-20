@@ -33,17 +33,15 @@ const esp_app_desc_t *esp_app_get_description(void);
 int esp_app_get_elf_sha256(char *dst, size_t size);
 """,
         "unity_test_runner.h": "void unity_run_menu(void);\n",
-        "sdkconfig.h": """#define CONFIG_IDF_TARGET_ESP32C6 1
-#define CONFIG_CURA_SOIL_0_GPIO 0
-#define CONFIG_CURA_SOIL_1_GPIO 1
-#define CONFIG_CURA_SENSOR_POWER_GATE_GPIO 2
-#define CONFIG_CURA_DS18B20_GPIO 3
-#define CONFIG_CURA_I2C_SDA_GPIO 21
-#define CONFIG_CURA_I2C_SCL_GPIO 22
+        "sdkconfig.h": """#define CONFIG_IDF_TARGET_ESP32S3 1
+#define CONFIG_CURA_SOIL_0_GPIO 1
+#define CONFIG_CURA_SOIL_1_GPIO 2
+#define CONFIG_CURA_SENSOR_POWER_GATE_GPIO 44
+#define CONFIG_CURA_DS18B20_GPIO 4
+#define CONFIG_CURA_I2C_SDA_GPIO 5
+#define CONFIG_CURA_I2C_SCL_GPIO 6
 #define CONFIG_CURA_SENSOR_POWER_STABILIZATION_MS 200
-#define CONFIG_ESP_CONSOLE_UART_DEFAULT 1
-#define CONFIG_ESP_CONSOLE_UART_NUM 0
-#define CONFIG_ESP_CONSOLE_UART_BAUDRATE 115200
+#define CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG 1
 #define CONFIG_CURA_DS18B20_0_ROM "0000000000000000"
 #define CONFIG_CURA_DS18B20_1_ROM "0000000000000000"
 """,
@@ -52,6 +50,7 @@ int esp_app_get_elf_sha256(char *dst, size_t size);
         (root / name).write_text(content)
     harness = root / "idf_boundary.c"
     harness.write_text("""#include <assert.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include "esp_mac.h"
@@ -69,7 +68,7 @@ int esp_app_get_elf_sha256(char *dst, size_t size) {
     return count + 1;
 }
 esp_err_t esp_efuse_mac_get_default(uint8_t *mac) {
-    /* The C6 default API returns EUI-64, not the six-byte base MAC. */
+    /* An accidentally substituted wider identity must not reach the boot record. */
     const uint8_t eui64[8] = {0x10,0x20,0x30,0xff,0xfe,0x40,0x50,0x60};
     memcpy(mac, eui64, sizeof(eui64));
     return ESP_OK;
@@ -80,6 +79,7 @@ esp_err_t esp_read_mac(uint8_t *mac, esp_mac_type_t type) {
     memcpy(mac, factory, sizeof(factory));
     return ESP_OK;
 }
+bool hwtest_usb_console_ready(void) { return true; }
 void unity_run_menu(void) { puts("UNITY_MENU_ENTERED"); }
 void app_main(void);
 int main(void) { app_main(); return 0; }
@@ -88,7 +88,9 @@ int main(void) { app_main(); return 0; }
     build = subprocess.run([
         os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Wextra", "-Werror",
         "-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-g",
-        "-I", str(root), str(APP / "main/test_app_main.c"), str(harness),
+        "-I", str(root), "-I", str(APP.parents[3] / "tests/support"), str(APP / "main/test_app_main.c"), str(harness),
+        "-I", str(APP / "runner_tests/native"), str(APP / "runner_tests/native/unity_output.c"),
+        str(APP / "main/carrier_output.c"),
         "-o", str(executable),
     ], capture_output=True, text=True)
     assert build.returncode == 0, build.stderr

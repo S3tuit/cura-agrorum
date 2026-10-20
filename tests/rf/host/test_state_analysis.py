@@ -167,7 +167,7 @@ def captures(tmp_path, binaries, request):
         binding = root / 'binding.json'
         binding.write_text(json.dumps(dict(node_id=NODE.hex(), image_sha256=digest(image),
             application_sha256='a' * 64, partition_sha256='b' * 64, size=image.stat().st_size,
-            c6_dut='0123456789ab')))
+            node_dut='0123456789ab')))
         path = root / 'capture.json'
         seal_capture(root / 'receiver.sqlite3', image, binding, build, service, GROUP, path)
         manifests.append(path)
@@ -230,7 +230,7 @@ def test_capture_mismatch_rejected(tmp_path, captures, damage):
     if damage == 'changed_image': Path(value['artifacts']['image']['path']).write_bytes(b'broken')
     elif damage == 'missing_file': Path(value['artifacts']['image']['path']).unlink()
     elif damage == 'node_identity':
-        value['c6_dut'] = 'ffffffffffff'; captures[1].write_text(json.dumps(value))
+        value['node_dut'] = 'ffffffffffff'; captures[1].write_text(json.dumps(value))
     else:
         service = tmp_path / 'other-service.json'
         original = json.loads(Path(value['artifacts']['service']['path']).read_text())

@@ -1,116 +1,103 @@
-# Radio test fixture and preflight
+# Wio B2B radio fixture and preflight
 
-[firmware/HARDWARE.md](../../../../HARDWARE.md#radio-circuit) owns nominal wiring
-and connector numbering. This guide owns C6 fixture changes and static checks;
-[README.md](README.md) describes the component image and
-[tests/rf](../../../../../tests/rf/README.md) owns joint C6/Pi execution.
-The Pi has its own [hardware guide](../../../../../receiver/HARDWARE.md).
+[firmware/HARDWARE.md](../../../../HARDWARE.md#radio-circuit) owns the XIAO/Wio
+B2B wiring and electrical profile. This guide owns fault access and physical
+checks; [joint RF procedures](../../../../../tests/rf/README.md) own execution.
+The Pi uses its separate [hardware guide](../../../../../receiver/HARDWARE.md).
 
-## Removable test connections
+## Fault access
 
-Add JP_DIO1_N between the MCU-side DIO1/RN5 junction and J_RAD_N.9. Keep RN5
-on the MCU side so opening the link leaves GPIO20 defined. Add removable
-absence-only ties from MCU-side BUSY (GPIO19) to +3V3_DUT and MCU-side MISO
-(GPIO14) to GND. All three stay on the carrier when the module is removed.
+The normal assembly mates the Wio directly to the XIAO B2B connector. Its radio
+signals cannot be disconnected individually with XIAO header jumpers. The Wio
+outer headers expose radio nets; they are not XIAO pad pass-throughs.
+
+DIO1 isolation requires a correctly mapped B2B interposer. Pass every connector
+contact through unchanged except for a removable link in the GPIO39/DIO1 path.
+Fit a 10 kohm pull-down from **MCU-side** DIO1 to ground so the open link cannot
+create floating IRQs. Expose MCU-side BUSY/GPIO40 and MISO/GPIO8 for the absence
+fixture, with labelled removable direct ties to 3V3 and ground respectively.
+Check the connector orientation and every contact against the manufacturer
+schematic before mating either board. Do not cut the Wio or XIAO traces as a
+substitute for a reviewed interposer.
 
 ```text
-GPIO19 / TP_N_BUSY ----+---- J_RAD_N.8 / module BUSY
-                      +---- JP_ABS_BUSY_N ---- +3V3_DUT
-GPIO14 / TP_N_MISO ----+---- J_RAD_N.5 / module MISO
-                      +---- JP_ABS_MISO_N ---- GND
-GPIO20 / TP_N_DIO1 ----+---- JP_DIO1_N ---- J_RAD_N.9 / module DIO1
-                      +---- RN5 ---- GND
+XIAO GPIO39 ----+---- JP_DIO1 ---- Wio DIO1
+               +---- 10 kohm ---- GND
+XIAO GPIO40 ----+---------------- Wio BUSY
+               +---- JP_ABS_BUSY ---- +3V3_DUT
+XIAO GPIO8  ----+---------------- Wio MISO
+               +---- JP_ABS_MISO ---- GND
 ```
 
-The absence jumpers are **direct ties**, not pull resistors. Fit them only after
-removing the whole module, including power, ground and all seven signals.
-Remove both ties before reinstalling the module. Never ground a connected
-module's DIO1 output or force its connected BUSY/MISO outputs to a rail.
+| `node_fixture` | `node_fault_access` | Required state |
+|---|---|---|
+| `nominal` | `b2b_direct` | Wio directly mated; no fault ties |
+| `dio1_disconnected` | `b2b_interposer_dio1_open` | Wio fitted through interposer; only DIO1 link open; both absence ties open |
+| `radio_absent` | `module_removed` | Wio completely removed; MCU breakout/interposer remains; BUSY tied to 3V3, MISO to GND, MCU DIO1 pull-down retained |
 
-| State | Module / J_RAD_N | JP_DIO1_N | JP_ABS_BUSY_N | JP_ABS_MISO_N |
-|---|---|---|---|---|
-| `nominal` | All nine contacts connected | Fitted | Open | Open |
-| `radio_absent` | Whole module removed | Fitted | BUSY to 3.3 V | MISO to GND |
-| `dio1_disconnected` | All other contacts connected | Open | Open | Open |
+The absence ties are **direct rail ties**, fitted only after all Wio contacts
+are disconnected. Remove both before reinstalling the module. Never force a
+connected module's BUSY, MISO or DIO1 output to a rail. Removing only module
+power does not establish absence and can back-power it through signals.
 
-J_HOST_N and RN5 remain connected in executable states. Keep any attached
-sensor circuit nominal and record its state separately; component cases do not
-sample sensors. No temporary CS preflight lead remains during execution.
+For every fixture change, stop the run, disconnect native USB and every other
+power/back-power path, then verify 3V3 below 0.1 V. EN/reset does not remove
+power. Change antennas and connectors only unpowered. Record the actual
+interposer construction with the run; without one, DIO1 fault testing is
+unavailable. Do not select that case on the direct stack.
 
-For every transition, stop the test, disconnect UART USB and any other
-power/back-power path, and verify the carrier rail is below 0.1 V. EN/reset,
-stopping software and the module battery switch do not remove power. Make
-antenna, jumper and connector changes only unpowered.
+## Preflight and electrical observations
 
-## Static preflight
+1. Identify the XIAO, B2B Wio module and 868 MHz antenna. Confirm the module's
+   IPEX socket is used, the B2B connector is aligned, and no through-header
+   shorts XIAO pads to the Wio outer headers. Leave battery and 5V pads unused.
+2. Unpowered, check common ground, supply polarity and shorts. With an
+   interposer, verify every pass-through and the selected link/tie state;
+   DIO1 isolation must be checked by continuity, not inferred from a low level.
+   In absence state, prove complete module disconnection before fitting ties.
+3. Keep MCU EN/reset held before applying USB for a supply-only check. Do not
+   flash or release reset during this check. Measure XIAO 3V3 and module VCC
+   with a voltmeter referenced to local ground. Require 3.2..3.4 V, including
+   at the module: the 3.0 V TCXO needs its documented supply headroom. Wait
+   five seconds and require three stable display updates. Remove power before
+   changing state. Do not connect current-range leads across a supply.
+4. Restore the selected executable fixture unpowered. Remove temporary test
+   leads and confirm no connected output is tied to a rail. Keep sensors
+   nominal and describe them separately; component episodes do not sample them.
+   Admit firmware/configuration, DUT identity and airtime before releasing it.
+5. During approved functional runs, observe VCC under TX load, RF enable and
+   MCU-side DIO1 using suitable probes. RF enable must be high for TX and RX,
+   then low through cold sleep and MCU deep sleep. Verify a subsequent wake
+   can release the GPIO hold and initialize again. Check gate/DQ default-off
+   behavior with the [sensor procedure](../../../sensors/tests/carrier/FIXTURE.md).
 
-1. Identify the C6, module, antenna and selected state. Check the HF module and
-   `ANT_SW A (3V3)` population. Leave battery/Pico/VBUS/VSYS connections absent
-   and the battery switch off. Attach the antenna unpowered.
-2. Trace each C6 GPIO to its module contact using the nominal wiring table.
-   Verify common ground, capacitor polarity, RN5 value/placement and no supply
-   or signal shorts. Check DIO1 continuity with its link fitted and isolation
-   with it open, accounting for semiconductor paths. In `radio_absent`, verify
-   all nine module connections are absent before fitting the two rail ties.
-   Perform resistance/continuity measurements only unpowered.
-3. Isolate all seven C6 signal drivers by disconnecting J_HOST_N, keeping
-   carrier supply/ground intact. With a module fitted, add a temporary lead
-   from TP_N_CS to TP_N_3V3 to hold CS inactive. Hold C6 EN before applying UART
-   USB power and keep it held until power is removed again. Do not flash or
-   access the C6 during this power-only check. With the module absent, omit
-   the CS lead and fit its two absence jumpers.
-4. Use a DC voltmeter with black lead at TP_N_GND. Check the C6 supply,
-   TP_N_3V3 and fitted module U1.36. Require 3.2..3.4 V at each supply point;
-   this is the fixture admission band, not a module operating-range claim.
-   Wait five seconds and require three stable display updates. Never connect
-   the current-range leads across the supply.
-5. Check the levels below. Low is <=0.2 times measured local 3V3; high is
-   >=0.8 times that supply without exceeding it beyond meter resolution.
-   An intermediate/unstable level or missing measurement leaves preflight
-   unresolved. Remove power before changing state and repeat its supply check.
-6. Restore nominal unpowered: remove both absence ties before reinstalling
-   the module, fit DIO1, and remove the temporary CS-high lead before
-   reconnecting J_HOST_N. Verify no C6 output remains tied to a rail. Leave
-   the node unpowered until image/configuration and DUT readiness are confirmed.
-   Keep the observations with the current test session while investigating.
+A static supply reading does not establish transient TCXO headroom, DC-DC
+stability or sleep current. Inspect the supply waveform during start, TX, RX
+and sleep; measure current with a method that preserves the supply voltage.
+Qualify the directly mated assembly separately from any interposer fixture.
+GPIO38 low alone does not prove the SX1262 entered cold sleep.
 
-| Power-only state, J_HOST_N isolated | CS | RESET | BUSY | MISO | MCU-side DIO1 |
-|---|---|---|---|---|---|
-| Nominal, temporary CS-high lead | High | High, internal pull-up | Low after settling | High impedance; no voltage criterion | Low |
-| Radio absent, rail ties fitted | No criterion | No criterion | High | Low | Low |
-| DIO1 disconnected, temporary CS-high lead | High | High, internal pull-up | Low after settling | High impedance; no voltage criterion | Low; also check open-link continuity |
+## Functional faults and qualification limits
 
-A low MCU-side DIO1 alone does not prove disconnection. BUSY low does not prove
-SPI or oscillator initialization. MISO is high impedance with CS inactive, as
-described in [Semtech section 8.2](https://files.waveshare.com/wiki/SX1262-XXXM-LoRaWAN-GNSS-HAT/DS_SX1261-2_V1.2.pdf).
-Watch for supply/reset errors under TX load during functional tests; static
-checks do not establish dynamic margin.
+Use fixed antenna positions at least 3 m apart with common vertical orientation,
+fixed heights and a clear path. Keep them unchanged through fault/restoration
+comparisons. Follow the [operating envelope](../../../../../tests/rf/OPERATING_ENVELOPE.md)
+and whole-case charges in [spec.py](../../../../../tests/rf/spec.py). Independent
+endpoint clocks and SSH arrival times do not establish radio timing.
 
-If assembly changes sensor wiring or the shared supply, rerun the necessary
-[sensor checks](../../../sensors/tests/carrier/README.md). To keep the radio
-quiet during supply checks, disconnect J_HOST_N and fit the temporary CS-high
-lead unpowered; remove it unpowered before restoring J_HOST_N.
+First pass nominal ACK exchange. For disconnected DIO1, the peer must receive
+the payload while the node returns within its deadline with `tx_started=true`,
+`tx_done=false` and TRANSMIT/WAIT_IRQ/HARDWARE_TOUCHED context. This consumes
+airtime. For absent radio, the MCU-side BUSY tie causes bounded initialization
+failure before TX. RF-disable cleanup must still be attempted after failure;
+observe GPIO38 inactive. Restore the direct nominal assembly unpowered and
+repeat ACK exchange before another fault campaign.
 
-## RF and fault observations
-
-Use repeatable antenna positions at least 3 m apart, with fixed heights, common
-vertical orientation, a clear path and no immediate metal obstruction. Keep
-positions unchanged through a fault/restoration comparison. RSSI/SNR are not
-calibrated power measurements. Follow the [operating envelope](../../../../../tests/rf/OPERATING_ENVELOPE.md)
-and use [spec.py](../../../../../tests/rf/spec.py) for case names and airtime
-charges, including uncertain transmissions. Confirm separate Pi radio ownership
-and readiness; SSH timing and endpoint monotonic clocks are not interchangeable.
-
-For `dio1_disconnected`, the peer must receive the real payload while the node
-returns within its deadline with `tx_started=true`, `tx_done=false`, and
-TRANSMIT/WAIT_IRQ/HARDWARE_TOUCHED diagnostic context. This consumes airtime.
-For `radio_absent`, the BUSY tie causes bounded lazy-initialization failure
-without starting TX; an I/O error needs its captured cause. Cleanup must permit
-MCU deep sleep. Restore nominal unpowered and repeat the nominal exchange.
-
-The actual [radio app](main/radio_app.c) and joint verifier own executable
-packet/timing assertions. The host suite covers exact deadline boundaries and
-backend errors. Component exchanges do not measure RF output power, emissions,
-carrier accuracy, DIO1 electrical-edge timestamp error or microamp sleep current.
-Forced-BUSY on a connected module, broken SPI and additional injected faults
-require their own controlled fixtures; these connections do not define them.
+The [component app](main/radio_app.c) and verifier own packet/timing assertions.
+Before installation, qualify actual USB reconnection and retained RTC across
+reset/timer wake, sensors and ADC references, nominal TX/RX and sleep/wake,
+fault cleanup, DC-DC supply behavior, conducted/radiated output and sleep current.
+Use the full production sleep interval for cadence/retention checks; accelerated
+RF cases do not establish it. Retain setup, instrument limits and uncertainty
+with physical results in the sibling logbook. Host tests, register settings,
+RSSI/SNR and earlier-board captures do not establish these physical quantities.

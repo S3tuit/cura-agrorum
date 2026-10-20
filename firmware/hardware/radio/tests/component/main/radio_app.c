@@ -1,3 +1,5 @@
+#include "rf_console.h"
+#include "usb_console_test_support.h"
 /* Bounded component tests; optional run-bound rejection matrix credentials. No storage writes. */
 #include <inttypes.h>
 #include <stdio.h>
@@ -22,14 +24,15 @@
 #include "sx1262_radio.h"
 #include "unity.h"
 
-#if !CONFIG_IDF_TARGET_ESP32C6 || CONFIG_CURA_SX1262_SCLK_GPIO != 6 || \
-    CONFIG_CURA_SX1262_MOSI_GPIO != 7 || CONFIG_CURA_SX1262_MISO_GPIO != 14 || \
-    CONFIG_CURA_SX1262_CS_GPIO != 23 || CONFIG_CURA_SX1262_RESET_GPIO != 18 || \
-    CONFIG_CURA_SX1262_BUSY_GPIO != 19 || CONFIG_CURA_SX1262_DIO1_GPIO != 20
-#error "Radio app requires the declared C6 carrier GPIO allocation"
+#if !CONFIG_IDF_TARGET_ESP32S3 || CONFIG_CURA_SX1262_SCLK_GPIO != 7 || \
+    CONFIG_CURA_SX1262_MOSI_GPIO != 9 || CONFIG_CURA_SX1262_MISO_GPIO != 8 || \
+    CONFIG_CURA_SX1262_CS_GPIO != 41 || CONFIG_CURA_SX1262_RESET_GPIO != 42 || \
+    CONFIG_CURA_SX1262_BUSY_GPIO != 40 || CONFIG_CURA_SX1262_DIO1_GPIO != 39 || \
+    CONFIG_CURA_SX1262_RF_ENABLE_GPIO != 38
+#error "Radio app requires the declared S3 B2B GPIO allocation"
 #endif
-#if !defined(CONFIG_ESP_CONSOLE_UART_DEFAULT) || CONFIG_ESP_CONSOLE_UART_NUM != 0 || CONFIG_ESP_CONSOLE_UART_BAUDRATE != 115200
-#error "Radio app requires UART0 at 115200 baud"
+#if !defined(CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG)
+#error "This S3 assembly requires the native USB Serial/JTAG console"
 #endif
 
 static const char *const cases[] = {
@@ -65,7 +68,7 @@ static uint64_t last_tx_done;
 
 static uint64_t now(void) { return ports->clock.monotonic_us(ports->clock.context); }
 static void hex(const uint8_t *p, size_t length) {
-  for (size_t i = 0; i < length; ++i) printf("%02x", p[i]);
+  for (size_t i = 0; i < length; ++i) rf_console_printf("%02x", p[i]);
 }
 static result_t *new_result(bool tx) {
   TEST_ASSERT_LESS_THAN(8, result_count);
@@ -228,42 +231,43 @@ void tearDown(void) {}
 static void dump_results(void) {
   for (unsigned i = 0; i < result_count; ++i) {
     result_t *r = &results[i];
-    printf("RF_RESULT {\"tx\":%s,\"before\":%" PRIu64 ",\"after\":%" PRIu64
+    rf_console_printf("RF_RESULT {\"tx\":%s,\"before\":%" PRIu64 ",\"after\":%" PRIu64
            ",\"deadline\":%" PRIu64 ",\"error\":%" PRIu32 ",\"operation\":%u,\"diagnostic\":\"",
            r->transmit ? "true" : "false", r->before, r->after, r->deadline, r->error, r->diagnostic.operation);
     hex(r->diagnostic.context, r->diagnostic.context_length);
-    printf("\",\"started\":%s,\"done\":%s,\"set_tx\":%" PRIu64 ",\"tx_done\":%" PRIu64
+    rf_console_printf("\",\"started\":%s,\"done\":%s,\"set_tx\":%" PRIu64 ",\"tx_done\":%" PRIu64
            ",\"rx_outcome\":%u,\"rx_done\":%" PRIu64 ",\"rssi\":%d,\"snr\":%d,\"payload\":\"",
            r->tx.tx_started ? "true" : "false", r->tx.tx_done ? "true" : "false",
            r->tx.set_tx_at_us, r->tx.tx_done_at_us, r->rx.outcome, r->rx.rx_done_at_us,
            r->rx.rssi_dbm_x2, r->rx.snr_db_x4);
     hex(r->transmit ? r->payload : r->rx.payload, r->transmit ? r->payload_length : r->rx.payload_length);
-    puts("\"}");
+    rf_console_puts("\"}");
   }
 }
 static void reject_command(const char *reason, const rf_line_t *line) {
-  printf("RF_REJECT {\"boot\":%" PRIu32 ",\"reason\":\"%s\",\"bytes\":%u,\"elapsed_us\":%" PRIu64 "}\n",
+  rf_console_printf("RF_REJECT {\"boot\":%" PRIu32 ",\"reason\":\"%s\",\"bytes\":%u,\"elapsed_us\":%" PRIu64 "}\n",
          boot_nonce, reason, (unsigned)line->length,
          line->started ? now() - line->first_byte_us : 0);
-  fflush(stdout);
+
   /* Rejection is terminal for this boot, including any buffered command tail. */
   for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
 void app_main(void) {
+  if (!hwtest_usb_console_ready()) return;
   ports = node_platform_esp_ports();
   uint8_t mac[6]; char elf[65];
   ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_EFUSE_FACTORY));
   const esp_app_desc_t *description = esp_app_get_description();
   for (unsigned i = 0; i < 32; ++i) snprintf(elf + 2*i, 3, "%02x", description->app_elf_sha256[i]);
   boot_nonce = esp_random();
-  bool sleep_wake = esp_reset_reason() == ESP_RST_DEEPSLEEP && retained.magic == 0x52464336;
+  bool sleep_wake = esp_reset_reason() == ESP_RST_DEEPSLEEP && retained.magic == 0x52465333;
   if (!sleep_wake) memset(&retained, 0, sizeof(retained));
-  printf("RF_BOOT {\"dut\":\"%02x%02x%02x%02x%02x%02x\",\"elf\":\"%s\",\"boot\":%" PRIu32
+  rf_console_printf("RF_BOOT {\"dut\":\"%02x%02x%02x%02x%02x%02x\",\"elf\":\"%s\",\"boot\":%" PRIu32
          ",\"reset\":%d,\"previous_boot\":%" PRIu32 ",\"continuation\":%u,\"previous_run\":\"%s\",\"previous_case\":\"%s\"}\n",
          mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], elf, boot_nonce, esp_reset_reason(),
          retained.previous_boot, retained.continuation, retained.run, retained.selection);
-  puts("RF_READY"); fflush(stdout);
+  rf_console_puts("RF_READY");
   rf_line_t line = {0};
   uint64_t received_at = 0;
   while (line.status == RF_LINE_PENDING) {
@@ -303,9 +307,9 @@ void app_main(void) {
   }
   /* A boot executes at most one command, then sleeps even when Unity fails. */
   memset(&retained, 0, sizeof(retained));
-  printf("RF_BEGIN {\"run\":\"%s\",\"case\":\"%s\",\"boot\":%" PRIu32 ",\"phase\":%u}\n",
+  rf_console_printf("RF_BEGIN {\"run\":\"%s\",\"case\":\"%s\",\"boot\":%" PRIu32 ",\"phase\":%u}\n",
          run_id, cases[selected], boot_nonce, phase);
-  printf("RF_COMMAND {\"boot\":%" PRIu32 ",\"bytes\":%u,\"elapsed_us\":%" PRIu64 "}\n",
+  rf_console_printf("RF_COMMAND {\"boot\":%" PRIu32 ",\"bytes\":%u,\"elapsed_us\":%" PRIu64 "}\n",
          boot_nonce, (unsigned)line.length, received_at - line.first_byte_us);
   UNITY_BEGIN();
   UnityDefaultTestRun(test_episode, cases[selected], __LINE__);
@@ -315,14 +319,14 @@ void app_main(void) {
   dump_results(); radio_observation_dump(); radio_header_dump();
   /* Absent hardware may refuse radio cleanup; the MCU must still sleep. */
   if (cleanup_error && selected != 9) failed = 1;
-  printf("RF_END {\"run\":\"%s\",\"case\":\"%s\",\"boot\":%" PRIu32
+  rf_console_printf("RF_END {\"run\":\"%s\",\"case\":\"%s\",\"boot\":%" PRIu32
          ",\"phase\":%u,\"failed\":%d,\"cleanup_error\":%" PRIu32
          ",\"cleanup_operation\":%u,\"cleanup_diagnostic\":\"",
          run_id, cases[selected], boot_nonce, phase, failed, cleanup_error, cleanup.operation);
-  hex(cleanup.context, cleanup.context_length); puts("\"}");
-  retained.magic = 0x52464336; retained.previous_boot = boot_nonce;
+  hex(cleanup.context, cleanup.context_length); rf_console_puts("\"}");
+  retained.magic = 0x52465333; retained.previous_boot = boot_nonce;
   strcpy(retained.run, run_id); strcpy(retained.selection, cases[selected]);
   retained.continuation = !failed && selected == 7 && phase == 0;
-  puts("RF_SLEEP"); fflush(stdout);
+  rf_console_puts("RF_SLEEP");
   ports->system.enter_deep_sleep_for(ports->system.context, 2000000);
 }

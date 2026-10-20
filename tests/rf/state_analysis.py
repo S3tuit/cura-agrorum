@@ -61,7 +61,7 @@ def seal_capture(database, image, binding, build, service, group, output):
         raise ValueError('node capture/build binding mismatch')
     read_database(paths['database'], group, node)
     value = dict(schema=1, node_id=node, group_id=group, artifacts=artifacts,
-                 service_unit=config['unit'], c6_dut=b['c6_dut'])
+                 service_unit=config['unit'], node_dut=b['node_dut'])
     # Recheck artifacts after inspection; no moving input may be sealed.
     if any(digest(paths[k]) != v['sha256'] for k, v in artifacts.items()):
         raise ValueError('capture changed while sealing')
@@ -222,7 +222,7 @@ def report(before_path, after_path, output):
         sources = build_reader(reader)
         bm, before, initial = load_capture(before_path, reader)
         am, after, final = load_capture(after_path, reader)
-        if any(bm[k] != am[k] for k in ('node_id', 'group_id', 'service_unit', 'c6_dut')) or any(
+        if any(bm[k] != am[k] for k in ('node_id', 'group_id', 'service_unit', 'node_dut')) or any(
                 bm['artifacts'][k]['sha256'] != am['artifacts'][k]['sha256'] for k in ('build', 'service')):
             raise ValueError('source/configuration/identity changed across captures')
         result = reconcile(before, after, initial, final)

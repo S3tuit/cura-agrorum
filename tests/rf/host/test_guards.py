@@ -17,11 +17,11 @@ definition.loader.exec_module(guard)
 
 @pytest.fixture
 def fixture():
-    return dict(schema=1, c6_fixture="nominal", c6_dut="cc8da2fc0224", c6_uart="/dev/ttyUSB0",
+    return dict(schema=2, node_fault_access="b2b_direct", node_fixture="nominal", node_dut="cc8da2fc0224", node_uart="/dev/ttyACM0",
                 pi_user="cura", pi_board_id="00000000e0027211", pi_fixture="radio_nominal",
                 rtc_shunts_open=True, receiver_service_stopped=True, exclusive_radios=True,
                 wiring_checked=True, power_checked=True, antennas_checked=True, operator="test operator",
-                c6_transmitter="node module", pi_transmitter="Pi module", operating_envelope_reference="approved test record",
+                node_transmitter="node module", pi_transmitter="Pi module", operating_envelope_reference="approved test record",
                 manual_fault_confirmed=False)
 
 
@@ -35,7 +35,7 @@ def test_selection_fails_closed(selection, fixture_name):
 
 @pytest.mark.parametrize("field,value", [("schema", True), ("rtc_shunts_open", 1),
     ("exclusive_radios", False), ("receiver_service_stopped", False), ("pi_user", "root"),
-    ("c6_dut", "unknown"), ("operating_envelope_reference", ""), ("c6_fixture", "radio_absent")])
+    ("node_dut", "unknown"), ("operating_envelope_reference", ""), ("node_fixture", "radio_absent")])
 def test_fixture_rejects_missing_or_mismatched_facts(fixture, field, value):
     fixture[field] = value
     with pytest.raises(ValueError):
@@ -43,11 +43,11 @@ def test_fixture_rejects_missing_or_mismatched_facts(fixture, field, value):
 
 
 def test_budget_is_only_a_bounded_declaration():
-    assert sum(e.charge["c6_us"] for e in EPISODES.values()) == 1806752
+    assert sum(e.charge["node_us"] for e in EPISODES.values()) == 1806752
     assert sum(e.charge["pi_us"] for e in EPISODES.values()) == 469712
     assert len(EPISODES) == 11
-    assert EPISODES["component.header_error_rearm"].charge == {"c6_us": 338766, "pi_us": 0}
-    assert EPISODES["component.radio_absent"].c6_packets == 1
+    assert EPISODES["component.header_error_rearm"].charge == {"node_us": 338766, "pi_us": 0}
+    assert EPISODES["component.radio_absent"].node_packets == 1
 
 
 @pytest.fixture
@@ -57,7 +57,7 @@ def options(tmp_path, fixture, monkeypatch):
     output = tmp_path / "new-run"
     values = dict(rf_fixture=str(file), rf_cases="component.ack_exchange", rf_run="a"*32, rf_output=str(output),
                   rf_manual_record=str(sheet), rf_session=str(tmp_path / "session.json"), rf_confirm_flash=True, count=1, embedded_services="esp,idf",
-                  target="esp32c6", app_path=str(APP), port="/dev/ttyUSB0", port_mac="cc:8d:a2:fc:02:24",
+                  target="esp32s3", app_path=str(APP), port="/dev/ttyACM0", port_mac="cc:8d:a2:fc:02:24",
                   build_dir=str(APP / "build"), root_logdir=str(output / "uart"), xmlpath=str(output / "junit.xml"))
     monkeypatch.setattr(guard, "verify_build", lambda _: {"verified": True})
     return values
@@ -65,7 +65,7 @@ def options(tmp_path, fixture, monkeypatch):
 
 @pytest.mark.parametrize("change", [{"erase_all": True}, {"erase_nvs": True}, {"skip_autoflash": True},
     {"esp_flash_force": True}, {"encrypt": True}, {"flash_port": "/dev/other"}, {"keyfile": "/tmp/key"},
-    {"port_mac": "wrong"}, {"port": "/dev/ttyACM0"}, {"count": 2}, {"rf_ready_run": "b"*32},
+    {"port_mac": "wrong"}, {"port": "/dev/other"}, {"count": 2}, {"rf_ready_run": "b"*32},
     {"rf_confirm_flash": False}, {"app_path": "/tmp/other"}, {"xmlpath": "/tmp/outside.xml"}, {"rf_session": None}, {"rf_session": "relative.json"}])
 def test_preflash_interlocks(options, change):
     options.update(change)
@@ -94,3 +94,13 @@ def test_real_cli_rejects_unguarded_hardware_collection(tmp_path):
     assert result.returncode == 4
     assert "--rf-fixture is required" in result.stderr
     assert "Connecting" not in result.stdout
+
+
+@pytest.mark.parametrize('kind,access', [('nominal', 'b2b_direct'),
+    ('dio1_disconnected', 'b2b_interposer_dio1_open'), ('radio_absent', 'module_removed')])
+def test_b2b_fault_access_is_explicit(fixture, kind, access):
+    fixture.update(node_fixture=kind, node_fault_access=access, manual_fault_confirmed=True)
+    assert validate_fixture(fixture) is fixture
+    fixture['node_fault_access'] = 'old-header-jumper'
+    with pytest.raises(ValueError, match='B2B fault access'):
+        validate_fixture(fixture)

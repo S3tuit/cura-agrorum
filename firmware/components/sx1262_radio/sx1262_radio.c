@@ -35,11 +35,11 @@ static const sx1262_radio_profile_t k_pilot_profile = {
     .spreading_factor = SX1262_RADIO_SPREADING_FACTOR,
     .coding_rate_denominator = SX1262_RADIO_CODING_RATE_DENOMINATOR,
     .sync_word = SX1262_RADIO_SYNC_WORD,
-    .pa_duty_cycle = UINT8_C(0x02),
+    .pa_duty_cycle = UINT8_C(0x03),
     .pa_hp_max = UINT8_C(0x02),
     .pa_device_sel = UINT8_C(0x00),
     .pa_lut = UINT8_C(0x01),
-    .tcxo_voltage = UINT8_C(0x01), /* SX126x TCXO_CTRL_1_7V. */
+    .tcxo_voltage = UINT8_C(0x06), /* SX126x TCXO_CTRL_3_0V. */
     .low_data_rate_optimize = SX1262_RADIO_LOW_DATA_RATE_OPTIMIZE,
     .explicit_header = SX1262_RADIO_EXPLICIT_HEADER,
     .payload_crc = SX1262_RADIO_PAYLOAD_CRC,
@@ -568,25 +568,33 @@ err_curag_t sx1262_radio_sleep(diagn_context_t *out_diag) {
   const curag_radio_state_t observed_state = s_radio.state;
   sx1262_radio_backend_error_t standby_detail;
   sx1262_radio_backend_error_t sleep_detail;
+  sx1262_radio_backend_error_t rf_detail;
   sx1262_radio_backend_error_clear(&standby_detail);
   sx1262_radio_backend_error_clear(&sleep_detail);
   const sx1262_radio_backend_call_result_t standby_result =
       sx1262_radio_backend_set_standby(&standby_detail);
   s_radio.rx_armed = false;
+  sx1262_radio_backend_call_result_t sleep_result = SX1262_COMMAND_FAILED;
+  if (standby_result == SX1262_COMMAND_CONFIRMED) {
+    sleep_result = sx1262_radio_backend_set_sleep_cold(&sleep_detail);
+  }
+  /* RF_SW is independent of the SPI command path. Even a BUSY/SPI failure
+   * must not skip the attempt to disable the antenna path. */
+  const bool rf_disabled = sx1262_radio_backend_disable_rf_path(&rf_detail);
   if (standby_result != SX1262_COMMAND_CONFIRMED) {
     s_radio.state = CURAG_RADIO_STATE_FAILED;
     return backend_failure(&standby_detail, CURAG_OP_SLEEP, observed_state,
                            out_diag);
   }
 
-  const sx1262_radio_backend_call_result_t sleep_result =
-      sx1262_radio_backend_set_sleep_cold(&sleep_detail);
-  if (sleep_result == SX1262_COMMAND_CONFIRMED) {
+  if (sleep_result == SX1262_COMMAND_CONFIRMED && rf_disabled) {
     s_radio.state = CURAG_RADIO_STATE_SLEEPING;
     return CURAG_OK;
   }
 
   s_radio.state = CURAG_RADIO_STATE_FAILED;
-  return backend_failure(&sleep_detail, CURAG_OP_SLEEP, observed_state,
+  return backend_failure(sleep_result != SX1262_COMMAND_CONFIRMED
+                             ? &sleep_detail : &rf_detail,
+                         CURAG_OP_SLEEP, observed_state,
                          out_diag);
 }

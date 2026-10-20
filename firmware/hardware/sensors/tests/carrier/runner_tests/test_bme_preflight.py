@@ -18,7 +18,7 @@ struct fake_i2c_bus { int unused; }; struct fake_i2c_device { int unused; };
 static struct fake_i2c_bus bus; static struct fake_i2c_device dev;
 static int scenario, reads, probes, adds, removes, deletes;
 esp_err_t i2c_new_master_bus(const i2c_master_bus_config_t *cfg, i2c_master_bus_handle_t *out) {
-  assert(cfg->sda_io_num == 21 && cfg->scl_io_num == 22 && cfg->i2c_port == 0);
+  assert(cfg->sda_io_num == 5 && cfg->scl_io_num == 6 && cfg->i2c_port == 0);
   if (scenario == 6) return ESP_ERR_NO_MEM;
   *out = &bus; return 0;
 }
@@ -56,9 +56,11 @@ int main(int argc, char **argv) {
     binary = root / 'probe'
     subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
                     '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-g',
-                    '-DCONFIG_CURA_I2C_SDA_GPIO=21', '-DCONFIG_CURA_I2C_SCL_GPIO=22',
+                    '-DCONFIG_CURA_I2C_SDA_GPIO=5', '-DCONFIG_CURA_I2C_SCL_GPIO=6',
                     '-I', str(host/'bme280_fakes'), '-I', str(host/'fakes'), '-I', str(APP/'main'),
-                    str(harness), str(APP/'main/carrier_bme_preflight.c'), '-o', str(binary)],
+                    str(harness), str(APP/'main/carrier_bme_preflight.c'),
+                    '-I', str(APP/'runner_tests/native'), str(APP/'runner_tests/native/unity_output.c'),
+                    str(APP/'main/carrier_output.c'), '-o', str(binary)],
                    check=True, capture_output=True, text=True)
     return binary
 

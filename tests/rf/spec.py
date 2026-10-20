@@ -15,7 +15,7 @@ CHARGE_US = {54: 112922, 23: 67866, 4: 34074, 1: 28442}
 class Episode:
     name: str
     fixture: str
-    c6_packets: int
+    node_packets: int
     pi_lengths: tuple[int, ...]
     purpose: str
     runner: str = "component"
@@ -24,7 +24,7 @@ class Episode:
 
     @property
     def charge(self):
-        return {"c6_us": self.c6_packets * CHARGE_US[54],
+        return {"node_us": self.node_packets * CHARGE_US[54],
                 "pi_us": sum(CHARGE_US[n] for n in self.pi_lengths)}
 
 
@@ -94,14 +94,14 @@ def node_episode(case, sleep_seconds=900):
     return dict(case=case, scope=scope, action=action, seed_wakes=plan.seed_wakes,
                 wakes=plan.wakes, sleep_seconds=sleep_seconds,
                 lease_seconds=(plan.wakes - 1) * 945 + 60 if sleep_seconds == 900 else plan.wakes * 50 + 10,
-                c6_max_packets=plan.c6_packets, pi_max_packets=len(plan.pi_lengths),
+                node_max_packets=plan.node_packets, pi_max_packets=len(plan.pi_lengths),
                 charges=plan.charge)
 
 
 def service_episode():
     plan = CASES["service.reading_delivery"]
     return dict(case=plan.name, wakes=plan.wakes, lease_seconds=110, sleep_seconds=10,
-                c6_max_packets=plan.c6_packets, pi_max_packets=len(plan.pi_lengths),
+                node_max_packets=plan.node_packets, pi_max_packets=len(plan.pi_lengths),
                 charges=plan.charge, final_observation="agreed sleep-entry marker")
 
 
@@ -112,33 +112,37 @@ def select_cases(value, fixture):
     if any(name not in EPISODES for name in names):
         raise ValueError("unknown or unimplemented RF selection")
     if any(EPISODES[name].fixture != fixture for name in names):
-        raise ValueError("selection does not match the C6 fixture")
+        raise ValueError("selection does not match the S3 fixture")
     if fixture != "nominal" and len(names) != 1:
         raise ValueError("manual fault selections must run alone")
     return [EPISODES[name] for name in names]
 
 
 def validate_fixture(value):
-    fields = {"schema", "c6_fixture", "c6_dut", "c6_uart", "pi_user", "pi_board_id", "pi_fixture",
+    fields = {"schema", "node_fault_access", "node_fixture", "node_dut", "node_uart", "pi_user", "pi_board_id", "pi_fixture",
               "rtc_shunts_open", "receiver_service_stopped", "exclusive_radios", "wiring_checked",
-              "power_checked", "antennas_checked", "operator", "c6_transmitter", "pi_transmitter",
+              "power_checked", "antennas_checked", "operator", "node_transmitter", "pi_transmitter",
               "operating_envelope_reference", "manual_fault_confirmed"}
-    if type(value) is not dict or set(value) != fields or type(value["schema"]) is not int or value["schema"] != 1:
+    if type(value) is not dict or set(value) != fields or type(value["schema"]) is not int or value["schema"] != 2:
         raise ValueError("invalid fixture schema/fields")
+    access = {"nominal": "b2b_direct", "dio1_disconnected": "b2b_interposer_dio1_open",
+              "radio_absent": "module_removed"}
+    if value["node_fault_access"] != access.get(value["node_fixture"]):
+        raise ValueError("B2B fault access does not match selected fixture")
     for field in ("rtc_shunts_open", "receiver_service_stopped", "exclusive_radios", "wiring_checked",
                   "power_checked", "antennas_checked"):
         if value[field] is not True:
             raise ValueError(f"operator confirmation missing: {field}")
-    for field in ("operator", "pi_board_id", "c6_transmitter", "pi_transmitter", "operating_envelope_reference"):
+    for field in ("operator", "pi_board_id", "node_transmitter", "pi_transmitter", "operating_envelope_reference"):
         if type(value[field]) is not str or not value[field].strip():
             raise ValueError(f"missing {field}")
-    if (value["c6_fixture"] not in {"nominal", "dio1_disconnected", "radio_absent"}
+    if (value["node_fixture"] not in {"nominal", "dio1_disconnected", "radio_absent"}
             or value["pi_fixture"] != "radio_nominal"
-            or not re.fullmatch(r"[0-9a-f]{12}", value["c6_dut"])
+            or not re.fullmatch(r"[0-9a-f]{12}", value["node_dut"])
             or not re.fullmatch(r"[a-z_][a-z0-9_-]*", value["pi_user"])
-            or value["pi_user"] == "root" or not value["c6_uart"].startswith("/dev/")):
+            or value["pi_user"] == "root" or not value["node_uart"].startswith("/dev/")):
         raise ValueError("invalid DUT identity, UART, user or fixture")
-    if type(value["manual_fault_confirmed"]) is not bool or (value["c6_fixture"] != "nominal" and
+    if type(value["manual_fault_confirmed"]) is not bool or (value["node_fixture"] != "nominal" and
                                                            not value["manual_fault_confirmed"]):
         raise ValueError("manual fault requires powered-off wiring confirmation")
     return value

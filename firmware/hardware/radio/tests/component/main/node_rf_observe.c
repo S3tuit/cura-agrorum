@@ -1,3 +1,4 @@
+#include "rf_console.h"
 /* Passive, bounded link wrappers for the production-node RF test build.
  * No injection, extra radio commands, or UART work in the receive path. */
 #include "esp_timer.h"
@@ -82,11 +83,11 @@ sx126x_hal_status_t __wrap_sx126x_hal_write(const void *context,
  */
 void node_rf_observe_dump(void) {
   for (unsigned i = 0U; i < count; ++i) {
-    printf("RF_NODE_PHY {\"index\":%u,\"opcode\":%u,\"value\":%u,"
+    rf_console_printf("RF_NODE_PHY {\"index\":%u,\"opcode\":%u,\"value\":%u,"
            "\"before_us\":%" PRIu64 ",\"after_us\":%" PRIu64
            ",\"irq_at_us\":%" PRIu64 ",\"result\":%u}\n",
            i, events[i].opcode, events[i].value, events[i].before_us,
            events[i].after_us, events[i].irq_at_us, events[i].result);
   }
-  printf("RF_NODE_PHY_END count=%u overflow=%u\n", count, overflow ? 1U : 0U);
+  rf_console_printf("RF_NODE_PHY_END count=%u overflow=%u\n", count, overflow ? 1U : 0U);
 }

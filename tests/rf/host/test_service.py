@@ -202,7 +202,7 @@ def test_source_manifest_and_bundle_ignore_planning_notes_and_rf_markdown(tmp_pa
         'tests/rf/session.notes.d/measurements.json',
         f'receiver/cura_receiver/session{note_suffix}/saved.py',
         'firmware/components/node_core/scratch.notes.c')]
-    fixture = {key: key for key in ('c6_dut', 'pi_board_id', 'c6_transmitter', 'pi_transmitter')}
+    fixture = {key: key for key in ('node_dut', 'pi_board_id', 'node_transmitter', 'pi_transmitter')}
     identity = inputs.session_identity(manifest, {}, fixture)
     for contents in ('temporary session data\n', 'changed session data\n'):
         for path in notes:

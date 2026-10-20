@@ -9,7 +9,7 @@ import pytest
 
 from capture import REPO, digest
 from prepare_rejection_inputs import prepare, BOUND_SOURCES
-from rejection_vectors import matrix, C6_CASES
+from rejection_vectors import matrix, NODE_CASES
 from cura_protocol_v2_lora.receiver_group import load_receiver_group
 from provisioning_common import derive_node_key
 
@@ -29,7 +29,7 @@ class Packet(C.Structure):
 
 @pytest.fixture(scope='module')
 def library(tmp_path_factory):
-    root = tmp_path_factory.mktemp('c6-rejection')
+    root = tmp_path_factory.mktemp('node-rejection')
     lib = root / 'packets.so'
     subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-shared', '-fPIC',
                     '-DCURA_LORA_V2_CRYPTO_USE_OPENSSL', '-I' + str(PROTOCOL / 'include'),
@@ -64,7 +64,7 @@ def test_actual_c_frames_and_acks_match_independent_python(library, first):
         assert bytes(packet.frame[:packet.frame_length]) == vector.frame
         assert bytes(packet.ack[:packet.ack_length]) == (vector.ack or b'')
         name = library.rejection_case_name(i)
-        assert name.decode() == C6_CASES[i] and len(name) <= 31
+        assert name.decode() == NODE_CASES[i] and len(name) <= 31
 
 
 @pytest.mark.parametrize('damage', ['counter', 'alias', 'bad_run', 'index'])
@@ -93,7 +93,7 @@ def test_every_alias_uses_the_existing_real_command_parser(library):
     parser = library.rf_command_parse
     parser.argtypes = [C.c_char_p, C.POINTER(Command)]
     parser.restype = C.c_bool
-    for case in C6_CASES:
+    for case in NODE_CASES:
         command = Command()
         assert parser(('RUN ' + 'a' * 32 + ' ' + case + ' 123 0').encode(), C.byref(command))
         assert command.selection.decode() == case and command.boot == 123 and command.phase == 0
@@ -144,6 +144,8 @@ def test_actual_cmake_rejects_changed_bundle(tmp_path, damage):
     script = tmp_path / 'check.cmake'
     script.write_text('''cmake_minimum_required(VERSION 3.22)
 function(idf_component_register)
+endfunction()
+function(target_sources)
 endfunction()
 function(target_compile_options)
 endfunction()

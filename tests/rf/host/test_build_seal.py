@@ -59,11 +59,11 @@ def build(tmp_path, monkeypatch):
         flash_files={"0x0": "bootloader/bootloader.bin",
                      "0x8000": "partition_table/partition-table.bin",
                      "0x10000": "cura_radio_component.bin"},
-        extra_esptool_args={"chip": "esp32c6"}))
+        extra_esptool_args={"chip": "esp32s3"}))
     (build / "config").mkdir()
-    pins = dict(SCLK=6, MOSI=7, MISO=14, CS=23, RESET=18, BUSY=19, DIO1=20)
+    pins = dict(SCLK=7, MOSI=9, MISO=8, CS=41, RESET=42, BUSY=40, DIO1=39, RF_ENABLE=38)
     config = {f"CURA_SX1262_{name}_GPIO": pin for name, pin in pins.items()}
-    config.update(ESP_CONSOLE_UART_NUM=0, ESP_CONSOLE_UART_BAUDRATE=115200)
+    config.update(ESP_CONSOLE_USB_SERIAL_JTAG=True, FREERTOS_UNICORE=True, ESPTOOLPY_FLASHSIZE="8MB")
     inputs.write_json(build / "config/sdkconfig.json", config)
     inputs.write_json(build / "project_description.json",
                       dict(config_file=str(app / "sdkconfig"), config_environment={}))
@@ -110,3 +110,16 @@ def test_missing_cmake_regeneration_records_rejected(build, monkeypatch, record)
     monkeypatch.setattr(inputs.subprocess, "run", query)
     with pytest.raises(ValueError, match="missing actual CMake regeneration records"):
         inputs.verify_build(root)
+
+
+@pytest.mark.parametrize('key,value', [('CURA_SX1262_RF_ENABLE_GPIO', 20),
+    ('CURA_SX1262_DIO1_GPIO', 20), ('ESP_CONSOLE_USB_SERIAL_JTAG', False),
+    ('FREERTOS_UNICORE', False), ('ESPTOOLPY_FLASHSIZE', '4MB')])
+def test_s3_electrical_configuration_is_bound_to_seal(build, key, value):
+    import json
+    _, root, _ = build
+    path = root / 'config/sdkconfig.json'
+    config = json.loads(path.read_text())
+    config[key] = value
+    path.write_text(json.dumps(config))
+    with pytest.raises(ValueError): inputs.check_flash(root)

@@ -1,3 +1,8 @@
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "support"))
+from usb_console import attach_usb_console, usb_identity
+
 import os
 import time
 
@@ -45,15 +50,21 @@ def _run_platform_deep_sleep_case(
     assert case.type == "multi_stage"
     assert len(case.subcases) == 2
 
+    final_subcase = case.subcases[-1]
+    final_menu_line = (
+        f'\t({final_subcase["index"]})\t"{final_subcase["name"]}"'
+    )
     dut.serial.hard_reset()
     dut.expect_exact(UNITY_READY_PROMPT, timeout=timeout)
     dut.confirm_write(case.index, expect_str=f"Running {case.name}...")
+    dut.expect_exact(final_menu_line, timeout=timeout)
     dut.write(str(case.subcases[0]["index"]))
     dut.expect_exact(PLATFORM_DEEP_SLEEP_START_MARKER, timeout=timeout)
     started_at = time.monotonic()
 
     dut.expect_exact(UNITY_READY_PROMPT, timeout=timeout)
     dut.confirm_write(case.index, expect_str=f"Running {case.name}...")
+    dut.expect_exact(final_menu_line, timeout=timeout)
     dut.write(str(case.subcases[1]["index"]))
     dut.expect_exact(PLATFORM_DEEP_SLEEP_END_MARKER, timeout=timeout)
     observed_duration = time.monotonic() - started_at
@@ -116,7 +127,10 @@ def _run_rtc_consumption_restart_case(
     dut.expect_unity_test_output(timeout=timeout)
 
 
-def test_node_persistence_on_device(dut: IdfDut) -> None:
+def test_node_persistence_on_device(request) -> None:
+    usb_identity(request.config.getoption("port"))
+    dut = request.getfixturevalue("dut")
+    attach_usb_console(dut)
     requested = os.environ.get("CURAG_HARDWARE_TEST_SET", "fast")
     if requested not in {"fast", "slow", "all"}:
         raise ValueError(f"unknown hardware test set: {requested}")
@@ -144,3 +158,13 @@ def test_node_persistence_on_device(dut: IdfDut) -> None:
             _run_repeated_rtc_round_trip_case(dut, case, timeout)
         else:
             dut.run_single_board_case(case.name, reset=True, timeout=timeout)
+
+    # The plugin's automatic failure hook overlooks dynamically acquired DUTs.
+    # Require the full selected matrix here so a failed or missing Unity result
+    # cannot leave make reporting success.
+    results = dut.testsuite.testcases
+    assert [case.name for case in results] == [case.name for case in selected], (
+        "Unity results do not match the selected integration cases"
+    )
+    unsuccessful = [case.name for case in results if case.result != "PASS"]
+    assert not unsuccessful, f"Unity cases did not pass: {unsuccessful}"

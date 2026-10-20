@@ -1,3 +1,4 @@
+#include "carrier_output.h"
 #include "carrier_bme_preflight.h"
 #include "driver/i2c_master.h"
 #include "sdkconfig.h"
@@ -28,7 +29,7 @@ esp_err_t carrier_bme_preflight(bool missing) {
   if (result == ESP_OK) {
     if (missing) {
       const esp_err_t probe = i2c_master_probe(bus, 0x76, 20);
-      printf("CARRIER_BME_ABSENT address=76 probe=%" PRId32 "\n",
+      carrier_output_printf("CARRIER_BME_ABSENT address=76 probe=%" PRId32 "\n",
              (int32_t)probe);
       /* Only a NACK-specific probe result establishes this fixture. */
       result = probe == ESP_ERR_NOT_FOUND ? ESP_OK
@@ -45,7 +46,7 @@ esp_err_t carrier_bme_preflight(bool missing) {
     }
   }
   if (!missing)
-    printf("CARRIER_BME address=76 register=D0 id=%02X status=%" PRId32 "\n", id,
+    carrier_output_printf("CARRIER_BME address=76 register=D0 id=%02X status=%" PRId32 "\n", id,
            (int32_t)result);
   esp_err_t cleanup = ESP_OK;
   if (device != NULL)
@@ -55,7 +56,7 @@ esp_err_t carrier_bme_preflight(bool missing) {
     if (cleanup == ESP_OK)
       cleanup = release;
   }
-  printf("CARRIER_BME_CLEANUP status=%" PRId32 "\n", (int32_t)cleanup);
+  carrier_output_printf("CARRIER_BME_CLEANUP status=%" PRId32 "\n", (int32_t)cleanup);
   if (result == ESP_OK)
     result = cleanup;
   return result;

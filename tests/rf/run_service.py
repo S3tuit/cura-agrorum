@@ -21,12 +21,11 @@ from cura_protocol_v2_lora.receiver_group import load_receiver_group
 from cura_receiver.application import authentication_keys
 from inputs import source_manifest
 from node_capture import build_reader
-from production_node import NodeUART, capture_storage, identify, verify_build, verify_installed
+from production_node import ProductionSession, verify_build
 from service_probe import validate_config
 from spec import validate_fixture, service_episode
 from transport import RemoteTransport
 from verify_service import verify_service
-from sleep_observation import sleep_count
 
 EPISODE = service_episode()
 
@@ -222,7 +221,7 @@ class InstalledService:
 
 def run(args):
     fixture = validate_fixture(json.loads(args.fixture.read_text()))
-    if fixture["c6_fixture"] != "nominal" or not args.confirm_isolated:
+    if fixture["node_fixture"] != "nominal" or not args.confirm_isolated:
         raise ValueError("nominal isolated production fixture required")
     if not re.fullmatch("[0-9a-f]{32}", args.run) or args.ready_run not in (None, args.run):
         raise ValueError("invalid run/readiness identity")
@@ -266,8 +265,9 @@ def run(args):
         write_json(root / "service-before.json", dict(state=before, database=prior))
         print(json.dumps(EPISODE, indent=2), flush=True)
         admit_episode(args.run, "service.reading_delivery", root, root / "operator-airtime-record.txt", args.ready_run)
-        verify_installed(fixture, args.build, root)
-        baseline = capture_storage(fixture, root, "before", reader, seal, args.run)
+        node = ProductionSession(fixture, root, reader, seal, args.run, EPISODE["wakes"])
+        node.verify_installed(args.build)
+        baseline = node.capture_before()
         if any(baseline["logs"].values()):
             raise ValueError("service.reading_delivery requires separately initialized empty node logs")
         # Reverse cleanup order stops the node/service before capturing database.
@@ -278,55 +278,34 @@ def run(args):
         ready = service.wait_for_prerequisites()
         running = service.running
         write_json(root / "service-ready.json", dict(state=running, database=ready))
-        node = NodeUART(fixture["c6_uart"], root)
-        node_closed = node_stopped = False
-        def stop_node():
-            nonlocal node_closed, node_stopped
-            if node_stopped:
-                return
-            error = None
-            if not node_closed:
-                try:
-                    node.close()
-                except BaseException as e:
-                    error = e
-                node_closed = True
-            try:
-                identify(fixture, root, "final-stop-mac")
-                node_stopped = True
-            except BaseException:
-                write_json(root / "node-restoration-required.json", dict(action="remove all node power; autonomous TX unconfirmed"))
-                raise
-            if error is not None:
-                raise error
-        cleanups.append(("autonomous node stop", stop_node))
+        node.prepare()
+        cleanups.append(("autonomous node stop", node.stop))
         node.start()
         deadline = time.monotonic() + EPISODE["lease_seconds"]
         while time.monotonic() < deadline:
-            if node.failure is not None:
-                raise RuntimeError("UART capture failed: " + str(node.failure))
+            node.check_health()
             same_service(before, service.probe("inspect"), running=running)
             observed = service.probe("observe")
             if observed["instance"] != ready["instance"] or observed["clean_stop"] is not None:
                 raise ValueError("service lifecycle changed")
             if observed["samples"] > 2 or observed["profiles"] > EPISODE["pi_max_packets"]:
                 raise ValueError("extra wake or episode ceiling exceeded")
-            markers = sleep_count((root / "c6-uart.bin").read_bytes(), 10, 2)
-            if observed["samples"] == 2 and markers == 2:
+            markers = node.sleep_count()
+            if observed["samples"] == 2 and markers == 2 and node.finalized:
                 write_json(root / "sleep-observation.json", dict(run=args.run, case="service.reading_delivery",
-                    wakes=2, sleep_seconds=10, boundary="cycle finalized, timer configured, entering sleep"))
+                    wakes=2, sleep_seconds=10, boundary="cycle finalized, timer configured, final wake parked"))
                 break
             time.sleep(2)
         else:
             raise TimeoutError("complete production wake pair not observed")
-        stop_node()
-        if sleep_count((root / "c6-uart.bin").read_bytes(), 10, 2) != 2:
+        node.stop()
+        if node.sleep_count() != 2:
             raise ValueError("incomplete final UART observation")
         service.stop()
         write_json(root / "service-after.json", service.probe("inspect"))
         service.capture_journal()
         database = service.capture_database()
-        captured = capture_storage(fixture, root, "after", reader, seal, args.run)
+        captured = node.capture_after()
         record["results"].append(verify_service(database, node_id, keys[node_id], captured,
                                                bytes.fromhex(ready["instance"]), reading_baseline))
     record["status"] = "PASS"

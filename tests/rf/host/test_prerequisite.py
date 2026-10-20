@@ -12,8 +12,8 @@ from inputs import finish_session, session_identity, start_session, write_json
 def bench(tmp_path):
     manifest = dict(files={"peer.py": "a", "README.md": "b"})
     seal = dict(files={"cura_radio_component.elf": "image"})
-    fixture = dict(c6_dut="node", pi_board_id="pi", c6_transmitter="node radio",
-                   pi_transmitter="pi radio", c6_fixture="nominal")
+    fixture = dict(node_dut="node", pi_board_id="pi", node_transmitter="node radio",
+                   pi_transmitter="pi radio", node_fixture="nominal")
     return tmp_path / "session.json", manifest, seal, fixture
 
 
@@ -26,13 +26,13 @@ def qualify(bench, selected=("component.ack_exchange", "component.ack_timeout"))
 def test_nominal_to_fault_then_restoration(bench):
     qualify(bench)
     path, manifest, seal, fixture = bench
-    fixture["c6_fixture"] = "dio1_disconnected"
+    fixture["node_fixture"] = "dio1_disconnected"
     identity = session_identity(manifest, seal, fixture)
     state, passed = start_session(path, identity, ["component.dio1_disconnected"])
     finish_session(path, state, passed, dict(status="PASS", fixture=fixture, selected=["component.dio1_disconnected"]))
     with pytest.raises(ValueError, match="fresh nominal"):
         start_session(path, identity, ["component.radio_absent"])
-    fixture["c6_fixture"] = "nominal"
+    fixture["node_fixture"] = "nominal"
     qualify(bench)
     assert start_session(path, identity, ["component.radio_absent"])[1] == {"component.ack_exchange", "component.ack_timeout"}
 
@@ -43,9 +43,9 @@ def test_stale_session_requires_new_nominal_run(bench, change, monkeypatch):
     path, manifest, seal, fixture = bench
     if change == "source": manifest["files"]["peer.py"] = "changed"
     elif change == "build": seal["files"]["cura_radio_component.elf"] = "changed"
-    elif change == "node": fixture["c6_dut"] = "other"
+    elif change == "node": fixture["node_dut"] = "other"
     elif change == "pi": fixture["pi_board_id"] = "other"
-    elif change == "radio": fixture["c6_transmitter"] = "other"
+    elif change == "radio": fixture["node_transmitter"] = "other"
     else:
         import json
         state = json.loads(path.read_text())

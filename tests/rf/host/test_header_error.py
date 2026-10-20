@@ -87,11 +87,11 @@ def header_record():
 
 
 def verify(events, capture):
-    return verify_case(CASE, events, capture, "a"*32, {"c6_dut": "cc8da2fc0224"}, "image")
+    return verify_case(CASE, events, capture, "a"*32, {"node_dut": "cc8da2fc0224"}, "image")
 
 
 def test_reviewed_header_record():
-    assert verify(*header_record())["c6_attempts"] == 3
+    assert verify(*header_record())["node_attempts"] == 3
 
 
 def confirmation_record(stage, reply):

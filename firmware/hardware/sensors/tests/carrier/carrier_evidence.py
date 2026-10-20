@@ -10,6 +10,20 @@ import subprocess
 APP = Path(__file__).resolve().parent
 REPO = APP.parents[4]
 BOSCH_PIN = REPO / 'firmware/components/bosch_bme280/source_pin.cmake'
+ACQUISITION_STAGES = ('acquisition', 'core')
+
+
+def require_acquisition_stages(events):
+    completed = [event.get('stage') for event in events if event.get('kind') == 'stage_completed']
+    if completed != list(ACQUISITION_STAGES):
+        raise ValueError('acquisition and core stages must complete exactly once in order')
+
+
+def fixture_manifest():
+    """Hash the run's fixture definition independently of compiled sources."""
+    paths = (REPO / 'firmware/HARDWARE.md', APP / 'FIXTURE.md')
+    return {str(path.relative_to(REPO)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in paths}
 
 
 def source_manifest():
@@ -29,10 +43,12 @@ def source_manifest():
              if source_file(p)]
     paths += [p for p in APP.glob('*.py') if source_file(p)]
     paths += [REPO / 'firmware/tests/support' / name
-              for name in ('persistence_test_support.c', 'persistence_test_support.h')]
+              for name in ('persistence_test_support.c', 'persistence_test_support.h', 'unity_console.c', 'usb_console.py',
+                           'usb_console_test_support.c', 'usb_console_test_support.h')]
     paths += [REPO / 'firmware/components/sx1262_radio' / name for name in
               ('CMakeLists.txt', 'sx1262_radio_timing.c', 'include/sx1262_radio.h')]
-    paths += [REPO / 'protocol/protocol-v2-lora/schemas/protocol_v2_lora.json']
+    paths += [REPO / 'protocol/protocol-v2-lora/schemas/protocol_v2_lora.json',
+              REPO / 'firmware/cmake/xiao_board.cmake']
     littlefs = APP / 'managed_components/joltwallet__littlefs'
     paths += [p for p in littlefs.rglob('*') if source_file(p) and p.suffix != '.py']
     paths += [APP / name for name in ('CMakeLists.txt', 'dependencies.lock',

@@ -20,18 +20,17 @@ from cura_receiver.application import authentication_keys
 from control import Peer
 from inputs import source_manifest
 from node_capture import build_reader
-from production_node import verify_build, verify_installed, capture_storage, identify, NodeUART
+from production_node import verify_build, ProductionSession
 from spec import NODE_CASES as CASES, node_episode as episode, validate_fixture
 from transport import RemoteTransport
 from verify_ack import verify_ack_case, verify_ack_transmissions
 from verify_header_ack import verify_header_ack_rf
-from sleep_observation import sleep_count
 
 
 
 def preflight(args):
     fixture = validate_fixture(json.loads(args.fixture.read_text()))
-    if fixture["c6_fixture"] != "nominal":
+    if fixture["node_fixture"] != "nominal":
         raise ValueError("node requires nominal production fixture")
     if not re.fullmatch("[0-9a-f]{32}", args.run):
         raise ValueError("invalid run identity")
@@ -95,72 +94,48 @@ def run(args):
             raise ValueError("local/remote isolated identity mismatch")
         print(json.dumps(plan, indent=2), flush=True)
         admit_episode(args.run, args.case, root, root / "operator-airtime-record.txt", args.ready_run)
-        verify_installed(fixture, args.build, root)
-        baseline = capture_storage(fixture, root, "before", reader, seal, args.run)
+        node = ProductionSession(fixture, root, reader, seal, args.run, plan["wakes"])
+        node.verify_installed(args.build)
+        baseline = node.capture_before()
         if any(records for records in baseline["logs"].values()):
             raise ValueError("node setup requires explicitly initialized empty logs; never auto-erase")
         peer = Peer(remote.ssh(command), remote.env, args.run, args.case, root,
                     digest(root / "source-manifest.json"), lease_seconds=plan["lease_seconds"])
         cleanups.append(("authenticated peer", peer.close))
-        node = NodeUART(fixture["c6_uart"], root)
-        node_closed = False
-        node_stopped = False
-
-        def stop_node():
-            nonlocal node_closed, node_stopped
-            if node_stopped:
-                return
-            close_error = None
-            if not node_closed:
-                try:
-                    node.close()
-                except BaseException as error:
-                    close_error = error
-                node_closed = True
-            try:
-                identify(fixture, root, "final-stop-mac")
-                node_stopped = True
-            except BaseException:
-                write_json(root / "node-restoration-required.json", dict(
-                    action="operator must remove all node power; autonomous TX state unconfirmed"))
-                raise
-            if close_error is not None:
-                raise close_error
-
-        cleanups.append(("autonomous node stop", stop_node))
+        node.prepare()
+        cleanups.append(("autonomous node stop", node.stop))
         peer.arm()
         node.start()
         end = time.monotonic() + plan["lease_seconds"] + 3
         sleep_notified = False
         while peer.process.poll() is None:
-            if node.failure is not None:
-                raise RuntimeError("UART observation lost: " + str(node.failure))
+            node.check_health()
             if time.monotonic() >= end:
                 raise TimeoutError("authenticated peer exceeded its finite lease")
             if plan["sleep_seconds"] == 10:
-                count = sleep_count((root / "c6-uart.bin").read_bytes(), 10, plan["wakes"])
-                if count == plan["wakes"] and not sleep_notified:
+                count = node.sleep_count()
+                if count == plan["wakes"] and node.finalized and not sleep_notified:
                     message = f"SLEEP {args.run} {args.case} {count}\n"
                     peer.process.stdin.write(message.encode()); peer.process.stdin.flush()
                     write_json(root / "sleep-observation.json", dict(run=args.run, case=args.case,
-                        wakes=count, sleep_seconds=10, boundary="cycle finalized, timer configured, entering sleep"))
+                        wakes=count, sleep_seconds=10, boundary="cycle finalized, timer configured, final wake parked"))
                     sleep_notified = True
             time.sleep(0.25)
         result = peer.finish()
         if plan["sleep_seconds"] == 10 and (not sleep_notified or not result["outcome"].get("final_sleep_observed")):
             raise ValueError("missing matched final sleep observation")
-        stop_node()
+        node.stop()
         if plan["sleep_seconds"] == 10:
-            if sleep_count((root / "c6-uart.bin").read_bytes(), 10, plan["wakes"]) != plan["wakes"]:
+            if node.sleep_count() != plan["wakes"]:
                 raise ValueError("incomplete final UART observation")
-        captured = capture_storage(fixture, root, "after", reader, seal, args.run)
+        captured = node.capture_after()
         verify_ack_transmissions(args.case, bytes.fromhex(seal["node_id"]), key,
                                   result["outcome"], result["trace"], result["attempts"])
         verified = verify_ack_case(args.case, bytes.fromhex(seal["node_id"]), key,
                                    result["outcome"]["packets"], captured)
         if ".header_error_" in args.case:
             verify_header_ack_rf(args.case, result["outcome"], result["trace"], captured,
-                                 (root / "c6-uart.bin").read_bytes())
+                                 (root / "node-uart.bin").read_bytes())
         run_record["results"].append(verified)
         verified["sleep_seconds"] = plan["sleep_seconds"]
         verified["cadence_scope"] = "accelerated ACK policy" if plan["sleep_seconds"] == 10 else "production cadence"

@@ -1,12 +1,12 @@
-# Fresh ESP32-C6 deployment
+# Fresh XIAO ESP32S3 deployment
 
 This sequence provisions a fresh receiver group and node identity, builds for
 the nominal [carrier wiring](../HARDWARE.md), and resets
-the C6 before installation. Ordinary firmware updates retain the existing
+the S3 before installation. Ordinary firmware updates retain the existing
 identity, counters and storage; do not use this reset sequence for them.
 
 Run the commands in one Bash session. You need Git, Python 3, ripgrep (`rg`),
-an installed ESP-IDF, and exclusive access to the C6 serial port. Replace the
+an installed ESP-IDF, and exclusive access to the XIAO native USB Serial/JTAG port. Replace the
 port and ESP-IDF path below with yours.
 
 ## 1. Create private staging directories
@@ -16,9 +16,9 @@ From the repository root:
 ```bash
 umask 077
 cura_repo=$(git rev-parse --show-toplevel)
-cura_deploy=$(mktemp -d /tmp/cura-c6-deploy.XXXXXX)
+cura_deploy=$(mktemp -d /tmp/cura-node-deploy.XXXXXX)
 cura_stage="$cura_deploy/source"
-cura_port=/dev/ttyUSB0
+cura_port=/dev/ttyACM0
 mkdir "$cura_deploy/receiver" "$cura_deploy/node"
 git -C "$cura_repo" worktree add --detach "$cura_stage" HEAD
 ```
@@ -61,12 +61,14 @@ test ! -e sdkconfig && \
 rg '^CONFIG_CURA_DS18B20_[01]_ROM=' sdkconfig
 ```
 
-Production selects ESP32-C6 in CMake. The defaults supply the production layout,
+Production selects ESP32S3 in CMake, 8 MB flash, one core and primary native
+USB Serial/JTAG. GPIO44 belongs to the sensor gate; UART0 console is rejected.
+The defaults supply the production layout,
 `sdkconfig.pilot` selects carrier wiring, and `sdkconfig.probes` supplies your
 channel identities. Check that the printed resolved values match your probes;
 an existing `sdkconfig` overrides defaults, so stop if the freshness check fails.
 
-## 4. Reset the C6 and initialize LittleFS
+## 4. Reset the S3 and initialize LittleFS
 
 Stop production firmware before this destructive step. It discards all previous
 node-local state. The complete rationale and storage requirements belong to the
@@ -74,12 +76,14 @@ node-local state. The complete rationale and storage requirements belong to the
 
 ```bash
 cd "$cura_stage/firmware/maintenance/erase_storage"
-idf.py set-target esp32c6
+idf.py set-target esp32s3
 idf.py build
 idf.py -p "$cura_port" erase-flash
 ```
 
-Disconnect **all** C6 power, then reconnect. This clears retained RTC state as
+Disconnect **all** node power, then reconnect. USB may enumerate with a
+different ttyACM number; identify the same physical board and update `cura_port`
+before continuing. This clears retained RTC state as
 well as the flash state already erased. Now initialize the empty filesystem:
 
 ```bash

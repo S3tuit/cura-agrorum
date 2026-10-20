@@ -231,7 +231,7 @@ target_compile_definitions(
   PRIVATE
     NODE_SENSORS_TESTING=1
     CONFIG_CURA_SENSOR_POWER_STABILIZATION_MS=200
-    CONFIG_CURA_DS18B20_GPIO=3
+    CONFIG_CURA_DS18B20_GPIO=4
 )
 target_compile_options(
   test_node_sensors
@@ -437,6 +437,8 @@ set(
   sleep_lifecycle
   sleep_standby_failure_blocks_sleep_and_retries
   sleep_command_failure_retries
+  sleep_rf_failure
+  sleep_rf_first_error
 )
 
 foreach(SCENARIO IN LISTS SX1262_RADIO_TEST_SCENARIOS)
@@ -463,7 +465,7 @@ foreach(target test_bme280_driver test_node_sensors_bme280)
         "${FIRMWARE_ROOT}/components/node_sensors/include"
         "${FIRMWARE_ROOT}/components/node_common/include")
     target_compile_definitions(${target} PRIVATE BME280_DOUBLE_ENABLE
-        CONFIG_CURA_I2C_SDA_GPIO=21 CONFIG_CURA_I2C_SCL_GPIO=22)
+        CONFIG_CURA_I2C_SDA_GPIO=5 CONFIG_CURA_I2C_SCL_GPIO=6)
     target_compile_features(${target} PRIVATE c_std_11)
     target_compile_options(${target} PRIVATE -Wall -Wextra -Werror -Wformat=2 -Wshadow
         -fsanitize=address,undefined -fno-omit-frame-pointer)
@@ -508,3 +510,13 @@ foreach(test IN LISTS BME_ADAPTER_CASES)
     set_tests_properties("node_sensors_bme280.${test}" PROPERTIES ENVIRONMENT
         "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:halt_on_error=1:fast_unwind_on_malloc=0")
 endforeach()
+
+add_executable(test_sx1262_rf_path test_sx1262_rf_path.c fake_esp_gpio.c
+    "${FIRMWARE_ROOT}/components/sx1262_radio/sx1262_radio_rf_path_esp.c")
+target_include_directories(test_sx1262_rf_path PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/fakes"
+    "${FIRMWARE_ROOT}/components/sx1262_radio/private_include")
+target_compile_features(test_sx1262_rf_path PRIVATE c_std_11)
+target_compile_options(test_sx1262_rf_path PRIVATE -Wall -Wextra -Werror
+    -Wconversion -Wsign-conversion -fsanitize=address,undefined -fno-omit-frame-pointer)
+target_link_options(test_sx1262_rf_path PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+add_test(NAME sx1262_rf_path COMMAND test_sx1262_rf_path)

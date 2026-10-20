@@ -10,6 +10,7 @@ typedef enum {
   GPIO_MODE_DISABLE = 0,
   GPIO_MODE_INPUT = 1,
   GPIO_MODE_OUTPUT_OD = 2,
+  GPIO_MODE_OUTPUT = 3,
 } gpio_mode_t;
 
 typedef enum {
@@ -39,6 +40,9 @@ typedef struct {
 } gpio_config_t;
 
 esp_err_t gpio_set_level(gpio_num_t gpio_num, uint32_t level);
+esp_err_t gpio_hold_en(gpio_num_t gpio_num);
+esp_err_t gpio_hold_dis(gpio_num_t gpio_num);
+void gpio_deep_sleep_hold_en(void);
 esp_err_t gpio_config(const gpio_config_t *configuration);
 esp_err_t gpio_set_direction(gpio_num_t gpio_num, gpio_mode_t mode);
 esp_err_t gpio_set_pull_mode(gpio_num_t gpio_num, gpio_pull_mode_t pull);

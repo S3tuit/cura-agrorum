@@ -44,8 +44,7 @@ def pytest_addoption(parser):
     group = parser.getgroup("sensor-carrier")
     group.addoption("--sensor-operation", choices=sorted(OPERATIONS))
     group.addoption("--sensor-fixture", choices=["nominal", "adc_reference", "missing_ds0", "missing_ds1", "missing_bme280"])
-    group.addoption("--carrier-revision")
-    group.addoption("--sensor-dut", default="cc8da2fc0224")
+    group.addoption("--sensor-dut")
     group.addoption("--sensor-repeat-count", type=int, default=100)
     group.addoption("--sensor-guided", action="store_true")
     group.addoption("--exploration", action="store_true",
@@ -64,7 +63,6 @@ def pytest_collection_finish(session):
         try:
             validate_selection(session.config.getoption("sensor_operation"),
                                session.config.getoption("sensor_fixture"),
-                               session.config.getoption("carrier_revision"),
                                session.config.getoption("sensor_fixture_ready"))
         except ValueError as exc:
             raise pytest.UsageError(str(exc)) from exc

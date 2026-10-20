@@ -1,5 +1,7 @@
 """Real guided procedure/menu/evidence at the UART, operator and clock boundaries."""
 import json
+import os
+import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -48,7 +50,8 @@ def test_manual_sleep_acceptance_and_failures(scripted_dut, tmp_path, monkeypatc
                 state.result(unity.name, result)
         elif command == 'CARRIER_HOLD_ACK transition-on':
             state.feed('CARRIER_HOLD_ACKED transition-on elapsed_us=11000000\n'
-                       'CARRIER_HOLD_END transition-on\nCARRIER_TRANSITION deep-sleep end=operator-reset\n')
+                       'CARRIER_HOLD_END transition-on\nCARRIER_TRANSITION deep-sleep end=operator-reset\n'
+                       'CURAG_USB_SLEEP_READY 12345678\n')
         elif command == '':
             state.feed("Here's the test menu, pick your combo:\n"
                        f'(11)\t"{unity.name}" [sensor_carrier][multi_stage]\n'
@@ -67,7 +70,7 @@ def test_manual_sleep_acceptance_and_failures(scripted_dut, tmp_path, monkeypatc
         if input_index[0] == 2:
             clock.now = 20 if failure == 'before_settling' else 611 if failure == 'late_meter' else 22
             if failure == 'boot_during_meter':
-                state.feed('ESP-ROM:esp32c6\n')
+                state.feed('ESP-ROM:esp32s3\n')
             if failure == 'missing_meter':
                 return 'TP_3V3=3.3\n'
             return ('TP_3V3=3.3 TP_GATE=3.3 TP_DQ=0.001 TP_SW=' +
@@ -198,3 +201,66 @@ def test_guided_sleep_detects_uart_loss_while_waiting(scripted_dut, tmp_path, mo
         procedure.deep_sleep(dut, 0, 615)
     assert evidence.data['events'][-1]['kind'] == 'deep_sleep_state_lost'
     assert procedure.holds == []
+
+
+@pytest.fixture(scope='module')
+def sleep_stage_binary(tmp_path_factory):
+    root = tmp_path_factory.mktemp('carrier-sleep-receipt')
+    source = (runner.APP / 'main/test_sensor_carrier.c').read_text()
+    stage = source[source.index('static void sleep_stage_1(void) {'):
+                   source.index('static void sleep_stage_2(void) {')]
+    harness = root / 'stage.c'
+    harness.write_text(r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "carrier_hold.h"
+static int mode, phase;
+static bool receipt;
+#define ESP_OK 0
+#define TEST_ASSERT_EQUAL_MESSAGE(expected, actual, message) assert((expected) == (actual))
+#define TEST_FAIL_MESSAGE(message) do { puts(message); exit(42); } while (0)
+static int transition_mode(void) { return mode; }
+static void enabled_transition(const char *name, int selected) {
+    assert(phase == 0 && selected == mode);
+    assert(strcmp(name, mode == CARRIER_HOLD_EXPLORATION ?
+                  "deep-sleep seconds=unlimited" : "deep-sleep end=operator-reset") == 0);
+    phase = 1;
+}
+static bool hwtest_usb_console_prepare_sleep(void) {
+    assert(phase == 1); phase = 2;
+    puts("RECEIPT"); return receipt;
+}
+static int node_sensors_power_gate_off(void) {
+    assert(phase == 2 && !receipt); phase = 3;
+    puts("GATE_OFF"); return ESP_OK;
+}
+static void esp_deep_sleep_start(void) {
+    assert(phase == 2 && receipt);
+    puts("SLEEP"); exit(0);
+}
+''' + stage + r'''
+int main(int argc, char **argv) {
+    assert(argc == 3); mode = atoi(argv[1]); receipt = atoi(argv[2]);
+    sleep_stage_1(); assert(false);
+}
+''')
+    binary = root / 'stage'
+    compiled = subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra',
+                               '-Werror', '-fsanitize=address,undefined',
+                               '-I', str(runner.APP / 'main'), str(harness), '-o', str(binary)],
+                              capture_output=True, text=True)
+    assert compiled.returncode == 0, compiled.stderr
+    return binary
+
+
+@pytest.mark.parametrize('mode', [1, 2], ids=['guided', 'exploration'])
+@pytest.mark.parametrize('receipt', [False, True])
+def test_actual_sleep_stage_requires_receipt_or_releases_gate(sleep_stage_binary, mode, receipt):
+    result = subprocess.run([str(sleep_stage_binary), str(mode), str(int(receipt))],
+                            capture_output=True, text=True)
+    assert result.returncode == (0 if receipt else 42), result.stderr
+    assert result.stdout == ('RECEIPT\nSLEEP\n' if receipt else
+                             'RECEIPT\nGATE_OFF\nhost did not acknowledge pre-sleep output\n')

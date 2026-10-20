@@ -5,6 +5,7 @@
 #include "bme280.h"
 #include "driver/gpio.h"
 #include "ds18b20.h"
+#include "esp_attr.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_timer.h"
@@ -139,7 +140,7 @@ esp_err_t __real_adc_oneshot_config_channel(adc_oneshot_unit_handle_t adc,
 esp_err_t __wrap_adc_oneshot_config_channel(adc_oneshot_unit_handle_t adc,
     adc_channel_t channel, const adc_oneshot_chan_cfg_t *config) {
   const esp_err_t result = __real_adc_oneshot_config_channel(adc, channel, config);
-  /* Approved C6 GPIO0/1 map to ADC1 channels 0/1; load_build checks the GPIOs. */
+  /* Approved S3 GPIO1/2 map to ADC1 channels 0/1; load_build checks the GPIOs. */
   soil_index = channel == ADC_CHANNEL_0 ? 0 : channel == ADC_CHANNEL_1 ? 1 : 2;
   if (result != ESP_OK || soil_index == 2 || !stabilization_done ||
       observed.gate_off != 0 || !config || config->atten != ADC_ATTEN_DB_12 ||
@@ -170,7 +171,9 @@ esp_err_t __wrap_adc_oneshot_read(adc_oneshot_unit_handle_t adc, adc_channel_t c
 }
 
 void __real_esp_rom_delay_us(uint32_t us);
-void __wrap_esp_rom_delay_us(uint32_t us) {
+/* Flash erases also call this global ROM wrapper with cache disabled. Keep
+ * its code in IRAM and use only internal static data and the real ROM delay. */
+void IRAM_ATTR __wrap_esp_rom_delay_us(uint32_t us) {
   /* Ignore delays inside the ADC driver itself; observe the sampler's gaps. */
   if (!inside_adc_read && soil_index < 2 && observed.soil_reads[soil_index] > 0 &&
       observed.soil_reads[soil_index] < 16 && !observed.soil_calibrations[soil_index]) {

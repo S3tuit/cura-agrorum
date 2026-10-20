@@ -1,3 +1,4 @@
+#include "carrier_output.h"
 #include <inttypes.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -5,6 +6,7 @@
 #include "carrier_checks.h"
 #include "carrier_core.h"
 #include "carrier_hold.h"
+#include "usb_console_test_support.h"
 #include "node_platform_esp.h"
 #include <stdbool.h>
 #include <stdio.h>
@@ -43,7 +45,7 @@ static void delay_ms(uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms) + 1U); }
 static void retain_error(esp_err_t candidate, esp_err_t *first,
                          const char *step) {
   if (candidate != ESP_OK) {
-    printf("CARRIER_ERROR step=%s status=%" PRId32 " name=%s\n", step,
+    carrier_output_printf("CARRIER_ERROR step=%s status=%" PRId32 " name=%s\n", step,
            (int32_t)candidate, esp_err_to_name(candidate));
     if (*first == ESP_OK) {
       *first = candidate;
@@ -89,13 +91,13 @@ static discovery_t discover_roms(void) {
       break;
     }
     if (found.count == DISCOVERY_CAPACITY) {
-      puts("CARRIER_DISCOVERY overflow");
+      carrier_output_puts("CARRIER_DISCOVERY overflow");
       found.result = ESP_ERR_INVALID_SIZE;
       break;
     }
     for (size_t previous = 0; previous < found.count; ++previous) {
       if (found.roms[previous] == device.address) {
-        puts("CARRIER_DISCOVERY repeated_address");
+        carrier_output_puts("CARRIER_DISCOVERY repeated_address");
         found.result = ESP_ERR_INVALID_RESPONSE;
         goto cleanup;
       }
@@ -111,7 +113,7 @@ static discovery_t discover_roms(void) {
       goto cleanup;
     }
     const uint8_t family = (uint8_t)(device.address & UINT64_C(0xff));
-    printf("CARRIER_ROM value=%s family=%02x type=%s\n", canonical, family,
+    carrier_output_printf("CARRIER_ROM value=%s family=%02x type=%s\n", canonical, family,
            family == 0x28U ? "DS18B20" : "unknown");
     found.roms[found.count++] = device.address;
     if (family == 0x28U) {
@@ -129,11 +131,10 @@ cleanup:
   retain_error(node_sensors_ds18b20_release_gpio(), &found.cleanup,
                "onewire_release");
   retain_error(node_sensors_power_gate_off(), &found.cleanup, "gate_off");
-  printf("CARRIER_DISCOVERY count=%u ds18b20=%u status=%" PRId32
+  carrier_output_printf("CARRIER_DISCOVERY count=%u ds18b20=%u status=%" PRId32
          " cleanup=%" PRId32 "\n",
          (unsigned)found.count, (unsigned)found.ds18b20_count,
          (int32_t)found.result, (int32_t)found.cleanup);
-  fflush(stdout);
   return found;
 }
 
@@ -151,7 +152,7 @@ static void require_configured_roms(uint64_t roms[2]) {
 }
 
 TEST_CASE("carrier setup discovery", "[sensor_carrier]") {
-  puts("CARRIER_SETUP discovery_only_no_nominal_acceptance");
+  carrier_output_puts("CARRIER_SETUP discovery_only_no_nominal_acceptance");
   const discovery_t found = discover_roms();
   const esp_err_t bme = carrier_bme_preflight(false);
   TEST_ASSERT_EQUAL(ESP_OK, found.result);
@@ -173,7 +174,7 @@ static void fixture_preflight(const char *fixture, unsigned expected_ds_mask, bo
                            found.ds18b20_count, expected_ds_mask);
   TEST_ASSERT_EQUAL_MESSAGE(ESP_OK, bme,
                             "BME280 identification/cleanup failed");
-  printf("CARRIER_PREFLIGHT %s_complete_resources_released_reset_required\n", fixture);
+  carrier_output_printf("CARRIER_PREFLIGHT %s_complete_resources_released_reset_required\n", fixture);
 }
 
 TEST_CASE("carrier nominal preflight", "[sensor_carrier]") {
@@ -229,7 +230,7 @@ TEST_CASE("carrier production gate-off hold", "[sensor_carrier]") {
 
 static void print_sample(node_sensor_sample_t sample, diagn_context_t diagnostic,
                          err_curag_t result, int64_t elapsed_us) {
-  printf("CARRIER_SAMPLE result=%08" PRIx32 " duration_us=%" PRId64
+  carrier_output_printf("CARRIER_SAMPLE result=%08" PRIx32 " duration_us=%" PRId64
          " validity=%02x soil0_mv=%u soil1_mv=%u temp0_centi_c=%d "
          "temp1_centi_c=%d enclosure_centi_c=%d pressure_pa=%" PRIu32
          " humidity_centi_pct=%u\n",
@@ -237,14 +238,13 @@ static void print_sample(node_sensor_sample_t sample, diagn_context_t diagnostic
          sample.soil_1_mv, sample.soil_temp_0_centi_c,
          sample.soil_temp_1_centi_c, sample.enclosure_centi_c,
          sample.enclosure_pressure_pa, sample.enclosure_humidity_centi_pct);
-  printf("CARRIER_DIAGNOSTIC operation=%u schema=%u length=%u context=",
+  carrier_output_printf("CARRIER_DIAGNOSTIC operation=%u schema=%u length=%u context=",
          (unsigned)diagnostic.operation, diagnostic.context_schema,
          diagnostic.context_length);
   for (size_t index = 0; index < sizeof(diagnostic.context); ++index) {
-    printf("%02x", diagnostic.context[index]);
+    carrier_output_printf("%02x", diagnostic.context[index]);
   }
-  putchar('\n');
-
+  carrier_output_puts("");
 }
 
 static void assert_sample(const node_sensor_sample_t *sample,
@@ -278,12 +278,12 @@ static void assert_acquisition_duration(int64_t duration_us) {
 
 static void print_observation(void) {
   const carrier_observation_t seen = carrier_observer_snapshot();
-  printf("CARRIER_OBSERVER conversions=%u reads=%u wait_us=%" PRId64
+  carrier_output_printf("CARRIER_OBSERVER conversions=%u reads=%u wait_us=%" PRId64
          " adc=%u/%u onewire=%u/%u ds=%u/%u bme=%u invalid=%u\n",
          seen.conversions, seen.reads, seen.minimum_wait_us,
          seen.adc_new, seen.adc_del, seen.bus_new, seen.bus_del,
          seen.ds_new, seen.ds_del, seen.bme_forced, seen.invalid_sequence);
-  printf("CARRIER_SOIL_OBSERVER stabilization_calls=%u stabilization_ms=%u"
+  carrier_output_printf("CARRIER_SOIL_OBSERVER stabilization_calls=%u stabilization_ms=%u"
          " reads0=%u reads1=%u delays0=%u delays1=%u cali0=%u cali1=%u"
          " mv0=%d mv1=%d power_released=%u\n",
          seen.stabilization_calls, seen.stabilization_ms,
@@ -291,14 +291,14 @@ static void print_observation(void) {
          seen.soil_calibrations[0], seen.soil_calibrations[1],
          seen.soil_mv[0], seen.soil_mv[1], seen.power_released);
   if (seen.bme_cal_read) {
-    printf("CARRIER_BME_TCAL raw=");
-    for (unsigned i = 0; i < sizeof(seen.bme_cal_t); ++i) printf("%02X", seen.bme_cal_t[i]);
-    puts("");
+    carrier_output_printf("CARRIER_BME_TCAL raw=");
+    for (unsigned i = 0; i < sizeof(seen.bme_cal_t); ++i) carrier_output_printf("%02X", seen.bme_cal_t[i]);
+    carrier_output_puts("");
   }
-  printf("CARRIER_BME_DATA reads=%u read_error=%" PRId32 " error_register=%02X raw=",
+  carrier_output_printf("CARRIER_BME_DATA reads=%u read_error=%" PRId32 " error_register=%02X raw=",
          seen.bme_data_reads, (int32_t)seen.bme_read_error, seen.bme_error_register);
-  for (unsigned i = 0; i < sizeof(seen.bme_raw); ++i) printf("%02X", seen.bme_raw[i]);
-  printf(" driver_result=%d temperature=%.9g pressure=%.9g humidity=%.9g\n",
+  for (unsigned i = 0; i < sizeof(seen.bme_raw); ++i) carrier_output_printf("%02X", seen.bme_raw[i]);
+  carrier_output_printf(" driver_result=%d temperature=%.9g pressure=%.9g humidity=%.9g\n",
          seen.bme_data_result, seen.bme_temperature, seen.bme_pressure, seen.bme_humidity);
 }
 
@@ -352,8 +352,7 @@ static void fixture_reading(unsigned ds_mask, bool bme_present, bool air_soil,
   carrier_core_observation_t seen;
   carrier_core_run(configured, ds_mask, bme_present, &seen);
   print_sample(seen.sample, seen.diagnostic, seen.result, seen.duration_us);
-  TEST_ASSERT_TRUE_MESSAGE(seen.duration_us >= 0 && seen.duration_us <= 30000000,
-                           "production sample did not return within 30 seconds");
+  assert_acquisition_duration(seen.duration_us);
   carrier_assert_sample(&seen.sample, &seen.diagnostic, seen.result,
                         ds_mask, air_soil, bme_present);
   TEST_ASSERT_TRUE_MESSAGE(seen.acquisition_valid,
@@ -405,7 +404,7 @@ static void observe_bme_sleep(const node_sensor_sample_t *sample) {
   memcpy(&retained, sample, sizeof(retained));
   uint8_t registers[2] = {0};
   const esp_err_t result = carrier_observer_bme_registers(registers);
-  printf("CARRIER_BME_SLEEP status=%02X control=%02X mode=%u result=%" PRId32 "\n",
+  carrier_output_printf("CARRIER_BME_SLEEP status=%02X control=%02X mode=%u result=%" PRId32 "\n",
          registers[0], registers[1], registers[1] & 3, (int32_t)result);
   TEST_ASSERT_EQUAL_MEMORY(&retained, sample, sizeof(retained));
   TEST_ASSERT_EQUAL(ESP_OK, result);
@@ -430,8 +429,7 @@ TEST_CASE("carrier BME280 sleep observation", "[sensor_carrier]") {
 TEST_CASE("carrier repeated nominal acquisition", "[sensor_carrier]") {
   uint64_t configured[2];
   fresh_acquisition(configured);
-  puts("CARRIER_REPEAT_COUNT");
-  fflush(stdout);
+  carrier_output_puts("CARRIER_REPEAT_COUNT");
   char text[24];
   unity_gets(text, sizeof(text));
   char *end = NULL;
@@ -451,11 +449,9 @@ TEST_CASE("carrier repeated nominal acquisition", "[sensor_carrier]") {
     assert_sample(&sample, &diagnostic, result, true);
     assert_observation(&sample, 3, true);
     observe_bme_sleep(&sample);
-    printf("CARRIER_ITERATION index=%" PRIu64 " total=%llu\n", index, requested);
-    fflush(stdout);
+    carrier_output_printf("CARRIER_ITERATION index=%" PRIu64 " total=%llu\n", index, requested);
   }
-  printf("CARRIER_REPEAT_DONE total=%llu\n", requested);
-  fflush(stdout);
+  carrier_output_printf("CARRIER_REPEAT_DONE total=%llu\n", requested);
 }
 
 TEST_CASE("carrier final cleanup hold", "[sensor_carrier]") {
@@ -477,11 +473,11 @@ TEST_CASE("carrier final cleanup hold", "[sensor_carrier]") {
     memset(&cleanup[i], 0xa5, sizeof(cleanup[i]));
     results[i] = node_sensors_force_power_off(&cleanup[i]);
     unchanged[i] = memcmp(&sample, &retained, sizeof(sample)) == 0;
-    printf("CARRIER_CLEANUP index=%u result=%08" PRIx32 " unchanged=%u\n",
+    carrier_output_printf("CARRIER_CLEANUP index=%u result=%08" PRIx32 " unchanged=%u\n",
            (unsigned)i + 1, (uint32_t)results[i], unchanged[i]);
   }
   const bool observed = carrier_observer_cleanup_valid(2);
-  printf("CARRIER_CLEANUP_OBSERVER valid=%u\n", observed);
+  carrier_output_printf("CARRIER_CLEANUP_OBSERVER valid=%u\n", observed);
   /* No further sensor/gate calls; this is independent of sample-return. */
   TEST_ASSERT_TRUE_MESSAGE(carrier_hold_wait("final-cleanup", mode),
                            "guided hold incomplete: valid acknowledgement required");
@@ -525,8 +521,7 @@ static void enabled_transition(const char *name, int mode) {
     TEST_ASSERT_EQUAL(ESP_OK, node_sensors_power_gate_off());
   }
   TEST_ASSERT_TRUE_MESSAGE(held, "transition hold requires valid acknowledgement");
-  printf("CARRIER_TRANSITION %s\n", name);
-  fflush(stdout);
+  carrier_output_printf("CARRIER_TRANSITION %s\n", name);
 }
 static bool s_observe_restart;
 static unsigned s_restart_off_calls;
@@ -540,9 +535,8 @@ err_curag_t __wrap_node_sensors_force_power_off(diagn_context_t *diagnostic) {
     if (diagnostic) {
       for (size_t i = 0; i < sizeof(diagnostic->context); ++i) empty &= diagnostic->context[i] == 0;
     }
-    printf("CARRIER_RESTART_CLEANUP calls=%u result=%08" PRIx32 " diagnostic_empty=%u observer_valid=%u\n",
+    carrier_output_printf("CARRIER_RESTART_CLEANUP calls=%u result=%08" PRIx32 " diagnostic_empty=%u observer_valid=%u\n",
            s_restart_off_calls, (uint32_t)result, empty, carrier_observer_cleanup_valid(1));
-    fflush(stdout);
   }
   return result;
 }
@@ -566,7 +560,7 @@ static void held_stage_1(void) {
 }
 static void held_stage_2(void) {
   TEST_ASSERT_FALSE(s_hardware_used);
-  TEST_ASSERT_EQUAL(ESP_RST_POWERON, esp_reset_reason()); /* C6 EN reset. */
+  TEST_ASSERT_EQUAL(ESP_RST_POWERON, esp_reset_reason()); /* Physical EN reset. */
 }
 static void sleep_stage_1(void) {
   const int mode = transition_mode();
@@ -574,13 +568,18 @@ static void sleep_stage_1(void) {
    * exploration ends with /done and EN/reset. Neither needs a timer dwell. */
   enabled_transition(mode == CARRIER_HOLD_EXPLORATION ?
                      "deep-sleep seconds=unlimited" : "deep-sleep end=operator-reset", mode);
+  if (!hwtest_usb_console_prepare_sleep()) {
+    TEST_ASSERT_EQUAL_MESSAGE(ESP_OK, node_sensors_power_gate_off(),
+                             "gate-off after missing sleep receipt failed");
+    TEST_FAIL_MESSAGE("host did not acknowledge pre-sleep output");
+  }
   esp_deep_sleep_start();
   TEST_FAIL_MESSAGE("deep sleep returned");
 }
 static void sleep_stage_2(void) {
   TEST_ASSERT_FALSE(s_hardware_used);
   (void)transition_mode();
-  TEST_ASSERT_EQUAL(ESP_RST_POWERON, esp_reset_reason()); /* C6 EN reset. */
+  TEST_ASSERT_EQUAL(ESP_RST_POWERON, esp_reset_reason()); /* Physical EN reset. */
 }
 TEST_CASE_MULTIPLE_STAGES("carrier production restart cleanup", "[sensor_carrier][reset=SW_CPU_RESET]",
                          reset_stage_1, reset_stage_2);

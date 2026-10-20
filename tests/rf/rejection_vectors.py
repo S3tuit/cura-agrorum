@@ -13,7 +13,7 @@ from cura_receiver.generated.receiver_enums_generated import ProcessingResult, A
 from spec import REJECTION_CASES
 
 CASES = tuple(vector for vector, _ in REJECTION_CASES.values())
-C6_CASES = tuple(REJECTION_CASES)
+NODE_CASES = tuple(REJECTION_CASES)
 
 
 @dataclass(frozen=True)

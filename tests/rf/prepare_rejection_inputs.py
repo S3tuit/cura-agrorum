@@ -11,7 +11,7 @@ sys.path[:0] = [str(REPO / 'receiver'), str(REPO / 'protocol/protocol-v2-lora/py
                str(REPO / 'protocol/protocol-v2-lora/tools')]
 from provisioning_common import (generate_receiver_group, generate_unique_node_id,
     derive_node_key, render_receiver_group, write_new_secret)
-from rejection_vectors import matrix, C6_CASES
+from rejection_vectors import matrix, NODE_CASES
 
 BOUND_SOURCES = (
     'firmware/hardware/radio/tests/component/main/radio_rejection.c',
@@ -62,7 +62,7 @@ def prepare(output, run):
                   first_message=0, first_sample=0,
                   cases=[dict(name=v.name, command_case=case, phase=v.phase, frame=v.frame.hex(), ack=v.ack.hex() if v.ack else None,
                               processing_result=v.processing_result, sample_id=v.sample_id)
-                         for v, case in zip(vectors, C6_CASES, strict=True)])
+                         for v, case in zip(vectors, NODE_CASES, strict=True)])
     # Header/keys and both allowlists are private; this public manifest has only hashes/frames/IDs.
     with (output / 'rejection-manifest.json').open('x') as stream:
         json.dump(public, stream, indent=2, sort_keys=True); stream.write('\n')

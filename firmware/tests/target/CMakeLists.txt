@@ -10,9 +10,10 @@ project(cura_node_persistence_hardware_tests)
 
 include("${CURA_FIRMWARE_DIR}/cmake/xiao_board.cmake")
 
-# Fits the core cases' complete delivery histories while keeping quota tests
-# short. Implementation and quota assertions must use the same limit.
+# Fits complete delivery histories and buffered diagnostic batches while keeping
+# quota tests short. Implementation and quota assertions must use the same limits.
 set(hwtest_delivery_log_limit 512)
+set(hwtest_diagnostic_log_limit 256)
 
 idf_component_get_property(node_persistence_lib node_persistence COMPONENT_LIB)
 target_compile_definitions(
@@ -24,12 +25,14 @@ target_compile_definitions(
       NODE_PERSISTENCE_PENDING_LOG_LIMIT=512
       NODE_PERSISTENCE_PENDING_COMPACT_RETAIN_LIMIT=256
       NODE_PERSISTENCE_QUARANTINE_LOG_LIMIT=128
-      NODE_PERSISTENCE_DIAGNOSTIC_LOG_LIMIT=128
+      NODE_PERSISTENCE_DIAGNOSTIC_LOG_LIMIT=${hwtest_diagnostic_log_limit}
       NODE_PERSISTENCE_DELIVERY_LOG_LIMIT=${hwtest_delivery_log_limit})
 
 idf_component_get_property(main_lib main COMPONENT_LIB)
 target_compile_definitions(
-    ${main_lib} PRIVATE NODE_PERSISTENCE_DELIVERY_LOG_LIMIT=${hwtest_delivery_log_limit})
+    ${main_lib} PRIVATE
+      NODE_PERSISTENCE_DELIVERY_LOG_LIMIT=${hwtest_delivery_log_limit}
+      NODE_PERSISTENCE_DIAGNOSTIC_LOG_LIMIT=${hwtest_diagnostic_log_limit})
 
 idf_component_get_property(node_core_lib node_core COMPONENT_LIB)
 target_compile_definitions(

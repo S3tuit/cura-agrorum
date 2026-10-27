@@ -145,14 +145,15 @@ static int32_t backend_file_size(node_persistence_file_handle_t handle,
   if (out_size == NULL) {
     return EINVAL;
   }
-  struct stat status;
-  if (fstat((int)handle, &status) != 0) {
+  /* LittleFS fstat reads committed metadata, hiding unsynced diagnostics and
+   * allowing later appends to overwrite them. SEEK_END uses the live handle;
+   * every read/write below seeks to its explicit offset before transferring.
+   */
+  const off_t size = lseek((int)handle, 0, SEEK_END);
+  if (size < 0) {
     return errno;
   }
-  if (status.st_size < 0) {
-    return EIO;
-  }
-  *out_size = (uint64_t)status.st_size;
+  *out_size = (uint64_t)size;
   return 0;
 }
 

@@ -47,6 +47,7 @@ typedef struct {
   int32_t (*path_stat)(const char *path, bool *out_exists, uint64_t *out_size);
   int32_t (*file_open)(const char *path, bool create, bool truncate,
                        node_persistence_file_handle_t *out_handle);
+  /* Includes unsynced writes; may change the descriptor's current offset. */
   int32_t (*file_size)(node_persistence_file_handle_t handle,
                        uint64_t *out_size);
   int32_t (*file_read_exact)(node_persistence_file_handle_t handle,

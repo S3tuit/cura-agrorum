@@ -6,7 +6,9 @@
 #include "esp_littlefs.h"
 #include "esp_system.h"
 #include "node_persistence.h"
+#include "node_sensors.h"
 #include "persistence_test_support.h"
+#include "sx1262_radio.h"
 #include "unity.h"
 
 #define HWTEST_DELIVERY_STARTED_RECORD_SIZE                                    \
@@ -450,6 +452,106 @@ TEST_CASE_MULTIPLE_STAGES("diagnostics become durable after sync all",
                           "[node_persistence][reset=SW_CPU_RESET]",
                           restart_diagnostic_stage_1,
                           restart_diagnostic_stage_2);
+
+static node_diagnostic_event_t buffered_diagnostic(diagn_context_t *context,
+                                                  uint8_t marker,
+                                                  bool sensor) {
+  node_diagnostic_event_t event = hwtest_make_diagnostic(context, marker);
+  event.error = sensor
+                    ? curag_error_make(CURAG_EDOM_SENSORS,
+                                       CURAG_ESENSORS_EPARTIAL_SAMPLE)
+                    : curag_error_make(CURAG_EDOM_RADIO, CURAG_ERADIO_EDEADLINE);
+  context->context_schema =
+      sensor ? CURAG_SENSOR_CONTEXT_V1 : CURAG_RADIO_CONTEXT_V1;
+  context->context_length =
+      sensor ? CURAG_SENSOR_CONTEXT_V1_LENGTH : CURAG_RADIO_CONTEXT_V1_LENGTH;
+  memset(context->context, marker, context->context_length);
+  return event;
+}
+
+static void assert_buffered_diagnostics(bool committed_prefix,
+                                         const bool sensor_events[3]) {
+  hwtest_erase_state();
+  hwtest_snapshot_t expected = {0};
+  uint8_t record[NODE_PERSISTENCE_RECORD_MAX_SIZE];
+  diagn_context_t context;
+  diagn_context_t diag;
+  if (committed_prefix) {
+    const node_diagnostic_event_t prefix = hwtest_make_diagnostic(&context, 0U);
+    expected.length = hwtest_encode_diagnostic_record(&prefix, expected.bytes);
+    TEST_ASSERT_EQUAL_HEX32(
+        CURAG_OK, node_persistence_append_diagnostic_event(&prefix, &diag));
+    TEST_ASSERT_EQUAL_HEX32(CURAG_OK, node_persistence_sync_all(&diag));
+  }
+
+  /* A shorter overwrite leaves an invalid tail; an equal-sized overwrite can
+   * silently lose a valid record. Compare every byte after sync and remount.
+   */
+  for (uint8_t index = 0U; index < 3U; ++index) {
+    const node_diagnostic_event_t event =
+        buffered_diagnostic(&context, (uint8_t)(index + 1U), sensor_events[index]);
+    const size_t length = hwtest_encode_diagnostic_record(&event, record);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(sizeof(expected.bytes),
+                                     expected.length + length);
+    memcpy(expected.bytes + expected.length, record, length);
+    expected.length += length;
+    TEST_ASSERT_EQUAL_HEX32(
+        CURAG_OK, node_persistence_append_diagnostic_event(&event, &diag));
+  }
+  TEST_ASSERT_EQUAL_HEX32(CURAG_OK, node_persistence_sync_all(&diag));
+  hwtest_snapshot_t actual;
+  hwtest_snapshot(HWTEST_DIAGNOSTIC_PATH, &actual);
+  hwtest_assert_snapshot_equal(&expected, &actual);
+  hwtest_simulate_component_restart();
+  hwtest_snapshot(HWTEST_DIAGNOSTIC_PATH, &actual);
+  hwtest_assert_snapshot_equal(&expected, &actual);
+  hwtest_finish_case();
+}
+
+TEST_CASE("buffered diagnostics preserve shorter and equal-sized records",
+          "[node_persistence]") {
+  const bool sensor_events[3] = {true, false, false};
+  assert_buffered_diagnostics(false, sensor_events);
+}
+
+TEST_CASE("buffered diagnostics preserve a committed prefix and longer records",
+          "[node_persistence]") {
+  const bool sensor_events[3] = {false, true, false};
+  assert_buffered_diagnostics(true, sensor_events);
+}
+
+TEST_CASE("buffered diagnostics count unsynced records toward quota",
+          "[node_persistence]") {
+  hwtest_erase_state();
+  hwtest_snapshot_t expected = {0};
+  uint8_t record[NODE_PERSISTENCE_RECORD_MAX_SIZE];
+  diagn_context_t context;
+  diagn_context_t diag;
+  uint8_t marker = 0U;
+  while (true) {
+    const node_diagnostic_event_t event =
+        buffered_diagnostic(&context, marker++, false);
+    const size_t length = hwtest_encode_diagnostic_record(&event, record);
+    if (expected.length + length > NODE_PERSISTENCE_DIAGNOSTIC_LOG_LIMIT) {
+      TEST_ASSERT_EQUAL_HEX32(
+          CURAG_ELOG_FULL,
+          node_persistence_append_diagnostic_event(&event, &diag));
+      break;
+    }
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(sizeof(expected.bytes),
+                                     expected.length + length);
+    memcpy(expected.bytes + expected.length, record, length);
+    expected.length += length;
+    TEST_ASSERT_EQUAL_HEX32(
+        CURAG_OK, node_persistence_append_diagnostic_event(&event, &diag));
+  }
+  TEST_ASSERT_EQUAL_HEX32(CURAG_OK, node_persistence_sync_all(&diag));
+  hwtest_simulate_component_restart();
+  hwtest_snapshot_t actual;
+  hwtest_snapshot(HWTEST_DIAGNOSTIC_PATH, &actual);
+  hwtest_assert_snapshot_equal(&expected, &actual);
+  hwtest_finish_case();
+}
 
 TEST_CASE("sync all closes handles without unregistering LittleFS",
           "[node_persistence]") {

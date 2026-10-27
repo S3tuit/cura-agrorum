@@ -519,4 +519,7 @@ target_compile_features(test_sx1262_rf_path PRIVATE c_std_11)
 target_compile_options(test_sx1262_rf_path PRIVATE -Wall -Wextra -Werror
     -Wconversion -Wsign-conversion -fsanitize=address,undefined -fno-omit-frame-pointer)
 target_link_options(test_sx1262_rf_path PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
-add_test(NAME sx1262_rf_path COMMAND test_sx1262_rf_path)
+foreach(scenario initial_off initial_level_failure initial_config_failure
+    initial_hold_failure on on_release_failure on_level_failure configured_off_failures)
+    add_test(NAME "sx1262_rf_path.${scenario}" COMMAND test_sx1262_rf_path "${scenario}")
+endforeach()

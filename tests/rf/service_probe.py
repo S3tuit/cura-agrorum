@@ -143,8 +143,10 @@ def database_observation(database):
         if instance is None:
             return dict(instance=None, health=None, profiles=0, samples=0, total_readings=total_readings)
         iid = instance["receiver_instance_id"]
-        health = db.execute("SELECT radio_state_id,communicator_sampled_at_monotonic_us FROM receiver_health "
-                            "WHERE receiver_instance_id=? ORDER BY health_sequence DESC LIMIT 1", (iid,)).fetchone()
+        health = db.execute("SELECT o.software_state_id,o.chip_mode_id,h.consistency_id,h.communicator_sampled_at_monotonic_us "
+                            "FROM receiver_health h JOIN radio_observations o "
+                            "ON o.receiver_instance_id=h.receiver_instance_id AND o.observation_sequence=h.radio_observation_sequence "
+                            "WHERE h.receiver_instance_id=? ORDER BY h.health_sequence DESC LIMIT 1", (iid,)).fetchone()
         profiles = db.execute("SELECT count(*) FROM message_profiles WHERE receiver_instance_id=?", (iid,)).fetchone()[0]
         samples = db.execute("SELECT count(*) FROM reading_messages WHERE first_receiver_instance_id=?", (iid,)).fetchone()[0]
         latest = db.execute("SELECT max(received_at_monotonic_us) FROM message_profiles WHERE receiver_instance_id=?", (iid,)).fetchone()[0]

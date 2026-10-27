@@ -47,6 +47,8 @@ def make_application(tmp_path, *, reuse_storage=False, instance_id=INSTANCE, clo
         stop_requested=stop.is_requested)
     rtc = FakeDs3231Control()
     rtc.read_results.append(Ds3231ReadResult(Ds3231ReadStatus.MISSING, started, started))
+    rtc.read_results.append(lambda: Ds3231ReadResult(Ds3231ReadStatus.MISSING,
+        clock.now_monotonic_us(), clock.now_monotonic_us()))
     app = ReceiverApplication(instance=instance, settings=settings, worker=worker, clock=clock,
         kernel=FakeKernelClock(), rtc=rtc, chrony=FakeChronyControl(), radio=radio, stop_intent=stop)
     return app, io, database, config

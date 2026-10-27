@@ -7,6 +7,9 @@ import json
 
 import pytest
 
+from cura_receiver.generated import receiver_enums_generated as E
+from tests.support.builders.persistence import _radio_observation
+
 from cura_receiver.generated.receiver_entities_generated import (
     ClockObservationV1,
     DiagnosticV1,
@@ -100,7 +103,14 @@ def _health_request() -> ReceiverHealthRequestV1:
         receiver_instance_id=b"r" * 16,
         health_sequence=1,
         communicator_sampled_at_monotonic_us=2,
-        radio_state=RadioState.RX_SINGLE,
+        radio_observation=_radio_observation(),
+        consistency=E.HealthConsistency.CONSISTENT,
+        radio_header_errors_observed=0, radio_header_errors_handled=0,
+        radio_crc_errors_observed=0, radio_crc_errors_handled=0,
+        radio_observations_dropped=0,
+        rtc_read_status=E.RtcReadStatus.OK, rtc_read_errno=None,
+        rtc_read_started_at_monotonic_us=2, rtc_read_finished_at_monotonic_us=2,
+        rtc_read_utc_s=1_800_000_000,
         radio_recovery_attempts=3,
         radio_recovery_successes=2,
         radio_recovery_failures=1,
@@ -115,7 +125,7 @@ def _health_request() -> ReceiverHealthRequestV1:
         rtc_write_results=(4, 5, 6),
         rtc_write_readback_verified_count=7,
         rtc_write_trust_invalidated_count=8,
-        persist_queue_admission_counts=((0, 0, 0),) * 5,
+        persist_queue_admission_counts=((0, 0, 0),) * 6,
     )
 
 
@@ -235,10 +245,10 @@ def test_neutral_tree_keeps_none_enum_tuple_and_record_tags_distinct() -> None:
     assert isinstance(evidence.value, NeutralRecordV1)
     values = {field.name: field.value for field in evidence.value.fields}
     assert values["last_rtc_health_transition_monotonic_us"] == NeutralNoneV1()
-    assert values["radio_state"] == NeutralEnumV1(
-        class_name="cura_receiver.generated.receiver_enums_generated.RadioState",
-        member_name="RX_SINGLE",
-        value=2,
+    assert values["consistency"] == NeutralEnumV1(
+        class_name="cura_receiver.generated.receiver_enums_generated.HealthConsistency",
+        member_name="CONSISTENT",
+        value=1,
     )
     assert values["chrony_step_command_results"] == NeutralTupleV1(
         (NeutralIntV1(1), NeutralIntV1(2), NeutralIntV1(3))

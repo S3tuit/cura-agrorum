@@ -15,10 +15,12 @@ from .generated.receiver_entities_generated import (
     ClockObservationV1,
     DiagnosticV1,
     MessageProfilingV1,
+    RadioObservationV1,
 )
 from .generated.receiver_enums_generated import (
     PersistQueueEntityKind,
-    RadioState,
+    HealthConsistency,
+    RtcReadStatus,
     RtcHealth,
     SystemTimeQuality,
 )
@@ -56,6 +58,11 @@ CLOCK_OBSERVATION_V1_SPEC = PersistQueueEntitySpec(
     schema_version=PERSIST_QUEUE_ENTITY_SCHEMA_VERSION,
 )
 
+RADIO_OBSERVATION_V1_SPEC = PersistQueueEntitySpec(
+    kind=PersistQueueEntityKind.RADIO_OBSERVATION,
+    schema_version=PERSIST_QUEUE_ENTITY_SCHEMA_VERSION,
+)
+
 SUPPORTED_PERSIST_QUEUE_ENTITY_SPECS = frozenset(
     {
         MEASUREMENT_PROFILE_V1_SPEC,
@@ -63,6 +70,7 @@ SUPPORTED_PERSIST_QUEUE_ENTITY_SPECS = frozenset(
         RECEIVER_HEALTH_REQUEST_V1_SPEC,
         DIAGNOSTIC_V1_SPEC,
         CLOCK_OBSERVATION_V1_SPEC,
+        RADIO_OBSERVATION_V1_SPEC,
     }
 )
 
@@ -95,18 +103,29 @@ class ProfileOnlyUnitV1:
 
 @dataclass(frozen=True, slots=True)
 class ReceiverHealthRequestV1:
-    """Immutable communicator-owned portion of one receiver-health row."""
+    """Immutable health and radio evidence, committed as one persistence unit."""
 
     receiver_instance_id: bytes
     health_sequence: int
     communicator_sampled_at_monotonic_us: int
-    radio_state: RadioState
+    radio_observation: RadioObservationV1
+    consistency: HealthConsistency
+    radio_header_errors_observed: int
+    radio_header_errors_handled: int
+    radio_crc_errors_observed: int
+    radio_crc_errors_handled: int
+    radio_observations_dropped: int
     radio_recovery_attempts: int
     radio_recovery_successes: int
     radio_recovery_failures: int
     radio_recovery_attempts_by_reason: tuple[int, ...]
     system_time_quality: SystemTimeQuality
     rtc_health: RtcHealth
+    rtc_read_status: RtcReadStatus
+    rtc_read_errno: int | None
+    rtc_read_started_at_monotonic_us: int
+    rtc_read_finished_at_monotonic_us: int
+    rtc_read_utc_s: int | None
     time_quality_transition_count: int
     rtc_health_transition_count: int
     last_time_quality_transition_monotonic_us: int | None
@@ -121,6 +140,7 @@ class ReceiverHealthRequestV1:
 PersistQueueEntityV1: TypeAlias = (
     MeasurementProfileUnitV1
     | ProfileOnlyUnitV1
+    | RadioObservationV1
     | ReceiverHealthRequestV1
     | DiagnosticV1
     | ClockObservationV1
@@ -135,6 +155,7 @@ __all__ = [
     "RECEIVER_HEALTH_REQUEST_V1_SPEC",
     "DIAGNOSTIC_V1_SPEC",
     "CLOCK_OBSERVATION_V1_SPEC",
+    "RADIO_OBSERVATION_V1_SPEC",
     "SUPPORTED_PERSIST_QUEUE_ENTITY_SPECS",
     "AuthenticatedReadingCandidateV1",
     "MeasurementProfileUnitV1",

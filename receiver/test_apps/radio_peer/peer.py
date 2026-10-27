@@ -7,7 +7,7 @@ directly, with its layer named in every run; all other cases use Radio.
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, is_dataclass, replace
 from enum import Enum
 import fcntl
 import hashlib
@@ -244,7 +244,10 @@ def execute(case, backend, radio, stop, started):
     require(len(transmissions) == maximum_tx, "incomplete downlink sequence")
     if case == "component.header_error_rearm":
         require(len(handled) == 1, "missing real HeaderErr stimulus")
-        require(radio.counters == counters_before, "HeaderErr changed counters or recovered")
+        expected_counters = replace(counters_before,
+            header_errors_observed=counters_before.header_errors_observed + 1,
+            header_errors_handled=counters_before.header_errors_handled + 1)
+        require(radio.counters == expected_counters, "HeaderErr counter delta differs or recovered")
     return dict(packets=packets, transmissions=transmissions, handled=handled,
                 counters_before=counters_before, counters_after=radio.counters if radio else None,
                 observation_end=backend.clock.now_monotonic_us())

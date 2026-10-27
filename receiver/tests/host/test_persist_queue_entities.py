@@ -16,6 +16,7 @@ from cura_receiver.generated.receiver_enums_generated import (
 )
 from cura_receiver.persist_queue_entities import (
     CLOCK_OBSERVATION_V1_SPEC,
+    RADIO_OBSERVATION_V1_SPEC,
     DIAGNOSTIC_V1_SPEC,
     MEASUREMENT_PROFILE_V1_SPEC,
     PERSIST_QUEUE_ENTITY_SCHEMA_VERSION,
@@ -66,27 +67,9 @@ def _profile() -> MessageProfilingV1:
 
 
 def _health_request() -> ReceiverHealthRequestV1:
-    return ReceiverHealthRequestV1(
-        receiver_instance_id=b"r" * 16,
-        health_sequence=1,
-        communicator_sampled_at_monotonic_us=2,
-        radio_state=RadioState.RX_SINGLE,
-        radio_recovery_attempts=3,
-        radio_recovery_successes=2,
-        radio_recovery_failures=1,
-        radio_recovery_attempts_by_reason=(0,) * 8,
-        system_time_quality=SystemTimeQuality.CHRONY_SYNCED,
-        rtc_health=RtcHealth.PRESENT,
-        time_quality_transition_count=4,
-        rtc_health_transition_count=5,
-        last_time_quality_transition_monotonic_us=6,
-        last_rtc_health_transition_monotonic_us=None,
-        chrony_step_command_results=(1, 2, 3),
-        rtc_write_results=(4, 5, 6),
-        rtc_write_readback_verified_count=7,
-        rtc_write_trust_invalidated_count=8,
-        persist_queue_admission_counts=((0, 0, 0),) * 5,
-    )
+    from tests.support.builders.persistence import _health_request as build
+    return build()
+
 
 
 # The closed V1 descriptor set carries identity metadata but no size policy.
@@ -97,6 +80,7 @@ def test_supported_specs_are_closed_v1_descriptors_without_sizes() -> None:
         RECEIVER_HEALTH_REQUEST_V1_SPEC,
         DIAGNOSTIC_V1_SPEC,
         CLOCK_OBSERVATION_V1_SPEC,
+    RADIO_OBSERVATION_V1_SPEC,
     }
 
     assert SUPPORTED_PERSIST_QUEUE_ENTITY_SPECS == expected

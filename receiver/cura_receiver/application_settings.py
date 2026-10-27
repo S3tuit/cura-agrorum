@@ -18,7 +18,7 @@ class ApplicationSettings:
     sqlite_temporary_directory: Path = Path("/var/lib/cura-agrorum/tmp")
     microsd_device: str | None = None
     minimum_free_bytes: int = 1 << 30
-    health_interval_us: int = 60_000_000
+    health_interval_us: int = 300_000_000
     shutdown_budget_us: int = 10_000_000
     time_policy: TimePolicy = field(default_factory=TimePolicy)
     time_settings: RuntimeTimeSettings = field(default_factory=RuntimeTimeSettings)

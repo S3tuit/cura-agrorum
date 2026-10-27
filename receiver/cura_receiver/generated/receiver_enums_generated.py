@@ -5,11 +5,11 @@ from __future__ import annotations
 
 from enum import Enum, unique
 
-RECEIVER_ENUM_MANIFEST_SHA256 = 'cf303f6f5f7a9587670a132b7c5e5d154a32e095867342d12556542f9b4bb658'
-RECEIVER_ENTITY_MANIFEST_SHA256 = '4022252a9edca8e782801d73baf82d1977351991635c16604015f59f7388c03e'
+RECEIVER_ENUM_MANIFEST_SHA256 = 'd8cd609e2fcb0296895339554f94bcca85ccc21fefdc23c96e526e5fee2d1a9a'
+RECEIVER_ENTITY_MANIFEST_SHA256 = 'ced92d7786e630fe43585d93683f55d358669b0952e72fe1643fee4632c94ed7'
 SQLITE_APPLICATION_ID = 0x43555252
-DATABASE_SCHEMA_VERSION = 16
-DATABASE_SCHEMA_SHA256 = '37f011197b25b8ff292dd5e37f91294368707611e5a7cb58ec2f13ed2368690a'
+DATABASE_SCHEMA_VERSION = 17
+DATABASE_SCHEMA_SHA256 = 'b974b9e3ac4aba05af8a9def99c8188f09a5a25901a3c8591c17b6fb7f0117d2'
 DATABASE_SCHEMA_FINGERPRINT = bytes.fromhex(DATABASE_SCHEMA_SHA256)
 
 __all__ = [
@@ -19,6 +19,11 @@ __all__ = [
     "DATABASE_SCHEMA_VERSION",
     "DATABASE_SCHEMA_SHA256",
     "DATABASE_SCHEMA_FINGERPRINT",
+    "RadioChipMode",
+    "RadioObservationTrigger",
+    "RadioCaptureStatus",
+    "RtcReadStatus",
+    "HealthConsistency",
     "SystemTimeQuality",
     "RtcHealth",
     "RadioState",
@@ -67,6 +72,44 @@ __all__ = [
     "PersistQueueViolationDetailCode",
     "PersistenceControlViolationDetailCode",
 ]
+
+@unique
+class RadioChipMode(Enum):
+    STBY_RC = 2
+    STBY_XOSC = 3
+    FS = 4
+    RX = 5
+    TX = 6
+
+@unique
+class RadioObservationTrigger(Enum):
+    HEALTH = 1
+    PHY_REJECTION = 2
+    UNEXPECTED_IRQ = 3
+    RECOVERY = 4
+    FINAL_FAILURE = 5
+    INITIALIZATION = 6
+
+@unique
+class RadioCaptureStatus(Enum):
+    COMPLETE = 1
+    PARTIAL = 2
+    UNAVAILABLE = 3
+
+@unique
+class RtcReadStatus(Enum):
+    OK = 1
+    MISSING = 2
+    INVALID = 3
+    IO_ERROR = 4
+    DEADLINE_EXCEEDED = 5
+    NOT_ATTEMPTED = 6
+
+@unique
+class HealthConsistency(Enum):
+    CONSISTENT = 1
+    INCONSISTENT = 2
+    INDETERMINATE = 3
 
 @unique
 class SystemTimeQuality(Enum):
@@ -127,6 +170,7 @@ class PersistQueueEntityKind(Enum):
     RECEIVER_HEALTH_REQUEST = 3
     DIAGNOSTIC = 4
     CLOCK_OBSERVATION = 5
+    RADIO_OBSERVATION = 6
 
 @unique
 class ProcessingResult(Enum):

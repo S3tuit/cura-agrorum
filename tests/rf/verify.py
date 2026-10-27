@@ -163,7 +163,10 @@ def verify_header_error(events, peer, tx):
             cut["irq"] == cut["device_errors"] == 0, "wrong S3 abort stimulus")
     require(all(b["set_tx"] - a["set_tx"] >= 12200000 for a, b in zip(tx, tx[1:])), "S3 pacing")
     outcome = peer["outcome"]
-    require(outcome["counters_before"] == outcome["counters_after"], "HeaderErr counters changed")
+    expected = dict(outcome["counters_before"])
+    for field in ("header_errors_observed", "header_errors_handled"):
+        expected[field] += 1
+    require(expected == outcome["counters_after"], "HeaderErr counter delta differs")
     require(outcome["counters_after"]["recovery_attempts"] == 0, "HeaderErr used recovery")
     handled = outcome["handled"]
     require(len(handled) == 1, "missing handled HeaderErr result")

@@ -101,6 +101,8 @@ class CommunicatorScheduler:
             return ScheduledTurn(Work.TERMINAL)
         if t.ordinary_admission_blocked and now < self.boundary_retry:
             return ScheduledTurn(Work.WAIT, wait_until_monotonic_us=self.boundary_retry)
+        if c.queue.reservation_active and c.ingress.active_occurrence is None:
+            raise RuntimeError("reservation escaped its owning operation")
         previous_sequence = c.occurrence_sequence
         exchange = self._receive(now)
         if self.stop_requested():
@@ -108,6 +110,8 @@ class CommunicatorScheduler:
         if c.radio.state in _TERMINAL:
             return ScheduledTurn(Work.TERMINAL, exchange)
         now = self.clock.now_monotonic_us()
+        if c.ingress.active_occurrence is not None:
+            return ScheduledTurn(Work.RADIO, exchange)
         if ((not self.initial_health_pending or c.airtime.save_required)
                 and c.radio.state is E.RadioState.RX_SINGLE and not t.ordinary_admission_blocked
                 and c.airtime.maintenance_required and now >= self.airtime_retry):

@@ -417,16 +417,25 @@ does not establish receiver time trust. Stop and resolve startup, device or
 permission failures before continuing. While the receiver runs, let it own time
 recovery and RTC writes; stop it before manual clock corrections or RTC writes.
 
-Health is persisted at startup and every minute. After allowing at least one
-health interval and a persistence flush, query the latest receiver instance:
+Health collection is attempted at startup and every five minutes during the pilot,
+with one best-effort final attempt on failure before exit. Queue, clock and ownership
+gates can prevent a record. After allowing at least one interval and a persistence
+flush, query the latest receiver instance:
 
 ```bash
 sudo -u cura-receiver sqlite3 -readonly -header -column \
   /var/lib/cura-agrorum/receiver.sqlite3 <<'SQL'
 SELECT lower(hex(h.receiver_instance_id)) AS instance, h.health_sequence,
-       r.code AS radio, q.code AS time, t.code AS rtc, p.code AS persistence
+       r.code AS radio_software, m.code AS radio_chip, c.code AS consistency,
+       q.code AS time, t.code AS rtc_software, s.code AS rtc_read, p.code AS persistence
 FROM receiver_health AS h
-JOIN radio_state_codes AS r ON r.id = h.radio_state_id
+JOIN radio_observations AS o
+  ON o.receiver_instance_id = h.receiver_instance_id
+ AND o.observation_sequence = h.radio_observation_sequence
+JOIN radio_state_codes AS r ON r.id = o.software_state_id
+LEFT JOIN radio_chip_mode_codes AS m ON m.id = o.chip_mode_id
+JOIN health_consistency_codes AS c ON c.id = h.consistency_id
+JOIN rtc_read_status_codes AS s ON s.id = h.rtc_read_status_id
 JOIN system_time_quality_codes AS q ON q.id = h.system_time_quality_id
 JOIN rtc_health_codes AS t ON t.id = h.rtc_health_id
 JOIN persistence_admission_state_codes AS p ON p.id = h.persistence_admission_state_id
@@ -438,9 +447,19 @@ SQL
 ```
 
 Match `instance` to this boot's successful startup record. On the healthy,
-network-synchronized setup, expect `RX_SINGLE`, `CHRONY_SYNCED`, `PRESENT` and
-`AVAILABLE`; brief radio activity can produce another transient radio state.
-Missing/stale rows or persistent degraded states require investigation.
+network-synchronized setup, expect software `RX_SINGLE`, chip `RX`, `CONSISTENT`,
+`CHRONY_SYNCED`, RTC software `PRESENT`, read `OK`, and persistence `AVAILABLE`.
+Consistency compares evidence with expectations; it is not an RF-path health test.
+Pending events or incomplete reads can make the result `INDETERMINATE`, while a
+completed contradictory comparison makes it `INCONSISTENT`. The
+[assessor](../cura_receiver/health_assessment.py) owns the precise rules.
+
+A health row proves an attempted sample, including when unhealthy. Read the raw
+observation and RTC read status/errno and sampling times when investigating gaps;
+five-minute sampling cannot establish continuous reception, and an RTC `MISSING`
+read does not prove physical absence. Captured pre-cleanup incident rows remain
+separate from final health, whose radio read may be unavailable. Missing/stale rows
+or persistent degraded states require investigation.
 
 ### Storage write observations
 
@@ -519,8 +538,8 @@ and RF qualification remain owned by [the test guide](../tests/README.md).
 
 Ordinary redeployment preserves the database. Runtime requires the installed
 schema version and fingerprint exactly and performs no migration. If a schema
-change requires a fresh database, stop all users, preserve the complete existing
-database/WAL/SHM set, and follow [database initialization](#11-initialize-the-group-bound-database)
+change requires a fresh database (including the radio-observation schema), stop
+all users, preserve the complete existing database/WAL/SHM set, and follow [database initialization](#11-initialize-the-group-bound-database)
 at an absent destination. Do not overwrite field history to install a new schema.
 
 A commissioning image must not be restored or reused after transmissions without

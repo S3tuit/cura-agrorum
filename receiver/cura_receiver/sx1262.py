@@ -17,6 +17,8 @@ from .ports.radio import (
     RadioFailure, RadioIo, RadioWait, Stage, integer,
 )
 
+from .radio_observations import RadioHistory, capture_snapshot
+
 IRQ_TX_DONE = 0x0001
 IRQ_RX_DONE = 0x0002
 IRQ_HEADER_ERROR = 0x0020
@@ -57,6 +59,11 @@ class Sx1262:
         self.checkpoint = None
         self.command_uncertain = False
         self._pending_edge = None
+        self.history = RadioHistory(clock)
+        self.io.set_event_observer(self.history.edge)
+
+    def observe(self, software_state, trigger, **context):
+        return capture_snapshot(self, software_state, trigger, **context)
 
     def _checkpoint(self):
         if self.checkpoint is not None:
@@ -143,6 +150,7 @@ class Sx1262:
         )
         if release_at >= deadline:
             self._error(Error.DEADLINE, Stage.RESET, outcome=Outcome.DEFINITELY_NOT_APPLIED)
+        self.history.record("reset", 1)
         self.io.set_reset(asserted=True)
         try:
             # GPIO/scheduler latency before assertion is not part of the pulse.
@@ -151,7 +159,10 @@ class Sx1262:
             )
             self.waiter.wait_until_monotonic_us(min(release_at, deadline))
         finally:
-            self.io.set_reset(asserted=False)
+            try:
+                self.history.record("reset", 0)
+            finally:
+                self.io.set_reset(asserted=False)
         if self.clock.now_monotonic_us() >= deadline:
             self._error(
                 Error.DEADLINE, Stage.RESET,
@@ -193,6 +204,7 @@ class Sx1262:
         try:
             if data[0] != 0xC0:
                 self.command_uncertain = True
+            self.history.record("command", data[0])
             result = self.io.transfer(data, deadline_monotonic_us=deadline)
         except RadioBackendError as error:
             if error.failure.outcome is Outcome.DEFINITELY_NOT_APPLIED:
@@ -235,10 +247,16 @@ class Sx1262:
         """Capture bounded read-only evidence before attributing command bits."""
         irq = int.from_bytes(self._raw(b"\x12\x00\x00\x00", deadline, Stage.READ_IRQ)[2:], "big")
         self.last_irq = irq
-        errors = int.from_bytes(self._raw(b"\x17\x00\x00\x00", deadline, Stage.READ_COMMAND)[2:], "big")
-        self.last_device_errors = errors
-        status = self._status(deadline) if chip_status is None else chip_status
-        return RadioEventObservation(irq, status, errors)
+        errors = None
+        try:
+            errors = int.from_bytes(self._raw(b"\x17\x00\x00\x00", deadline, Stage.READ_COMMAND)[2:], "big")
+            self.last_device_errors = errors
+            status = self._status(deadline) if chip_status is None else chip_status
+            return RadioEventObservation(irq, status, errors)
+        except RadioBackendError as error:
+            # Preserve this event's completed reads, never last-event caches.
+            raise RadioBackendError(replace(error.failure, irq_status=irq,
+                                           device_errors=errors)) from error
 
     def validate_event(self, event, *, transmit):
         """The owner checks edge chronology; this checks matching device facts."""

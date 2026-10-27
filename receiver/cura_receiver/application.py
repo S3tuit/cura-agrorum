@@ -108,6 +108,7 @@ class ReceiverApplication:
         runtime._pending.extend((runtime.telemetry.radio, episode) for episode in result.episodes)
         if result.state is not E.RadioState.RX_SINGLE:
             runtime.flush_diagnostics()
+            runtime.final_failure_health()
             self.start_result = ApplicationStartResult(False, result.state.name)
             return self.start_result
         airtime.confirm_transmitter_disabled()

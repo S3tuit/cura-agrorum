@@ -259,18 +259,21 @@ def test_health_frozen_before_first_transaction(setup, device, process):
         INSTANCE,
         1,
         15,
-        enum.RadioState.RX_SINGLE.value,
+        1,  # referenced radio observation
+        1,  # consistent
+        *([0] * 5),
         0,
         0,
         0,
         *([0] * 8),
         0,
         1,
+        1, None, 14, 15, 1_800_000_000,
         0,
         0,
         None,
         None,
-        *([0] * 23),
+        *([0] * 26),
         100,
         1,
         1,
@@ -584,7 +587,7 @@ def _kind_case(kind):
         ("measurement", "processing_result", enum.DiagnosticOperation.RECEIVE),
         ("measurement", "ack_selected", enum.DiagnosticSeverity.FATAL),
         ("measurement", "ack_tx_result", enum.SystemTimeQuality.CHRONY_SYNCED),
-        ("health", "radio_state", enum.SystemTimeQuality.CHRONY_SYNCED),
+        ("health", "consistency", enum.SystemTimeQuality.CHRONY_SYNCED),
         ("health", "system_time_quality", enum.RadioState.INITIALIZING),
         ("health", "rtc_health", enum.SystemTimeQuality.RTC_HOLDOVER),
     ],
@@ -735,6 +738,12 @@ def test_every_replay_column_is_compared(setup, kind, column):
         replacement = 0 if original else 1
     else:
         replacement = original + 1
+    if kind == "health" and column == "radio_observation_sequence":
+        from tests.support.builders.persistence import _radio_observation
+        columns = row.RADIO_OBSERVATION_V1_COLUMNS
+        connection.execute("INSERT INTO radio_observations (" + ",".join(columns)
+                           + ") VALUES (" + ",".join("?" for _ in columns) + ")",
+                           row.radio_observation_v1_parameters(_radio_observation(sequence=replacement)))
     trigger_sql = connection.execute(
         "SELECT sql FROM sqlite_master WHERE name=?", (table + "_no_update",)
     ).fetchone()[0]

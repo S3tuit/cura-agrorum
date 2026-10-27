@@ -60,6 +60,8 @@ class Air(PhysicalPort):
         else:
             self.tx_done = None
         self.sequence += 1
+        if self.event_observer is not None:
+            self.event_observer(candidate * 1000, self.sequence)
         return Dio1Edge(candidate * 1000, self.sequence)
 
 

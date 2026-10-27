@@ -40,7 +40,8 @@
         {"name": "PROFILE_ONLY", "source_index": 1},
         {"name": "RECEIVER_HEALTH_REQUEST", "source_index": 2},
         {"name": "DIAGNOSTIC", "source_index": 3},
-        {"name": "CLOCK_OBSERVATION", "source_index": 4}
+        {"name": "CLOCK_OBSERVATION", "source_index": 4},
+        {"name": "RADIO_OBSERVATION", "source_index": 5}
       ]
     },
     {
@@ -178,6 +179,116 @@
           "name": "t6_set_rx_issued_monotonic_us",
           "type": "u64",
           "nullable": true
+        }
+      ]
+    },
+    {
+      "name": "RADIO_SNAPSHOT_V1",
+      "python_name": "RadioSnapshotV1",
+      "fields": [
+        {
+          "name": "trigger",
+          "type": "enum:RADIO_OBSERVATION_TRIGGER",
+          "column": "trigger_id"
+        },
+        {
+          "name": "software_state",
+          "type": "enum:RADIO_STATE",
+          "column": "software_state_id"
+        },
+        {
+          "name": "capture_started_at_monotonic_us",
+          "type": "u64"
+        },
+        {
+          "name": "capture_finished_at_monotonic_us",
+          "type": "u64"
+        },
+        {
+          "name": "capture_status",
+          "type": "enum:RADIO_CAPTURE_STATUS",
+          "column": "capture_status_id"
+        },
+        {
+          "name": "chip_status",
+          "type": "u8",
+          "nullable": true
+        },
+        {
+          "name": "chip_mode",
+          "type": "enum:RADIO_CHIP_MODE",
+          "column": "chip_mode_id",
+          "nullable": true
+        },
+        {
+          "name": "irq_status",
+          "type": "u16",
+          "nullable": true
+        },
+        {
+          "name": "device_errors",
+          "type": "u16",
+          "nullable": true
+        },
+        {
+          "name": "dio1_before",
+          "type": "bool8",
+          "nullable": true
+        },
+        {
+          "name": "dio1_after",
+          "type": "bool8",
+          "nullable": true
+        },
+        {
+          "name": "busy",
+          "type": "bool8",
+          "nullable": true
+        },
+        {"name": "gpio_event_pending", "type": "bool8", "nullable": true},
+        {
+          "name": "event_timestamp_ns",
+          "type": "u64",
+          "nullable": true
+        },
+        {
+          "name": "event_sequence",
+          "type": "u64",
+          "nullable": true
+        },
+        {
+          "name": "last_set_rx_issued_monotonic_us",
+          "type": "u64",
+          "nullable": true
+        },
+        {
+          "name": "failure_code",
+          "type": "u16",
+          "nullable": true
+        },
+        {
+          "name": "failure_stage",
+          "type": "u8",
+          "nullable": true
+        },
+        {
+          "name": "failure_opcode",
+          "type": "u8",
+          "nullable": true
+        },
+        {
+          "name": "os_errno",
+          "type": "i32",
+          "nullable": true
+        },
+        {
+          "name": "history",
+          "type": "bytes",
+          "maximum_length": 8192
+        },
+        {
+          "name": "history_dropped",
+          "type": "u64"
         }
       ]
     }
@@ -703,6 +814,94 @@
       ]
     },
     {
+      "name": "RADIO_OBSERVATION_V1",
+      "python_name": "RadioObservationV1",
+      "persistence": {
+        "mode": "direct",
+        "table": "radio_observations",
+        "write_policy": "append_only",
+        "primary_key": [
+          "receiver_instance_id",
+          "observation_sequence"
+        ],
+        "without_rowid": true
+      },
+      "fields": [
+        {
+          "name": "receiver_instance_id",
+          "type": "bytes[16]"
+        },
+        {
+          "name": "observation_sequence",
+          "type": "u64"
+        },
+        {
+          "name": "snapshot",
+          "type": "logical_record:RADIO_SNAPSHOT_V1",
+          "sql": {
+            "flatten": true
+          }
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "receiver_instance_id"
+          ],
+          "references": {
+            "table": "receiver_instances",
+            "columns": [
+              "receiver_instance_id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "trigger_id"
+          ],
+          "references": {
+            "table": "radio_observation_trigger_codes",
+            "columns": [
+              "id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "software_state_id"
+          ],
+          "references": {
+            "table": "radio_state_codes",
+            "columns": [
+              "id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "capture_status_id"
+          ],
+          "references": {
+            "table": "radio_capture_status_codes",
+            "columns": [
+              "id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "chip_mode_id"
+          ],
+          "references": {
+            "table": "radio_chip_mode_codes",
+            "columns": [
+              "id"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "RECEIVER_HEALTH_V1",
       "python_name": "ReceiverHealthV1",
       "persistence": {
@@ -716,21 +915,65 @@
         "without_rowid": true
       },
       "fields": [
-        {"name": "receiver_instance_id", "type": "bytes[16]"},
-        {"name": "health_sequence", "type": "u64"},
-        {"name": "communicator_sampled_at_monotonic_us", "type": "u64"},
         {
-          "name": "radio_state",
-          "type": "enum:RADIO_STATE",
-          "column": "radio_state_id"
+          "name": "receiver_instance_id",
+          "type": "bytes[16]"
         },
-        {"name": "radio_recovery_attempts", "type": "u64"},
-        {"name": "radio_recovery_successes", "type": "u64"},
-        {"name": "radio_recovery_failures", "type": "u64"},
+        {
+          "name": "health_sequence",
+          "type": "u64"
+        },
+        {
+          "name": "communicator_sampled_at_monotonic_us",
+          "type": "u64"
+        },
+        {
+          "name": "radio_observation_sequence",
+          "type": "u64"
+        },
+        {
+          "name": "consistency",
+          "type": "enum:HEALTH_CONSISTENCY",
+          "column": "consistency_id"
+        },
+        {
+          "name": "radio_header_errors_observed",
+          "type": "u64"
+        },
+        {
+          "name": "radio_header_errors_handled",
+          "type": "u64"
+        },
+        {
+          "name": "radio_crc_errors_observed",
+          "type": "u64"
+        },
+        {
+          "name": "radio_crc_errors_handled",
+          "type": "u64"
+        },
+        {
+          "name": "radio_observations_dropped",
+          "type": "u64"
+        },
+        {
+          "name": "radio_recovery_attempts",
+          "type": "u64"
+        },
+        {
+          "name": "radio_recovery_successes",
+          "type": "u64"
+        },
+        {
+          "name": "radio_recovery_failures",
+          "type": "u64"
+        },
         {
           "name": "radio_recovery_attempts_by_reason",
           "type": "u64",
-          "array_axes": ["radio_recovery_reason"],
+          "array_axes": [
+            "radio_recovery_reason"
+          ],
           "column_pattern": "radio_recovery_attempts_by_reason_{radio_recovery_reason}"
         },
         {
@@ -743,8 +986,37 @@
           "type": "enum:RTC_HEALTH",
           "column": "rtc_health_id"
         },
-        {"name": "time_quality_transition_count", "type": "u64"},
-        {"name": "rtc_health_transition_count", "type": "u64"},
+        {
+          "name": "rtc_read_status",
+          "type": "enum:RTC_READ_STATUS",
+          "column": "rtc_read_status_id"
+        },
+        {
+          "name": "rtc_read_errno",
+          "type": "i32",
+          "nullable": true
+        },
+        {
+          "name": "rtc_read_started_at_monotonic_us",
+          "type": "u64"
+        },
+        {
+          "name": "rtc_read_finished_at_monotonic_us",
+          "type": "u64"
+        },
+        {
+          "name": "rtc_read_utc_s",
+          "type": "i64",
+          "nullable": true
+        },
+        {
+          "name": "time_quality_transition_count",
+          "type": "u64"
+        },
+        {
+          "name": "rtc_health_transition_count",
+          "type": "u64"
+        },
         {
           "name": "last_time_quality_transition_monotonic_us",
           "type": "u64",
@@ -758,17 +1030,27 @@
         {
           "name": "chrony_step_command_results",
           "type": "u64",
-          "array_axes": ["chrony_step_command_result"],
+          "array_axes": [
+            "chrony_step_command_result"
+          ],
           "column_pattern": "chrony_step_command_results_{chrony_step_command_result}"
         },
         {
           "name": "rtc_write_results",
           "type": "u64",
-          "array_axes": ["rtc_write_result"],
+          "array_axes": [
+            "rtc_write_result"
+          ],
           "column_pattern": "rtc_write_results_{rtc_write_result}"
         },
-        {"name": "rtc_write_readback_verified_count", "type": "u64"},
-        {"name": "rtc_write_trust_invalidated_count", "type": "u64"},
+        {
+          "name": "rtc_write_readback_verified_count",
+          "type": "u64"
+        },
+        {
+          "name": "rtc_write_trust_invalidated_count",
+          "type": "u64"
+        },
         {
           "name": "persist_queue_admission_counts",
           "type": "u64",
@@ -778,8 +1060,14 @@
           ],
           "column_pattern": "persist_queue_admission_counts_{persist_queue_entity_kind}_{admission_result}"
         },
-        {"name": "persistence_sampled_at_monotonic_us", "type": "u64"},
-        {"name": "persistence_admission_generation", "type": "u64"},
+        {
+          "name": "persistence_sampled_at_monotonic_us",
+          "type": "u64"
+        },
+        {
+          "name": "persistence_admission_generation",
+          "type": "u64"
+        },
         {
           "name": "persistence_admission_state",
           "type": "enum:PERSISTENCE_ADMISSION_STATE",
@@ -792,27 +1080,70 @@
         {
           "name": "persistence_admission_transition_counts",
           "type": "u64",
-          "array_axes": ["persistence_admission_state"],
+          "array_axes": [
+            "persistence_admission_state"
+          ],
           "column_pattern": "persistence_admission_transition_counts_{persistence_admission_state}"
         },
-        {"name": "durable_quarantine_successes", "type": "u64"},
-        {"name": "durable_quarantine_failures", "type": "u64"},
-        {"name": "batch_transaction_attempts", "type": "u64"},
-        {"name": "batch_transaction_commits", "type": "u64"},
-        {"name": "batch_transaction_failures", "type": "u64"},
-        {"name": "batch_entities_committed", "type": "u64"},
-        {"name": "batch_commit_duration_total_us", "type": "u64"},
-        {"name": "batch_commit_duration_max_us", "type": "u64"},
-        {"name": "wal_checkpoint_attempts", "type": "u64"},
-        {"name": "wal_checkpoint_successes", "type": "u64"},
-        {"name": "wal_checkpoint_failures", "type": "u64"},
-        {"name": "linux_load_1m_milli", "type": "u32", "nullable": true},
+        {
+          "name": "durable_quarantine_successes",
+          "type": "u64"
+        },
+        {
+          "name": "durable_quarantine_failures",
+          "type": "u64"
+        },
+        {
+          "name": "batch_transaction_attempts",
+          "type": "u64"
+        },
+        {
+          "name": "batch_transaction_commits",
+          "type": "u64"
+        },
+        {
+          "name": "batch_transaction_failures",
+          "type": "u64"
+        },
+        {
+          "name": "batch_entities_committed",
+          "type": "u64"
+        },
+        {
+          "name": "batch_commit_duration_total_us",
+          "type": "u64"
+        },
+        {
+          "name": "batch_commit_duration_max_us",
+          "type": "u64"
+        },
+        {
+          "name": "wal_checkpoint_attempts",
+          "type": "u64"
+        },
+        {
+          "name": "wal_checkpoint_successes",
+          "type": "u64"
+        },
+        {
+          "name": "wal_checkpoint_failures",
+          "type": "u64"
+        },
+        {
+          "name": "linux_load_1m_milli",
+          "type": "u32",
+          "nullable": true
+        },
         {
           "name": "cpu_temperature_milli_c",
           "type": "i32",
           "nullable": true
         },
-        {"name": "memory_available_bytes", "type": "u64", "nullable": true},
+        {
+          "name": "memory_available_bytes",
+          "type": "u64",
+          "nullable": true
+        },
         {
           "name": "sqlite_filesystem_available_bytes",
           "type": "u64",
@@ -828,38 +1159,100 @@
           "type": "u64",
           "nullable": true
         },
-        {"name": "ntp_offset_us", "type": "i64", "nullable": true},
-        {"name": "storage_device_write_bytes", "type": "u64", "nullable": true},
-        {"name": "receiver_process_write_bytes", "type": "u64", "nullable": true}
+        {
+          "name": "ntp_offset_us",
+          "type": "i64",
+          "nullable": true
+        },
+        {
+          "name": "storage_device_write_bytes",
+          "type": "u64",
+          "nullable": true
+        },
+        {
+          "name": "receiver_process_write_bytes",
+          "type": "u64",
+          "nullable": true
+        }
       ],
       "foreign_keys": [
         {
-          "columns": ["receiver_instance_id"],
+          "columns": [
+            "receiver_instance_id"
+          ],
           "references": {
             "table": "receiver_instances",
-            "columns": ["receiver_instance_id"]
+            "columns": [
+              "receiver_instance_id"
+            ]
           }
         },
         {
-          "columns": ["radio_state_id"],
-          "references": {"table": "radio_state_codes", "columns": ["id"]}
-        },
-        {
-          "columns": ["system_time_quality_id"],
+          "columns": [
+            "system_time_quality_id"
+          ],
           "references": {
             "table": "system_time_quality_codes",
-            "columns": ["id"]
+            "columns": [
+              "id"
+            ]
           }
         },
         {
-          "columns": ["rtc_health_id"],
-          "references": {"table": "rtc_health_codes", "columns": ["id"]}
+          "columns": [
+            "rtc_health_id"
+          ],
+          "references": {
+            "table": "rtc_health_codes",
+            "columns": [
+              "id"
+            ]
+          }
         },
         {
-          "columns": ["persistence_admission_state_id"],
+          "columns": [
+            "persistence_admission_state_id"
+          ],
           "references": {
             "table": "persistence_admission_state_codes",
-            "columns": ["id"]
+            "columns": [
+              "id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "receiver_instance_id",
+            "radio_observation_sequence"
+          ],
+          "references": {
+            "table": "radio_observations",
+            "columns": [
+              "receiver_instance_id",
+              "observation_sequence"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "consistency_id"
+          ],
+          "references": {
+            "table": "health_consistency_codes",
+            "columns": [
+              "id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "rtc_read_status_id"
+          ],
+          "references": {
+            "table": "rtc_read_status_codes",
+            "columns": [
+              "id"
+            ]
           }
         }
       ]

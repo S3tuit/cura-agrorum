@@ -1,8 +1,150 @@
 {
   "schema_format_version": 1,
   "application_id": 1129665106,
-  "database_schema_version": 16,
+  "database_schema_version": 17,
   "enums": [
+    {
+      "name": "RADIO_CHIP_MODE",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "radio_chip_mode_codes"
+      },
+      "values": [
+        {
+          "name": "STBY_RC",
+          "value": 2
+        },
+        {
+          "name": "STBY_XOSC",
+          "value": 3
+        },
+        {
+          "name": "FS",
+          "value": 4
+        },
+        {
+          "name": "RX",
+          "value": 5
+        },
+        {
+          "name": "TX",
+          "value": 6
+        }
+      ]
+    },
+    {
+      "name": "RADIO_OBSERVATION_TRIGGER",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "radio_observation_trigger_codes"
+      },
+      "values": [
+        {
+          "name": "HEALTH",
+          "value": 1
+        },
+        {
+          "name": "PHY_REJECTION",
+          "value": 2
+        },
+        {
+          "name": "UNEXPECTED_IRQ",
+          "value": 3
+        },
+        {
+          "name": "RECOVERY",
+          "value": 4
+        },
+        {
+          "name": "FINAL_FAILURE",
+          "value": 5
+        },
+        {
+          "name": "INITIALIZATION",
+          "value": 6
+        }
+      ]
+    },
+    {
+      "name": "RADIO_CAPTURE_STATUS",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "radio_capture_status_codes"
+      },
+      "values": [
+        {
+          "name": "COMPLETE",
+          "value": 1
+        },
+        {
+          "name": "PARTIAL",
+          "value": 2
+        },
+        {
+          "name": "UNAVAILABLE",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "name": "RTC_READ_STATUS",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "rtc_read_status_codes"
+      },
+      "values": [
+        {
+          "name": "OK",
+          "value": 1
+        },
+        {
+          "name": "MISSING",
+          "value": 2
+        },
+        {
+          "name": "INVALID",
+          "value": 3
+        },
+        {
+          "name": "IO_ERROR",
+          "value": 4
+        },
+        {
+          "name": "DEADLINE_EXCEEDED",
+          "value": 5
+        },
+        {
+          "name": "NOT_ATTEMPTED",
+          "value": 6
+        }
+      ]
+    },
+    {
+      "name": "HEALTH_CONSISTENCY",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "health_consistency_codes"
+      },
+      "values": [
+        {
+          "name": "CONSISTENT",
+          "value": 1
+        },
+        {
+          "name": "INCONSISTENT",
+          "value": 2
+        },
+        {
+          "name": "INDETERMINATE",
+          "value": 3
+        }
+      ]
+    },
     {
       "name": "SYSTEM_TIME_QUALITY",
       "storage": "u8",
@@ -103,7 +245,8 @@
         {"name": "PROFILE_ONLY", "value": 2},
         {"name": "RECEIVER_HEALTH_REQUEST", "value": 3},
         {"name": "DIAGNOSTIC", "value": 4},
-        {"name": "CLOCK_OBSERVATION", "value": 5}
+        {"name": "CLOCK_OBSERVATION", "value": 5},
+        {"name": "RADIO_OBSERVATION", "value": 6}
       ]
     },
     {

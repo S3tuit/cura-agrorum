@@ -29,6 +29,11 @@ from .generated.receiver_enums_generated import (
     DiagnosticSeverity,
     ProcessingResult,
     RadioState,
+    RadioChipMode,
+    RadioCaptureStatus,
+    RadioObservationTrigger,
+    HealthConsistency,
+    RtcReadStatus,
     RtcHealth,
     SystemTimeQuality,
 )
@@ -107,6 +112,20 @@ def _validate_profile_enums(profile: rows.MessageProfilingV1) -> None:
     )
 
 
+def _validate_radio_observation(entity):
+    if type(entity) is not rows.RadioObservationV1 or type(entity.snapshot) is not rows.RadioSnapshotV1:
+        raise TypeError("invalid radio observation")
+    snapshot = entity.snapshot
+    _require_enum_fields(snapshot, software_state=RadioState,
+                         trigger=RadioObservationTrigger, capture_status=RadioCaptureStatus)
+    if snapshot.chip_mode is not None:
+        _require_enum_fields(snapshot, chip_mode=RadioChipMode)
+    if snapshot.capture_finished_at_monotonic_us < snapshot.capture_started_at_monotonic_us:
+        raise ValueError("radio observation time regressed")
+    if type(snapshot.history) is not bytes:
+        raise TypeError("radio history must be immutable bytes")
+
+
 class OrdinaryBatchCommitOutcome(Enum):
     COMMITTED = auto()
     NOT_COMMITTED = auto()
@@ -127,9 +146,11 @@ class _PreparedUnit:
         | rows.DiagnosticV1
         | rows.MessageProfileRowV1
         | rows.ReceiverHealthV1
+        | rows.RadioObservationV1
     )
     reading: PreparedReading | None = None
     measurement: MeasurementProfileUnitV1 | None = None
+    observation: rows.RadioObservationV1 | None = None
 
 
 class OrdinaryPersistence:
@@ -271,6 +292,9 @@ class OrdinaryPersistence:
         return True
 
     def _prepare(self, entity: object, kind: Kind) -> _PreparedUnit:
+        if kind is Kind.RADIO_OBSERVATION and type(entity) is rows.RadioObservationV1:
+            _validate_radio_observation(entity)
+            return _PreparedUnit(entity)
         if (
             kind is Kind.MEASUREMENT_PROFILE
             and type(entity) is MeasurementProfileUnitV1
@@ -313,10 +337,18 @@ class OrdinaryPersistence:
         ):
             _require_enum_fields(
                 entity,
-                radio_state=RadioState,
+                consistency=HealthConsistency,
+                rtc_read_status=RtcReadStatus,
                 system_time_quality=SystemTimeQuality,
                 rtc_health=RtcHealth,
             )
+            _validate_radio_observation(entity.radio_observation)
+            if entity.radio_observation.receiver_instance_id != entity.receiver_instance_id:
+                raise ValueError("health observation belongs to another receiver instance")
+            if entity.rtc_read_finished_at_monotonic_us < entity.rtc_read_started_at_monotonic_us:
+                raise ValueError("RTC observation time regressed")
+            if (entity.rtc_read_utc_s is not None) != (entity.rtc_read_status is RtcReadStatus.OK):
+                raise ValueError("RTC time is present exactly on successful reads")
             for array in (
                 entity.radio_recovery_attempts_by_reason,
                 entity.chrony_step_command_results,
@@ -346,8 +378,9 @@ class OrdinaryPersistence:
                 rows.ReceiverHealthV1(
                     **{
                         field.name: getattr(entity, field.name)
-                        for field in fields(entity)
+                        for field in fields(entity) if field.name != "radio_observation"
                     },
+                    radio_observation_sequence=entity.radio_observation.observation_sequence,
                     persistence_sampled_at_monotonic_us=sampled,
                     persistence_admission_generation=admission.generation,
                     persistence_admission_state=admission.state,
@@ -360,13 +393,27 @@ class OrdinaryPersistence:
                         for field in fields(self.recovery.counters)
                     },
                     **{field.name: getattr(host, field.name) for field in fields(host)},
-                )
+                ),
+                observation=entity.radio_observation,
             )
         raise TypeError("entity does not match its queue specification")
 
     def _write(self, work: _PreparedUnit) -> None:
         entity = work.row
+        if work.observation is not None:
+            # Both effects belong to this queue unit, including exact replay after
+            # an unknown commit. Never repair a partial durable compound identity.
+            observation = work.observation
+            saved_observation = self._repository.find_radio_observation(
+                observation.receiver_instance_id, observation.observation_sequence)
+            saved_health = self._repository.find_receiver_health(entity.receiver_instance_id, entity.health_sequence)
+            if (saved_observation is None) != (saved_health is None):
+                raise PersistenceIdentityCollision("partial health/observation effect")
+            self._write(_PreparedUnit(observation))
         bindings = {
+            rows.RadioObservationV1: (
+                rows.RADIO_OBSERVATION_V1_COLUMNS, rows.radio_observation_v1_parameters,
+            ),
             rows.ClockObservationV1: (
                 rows.CLOCK_OBSERVATION_V1_COLUMNS,
                 rows.clock_observation_v1_parameters,
@@ -386,7 +433,11 @@ class OrdinaryPersistence:
         }
         columns, binder = bindings[type(entity)]
         validate_sqlite_parameters(columns, binder(entity))
-        if type(entity) is rows.ClockObservationV1:
+        if type(entity) is rows.RadioObservationV1:
+            existing = self._repository.find_radio_observation(entity.receiver_instance_id, entity.observation_sequence)
+            parameters = rows.radio_observation_v1_parameters(entity)
+            insert = self._repository.insert_radio_observation
+        elif type(entity) is rows.ClockObservationV1:
             existing = self._repository.find_clock_observation(
                 entity.receiver_instance_id, entity.observation_sequence
             )

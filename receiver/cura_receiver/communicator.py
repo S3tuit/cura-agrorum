@@ -4,6 +4,7 @@ No disk access, control-channel wait or ordinary persistence wait occurs in an
 exchange. Periodic work and lifecycle composition run at its safe boundaries.
 """
 
+from collections import deque
 from dataclasses import dataclass
 
 from .elapsed_duration import checked_monotonic_deadline
@@ -12,7 +13,7 @@ from .ports.radio import RadioTxAuthorization, Outcome
 from .radio import ReceiveDisposition
 from .protocol_ingress import (ProtocolIngressPacketV1, ProtocolIngressTerminalV1,
                                ProtocolIngressFinalizationV1, ProtocolIngressAdmissionV1)
-from .generated.receiver_entities_generated import MessageProfilingV1
+from .generated.receiver_entities_generated import MessageProfilingV1, RadioObservationV1
 from .persist_queue_entities import PROFILE_ONLY_V1_SPEC, ProfileOnlyUnitV1
 from .tx_airtime import TxCertainty
 from .producer_admission import ProducerAdmission
@@ -60,6 +61,9 @@ class Communicator:
         self.instance_id = instance_id
         self.clock = clock
         self.radio = radio
+        self.observation_sequence = self.observations_dropped = 0
+        self.pending_radio_observations = deque(maxlen=16)
+        self.radio.observation_sink = self.retain_radio_observation
         self.ingress = ingress
         self.time = runtime_time
         self.airtime = airtime
@@ -70,6 +74,17 @@ class Communicator:
         self._episodes = []
         self._fallback = E.AckTxResult.NOT_APPLICABLE
         self.failure_location = (E.CorePhase.PACKET_PROCESSING, E.CoreFailureStage.INVOKE_ADAPTER, E.DiagnosticOperation.RECEIVE)
+
+    def identify_radio_observation(self, snapshot):
+        self.observation_sequence = checked_monotonic_deadline(self.observation_sequence, 1)
+        return RadioObservationV1(self.instance_id, self.observation_sequence, snapshot)
+
+    def retain_radio_observation(self, snapshot):
+        observation = self.identify_radio_observation(snapshot)
+        if len(self.pending_radio_observations) == self.pending_radio_observations.maxlen:
+            self.observations_dropped += 1
+        self.pending_radio_observations.append(observation)
+        return observation.observation_sequence
 
     def _record(self, result):
         self._result = result
@@ -283,6 +298,7 @@ class Communicator:
             cleanup_error = None
             completed = None
             try:
+                self.radio.capture_failure()
                 self.radio.request_shutdown()
                 self._record(self.radio.shutdown())
                 queue_sound = not isinstance(original, PersistQueueInterfaceError) or original.queue_known_sound

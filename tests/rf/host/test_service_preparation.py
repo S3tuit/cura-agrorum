@@ -60,7 +60,7 @@ def test_inadequate_silence_never_creates_file(tmp_path, damage):
 
 def ready():
     return dict(started=100, observed_monotonic_us=200,
-                health=dict(radio_state_id=2, communicator_sampled_at_monotonic_us=150),
+                health=dict(software_state_id=2, chip_mode_id=5, consistency_id=1, communicator_sampled_at_monotonic_us=150),
                 clock=dict(system_time_quality_id=2, clock_state_generation=1, sampled_at_monotonic_us=150),
                 airtime=dict(status='LOADED', total_charged_us=8_000_000, budget_us=36_000_000))
 
@@ -70,7 +70,7 @@ def test_prerequisites_require_fresh_network_and_valid_history():
     for quality in (0, 1):
         observed = ready(); observed['clock']['system_time_quality_id'] = quality
         assert 'fresh_CHRONY_SYNCED_observation_required' in service_prerequisite_reasons(observed)
-    observed = ready(); observed['observed_monotonic_us'] = 80_000_000
+    observed = ready(); observed['observed_monotonic_us'] = 320_000_000
     assert len(service_prerequisite_reasons(observed)) == 2
     observed = ready(); observed['airtime']['total_charged_us'] = 36_000_000
     assert service_prerequisite_reasons(observed) == ['conservative_airtime_budget_has_no_headroom']

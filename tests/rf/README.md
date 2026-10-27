@@ -156,7 +156,8 @@ pytest flow flashes the component image before execution.
 The Pi uses production Radio/Sx1262/LinuxRadioIo. Independent verification
 requires actual SPI `0x52 / 0x0020 / 0` evidence, explicit `HANDLED_NO_PACKET`,
 standby -> exact IRQ clearing -> fresh complete RX profile -> confirmed SetRx,
-unchanged counters, no recovery and the next exact complete packet. A missing
+one observed and one handled HeaderErr counter increment, no other counter
+change, no recovery and the next exact complete packet. A missing
 HeaderErr fails even when both complete packets arrive. Raw test capture does
 not add production telemetry. Host communicator tests establish suppression of
 packet occurrences, profiles and diagnostics; this component episode does not
@@ -335,7 +336,8 @@ No second full before-database copy or airtime reset is needed.
 
 Node binaries and an empty readable storage baseline are verified without
 flashing. Operator admission precedes service/node start. A new service-instance
-health row reporting RX_SINGLE, a fresh same-instance CHRONY_SYNCED observation,
+health row reporting consistent software RX_SINGLE and hardware RX within the
+five-minute pilot interval plus 15 seconds, a fresh same-instance CHRONY_SYNCED observation,
 and production-validated airtime history with conservative budget headroom are
 required by the shared `InstalledService.wait_for_prerequisites()` check. It waits
 at most 45 seconds by default, preserves reason-specific observations in

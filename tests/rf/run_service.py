@@ -76,9 +76,9 @@ def service_prerequisite_reasons(observed):
     reasons = []
     now = observed['observed_monotonic_us']
     health, clock, airtime = (observed.get(k) for k in ('health', 'clock', 'airtime'))
-    if (health is None or health['radio_state_id'] != 2 or
-            not 0 <= now - health['communicator_sampled_at_monotonic_us'] <= 75_000_000):
-        reasons.append('fresh_RX_SINGLE_health_required')
+    if (health is None or health['software_state_id'] != 2 or health['chip_mode_id'] != 5 or health['consistency_id'] != 1 or
+            not 0 <= now - health['communicator_sampled_at_monotonic_us'] <= 315_000_000):
+        reasons.append('fresh_consistent_RX_health_required')
     if (clock is None or clock['system_time_quality_id'] != 2 or
             clock['clock_state_generation'] < 1 or
             not observed['started'] <= clock['sampled_at_monotonic_us'] <= now or

@@ -93,7 +93,7 @@ def prepare(root, scale, source_commit):
     (root / 'receiver-group.json').chmod(0o600)
     inventory = dict(format_version=1, source_commit=source_commit,
         source_files=source_manifest(), fixture_scale=scale, fixtures={},
-        fixture_basis='Synthetic current-schema rows: approximately 10000 health, 10000 clock and 800 profiles for pilot; large is 10x. Historical pilot database was about 3 MiB. These are controlled size/history fixtures, not a byte replay of the historical database.',
+        fixture_basis='Synthetic current-schema rows: approximately 10000 health/paired radio observations, 10000 clock and 800 profiles for pilot; large is 10x. Historical pilot database was about 3 MiB. These are controlled size/history fixtures, not a byte replay of the historical database.',
         prepared_on=dict(hostname=platform.node(), python=sys.version, sqlite=sqlite3.sqlite_version))
     for name in FIXTURES:
         directory = root / 'templates' / name
@@ -106,14 +106,17 @@ def prepare(root, scale, source_commit):
             instance = ReceiverInstanceStart(INSTANCE, 0)
             insert_receiver_instance_start(db, instance, bytes(16))
             owner = OrdinaryPersistence(database, PersistQueue(), instance=instance, clock=LinuxOsClock())
-            health = owner._prepare(_health_request(), PersistQueueEntityKind.RECEIVER_HEALTH_REQUEST).row
+            prepared_health = owner._prepare(_health_request(), PersistQueueEntityKind.RECEIVER_HEALTH_REQUEST)
+            health, observation = prepared_health.row, prepared_health.observation
             repository = SqliteRepository(db)
             factor = scale * (10 if name == 'large' else 1)
             health_count = max(1, round(10000 * factor))
             profile_count = max(1, round(800 * factor))
             db.execute('BEGIN IMMEDIATE')
             for sequence in range(1, health_count + 1):
-                repository.insert_receiver_health(replace(health, health_sequence=sequence))
+                repository.insert_radio_observation(replace(observation, observation_sequence=sequence))
+                repository.insert_receiver_health(replace(health, health_sequence=sequence,
+                                                          radio_observation_sequence=sequence))
                 repository.insert_clock_observation(_observation(sequence=sequence))
             for sequence in range(1, profile_count + 1):
                 repository.insert_message_profile(rows.MessageProfileRowV1(
@@ -132,7 +135,7 @@ def prepare(root, scale, source_commit):
         if name == 'wal' and files.get('receiver.sqlite3-wal', {}).get('bytes', 0) == 0:
             raise RuntimeError('WAL fixture did not retain committed WAL')
         inventory['fixtures'][name] = dict(files=files, health_rows=health_count,
-            clock_rows=health_count, profile_rows=profile_count, valid_state=True,
+            radio_observation_rows=health_count, clock_rows=health_count, profile_rows=profile_count, valid_state=True,
             inherited_wal=name == 'wal', shm_reconstructed=True)
     write_json(root / 'inventory.json', inventory)
     print(json.dumps({name: value['files'] for name, value in inventory['fixtures'].items()}, indent=2))

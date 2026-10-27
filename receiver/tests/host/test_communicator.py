@@ -1,6 +1,7 @@
 """Real packet composition over SPI/GPIO fakes, real policy and real SQLite."""
 
 from types import SimpleNamespace
+from dataclasses import replace
 import sqlite3
 
 import pytest
@@ -190,7 +191,7 @@ def test_handled_header_has_no_occurrence_profile_or_diagnostic(composition, mon
     assert turn.exchange.finalization is None and turn.exchange.radio_episodes == ()
     assert c.communicator.occurrence_sequence == 0
     assert all(c.communicator.queue.counts[i] == counts[i] for i in (0, 1, 3, 4))
-    assert c.radio.counters == counters
+    assert c.radio.counters == replace(counters, header_errors_observed=1, header_errors_handled=1)
     assert runtime.telemetry.diagnostic_sequence == 0
     assert not any(command[0] in (0x0e, 0x83) for command in c.io.commands)
     assert deliver(c).finalization.published_entity.profile.processing_result is E.ProcessingResult.ACCEPTED
@@ -213,7 +214,8 @@ def test_failed_header_handling_still_profiles_and_diagnoses(composition, opcode
     assert c.radio.state is E.RadioState.RX_SINGLE
     assert runtime.telemetry.diagnostic_sequence == 1
     assert c.radio.counters.recovery_attempts == c.radio.counters.recovery_successes == 1
-    assert c.radio.counters.header_errors == 0
+    assert c.radio.counters.header_errors_observed == 1
+    assert c.radio.counters.header_errors_handled == 0
 
 
 @pytest.mark.parametrize("fault", ["crc", "header", "read_buffer", "packet_status", "clear_irq"])
@@ -350,7 +352,8 @@ def test_failed_receive_construction_failure_preserves_core_policy_and_drain(com
         assert runtime.failure.diagnostic_result is None
         assert runtime.telemetry.diagnostic_sequence == 0
         assert c.communicator.queue.counts[3] == (0, 0, 0)
-        assert batch is None
+        assert batch.entries[0].entity.snapshot.trigger is E.RadioObservationTrigger.PHY_REJECTION
+        batch.acknowledge_durable(completed_entities=1)
     else:
         assert runtime.failure.diagnostic_result is E.AdmissionResult.RESERVED
         assert runtime.telemetry.diagnostic_sequence == 1
@@ -407,14 +410,14 @@ def test_scheduler_boundary_retry_is_paced(composition):
     assert c.communicator.queue.counts == counts
 
 
-# The real health request includes its own admission and persists through worker enrichment.
+# The health request samples admission before its own reservation and persists through worker enrichment.
 def test_health_uses_shared_admission_matrix(composition):
     from cura_receiver.communicator_telemetry import CommunicatorTelemetry
     c = composition()
     deliver(c)
-    telemetry = CommunicatorTelemetry(c.communicator)
+    telemetry = CommunicatorTelemetry(c.communicator, rtc=None)
     assert telemetry.health() is E.AdmissionResult.RESERVED
-    assert c.communicator.queue.counts == ((1, 0, 0), (0, 0, 0), (1, 0, 0), (0, 0, 0), (1, 0, 0))
+    assert c.communicator.queue.counts == ((1, 0, 0), (0, 0, 0), (1, 0, 0), (0, 0, 0), (1, 0, 0), (0, 0, 0))
     c.worker.request_stop(deadline_monotonic_us=c.clock.now_monotonic_us() + 5_000_000)
     c.worker.join(5)
     assert c.worker.failure is None
@@ -426,7 +429,7 @@ def test_health_uses_shared_admission_matrix(composition):
 def test_health_gate_and_failed_attempt_sequence(composition):
     from cura_receiver.communicator_telemetry import CommunicatorTelemetry
     c = composition(isolated_queue=True)
-    telemetry = CommunicatorTelemetry(c.communicator)
+    telemetry = CommunicatorTelemetry(c.communicator, rtc=None)
     assert telemetry.health() is E.AdmissionResult.QUEUE_FULL
     assert telemetry.health_sequence == 1
     assert c.communicator.queue.counts[2] == (0, 0, 1)
@@ -464,7 +467,7 @@ def test_idle_recovery_continues_at_next_turn(composition):
 def test_queue_closure_ends_diagnostics(composition, pending_clock):
     from cura_receiver.communicator_telemetry import CommunicatorTelemetry, EmissionSkipped
     c = composition(isolated_queue=True)
-    telemetry = CommunicatorTelemetry(c.communicator)
+    telemetry = CommunicatorTelemetry(c.communicator, rtc=None)
     if pending_clock:
         c.clock.advance_elapsed_us(60_000_000)
         c.time.expire_due()
@@ -569,7 +572,7 @@ def test_health_construction_failure_releases_reservation(composition, monkeypat
     assert runtime.step() is None
     assert runtime.terminal
     assert c.queue.snapshot().reserved_entities == 0
-    assert runtime.telemetry.health_sequence == 1
+    assert runtime.telemetry.health_sequence == 2  # Periodic construction plus the final best-effort attempt.
     assert runtime.failure.diagnostic_result is E.AdmissionResult.RESERVED
     assert runtime.telemetry.diagnostic_sequence == 1
 

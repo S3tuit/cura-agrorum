@@ -218,8 +218,8 @@ def test_normal_rx_error_irq(owner, irq):
     assert result.receive_event.frame is None and result.receive_event.irq_status == irq
     assert b"\x02" + irq.to_bytes(2, "big") in io.commands
     assert not any(command[0] == 0x1E for command in io.commands)
-    assert radio.counters.header_errors == bool(irq & 0x20)
-    assert radio.counters.crc_errors == bool(irq & 0x40)
+    assert radio.counters.header_errors_observed == bool(irq & 0x20)
+    assert radio.counters.crc_errors_observed == bool(irq & 0x40)
 
 
 @pytest.mark.parametrize("status", [0x52, 0x54, 0x22, 0x24])
@@ -238,7 +238,8 @@ def test_header_error_is_explicit_handled_no_packet(owner, status):
     assert event.t2_packet_copied_monotonic_us is None
     assert event.edge_timestamp_ns <= event.t1_handler_started_monotonic_us * 1000
     assert result.t6_set_rx_issued_monotonic_us is not None
-    assert radio.counters == counters
+    from dataclasses import replace
+    assert radio.counters == replace(counters, header_errors_observed=1, header_errors_handled=1)
     commands = [c.hex() for c in io.commands if c[0] != 0xc0]
     assert commands == [
         "12000000", "17000000", "8000", "020020",
@@ -269,7 +270,8 @@ def test_header_handling_failure_retains_failed_event(owner, opcode, reason):
     assert result.state is State.RECOVERING
     event = result.receive_event
     assert event.disposition is ReceiveDisposition.FAILED and event.irq_status == 0x20
-    assert radio.counters.header_errors == 0
+    assert radio.counters.header_errors_observed == 1
+    assert radio.counters.header_errors_handled == 0
     assert radio.counters.recovery_attempts_by_reason[reason.value - 1] == 1
     recovered = radio.recover()
     assert recovered.state is State.RX_SINGLE and recovered.receive_event is None

@@ -1,5 +1,6 @@
 """Real owner/peer handling and independent RF evidence rejection."""
 from copy import deepcopy
+from dataclasses import replace
 import threading
 
 import pytest
@@ -36,7 +37,10 @@ def test_peer_requires_header_between_complete_packets(stimulus):
         return
     result = peer.execute(CASE, backend, radio, threading.Event(), start)
     assert len(result["handled"]) == 1 and len(result["packets"]) == 2
-    assert result["counters_before"] == result["counters_after"]
+    before = result["counters_before"]
+    expected = replace(before, header_errors_observed=before.header_errors_observed + 1,
+                       header_errors_handled=before.header_errors_handled + 1)
+    assert result["counters_after"] == expected
     assert not any(c[0] == 0x83 for c in io.commands)
 
 
@@ -65,13 +69,15 @@ def header_record():
                dict(frame=U, irq_status=2, device_errors=0, edge_timestamp_ns=3000000000,
                     t2_packet_copied_monotonic_us=3000100)]
     counters = dict(recovery_attempts=0, recovery_successes=0, recovery_failures=0,
-                    recovery_attempts_by_reason=[0]*8, header_errors=0, crc_errors=0)
+                    recovery_attempts_by_reason=[0]*8, header_errors_observed=0, header_errors_handled=0,
+                    crc_errors_observed=0, crc_errors_handled=0)
     handled = dict(state="RX_SINGLE", episodes=[], t6_set_rx_issued_monotonic_us=2000000,
                    receive_event=dict(disposition="HANDLED_NO_PACKET", frame=None, irq_status=32,
                                       device_errors=0, edge_timestamp_ns=1900000000,
                                       t1_handler_started_monotonic_us=1900100))
     capture["outcome"] = dict(packets=packets, transmissions=[], handled=[handled],
                               counters_before=counters, counters_after=deepcopy(counters))
+    capture["outcome"]["counters_after"].update(header_errors_observed=1, header_errors_handled=1)
     def spi(tx, reply="a222", before=1900200):
         return dict(operation="spi", tx=tx, result=reply, before=before, after=before)
     restoration = profile_trace(False)
@@ -144,7 +150,7 @@ def test_header_verifier_rejects_missing_or_contradictory_evidence(fault):
     elif fault == "setrx": capture["outcome"]["handled"][0]["t6_set_rx_issued_monotonic_us"] = 0
     elif fault == "disposition": capture["outcome"]["handled"][0]["receive_event"]["disposition"] = "FAILED"
     elif fault == "recovery": capture["outcome"]["handled"][0]["episodes"] = [{}]
-    elif fault == "counter": capture["outcome"]["counters_after"]["header_errors"] = 1
+    elif fault == "counter": capture["outcome"]["counters_after"]["header_errors_handled"] = 0
     elif fault == "final_packet": capture["outcome"]["packets"].pop()
     elif fault == "extra_tx": spi.insert(0, dict(operation="spi", tx="83001900", result="a222"))
     elif fault == "missing_result": capture["outcome"]["handled"] = []

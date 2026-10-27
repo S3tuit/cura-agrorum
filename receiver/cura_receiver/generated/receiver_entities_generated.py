@@ -13,17 +13,22 @@ from .receiver_enums_generated import (
     DiagnosticErrorDomain,
     DiagnosticOperation,
     DiagnosticSeverity,
+    HealthConsistency,
     PersistenceAdmissionState,
     PersistenceClassification,
     PersistQueueEntityKind,
     ProcessingResult,
     QuarantineFailureReason,
+    RadioCaptureStatus,
+    RadioChipMode,
+    RadioObservationTrigger,
     RadioState,
     RtcHealth,
+    RtcReadStatus,
     SystemTimeQuality,
 )
 
-RECEIVER_ENTITY_MANIFEST_SHA256 = '4022252a9edca8e782801d73baf82d1977351991635c16604015f59f7388c03e'
+RECEIVER_ENTITY_MANIFEST_SHA256 = 'ced92d7786e630fe43585d93683f55d358669b0952e72fe1643fee4632c94ed7'
 
 __all__ = [
     "RECEIVER_ENTITY_MANIFEST_SHA256",
@@ -33,6 +38,8 @@ __all__ = [
     "DIAGNOSTIC_V1_COLUMNS",
     "QUARANTINED_ENTITY_ROW_V1_TABLE",
     "QUARANTINED_ENTITY_ROW_V1_COLUMNS",
+    "RADIO_OBSERVATION_V1_TABLE",
+    "RADIO_OBSERVATION_V1_COLUMNS",
     "RECEIVER_HEALTH_V1_TABLE",
     "RECEIVER_HEALTH_V1_COLUMNS",
     "MESSAGE_PROFILE_ROW_V1_TABLE",
@@ -44,9 +51,11 @@ __all__ = [
     "NetworkClockEvidenceV1",
     "RtcClockEvidenceV1",
     "MessageProfilingV1",
+    "RadioSnapshotV1",
     "ClockObservationV1",
     "DiagnosticV1",
     "QuarantinedEntityRowV1",
+    "RadioObservationV1",
     "ReceiverHealthV1",
     "MessageProfileRowV1",
     "ReadingMessageRowV1",
@@ -59,6 +68,7 @@ __all__ = [
     "clock_observation_v1_parameters",
     "diagnostic_v1_parameters",
     "quarantined_entity_row_v1_parameters",
+    "radio_observation_v1_parameters",
     "receiver_health_v1_parameters",
     "message_profile_row_v1_parameters",
     "reading_message_row_v1_parameters",
@@ -133,13 +143,48 @@ QUARANTINED_ENTITY_ROW_V1_COLUMNS = (
     'isolation_attempt_count',
 )
 
+RADIO_OBSERVATION_V1_TABLE = 'radio_observations'
+
+RADIO_OBSERVATION_V1_COLUMNS = (
+    'receiver_instance_id',
+    'observation_sequence',
+    'trigger_id',
+    'software_state_id',
+    'capture_started_at_monotonic_us',
+    'capture_finished_at_monotonic_us',
+    'capture_status_id',
+    'chip_status',
+    'chip_mode_id',
+    'irq_status',
+    'device_errors',
+    'dio1_before',
+    'dio1_after',
+    'busy',
+    'gpio_event_pending',
+    'event_timestamp_ns',
+    'event_sequence',
+    'last_set_rx_issued_monotonic_us',
+    'failure_code',
+    'failure_stage',
+    'failure_opcode',
+    'os_errno',
+    'history',
+    'history_dropped',
+)
+
 RECEIVER_HEALTH_V1_TABLE = 'receiver_health'
 
 RECEIVER_HEALTH_V1_COLUMNS = (
     'receiver_instance_id',
     'health_sequence',
     'communicator_sampled_at_monotonic_us',
-    'radio_state_id',
+    'radio_observation_sequence',
+    'consistency_id',
+    'radio_header_errors_observed',
+    'radio_header_errors_handled',
+    'radio_crc_errors_observed',
+    'radio_crc_errors_handled',
+    'radio_observations_dropped',
     'radio_recovery_attempts',
     'radio_recovery_successes',
     'radio_recovery_failures',
@@ -153,6 +198,11 @@ RECEIVER_HEALTH_V1_COLUMNS = (
     'radio_recovery_attempts_by_reason_hardware_unreachable',
     'system_time_quality_id',
     'rtc_health_id',
+    'rtc_read_status_id',
+    'rtc_read_errno',
+    'rtc_read_started_at_monotonic_us',
+    'rtc_read_finished_at_monotonic_us',
+    'rtc_read_utc_s',
     'time_quality_transition_count',
     'rtc_health_transition_count',
     'last_time_quality_transition_monotonic_us',
@@ -180,6 +230,9 @@ RECEIVER_HEALTH_V1_COLUMNS = (
     'persist_queue_admission_counts_clock_observation_reserved',
     'persist_queue_admission_counts_clock_observation_persistence_unavailable',
     'persist_queue_admission_counts_clock_observation_queue_full',
+    'persist_queue_admission_counts_radio_observation_reserved',
+    'persist_queue_admission_counts_radio_observation_persistence_unavailable',
+    'persist_queue_admission_counts_radio_observation_queue_full',
     'persistence_sampled_at_monotonic_us',
     'persistence_admission_generation',
     'persistence_admission_state_id',
@@ -370,6 +423,31 @@ class MessageProfilingV1:
     t6_set_rx_issued_monotonic_us: int | None
 
 @dataclass(frozen=True, slots=True)
+class RadioSnapshotV1:
+    trigger: RadioObservationTrigger
+    software_state: RadioState
+    capture_started_at_monotonic_us: int
+    capture_finished_at_monotonic_us: int
+    capture_status: RadioCaptureStatus
+    chip_status: int | None
+    chip_mode: RadioChipMode | None
+    irq_status: int | None
+    device_errors: int | None
+    dio1_before: bool | None
+    dio1_after: bool | None
+    busy: bool | None
+    gpio_event_pending: bool | None
+    event_timestamp_ns: int | None
+    event_sequence: int | None
+    last_set_rx_issued_monotonic_us: int | None
+    failure_code: int | None
+    failure_stage: int | None
+    failure_opcode: int | None
+    os_errno: int | None
+    history: bytes
+    history_dropped: int
+
+@dataclass(frozen=True, slots=True)
 class ClockObservationV1:
     receiver_instance_id: bytes
     observation_sequence: int
@@ -482,17 +560,62 @@ def quarantined_entity_row_v1_parameters(entity: QuarantinedEntityRowV1) -> tupl
     )
 
 @dataclass(frozen=True, slots=True)
+class RadioObservationV1:
+    receiver_instance_id: bytes
+    observation_sequence: int
+    snapshot: RadioSnapshotV1
+
+def radio_observation_v1_parameters(entity: RadioObservationV1) -> tuple[object, ...]:
+    return (
+        entity.receiver_instance_id,
+        entity.observation_sequence,
+        entity.snapshot.trigger.value,
+        entity.snapshot.software_state.value,
+        entity.snapshot.capture_started_at_monotonic_us,
+        entity.snapshot.capture_finished_at_monotonic_us,
+        entity.snapshot.capture_status.value,
+        entity.snapshot.chip_status,
+        None if entity.snapshot.chip_mode is None else entity.snapshot.chip_mode.value,
+        entity.snapshot.irq_status,
+        entity.snapshot.device_errors,
+        entity.snapshot.dio1_before,
+        entity.snapshot.dio1_after,
+        entity.snapshot.busy,
+        entity.snapshot.gpio_event_pending,
+        entity.snapshot.event_timestamp_ns,
+        entity.snapshot.event_sequence,
+        entity.snapshot.last_set_rx_issued_monotonic_us,
+        entity.snapshot.failure_code,
+        entity.snapshot.failure_stage,
+        entity.snapshot.failure_opcode,
+        entity.snapshot.os_errno,
+        entity.snapshot.history,
+        entity.snapshot.history_dropped,
+    )
+
+@dataclass(frozen=True, slots=True)
 class ReceiverHealthV1:
     receiver_instance_id: bytes
     health_sequence: int
     communicator_sampled_at_monotonic_us: int
-    radio_state: RadioState
+    radio_observation_sequence: int
+    consistency: HealthConsistency
+    radio_header_errors_observed: int
+    radio_header_errors_handled: int
+    radio_crc_errors_observed: int
+    radio_crc_errors_handled: int
+    radio_observations_dropped: int
     radio_recovery_attempts: int
     radio_recovery_successes: int
     radio_recovery_failures: int
     radio_recovery_attempts_by_reason: tuple[int, ...]
     system_time_quality: SystemTimeQuality
     rtc_health: RtcHealth
+    rtc_read_status: RtcReadStatus
+    rtc_read_errno: int | None
+    rtc_read_started_at_monotonic_us: int
+    rtc_read_finished_at_monotonic_us: int
+    rtc_read_utc_s: int | None
     time_quality_transition_count: int
     rtc_health_transition_count: int
     last_time_quality_transition_monotonic_us: int | None
@@ -541,9 +664,9 @@ def receiver_health_v1_parameters(entity: ReceiverHealthV1) -> tuple[object, ...
         raise ValueError(
             'rtc_write_results' + ' must have length 3'
         )
-    if len(entity.persist_queue_admission_counts) != 5:
+    if len(entity.persist_queue_admission_counts) != 6:
         raise ValueError(
-            'persist_queue_admission_counts' + ' must have length 5'
+            'persist_queue_admission_counts' + ' must have length 6'
         )
     if any(len(item) != 3 for item in entity.persist_queue_admission_counts):
         raise ValueError(
@@ -557,7 +680,13 @@ def receiver_health_v1_parameters(entity: ReceiverHealthV1) -> tuple[object, ...
         entity.receiver_instance_id,
         entity.health_sequence,
         entity.communicator_sampled_at_monotonic_us,
-        entity.radio_state.value,
+        entity.radio_observation_sequence,
+        entity.consistency.value,
+        entity.radio_header_errors_observed,
+        entity.radio_header_errors_handled,
+        entity.radio_crc_errors_observed,
+        entity.radio_crc_errors_handled,
+        entity.radio_observations_dropped,
         entity.radio_recovery_attempts,
         entity.radio_recovery_successes,
         entity.radio_recovery_failures,
@@ -571,6 +700,11 @@ def receiver_health_v1_parameters(entity: ReceiverHealthV1) -> tuple[object, ...
         entity.radio_recovery_attempts_by_reason[7],
         entity.system_time_quality.value,
         entity.rtc_health.value,
+        entity.rtc_read_status.value,
+        entity.rtc_read_errno,
+        entity.rtc_read_started_at_monotonic_us,
+        entity.rtc_read_finished_at_monotonic_us,
+        entity.rtc_read_utc_s,
         entity.time_quality_transition_count,
         entity.rtc_health_transition_count,
         entity.last_time_quality_transition_monotonic_us,
@@ -598,6 +732,9 @@ def receiver_health_v1_parameters(entity: ReceiverHealthV1) -> tuple[object, ...
         entity.persist_queue_admission_counts[4][0],
         entity.persist_queue_admission_counts[4][1],
         entity.persist_queue_admission_counts[4][2],
+        entity.persist_queue_admission_counts[5][0],
+        entity.persist_queue_admission_counts[5][1],
+        entity.persist_queue_admission_counts[5][2],
         entity.persistence_sampled_at_monotonic_us,
         entity.persistence_admission_generation,
         entity.persistence_admission_state.value,

@@ -230,7 +230,7 @@ def test_schema_fingerprint_is_exact_schema_sql_sha256() -> None:
         hashlib.sha256(schema_bytes).digest() == generated.DATABASE_SCHEMA_FINGERPRINT
     )
     assert generated.SQLITE_APPLICATION_ID == 0x43555252
-    assert generated.DATABASE_SCHEMA_VERSION == 16
+    assert generated.DATABASE_SCHEMA_VERSION == 17
 
 
 # Requires every declared catalogue, entity table, and trigger in assembled SQL.
@@ -978,19 +978,25 @@ def test_receiver_scoped_generated_rows_require_lifecycle_parent() -> None:
     }
     health_values.update(
         receiver_instance_id=receiver_instance_id,
-        radio_state=generated.RadioState.INITIALIZING,
+        consistency=generated.HealthConsistency.INDETERMINATE,
+        rtc_read_status=generated.RtcReadStatus.NOT_ATTEMPTED,
         radio_recovery_attempts_by_reason=(0,) * 8,
         system_time_quality=generated.SystemTimeQuality.UNTRUSTED,
         rtc_health=generated.RtcHealth.PRESENT,
         chrony_step_command_results=(0,) * 3,
         rtc_write_results=(0,) * 3,
-        persist_queue_admission_counts=((0,) * 3,) * 5,
+        persist_queue_admission_counts=((0,) * 3,) * 6,
         persistence_admission_state=(
             generated.PersistenceAdmissionState.UNAVAILABLE_STARTING
         ),
         persistence_admission_transition_counts=(0,) * 7,
     )
+    from tests.support.builders.persistence import _radio_observation
+    observation = replace(_radio_observation(sequence=0), receiver_instance_id=receiver_instance_id)
     rows = (
+        (generated_entities.RADIO_OBSERVATION_V1_TABLE,
+         generated_entities.RADIO_OBSERVATION_V1_COLUMNS,
+         generated_entities.radio_observation_v1_parameters(observation)),
         (
             generated_entities.CLOCK_OBSERVATION_V1_TABLE,
             generated_entities.CLOCK_OBSERVATION_V1_COLUMNS,
@@ -1123,13 +1129,14 @@ def test_receiver_health_binding_expands_only_exact_array_shapes() -> None:
     values = {field.name: 0 for field in fields(generated_entities.ReceiverHealthV1)}
     values.update(
         receiver_instance_id=bytes(16),
-        radio_state=generated.RadioState.INITIALIZING,
+        consistency=generated.HealthConsistency.INDETERMINATE,
+        rtc_read_status=generated.RtcReadStatus.NOT_ATTEMPTED,
         radio_recovery_attempts_by_reason=(0,) * 8,
         system_time_quality=generated.SystemTimeQuality.UNTRUSTED,
         rtc_health=generated.RtcHealth.PRESENT,
         chrony_step_command_results=(0,) * 3,
         rtc_write_results=(0,) * 3,
-        persist_queue_admission_counts=((0,) * 3,) * 5,
+        persist_queue_admission_counts=((0,) * 3,) * 6,
         persistence_admission_state=(
             generated.PersistenceAdmissionState.UNAVAILABLE_STARTING
         ),
@@ -1137,8 +1144,8 @@ def test_receiver_health_binding_expands_only_exact_array_shapes() -> None:
     )
     health = generated_entities.ReceiverHealthV1(**values)
     parameters = generated_entities.receiver_health_v1_parameters(health)
-    assert len(parameters) == 75
-    assert len(generated_entities.RECEIVER_HEALTH_V1_COLUMNS) == 75
+    assert len(parameters) == 89
+    assert len(generated_entities.RECEIVER_HEALTH_V1_COLUMNS) == 89
 
     wrong_shape = replace(health, chrony_step_command_results=(0,) * 2)
     with pytest.raises(ValueError, match="chrony_step_command_results"):

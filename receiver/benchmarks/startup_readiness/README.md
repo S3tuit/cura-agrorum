@@ -5,7 +5,10 @@ The pilot startup budget selected on **2026-10-06 is 12 seconds**:
 measured completion time. Application startup now accepts this explicit budget
 through `CURA_RECEIVER_STARTUP_BUDGET_US=12000000`; see the
 [deployment procedure](../../deploy/README.md). Installed application qualification
-is separate from these worker measurements.
+is separate from these worker measurements. Current-schema fixtures include a
+radio observation for every health row. Their size and validation cost differ
+from the retained measurements; rerun on the Pi before claiming that the measured
+startup envelope covers this schema.
 
 For this pilot, **large database** means the measured synthetic fixture:
 21,315,584 main-database bytes (21.316 decimal MB, approximately 20.33 MiB),

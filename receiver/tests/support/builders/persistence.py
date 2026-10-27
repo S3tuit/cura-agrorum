@@ -102,6 +102,20 @@ def _profile(*, sequence=1):
     )
 
 
+def _radio_observation(*, sequence=1):
+    return row.RadioObservationV1(INSTANCE, sequence, row.RadioSnapshotV1(
+        trigger=enum.RadioObservationTrigger.HEALTH,
+        software_state=enum.RadioState.RX_SINGLE,
+        capture_started_at_monotonic_us=13, capture_finished_at_monotonic_us=14,
+        capture_status=enum.RadioCaptureStatus.COMPLETE,
+        chip_status=0x52, chip_mode=enum.RadioChipMode.RX,
+        irq_status=0, device_errors=0, dio1_before=False, dio1_after=False, busy=False,
+        gpio_event_pending=False, event_timestamp_ns=None, event_sequence=None, last_set_rx_issued_monotonic_us=1,
+        failure_code=None, failure_stage=None, failure_opcode=None, os_errno=None,
+        history=b'[]', history_dropped=0,
+    ))
+
+
 def _health_request(*, sequence=1):
     from cura_receiver.persist_queue_entities import ReceiverHealthRequestV1
 
@@ -109,13 +123,20 @@ def _health_request(*, sequence=1):
         receiver_instance_id=INSTANCE,
         health_sequence=sequence,
         communicator_sampled_at_monotonic_us=15,
-        radio_state=enum.RadioState.RX_SINGLE,
+        radio_observation=_radio_observation(sequence=sequence),
+        consistency=enum.HealthConsistency.CONSISTENT,
+        radio_header_errors_observed=0, radio_header_errors_handled=0,
+        radio_crc_errors_observed=0, radio_crc_errors_handled=0,
+        radio_observations_dropped=0,
         radio_recovery_attempts=0,
         radio_recovery_successes=0,
         radio_recovery_failures=0,
         radio_recovery_attempts_by_reason=(0,) * 8,
         system_time_quality=enum.SystemTimeQuality.UNTRUSTED,
         rtc_health=enum.RtcHealth.PRESENT,
+        rtc_read_status=enum.RtcReadStatus.OK, rtc_read_errno=None,
+        rtc_read_started_at_monotonic_us=14, rtc_read_finished_at_monotonic_us=15,
+        rtc_read_utc_s=1_800_000_000,
         time_quality_transition_count=0,
         rtc_health_transition_count=0,
         last_time_quality_transition_monotonic_us=None,
@@ -124,7 +145,7 @@ def _health_request(*, sequence=1):
         rtc_write_results=(0, 0, 0),
         rtc_write_readback_verified_count=0,
         rtc_write_trust_invalidated_count=0,
-        persist_queue_admission_counts=((0, 0, 0),) * 5,
+        persist_queue_admission_counts=((0, 0, 0),) * 6,
     )
 
 

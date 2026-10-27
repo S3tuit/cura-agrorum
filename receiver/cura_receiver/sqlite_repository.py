@@ -51,6 +51,7 @@ REQUIRED_TABLE_PROJECTIONS = (
     (rows.CLOCK_OBSERVATION_V1_TABLE, rows.CLOCK_OBSERVATION_V1_COLUMNS),
     (rows.DIAGNOSTIC_V1_TABLE, rows.DIAGNOSTIC_V1_COLUMNS),
     (rows.RECEIVER_HEALTH_V1_TABLE, rows.RECEIVER_HEALTH_V1_COLUMNS),
+    (rows.RADIO_OBSERVATION_V1_TABLE, rows.RADIO_OBSERVATION_V1_COLUMNS),
     (rows.MESSAGE_PROFILE_ROW_V1_TABLE, rows.MESSAGE_PROFILE_ROW_V1_COLUMNS),
     (rows.READING_MESSAGE_ROW_V1_TABLE, rows.READING_MESSAGE_ROW_V1_COLUMNS),
     (rows.QUARANTINED_ENTITY_ROW_V1_TABLE, rows.QUARANTINED_ENTITY_ROW_V1_COLUMNS),
@@ -61,6 +62,7 @@ REQUIRED_TABLE_PROJECTIONS = (
 _BOOLEAN_COLUMNS = frozenset(
     {
         "header_authenticated",
+        "dio1_before", "dio1_after", "busy", "gpio_event_pending",
         "step_discontinuity_boundary",
         "is_canonical_for_sample",
     }
@@ -171,6 +173,15 @@ class SqliteRepository:
             "quarantine_id = ?",
             (_identity(quarantine_id, 32),),
         )
+
+    def insert_radio_observation(self, entity: rows.RadioObservationV1) -> None:
+        self._insert(rows.RADIO_OBSERVATION_V1_TABLE, rows.RADIO_OBSERVATION_V1_COLUMNS,
+                     rows.radio_observation_v1_parameters(entity))
+
+    def find_radio_observation(self, receiver_instance_id: bytes, sequence: int) -> SqliteRow | None:
+        return self._find(rows.RADIO_OBSERVATION_V1_TABLE, rows.RADIO_OBSERVATION_V1_COLUMNS,
+                          "receiver_instance_id = ? AND observation_sequence = ?",
+                          (_identity(receiver_instance_id, 16), _unsigned(sequence, 63)))
 
     def insert_receiver_health(self, entity: rows.ReceiverHealthV1) -> None:
         self._insert(

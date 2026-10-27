@@ -711,3 +711,28 @@ def test_gpio_errno(device, method, point, stage):
     assert caught.value.failure.stage is stage
     assert caught.value.failure.os_errno == errno.ENODEV
     assert caught.value.failure.hardware_missing
+
+
+@pytest.mark.parametrize('ready', [False, True])
+def test_health_event_readiness_does_not_consume_or_resynchronize(device, ready):
+    io, deps, clock = device
+    io.open(RadioConfiguration(), deadline_monotonic_us=1000)
+    if ready:
+        deps.events.append(object())
+    before = vars(io).copy()
+    start = clock.now_monotonic_us()
+    assert io.edge_pending() is ready
+    assert vars(io) == before and bool(deps.events) is ready
+    assert clock.now_monotonic_us() == start
+    assert not any(call[0] == 'read_edge_events' for call in deps.calls)
+
+
+def test_failed_health_event_readiness_preserves_adapter_sync_flags(device):
+    io, deps, _ = device
+    io.open(RadioConfiguration(), deadline_monotonic_us=1000)
+    before = vars(io).copy()
+    deps.hooks['wait_edge_events'] = failure(OSError(errno.EIO, 'injected'))
+    with pytest.raises(RadioBackendError) as caught:
+        io.edge_pending()
+    assert caught.value.failure.os_errno == errno.EIO
+    assert vars(io) == before

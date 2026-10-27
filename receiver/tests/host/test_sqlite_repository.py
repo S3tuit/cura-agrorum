@@ -98,7 +98,14 @@ def _health() -> row.ReceiverHealthV1:
         receiver_instance_id=INSTANCE,
         health_sequence=1,
         communicator_sampled_at_monotonic_us=10,
-        radio_state=enum.RadioState.RX_SINGLE,
+        radio_observation_sequence=1,
+        consistency=enum.HealthConsistency.CONSISTENT,
+        radio_header_errors_observed=0, radio_header_errors_handled=0,
+        radio_crc_errors_observed=0, radio_crc_errors_handled=0,
+        radio_observations_dropped=0,
+        rtc_read_status=enum.RtcReadStatus.OK, rtc_read_errno=None,
+        rtc_read_started_at_monotonic_us=10, rtc_read_finished_at_monotonic_us=10,
+        rtc_read_utc_s=1_800_000_000,
         radio_recovery_attempts=8,
         radio_recovery_successes=7,
         radio_recovery_failures=1,
@@ -119,6 +126,7 @@ def _health() -> row.ReceiverHealthV1:
             (7, 8, 9),
             (10, 11, 12),
             (13, 14, 15),
+            (16, 17, 18),
         ),
         persistence_sampled_at_monotonic_us=11,
         persistence_admission_generation=1,
@@ -290,10 +298,10 @@ def _examples():
         (
             "receiver_health",
             _health(),
-            (INSTANCE, 1, 10, 2, 8, 7, 1)
+            (INSTANCE, 1, 10, 1, 1, 0, 0, 0, 0, 0, 8, 7, 1)
             + (1,) * 8
-            + (0, 1, 0, 0, None, None, 1, 2, 3, 4, 5, 6, 3, 2)
-            + tuple(range(1, 16))
+            + (0, 1, 1, None, 10, 10, 1_800_000_000, 0, 0, None, None, 1, 2, 3, 4, 5, 6, 3, 2)
+            + tuple(range(1, 19))
             + (
                 11,
                 1,
@@ -364,6 +372,9 @@ def test_complete_row_insert_lookup_and_collision(
     connection.execute("BEGIN IMMEDIATE")
     if kind == "reading_message":
         repository.insert_message_profile(_profile())
+    if kind == "receiver_health":
+        from tests.support.builders.persistence import _radio_observation
+        repository.insert_radio_observation(_radio_observation())
     insert(entity)
     assert find(*key) == expected
     observer = sqlite3.connect(path)
@@ -606,6 +617,9 @@ def test_each_bound_u64(
             getattr(repository, "insert_" + kind)(updated)
         assert executed == []
     else:
+        if kind == "receiver_health":
+            from tests.support.builders.persistence import _radio_observation
+            repository.insert_radio_observation(_radio_observation(sequence=updated.radio_observation_sequence))
         getattr(repository, "insert_" + kind)(updated)
         table = {
             "clock_observation": "clock_observations",

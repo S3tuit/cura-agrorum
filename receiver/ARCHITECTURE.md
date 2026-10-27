@@ -161,11 +161,31 @@ profile, then restores uplink RX. Bounded recovery retains command certainty and
 reports a single episode rather than hiding uncertain effects behind retries.
 
 [Telemetry](cura_receiver/communicator_telemetry.py) publishes profiles before their
-separate diagnostic attempt. Domain codecs retain bounded context, not arbitrary
-exception text. A recovery/reconciliation episode retains its original failure;
-queue rejection never recursively creates a diagnostic. Persistence cannot reliably
+separate diagnostic attempt. A shared telemetry gate fences clock expiry before
+publication, including after blocking health probes and terminal cleanup. Accepted
+packet completion retains its existing ownership and bypasses that gate.
+Domain codecs retain bounded context, not arbitrary exception text. A recovery or
+reconciliation episode retains its original failure; queue rejection never
+recursively creates a diagnostic. Persistence cannot reliably
 report through its own failed queue/database, so some failures leave only health,
 quarantine, or best-effort service output. Diagnostics do not control radio safety.
+
+[Health collection](cura_receiver/communicator_telemetry.py) samples hardware once
+at a safe housekeeping boundary, before queue reservation. It preserves software
+expectations at their original sampling time independently of the reads; probes
+cannot change operational state, clock provenance or recovery policy. Normal clock
+expiry at the publication gate does not relabel the prepared sample. The health row
+and its referenced radio observation commit as one immutable unit, including on
+retry. An outstanding packet reservation still belongs exclusively to that
+exchange or its cleanup;
+nested incident capture retains bounded RAM evidence and never reserves.
+
+Radio [snapshots](cura_receiver/radio_observations.py) precede recovery mutations;
+periodic reads also observe silence. Pilot rejection capture and bounded GPIO/command
+history support investigation; the rejection counters remain permanent. Deferred
+observations may be lost under pressure, with a cumulative loss count in health.
+An allocated sequence or successful enqueue does not establish durability, and a
+process loss can remove evidence before any later health reports it.
 
 [Shutdown](cura_receiver/application_shutdown.py) stops new TX, attempts radio safety,
 settles state, closes/drains the queue, and requests a clean marker only when its

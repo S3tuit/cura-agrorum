@@ -274,7 +274,7 @@ def test_application_stop_during_rtc_read_cancels_before_write(tmp_path):
             start = app.clock.now_monotonic_us()
             app.clock.advance_elapsed_us(2_900_000)
             return Ds3231ReadResult(R.OK, start, app.clock.now_monotonic_us(), UTC//1_000_000)
-        app.rtc.read_results.append(read)
+        app.rtc.read_results.appendleft(read)
         turn = app.runtime.step()
         assert turn.work.name == "RTC", turn
         assert app.stop_intent.is_requested()

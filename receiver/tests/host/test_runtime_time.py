@@ -73,6 +73,8 @@ def test_scheduler_first_tracking_poll_with_advancing_clock(monkeypatch):
     sample(rt, kernel)
     communicator = SimpleNamespace(
         time=rt, clock=clock, occurrence_sequence=0,
+        queue=SimpleNamespace(reservation_active=False),
+        ingress=SimpleNamespace(active_occurrence=None),
         radio=SimpleNamespace(state=E.RadioState.RX_SINGLE),
         airtime=SimpleNamespace(maintenance_required=False),
         receive_once=lambda **_: SimpleNamespace(finalization=None, radio_episodes=()),

@@ -371,7 +371,7 @@ def test_unknown_entity_spec_is_an_interface_violation(spec: object) -> None:
 def test_equivalent_supported_entity_spec_is_accepted_without_normalization() -> None:
     queue = PersistQueue(capacity_entities=1)
     _make_available(queue)
-    spec = PersistQueueEntitySpec(PersistQueueEntityKind.PROFILE_ONLY, 2)
+    spec = PersistQueueEntitySpec(PersistQueueEntityKind.PROFILE_ONLY, RECEPTION_ONLY_V2_SPEC.schema_version)
 
     result = queue.try_reserve_one(spec)
 

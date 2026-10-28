@@ -69,8 +69,8 @@ def test_commit_before_acknowledgement(setup):
     assert connection.execute(
         "SELECT * FROM clock_observations ORDER BY observation_sequence"
     ).fetchall() == [
-        (INSTANCE, 1, 0, 10, None, 0, 0, 1, *(None,) * 21),
-        (INSTANCE, 2, 0, 10, None, 0, 0, 1, *(None,) * 21),
+        (INSTANCE, 1, 0, 10, None, 0, 0, 1, *(None,) * 20),
+        (INSTANCE, 2, 0, 10, None, 0, 0, 1, *(None,) * 20),
     ]
 
 
@@ -1120,7 +1120,7 @@ def test_failed_rollback_reopens_without_reconstruction(setup):
             0,
             0,
             1,
-            *(None,) * 21,
+            *(None,) * 20,
         )
 
 

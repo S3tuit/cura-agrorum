@@ -10,14 +10,17 @@ from .elapsed_duration import (
     checked_correlated_utc,
     checked_duration_us,
     checked_utc_us,
+    checked_monotonic_deadline,
+    rate_growth_us,
 )
 from .generated.receiver_entities_generated import (
     CLOCK_OBSERVATION_V1_COLUMNS,
     ClockObservationV1,
     NetworkClockEvidenceV1,
-    RtcClockEvidenceV1,
+    RtcClockEvidenceV2,
 )
 from .generated.receiver_enums_generated import RtcHealth, SystemTimeQuality
+from .time_policy import TimePolicy
 
 
 def _identity(value: bytes) -> None:
@@ -36,7 +39,7 @@ def clock_observation_from_row(row: tuple[object, ...]) -> ClockObservationV1:
     if len(row) != len(CLOCK_OBSERVATION_V1_COLUMNS):
         raise ValueError("clock observation row has the wrong column count")
     network = row[12:23]
-    rtc = row[23:29]
+    rtc = row[23:]
     return ClockObservationV1(
         *row[:5],
         bool(row[5]),
@@ -44,7 +47,7 @@ def clock_observation_from_row(row: tuple[object, ...]) -> ClockObservationV1:
         RtcHealth(row[7]),
         *row[8:12],
         None if network[0] is None else NetworkClockEvidenceV1(*network),
-        None if rtc[0] is None else RtcClockEvidenceV1(*rtc),
+        None if rtc[0] is None else RtcClockEvidenceV2(*rtc),
     )
 
 
@@ -71,14 +74,16 @@ class CorrelatedUtc:
     utc_us: int
     clock_observation_receiver_instance_id: bytes
     clock_observation_sequence: int
+    error_bound_us: int
 
 
 class ClockCorrelation:
     """Index a supplied history snapshot; never compare clocks across instances or boots.
 
     Invalid history raises an input error. An event without an eligible, representable
-    UTC has no result. Correlation follows the recorded segment boundaries asserted by
-    trusted publication; per-observation error evidence is retained but not used here.
+    UTC has no result. The caller supplies the applicable deployment policy; the
+    saved error grows with absolute distance from the selected anchor. Both the
+    strict budget and its recorded horizon limit forward and backward projection.
 
     Ordinary untrusted intervals may be backfilled by the first later trusted
     observation from the same instance. A clock-step boundary forbids that
@@ -91,7 +96,12 @@ class ClockCorrelation:
         self,
         instances: Iterable[AnalysisInstance],
         observations: Iterable[ClockObservationV1],
+        *,
+        policy: TimePolicy,
     ) -> None:
+        if type(policy) is not TimePolicy:
+            raise TypeError("correlation requires the applicable deployment TimePolicy")
+        self._policy = policy
         self._instances: dict[bytes, AnalysisInstance] = {}
         ordinals: set[int] = set()
         for instance in instances:
@@ -141,6 +151,15 @@ class ClockCorrelation:
                 raise ValueError("holdover observation requires a present RTC")
             if trusted:
                 checked_utc_us(observation.sampled_at_utc_us)
+                _persisted_unsigned(observation.error_bound_us)
+                horizon = observation.error_budget_expires_at_monotonic_us
+                if horizon is None:
+                    if policy.monotonic_elapsed_rate_bound_ppm:
+                        raise ValueError("trusted observation requires a finite error horizon")
+                else:
+                    _persisted_unsigned(horizon)
+                    if horizon <= observation.sampled_at_monotonic_us:
+                        raise ValueError("trusted observation has an exhausted error horizon")
             groups[observation.receiver_instance_id].append(observation)
         self._observations: dict[bytes, tuple[ClockObservationV1, ...]] = {}
         self._times: dict[bytes, tuple[int, ...]] = {}
@@ -204,7 +223,17 @@ class ClockCorrelation:
                     break
         if selected is None:
             return None
+        distance = abs(event_monotonic_us - selected.sampled_at_monotonic_us)
+        horizon = selected.error_budget_expires_at_monotonic_us
+        if horizon is not None and distance >= horizon - selected.sampled_at_monotonic_us:
+            return None
         try:
+            error = checked_monotonic_deadline(
+                selected.error_bound_us,
+                rate_growth_us(self._policy.monotonic_elapsed_rate_bound_ppm, distance),
+            )
+            if error >= self._policy.receiver_utc_error_budget_us:
+                return None
             utc = checked_correlated_utc(
                 selected.sampled_at_utc_us,
                 selected.sampled_at_monotonic_us,
@@ -212,4 +241,4 @@ class ClockCorrelation:
             )
         except OverflowError:
             return None
-        return CorrelatedUtc(utc, receiver_instance_id, selected.observation_sequence)
+        return CorrelatedUtc(utc, receiver_instance_id, selected.observation_sequence, error)

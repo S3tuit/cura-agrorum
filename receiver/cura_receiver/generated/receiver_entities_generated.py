@@ -28,7 +28,7 @@ from .receiver_enums_generated import (
     SystemTimeQuality,
 )
 
-RECEIVER_ENTITY_MANIFEST_SHA256 = 'e942afb3f0b2fd98f03405414fa78b6b81f0d7402ff6754447db0a23dece0d8b'
+RECEIVER_ENTITY_MANIFEST_SHA256 = '68dbca63f31af3f30b38ce74f58b8e998bfb404f7d3fc339f6dbc69c75f738a4'
 
 __all__ = [
     "RECEIVER_ENTITY_MANIFEST_SHA256",
@@ -54,7 +54,7 @@ __all__ = [
     "COMMUNICATOR_STATE_V2_TABLE",
     "COMMUNICATOR_STATE_V2_COLUMNS",
     "NetworkClockEvidenceV1",
-    "RtcClockEvidenceV1",
+    "RtcClockEvidenceV2",
     "PacketReceptionV1",
     "RadioSnapshotV1",
     "ClockObservationV1",
@@ -150,7 +150,6 @@ CLOCK_OBSERVATION_V1_COLUMNS = (
     'rtc_reference_readback_utc_us',
     'rtc_reference_uncertainty_us',
     'rtc_reference_drift_bound_ppm',
-    'rtc_drift_contribution_us',
 )
 
 DIAGNOSTIC_V1_TABLE = 'diagnostics'
@@ -434,13 +433,12 @@ class NetworkClockEvidenceV1:
     stratum: int
 
 @dataclass(frozen=True, slots=True)
-class RtcClockEvidenceV1:
+class RtcClockEvidenceV2:
     reference_receiver_instance_id: bytes
     reference_verified_at_utc_us: int
     reference_readback_utc_us: int
     reference_uncertainty_us: int
     reference_drift_bound_ppm: int
-    drift_contribution_us: int
 
 @dataclass(frozen=True, slots=True)
 class PacketReceptionV1:
@@ -509,7 +507,7 @@ class ClockObservationV1:
     sample_finished_at_monotonic_us: int | None
     error_budget_expires_at_monotonic_us: int | None
     network_evidence: NetworkClockEvidenceV1 | None
-    rtc_evidence: RtcClockEvidenceV1 | None
+    rtc_evidence: RtcClockEvidenceV2 | None
 
 def clock_observation_v1_parameters(entity: ClockObservationV1) -> tuple[object, ...]:
     return (
@@ -541,7 +539,6 @@ def clock_observation_v1_parameters(entity: ClockObservationV1) -> tuple[object,
         None if entity.rtc_evidence is None else entity.rtc_evidence.reference_readback_utc_us,
         None if entity.rtc_evidence is None else entity.rtc_evidence.reference_uncertainty_us,
         None if entity.rtc_evidence is None else entity.rtc_evidence.reference_drift_bound_ppm,
-        None if entity.rtc_evidence is None else entity.rtc_evidence.drift_contribution_us,
     )
 
 @dataclass(frozen=True, slots=True)

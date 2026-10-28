@@ -163,7 +163,7 @@ def _examples():
                 enum.RtcHealth.PRESENT,
                 None, None, None, None, None, None,
             ),
-            (INSTANCE, 1, 0, 10, None, 0, 0, 1, *(None,) * 21),
+            (INSTANCE, 1, 0, 10, None, 0, 0, 1, *(None,) * 20),
             (INSTANCE, 1),
         ),
         (

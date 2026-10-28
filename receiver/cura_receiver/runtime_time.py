@@ -26,6 +26,7 @@ from .elapsed_duration import (
 )
 from .generated import receiver_enums_generated as E
 from .generated.receiver_entities_generated import ClockObservationV1
+from .clock_publication import clock_boundary_required, should_publish_clock_sample
 from .persist_queue_entities import CLOCK_OBSERVATION_V1_SPEC
 from .ports.ds3231 import (
     Ds3231ReadResult,
@@ -234,7 +235,13 @@ def rtc_health(result):
 
 
 class RuntimeTime:
-    """One communicator caller owns this object and every injected platform port."""
+    """One communicator caller owns this object and every injected platform port.
+
+    ``sample`` and ``schedule`` govern live trust and airtime independently of
+    ``published_observation``, which changes only after FIFO admission. Losing
+    a routine publication cannot refresh historical trust or invalidate a still
+    usable live sample; mandatory boundary admission retains fail-closed ordering.
+    """
 
     def __init__(
         self,
@@ -267,6 +274,7 @@ class RuntimeTime:
         self.tracking_poll_deadline = None
         self.observation_sequence = 0
         self.pending_observation = None
+        self.published_observation = None
         self._network_latch = TimeFailureLatch()
         self._rtc_latch = TimeFailureLatch()
         self._step_boundary_published = False
@@ -391,7 +399,9 @@ class RuntimeTime:
             step_boundary=step,
         )
         self.sample = self.schedule = None
-        if self.pending_observation is None:
+        if self.pending_observation is None and clock_boundary_required(
+            self.published_observation, self.state.quality, self.state.rtc_health, step=step
+        ):
             self.pending_observation = untrusted_clock_observation(
                 self.instance,
                 0,
@@ -412,6 +422,7 @@ class RuntimeTime:
         if reservation.status is not E.AdmissionResult.RESERVED:
             return TimeUpdate(admission_result=reservation.status)
         reservation.reservation.publish(pending)
+        self.published_observation = pending
         self.pending_observation = None
         self._health_observation_pending = False
         if pending.step_discontinuity_boundary:
@@ -481,6 +492,22 @@ class RuntimeTime:
             return self._untrusted(
                 now, tracking_processed=tracking_processed, health=candidate.rtc_health
             )
+        mandatory = (
+            self._health_observation_pending
+            or sample.quality is E.SystemTimeQuality.RTC_HOLDOVER
+            or clock_boundary_required(
+                self.published_observation, sample.quality, candidate.rtc_health
+            )
+        )
+        publish = mandatory or should_publish_clock_sample(
+            self.published_observation, sample,
+            rtc_health=candidate.rtc_health,
+            next_check_at_monotonic_us=schedule.tracking_poll_due_at_monotonic_us,
+            policy=self.policy,
+        )
+        if not publish:
+            self._install_live_sample(sample, candidate, schedule, tracking_start)
+            return TimeUpdate()
         sequence = self._sequence()
         observation = trusted_clock_observation(
             self.instance,
@@ -502,7 +529,24 @@ class RuntimeTime:
             if reservation.reservation is not None:
                 reservation.reservation.cancel()
             return self._untrusted(now, tracking_processed=tracking_processed)
+        now = self.clock.now_monotonic_us()
+        deadlines = [
+            schedule.trust_expires_at_monotonic_us,
+            schedule.tracking_poll_due_at_monotonic_us,
+        ]
+        expiry = min((value for value in deadlines if value is not None), default=None)
+        if expiry is not None and now >= expiry:
+            if reservation.reservation is not None:
+                reservation.reservation.cancel()
+            return self._untrusted(
+                expiry, tracking_processed=tracking_processed, health=candidate.rtc_health
+            )
         if reservation.status is not E.AdmissionResult.RESERVED:
+            if not mandatory:
+                # The live source remains valid. Retry only with a fresh sample;
+                # no failed enqueue can extend the older historical anchor.
+                self._install_live_sample(sample, candidate, schedule, tracking_start)
+                return TimeUpdate(admission_result=reservation.status)
             self.state = advance_clock_state(
                 before,
                 quality=E.SystemTimeQuality.UNTRUSTED,
@@ -520,13 +564,17 @@ class RuntimeTime:
             )
             return TimeUpdate(admission_result=reservation.status)
         reservation.reservation.publish(observation)
-        self.state = candidate
+        self.published_observation = observation
         self._health_observation_pending = False
+        self._install_live_sample(sample, candidate, schedule, tracking_start)
+        return TimeUpdate(admission_result=reservation.status, observation=observation)
+
+    def _install_live_sample(self, sample, candidate, schedule, tracking_start):
+        self.state = candidate
         self.sample = replace(sample, generation=candidate.generation)
         self.schedule = schedule
         if tracking_start is not None:
             self.tracking_poll_deadline = schedule.tracking_poll_due_at_monotonic_us
-        return TimeUpdate(admission_result=reservation.status, observation=observation)
 
     def _tracking_estimate(self, tracking):
         """One source bound shared by step, kernel and RTC admission."""

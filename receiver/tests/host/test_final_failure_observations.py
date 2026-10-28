@@ -2,6 +2,7 @@ import sqlite3
 
 import pytest
 
+from cura_receiver.time_policy import TimePolicy
 from cura_receiver.clock_correlation import AnalysisInstance, ClockCorrelation, clock_observation_from_row
 from cura_receiver.generated import receiver_enums_generated as E
 from cura_receiver.generated.receiver_entities_generated import CLOCK_OBSERVATION_V1_COLUMNS
@@ -44,7 +45,7 @@ def test_final_health_fences_expiry_without_another_scheduler_time_turn(composit
     boundary = observations[-1]
     assert boundary.sampled_at_monotonic_us == expiry
     assert boundary.system_time_quality is E.SystemTimeQuality.UNTRUSTED
-    assert ClockCorrelation([instance], observations).correlate(instance.receiver_instance_id, sampled) is None
+    assert ClockCorrelation([instance], observations, policy=TimePolicy()).correlate(instance.receiver_instance_id, sampled) is None
 
 
 def test_runtime_failure_captures_before_shutdown_and_health_never_reopens(composition):

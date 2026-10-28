@@ -159,13 +159,12 @@ _ALLOWED_RECORD_FIELDS: dict[str, tuple[str, ...]] = {
         "reference_time_utc_us",
         "stratum",
     ),
-    "cura_receiver.generated.receiver_entities_generated.RtcClockEvidenceV1": (
+    "cura_receiver.generated.receiver_entities_generated.RtcClockEvidenceV2": (
         "reference_receiver_instance_id",
         "reference_verified_at_utc_us",
         "reference_readback_utc_us",
         "reference_uncertainty_us",
         "reference_drift_bound_ppm",
-        "drift_contribution_us",
     ),
     "cura_receiver.generated.receiver_entities_generated.DiagnosticV1": (
         "receiver_instance_id",
@@ -299,9 +298,6 @@ _ALLOWED_ENUM_MEMBERS: dict[str, dict[str, int]] = {
         "UNTRUSTED": 0,
         "RTC_HOLDOVER": 1,
         "CHRONY_SYNCED": 2,
-        # Archived V1 evidence retains its original enum spelling. The live
-        # enum has no alias and new records emit CHRONY_SYNCED only.
-        "NETWORK_SYNCED": 2,
     },
 }
 

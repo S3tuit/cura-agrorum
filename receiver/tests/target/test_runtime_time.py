@@ -357,7 +357,7 @@ def test_offline_component_startup(tmp_path, proven):
     observations = [clock_observation_from_row(row) for row in rows]
     assert observations == [update.observation]
     assert observations[0].sampled_at_monotonic_us >= instance.started_at_monotonic_us
-    correlation = ClockCorrelation([AnalysisInstance(*lifecycle)], observations)
+    correlation = ClockCorrelation([AnalysisInstance(*lifecycle)], observations, policy=rt.policy)
     derived = correlation.correlate(
         instance.receiver_instance_id, observations[0].sampled_at_monotonic_us
     )
@@ -370,7 +370,6 @@ def test_offline_component_startup(tmp_path, proven):
         drift = rate_growth_us(
             10, observations[0].sampled_at_utc_us - evidence.reference_readback_utc_us
         )
-        assert evidence.drift_contribution_us == drift
         read = (
             500_000
             + maximum_physical_half_bracket_us(

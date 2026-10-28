@@ -89,7 +89,7 @@ def test_mixed_batch_quarantine_and_remaining_lease(setup):
     assert connection.execute("SELECT * FROM quarantined_entities").fetchone() == (
         quarantine_evidence_sha256(evidence),
         2,
-        2,
+        RECEPTION_ONLY_V2_SPEC.schema_version,
         len(evidence),
         evidence,
         INSTANCE,

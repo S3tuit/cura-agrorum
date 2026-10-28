@@ -26,7 +26,7 @@ from .generated.receiver_enums_generated import (
 )
 
 
-PERSIST_QUEUE_ENTITY_SCHEMA_VERSION = 2
+PERSIST_QUEUE_ENTITY_SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True, slots=True)

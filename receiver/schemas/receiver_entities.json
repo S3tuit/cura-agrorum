@@ -86,15 +86,14 @@
       ]
     },
     {
-      "name": "RTC_CLOCK_EVIDENCE_V1",
-      "python_name": "RtcClockEvidenceV1",
+      "name": "RTC_CLOCK_EVIDENCE_V2",
+      "python_name": "RtcClockEvidenceV2",
       "fields": [
         {"name": "reference_receiver_instance_id", "type": "bytes[16]", "column": "rtc_reference_receiver_instance_id"},
         {"name": "reference_verified_at_utc_us", "type": "i64", "column": "rtc_reference_verified_at_utc_us"},
         {"name": "reference_readback_utc_us", "type": "i64", "column": "rtc_reference_readback_utc_us"},
         {"name": "reference_uncertainty_us", "type": "u64", "column": "rtc_reference_uncertainty_us"},
-        {"name": "reference_drift_bound_ppm", "type": "u32", "column": "rtc_reference_drift_bound_ppm"},
-        {"name": "drift_contribution_us", "type": "u64", "column": "rtc_drift_contribution_us"}
+        {"name": "reference_drift_bound_ppm", "type": "u32", "column": "rtc_reference_drift_bound_ppm"}
       ]
     },
     {
@@ -538,7 +537,7 @@
         },
         {
           "name": "rtc_evidence",
-          "type": "logical_record:RTC_CLOCK_EVIDENCE_V1",
+          "type": "logical_record:RTC_CLOCK_EVIDENCE_V2",
           "nullable": true,
           "sql": {"flatten": true}
         }

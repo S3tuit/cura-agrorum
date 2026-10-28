@@ -35,7 +35,7 @@ class TimePolicy:
     receiver_utc_error_budget_us: int = 40_000_000
     network_rtc_write_error_threshold_us: int = 5_000_000
     chrony_tracking_poll_period_cap_us: int = 60_000_000
-    clock_observation_period_cap_us: int = 10_800_000_000
+    clock_observation_period_cap_us: int = 3_600_000_000
     network_rtc_refresh_period_us: int = 10_800_000_000
     rtc_holdover_observation_period_cap_us: int = 3_600_000_000
     time_sampling_margin_us: int = field(default=TIME_SAMPLING_MARGIN_US, init=False)

@@ -3,6 +3,8 @@ from dataclasses import asdict, replace
 import pytest
 from hypothesis import given, settings, strategies as st
 
+from cura_receiver.time_policy import TimePolicy
+from cura_receiver.elapsed_duration import exclusive_trust_distance_us
 from cura_receiver.clock_correlation import AnalysisInstance, ClockCorrelation
 from cura_receiver.generated import protocol_v2_lora_generated as protocol
 from cura_receiver.generated.receiver_entities_generated import (
@@ -130,10 +132,15 @@ def clocks(*, instances=(INSTANCE,), observations=None):
                 False,
                 SystemTimeQuality.CHRONY_SYNCED,
                 RtcHealth.PRESENT,
-                None, None, None, None, None, None,
+                1_000_000,
+                0,
+                0,
+                exclusive_trust_distance_us(1_000_000, 40_000_000, rate_bound_ppm=3700),
+                None,
+                None,
             )
         ]
-    return ClockCorrelation(instances, observations)
+    return ClockCorrelation(instances, observations, policy=TimePolicy())
 
 
 # The scalar direct-anchor interval permits equality; fixed pilot airtime has adjacent integral run_ms limits.
@@ -245,7 +252,12 @@ def test_earliest_occurrence_across_boots():
             False,
             SystemTimeQuality.CHRONY_SYNCED,
             RtcHealth.PRESENT,
-            None, None, None, None, None, None,
+            1_000_000 if utc is not None else None,
+            0 if utc is not None else None,
+            0 if utc is not None else None,
+            exclusive_trust_distance_us(1_000_000, 40_000_000, rate_bound_ppm=3700) if utc is not None else None,
+            None,
+            None,
         )
         for i, utc in ((INSTANCE, 100_000_000), (new, 0))
     ]
@@ -285,7 +297,12 @@ def test_step_gap_occurrence_cannot_anchor():
             False,
             SystemTimeQuality.CHRONY_SYNCED,
             RtcHealth.PRESENT,
-            None, None, None, None, None, None,
+            1_000_000,
+            20_000_000,
+            20_000_000,
+            (20_000_000) + exclusive_trust_distance_us(1_000_000, 40_000_000, rate_bound_ppm=3700),
+            None,
+            None,
         ),
     ]
     output = analyze_reading_timestamps(
@@ -445,7 +462,12 @@ def test_logical_timestamp_overflow():
             False,
             SystemTimeQuality.CHRONY_SYNCED,
             RtcHealth.PRESENT,
-            None, None, None, None, None, None,
+            1_000_000,
+            0,
+            0,
+            exclusive_trust_distance_us(1_000_000, 40_000_000, rate_bound_ppm=3700),
+            None,
+            None,
         )
     ]
     output = analyze_reading_timestamps(
@@ -520,7 +542,20 @@ def test_logical_chain_properties(facts):
             anchors[sample] = utc
             profiles.append(profile(row, received=15_551_328 + utc))
     expected = reference_logical_chain(primitives, anchors)
-    output = analyze_reading_timestamps(reversed(rows), reversed(profiles), clocks())
+    # Give each reception a fresh clock anchor: this oracle exercises logical
+    # backlog chains, independently of the bounded clock projection tests.
+    anchor = ClockObservationV1(
+        INSTANCE.receiver_instance_id, 0, 0, 0, 0, False,
+        SystemTimeQuality.CHRONY_SYNCED, RtcHealth.PRESENT, 1_000_000,
+        0, 0, exclusive_trust_distance_us(1_000_000, 40_000_000), None, None,
+    )
+    observations = [
+        replace(anchor, observation_sequence=i, sampled_at_monotonic_us=i * 1_000_000_000,
+                sampled_at_utc_us=i * 1_000_000_000,
+                error_budget_expires_at_monotonic_us=i * 1_000_000_000 + exclusive_trust_distance_us(1_000_000, 40_000_000, rate_bound_ppm=3700))
+        for i in range(len(facts))
+    ]
+    output = analyze_reading_timestamps(reversed(rows), reversed(profiles), clocks(observations=observations))
     assert {
         sample: (value.timestamp_utc_us, value.anchor_sample_id)
         for (_, sample), value in output.items()

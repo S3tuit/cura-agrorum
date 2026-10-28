@@ -106,11 +106,13 @@ def test_full_queue_retains_boundary():
     rt, _, kernel, queue = runtime(capacity=1)
     sample(rt, kernel)
     rt.sample_network(tracking(rt))
+    rt.state = advance_clock_state(rt.state, quality=rt.state.quality,
+                                   rtc_health=E.RtcHealth.MISSING)
     sample(rt, kernel)
     update = rt.sample_network(tracking(rt))
     assert update.admission_result is E.AdmissionResult.QUEUE_FULL
     assert (
-        rt.state.quality is E.SystemTimeQuality.UNTRUSTED and rt.state.generation == 2
+        rt.state.quality is E.SystemTimeQuality.UNTRUSTED and rt.state.generation == 3
     )
     assert rt.ordinary_admission_blocked and rt.observation_sequence == 2
 
@@ -266,6 +268,10 @@ def test_step_timeout_with_pending_observation(disposition):
     rt.poll_chrony(chrony)
     chrony.step_results.append(ChronyStepResult(disposition, 1000, 1000))
     rt.poll_chrony(chrony)
+    # A real health boundary, rather than a repeated unchanged failed poll,
+    # exercises the pending-observation path while stable time is awaited.
+    rt.state = advance_clock_state(rt.state, quality=rt.state.quality,
+                                   rtc_health=E.RtcHealth.MISSING)
     chrony.tracking_results.append(tracking(rt, status=Q.UNAVAILABLE))
     assert rt.poll_chrony(chrony).admission_result is E.AdmissionResult.QUEUE_FULL
     pending = rt.pending_observation
@@ -323,8 +329,9 @@ def test_step_kernel_completion_deadline(disposition, completion_offset):
     else:
         assert rt.step_state is SS.RETRY_BACKOFF
         assert rt.state.quality is E.SystemTimeQuality.UNTRUSTED
-        assert result.observation.sampled_at_utc_us is None
-        assert result.observation.sampled_at_monotonic_us == deadline
+        assert result.observation is None
+        assert rt.published_observation.step_discontinuity_boundary
+        assert rt.sample is None
         assert result.failure.error_code is (
             E.TimeDiagnosticErrorCode.OUTCOME_UNKNOWN
             if disposition is SD.OUTCOME_UNKNOWN else E.TimeDiagnosticErrorCode.DEADLINE
@@ -360,9 +367,9 @@ def test_step_deadline_during_trusted_reservation(monkeypatch, completion_offset
     monkeypatch.setattr(PersistQueue, "try_reserve_one", delayed_reservation)
     before_count = rt.queue.counts[4][0]
     result = rt.poll_chrony(chrony)
-    assert rt.queue.counts[4][0] - before_count == (1 if completion_offset < 0 else 2)
+    assert rt.queue.counts[4][0] - before_count == 1
     assert queue.snapshot().reserved_entities == 0
-    assert queue.snapshot().published_entities == 2  # Boundary plus trusted recovery or timeout.
+    assert queue.snapshot().published_entities == (2 if completion_offset < 0 else 1)
     assert rt.state.generation == 2  # One step transition and one tracking completion.
     if completion_offset < 0:
         assert rt.step_state is SS.IDLE and result.failure is None
@@ -370,8 +377,9 @@ def test_step_deadline_during_trusted_reservation(monkeypatch, completion_offset
     else:
         assert rt.step_state is SS.RETRY_BACKOFF
         assert result.failure.error_code is E.TimeDiagnosticErrorCode.DEADLINE
-        assert result.observation.sampled_at_utc_us is None
-        assert result.observation.sampled_at_monotonic_us == deadline
+        assert result.observation is None
+        assert rt.published_observation.step_discontinuity_boundary
+        assert rt.sample is None
 
 
 # Definite rejection retains the gap and returns a single exceptional result before bounded backoff.
@@ -1004,7 +1012,7 @@ def test_runtime_network_sequences(inputs):
         )
         assert rt.state.quality.name == next_expected
         assert (
-            not result.observation.step_discontinuity_boundary
+            (result.observation is None or not result.observation.step_discontinuity_boundary)
             and result.failure is None
         )
         expected = next_expected
@@ -1375,7 +1383,8 @@ def test_step_publication_process_crash_restart(tmp_path, milestone, committed):
             assert observations[0].step_discontinuity_boundary
             assert observations[0].sampled_at_monotonic_us == 1000
         history = ClockCorrelation(
-            [AnalysisInstance(*row) for row in lifecycle], observations
+            [AnalysisInstance(*row) for row in lifecycle], observations,
+            policy=rt.policy,
         )
         old_id = lifecycle[0][1]
         assert history.correlate(old_id, 1000) is None
@@ -1633,3 +1642,119 @@ def test_poll_computes_initial_network_bound_once(monkeypatch):
     result = rt.poll_chrony(chrony)
     assert len(calls) == 1
     assert result.observation.system_time_quality is E.SystemTimeQuality.CHRONY_SYNCED
+
+
+def fresh_poll(rt, clock, kernel, *, correction=0):
+    clock.advance_elapsed_us(rt.next_tracking_start() - clock.now_monotonic_us())
+    assert rt.expire_due().observation is None
+    sample(rt, kernel)
+    return rt.sample_network(tracking(rt, correction=correction))
+
+
+def test_sparse_publication_keeps_live_checks_generations_and_airtime():
+    rt, clock, kernel, _ = runtime()
+    sample(rt, kernel)
+    first = rt.sample_network(tracking(rt)).observation
+    published = [first]
+    for _ in range(120):
+        old_sample = rt.sample
+        result = fresh_poll(rt, clock, kernel)
+        assert rt.sample.monotonic_us > old_sample.monotonic_us
+        assert rt.sample.generation == old_sample.generation + 1
+        assert rt.airtime_correlation().sample is rt.sample
+        if result.observation is not None:
+            published.append(result.observation)
+        assert rt.published_observation is published[-1]
+    assert len(published) == 3
+    assert [o.observation_sequence for o in published] == [1, 2, 3]
+    assert all(b.sampled_at_monotonic_us - a.sampled_at_monotonic_us <= 3_600_000_000
+               for a, b in zip(published, published[1:]))
+
+
+def test_full_routine_queue_does_not_reset_anchor_or_expire_live_trust():
+    from cura_receiver.clock_correlation import AnalysisInstance, ClockCorrelation
+
+    rt, clock, kernel, queue = runtime(capacity=1)
+    sample(rt, kernel)
+    first = rt.sample_network(tracking(rt)).observation
+    failures = 0
+    while clock.now_monotonic_us() <= first.error_budget_expires_at_monotonic_us:
+        result = fresh_poll(rt, clock, kernel)
+        failures += result.admission_result is E.AdmissionResult.QUEUE_FULL
+        assert rt.state.quality is E.SystemTimeQuality.CHRONY_SYNCED
+        assert rt.published_observation is first
+        assert rt.pending_observation is None
+        assert not rt.ordinary_admission_blocked
+        assert rt.airtime_correlation() is not None
+    assert failures > 0
+    assert queue.snapshot().reserved_entities == 0
+    history = ClockCorrelation([AnalysisInstance(1, rt.instance, b"b" * 16, 1000)], [first], policy=rt.policy)
+    assert history.correlate(rt.instance, clock.now_monotonic_us()) is None
+    # Opening the queue cannot fabricate a refresh from the cached live sample.
+    assert rt.publish_pending().observation is None
+
+
+@pytest.mark.parametrize("error", [39_000_000, 39_950_000])
+def test_above_guard_publishes_once_per_fresh_sample_without_geometric_retry(error):
+    rt, clock, kernel, _ = runtime()
+    sample(rt, kernel)
+    rt.sample_network(tracking(rt))
+    rt.state = advance_clock_state(rt.state, quality=rt.state.quality, rtc_health=E.RtcHealth.MISSING)
+    first = fresh_poll(rt, clock, kernel, correction=error - 1_000_000).observation
+    assert first.error_bound_us == error
+    times = [first.sampled_at_monotonic_us]
+    for _ in range(12):
+        assert rt.publish_pending().observation is None
+        result = fresh_poll(rt, clock, kernel, correction=error - 1_000_000)
+        assert result.observation.error_bound_us == error
+        times.append(result.observation.sampled_at_monotonic_us)
+    assert len(set(b - a for a, b in zip(times, times[1:]))) == 1
+    assert times[1] - times[0] > 12_000_000
+
+
+def test_missed_live_check_publishes_one_boundary_then_recovery():
+    rt, clock, kernel, _ = runtime()
+    sample(rt, kernel)
+    first = rt.sample_network(tracking(rt)).observation
+    clock.advance_elapsed_us(rt.tracking_poll_deadline - clock.now_monotonic_us())
+    boundary = rt.expire_due().observation
+    assert boundary.sampled_at_monotonic_us < first.error_budget_expires_at_monotonic_us
+    assert boundary.system_time_quality is E.SystemTimeQuality.UNTRUSTED
+    assert rt.airtime_correlation() is None
+    for _ in range(3):
+        clock.advance_elapsed_us(60_000_000)
+        assert rt.sample_network(tracking(rt, status=Q.UNAVAILABLE)).observation is None
+        assert rt.published_observation is boundary
+    sample(rt, kernel)
+    recovery = rt.sample_network(tracking(rt)).observation
+    assert recovery.system_time_quality is E.SystemTimeQuality.CHRONY_SYNCED
+    assert recovery.observation_sequence == boundary.observation_sequence + 1
+
+
+@pytest.mark.parametrize("change", ["generation", "late"])
+def test_routine_reservation_rechecks_source_before_publication(monkeypatch, change):
+    rt, clock, kernel, queue = runtime()
+    rt.policy = replace(rt.policy, clock_observation_period_cap_us=60_000_000)
+    sample(rt, kernel)
+    first = rt.sample_network(tracking(rt)).observation
+    original = PersistQueue.try_reserve_one
+    changed = False
+
+    def interleaved(self, spec):
+        nonlocal changed
+        result = original(self, spec)
+        if not changed:
+            changed = True
+            if change == "generation":
+                rt.state = advance_clock_state(rt.state, quality=rt.state.quality,
+                                               rtc_health=rt.state.rtc_health, tracking_processed=True)
+            else:
+                clock.advance_elapsed_us(60_000_000)
+        return result
+
+    monkeypatch.setattr(PersistQueue, "try_reserve_one", interleaved)
+    result = fresh_poll(rt, clock, kernel)
+    assert result.observation.system_time_quality is E.SystemTimeQuality.UNTRUSTED
+    assert rt.published_observation is not first
+    assert rt.sample is None
+    assert queue.snapshot().reserved_entities == 0

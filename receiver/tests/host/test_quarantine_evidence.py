@@ -2,7 +2,7 @@ from __future__ import annotations
 from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 
 import base64
-from dataclasses import fields
+from dataclasses import fields, replace
 from enum import Enum
 import json
 
@@ -15,6 +15,7 @@ from cura_receiver.generated.receiver_entities_generated import (
     ClockObservationV1,
     DiagnosticV1,
     PacketReceptionV1,
+    RtcClockEvidenceV2,
 )
 from cura_receiver.generated.protocol_v2_lora_generated import Domain
 from cura_receiver.generated.receiver_enums_generated import (
@@ -430,23 +431,6 @@ def test_decoder_rejects_unknown_or_contradictory_enum_assignment(
         decode_quarantine_evidence_v1(encoded)
 
 
-# Historical V1 evidence stays readable with its original name and numeric ID.
-def test_historical_time_quality_spelling_decodes_without_relabelling() -> None:
-    class_name = "cura_receiver.generated.receiver_enums_generated.SystemTimeQuality"
-    encoded = _canonical_evidence_document(
-        {
-            "class": class_name,
-            "member": "NETWORK_SYNCED",
-            "tag": "enum",
-            "value": "2",
-        }
-    )
-    evidence = decode_quarantine_evidence_v1(encoded)
-    assert evidence.value == NeutralEnumV1(
-        class_name=class_name, member_name="NETWORK_SYNCED", value=2,
-    )
-
-
 # Canonical input still cannot exceed any decoder-side logical resource bound.
 def test_decoder_rejects_depth_node_tuple_and_scalar_bounds() -> None:
     too_deep: dict[str, object] = {"tag": "none"}
@@ -602,4 +586,18 @@ def test_neutral_nodes_and_document_are_frozen_and_slotted() -> None:
         "entity_kind",
         "entity_schema_version",
         "value",
+    ]
+
+
+def test_current_rtc_evidence_decodes_neutrally():
+    entity, spec = _queue_entities()[-1]
+    entity = replace(entity, rtc_evidence=RtcClockEvidenceV2(b"r" * 16, 10, 11, 12, 10))
+    encoded = encode_quarantine_evidence_v1(entity, spec=spec)
+    decoded = decode_quarantine_evidence_v1(encoded)
+    retained = next(f.value for f in decoded.value.fields if f.name == "rtc_evidence")
+    assert isinstance(retained, NeutralRecordV1)
+    assert retained.class_name.endswith(".RtcClockEvidenceV2")
+    assert [f.value for f in retained.fields] == [
+        NeutralBytesV1(b"r" * 16), NeutralIntV1(10), NeutralIntV1(11),
+        NeutralIntV1(12), NeutralIntV1(10),
     ]

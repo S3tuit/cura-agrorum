@@ -231,7 +231,7 @@ def test_schema_fingerprint_is_exact_schema_sql_sha256() -> None:
         hashlib.sha256(schema_bytes).digest() == generated.DATABASE_SCHEMA_FINGERPRINT
     )
     assert generated.SQLITE_APPLICATION_ID == 0x43555252
-    assert generated.DATABASE_SCHEMA_VERSION == 18
+    assert generated.DATABASE_SCHEMA_VERSION == load_manifest()["database_schema_version"]
 
 
 # Requires every declared catalogue, entity table, and trigger in assembled SQL.
@@ -316,7 +316,7 @@ def test_generated_entity_binding_is_projection_only() -> None:
     assert values[4] is None
     assert values[5] is True
     assert values[6:8] == (0, 1)
-    assert values[8:] == (None,) * 21
+    assert values[8:] == (None,) * 20
 
     connection = open_schema()
     connection.execute("PRAGMA foreign_keys = OFF")
@@ -389,7 +389,7 @@ def test_nullable_logical_record_is_all_or_none() -> None:
     assert by_column["network_reference_id"] == 0xB99DE5FE
     assert by_column["network_stratum"] == 3
     rtc_columns = [c for c in columns if c.startswith(("rtc_r", "rtc_d"))]
-    assert len(rtc_columns) == 6 and all(by_column[c] is None for c in rtc_columns)
+    assert len(rtc_columns) == 5 and all(by_column[c] is None for c in rtc_columns)
 
     connection = open_schema()
     connection.execute("PRAGMA foreign_keys = OFF")
@@ -401,7 +401,7 @@ def test_nullable_logical_record_is_all_or_none() -> None:
     partial = dict(by_column, observation_sequence=2, network_stratum=None)
     with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
         connection.execute(insert, tuple(partial[c] for c in columns))
-    stray = dict(by_column, observation_sequence=3, rtc_drift_contribution_us=0)
+    stray = dict(by_column, observation_sequence=3, rtc_reference_drift_bound_ppm=10)
     with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
         connection.execute(insert, tuple(stray[c] for c in columns))
 
@@ -430,7 +430,7 @@ def test_nullable_logical_record_validation(
         record = next(
             r
             for r in manifest["logical_records"]  # type: ignore[index]
-            if r["name"] == "RTC_CLOCK_EVIDENCE_V1"
+            if r["name"] == "RTC_CLOCK_EVIDENCE_V2"
         )
         for member in record["fields"]:
             member["nullable"] = True

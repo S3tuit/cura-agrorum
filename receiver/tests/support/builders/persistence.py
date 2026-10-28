@@ -61,9 +61,9 @@ def _rtc_observation(*, sequence=1):
         2_010_000,
         9_000_000_000,
         None,
-        row.RtcClockEvidenceV1(
+        row.RtcClockEvidenceV2(
             b"v" * 16, 1_799_990_000_000_000, 1_799_990_000_500_000,
-            4_000_000, 10, 100_000,
+            4_000_000, 10,
         ),
     )
 

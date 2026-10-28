@@ -167,15 +167,34 @@ Receiver instance identity changes on every process start; Linux boot identity
 scopes monotonic time. Event rows store monotonic timestamps and stay immutable.
 [Clock observations](cura_receiver/time_observations.py) provide trusted UTC samples;
 [correlation](cura_receiver/clock_correlation.py) derives UTC within one receiver
-instance, retaining the source observation. Clock steps fence correlation rather than
-retroactively changing stored events. [Logical reading analysis](cura_receiver/logical_timestamps.py)
-applies protocol anchor and sample-chain rules afterward.
+instance, retaining the source observation and projected receiver-UTC error. Analysis
+must supply the applicable deployment policy. Both the saved horizon and the strict
+error budget bound forward and backward projection; an expired selected anchor
+returns no UTC. Clock steps fence correlation rather than changing stored events. [Logical reading analysis](cura_receiver/logical_timestamps.py)
+applies protocol anchor and sample-chain rules afterward; the receiver-clock bound
+alone does not establish an end-to-end backlog timestamp bound.
 
 [Runtime time](cura_receiver/runtime_time.py) separates Linux clock quality from RTC
 health. Chrony-disciplined system time may be trusted when its estimated error fits
 the policy; a recent NTP packet alone is neither necessary nor sufficient. RTC
 holdover samples the proven RTC directly. Offline operation never repeatedly copies
 one clock into the other to manufacture trust.
+
+[Publication policy](cura_receiver/clock_publication.py) keeps the last admitted
+anchor separate from the live sample. Existing live checks continue, including
+polls shortened by expiry. Initial/quality/RTC-health/step boundaries and direct
+RTC observations remain mandatory. Ordinary network samples replenish the saved
+anchor before the next required check would cross its one-hour cap, half-remaining
+budget deadline or one-second reserve before hard expiry. There is no minimum
+spacing: an already-due guard is evaluated once per fresh sample, never by
+republishing cached evidence. The reserve is a scheduling preference, not a lower
+validity ceiling or a promise that high-error source evidence can replenish it.
+
+Only successful FIFO admission advances the saved anchor; this is not a SQLite
+commit acknowledgement. A failed routine publication leaves live trust available
+and the saved horizon unchanged. Mandatory boundary failures retain ordered,
+fail-closed handling. Unpublished live checks still advance clock generations
+and supply current airtime evidence.
 
 RTC refresh first durably invalidates old provenance, performs one write and verified
 read-back, then commits new provenance. Live clock generations fence trust across

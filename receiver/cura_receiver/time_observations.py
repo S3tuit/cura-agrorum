@@ -21,7 +21,7 @@ from .elapsed_duration import (
 from .generated.receiver_entities_generated import (
     ClockObservationV1,
     NetworkClockEvidenceV1,
-    RtcClockEvidenceV1,
+    RtcClockEvidenceV2,
     RtcProvenanceV1,
 )
 from .generated.receiver_enums_generated import RtcHealth, SystemTimeQuality
@@ -44,7 +44,7 @@ class SampleEvidence:
     started_at_monotonic_us: int
     finished_at_monotonic_us: int
     network: NetworkClockEvidenceV1 | None = None
-    rtc: RtcClockEvidenceV1 | None = None
+    rtc: RtcClockEvidenceV2 | None = None
 
     def __post_init__(self) -> None:
         checked_monotonic_elapsed(
@@ -189,7 +189,12 @@ def rtc_observation(
     policy: TimePolicy,
     report_calculation_failure: bool = False,
 ) -> TrustedTimeSample | None:
-    """Provenance must already be durably loaded/acknowledged and its instance resolved."""
+    """Provenance must already be durably loaded/acknowledged and its instance resolved.
+
+    Evidence retains the original verification baseline across reboots. RTC drift
+    growth needs no separate stored field: replay derives it exactly from the
+    sample UTC, saved read-back UTC and the baseline's saved drift bound.
+    """
     try:
         if before.generation != after.generation or rtc_health is not RtcHealth.PRESENT:
             return None
@@ -239,13 +244,12 @@ def rtc_observation(
         )
         if error >= policy.receiver_utc_error_budget_us:
             return None
-        rtc = RtcClockEvidenceV1(
+        rtc = RtcClockEvidenceV2(
             provenance.verified_by_receiver_instance_id,
             provenance.network_utc_at_verification_us,
             provenance.rtc_readback_utc_us,
             provenance.verification_uncertainty_us,
             provenance.drift_bound_ppm,
-            growth,
         )
         sample = TrustedTimeSample(
             midpoint,

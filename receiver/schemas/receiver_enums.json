@@ -1,7 +1,7 @@
 {
   "schema_format_version": 1,
   "application_id": 1129665106,
-  "database_schema_version": 18,
+  "database_schema_version": 19,
   "enums": [
     {
       "name": "PACKET_EXCEPTION_REASON",

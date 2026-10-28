@@ -381,7 +381,12 @@ def component(descriptor, case, *, stream=False):
             env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
         )
     else:
-        result = run(*argv, timeout=90)
+        result = run(*argv, timeout=90, check=False)
+        # A failing child's exception text otherwise disappears inside
+        # CalledProcessError and makes the hardware receipt undiagnosable.
+        (descriptor.parent / (case + "-stdout.txt")).write_text(result.stdout)
+        (descriptor.parent / (case + "-stderr.txt")).write_text(result.stderr)
+        result.check_returncode()
         (descriptor.parent / (case + "-result.json")).write_text(result.stdout)
 
 
@@ -576,6 +581,7 @@ def execute_component(case, value):
                     )
                 ],
                 [u.observation for u in updates],
+                policy=rt.policy,
             )
             assert (
                 history.correlate(

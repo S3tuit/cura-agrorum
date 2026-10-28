@@ -124,13 +124,17 @@ def recomputed_network_error(observation):
     )
 
 
-def recomputed_rtc_error(observation):
+def recomputed_rtc_drift(observation):
     rtc = observation.rtc_evidence
-    drift = rate_growth_us(
+    return rate_growth_us(
         rtc.reference_drift_bound_ppm,
         observation.sampled_at_utc_us - rtc.reference_readback_utc_us,
     )
-    assert drift == rtc.drift_contribution_us
+
+
+def recomputed_rtc_error(observation):
+    rtc = observation.rtc_evidence
+    drift = recomputed_rtc_drift(observation)
     read = (
         500_000
         + maximum_physical_half_bracket_us(
@@ -207,8 +211,8 @@ def test_rtc_observations_keep_their_own_verification_baseline():
         )
         assert observation.error_bound_us == recomputed_rtc_error(observation)
         assert observation.error_budget_expires_at_monotonic_us == horizon(observation)
-    assert stored[0].rtc_evidence.drift_contribution_us == 36_001  # ceil(3600 s x 10 ppm)
-    assert stored[1].rtc_evidence.drift_contribution_us == 646  # ceil(64.5 s x 10 ppm)
+    assert recomputed_rtc_drift(stored[0]) == 36_001  # ceil(3600 s x 10 ppm)
+    assert recomputed_rtc_drift(stored[1]) == 646  # ceil(64.5 s x 10 ppm)
 
 
 # After a reboot the startup read charges drift over the whole powered-off age of a
@@ -222,7 +226,7 @@ def test_aged_baseline_after_reboot():
     assert stored.system_time_quality is E.SystemTimeQuality.RTC_HOLDOVER
     assert stored.rtc_evidence.reference_receiver_instance_id == OTHER_INSTANCE
     assert stored.receiver_instance_id != OTHER_INSTANCE
-    assert stored.rtc_evidence.drift_contribution_us == 25_920_260  # ceil(30 d x 10 ppm)
+    assert recomputed_rtc_drift(stored) == 25_920_260  # ceil(30 d x 10 ppm)
     assert (stored.sample_started_at_monotonic_us, stored.sample_finished_at_monotonic_us) == (0, 100)
     assert stored.error_bound_us == recomputed_rtc_error(stored)
 
@@ -284,7 +288,7 @@ def test_capture_adds_no_operations_or_emissions():
 
 
 NETWORK_FACTS = row.NetworkClockEvidenceV1(0, 10, 0, 0, 0, 0, 0, 0, 1, 0, 2)
-RTC_FACTS = row.RtcClockEvidenceV1(b"v" * 16, 0, 0, 1, 10, 0)
+RTC_FACTS = row.RtcClockEvidenceV2(b"v" * 16, 0, 0, 1, 10)
 
 
 # Evidence must name exactly the source that produced the sample's quality.

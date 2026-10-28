@@ -5,6 +5,7 @@ from cura_receiver.generated import receiver_enums_generated as E
 from cura_receiver.persist_queue import PersistQueue, PersistenceAdmissionSnapshot, PersistQueueInterfaceError
 from cura_receiver.persist_queue_entities import RECEPTION_ONLY_V2_SPEC, RECEIVER_HEALTH_REQUEST_V1_SPEC
 from cura_receiver.producer_admission import ProducerAdmission
+from cura_receiver.time_policy import advance_clock_state
 from tests.host.test_runtime_time import runtime, sample, tracking
 from tests.support.fakes.chrony import FakeChronyControl
 
@@ -52,6 +53,8 @@ def test_full_queue_and_saturation():
     rt, _, kernel, _ = runtime(capacity=1)
     sample(rt, kernel)
     rt.sample_network(tracking(rt))
+    rt.state = advance_clock_state(rt.state, quality=rt.state.quality,
+                                   rtc_health=E.RtcHealth.MISSING)
     sample(rt, kernel)
     rt.sample_network(tracking(rt))
     assert rt.queue.counts[4] == (1, 0, 1)

@@ -240,7 +240,7 @@ def test_observation_and_poll_deadlines():
         sample, zero_rate, tracking_started_at_monotonic_us=100
     )
     assert schedule.trust_expires_at_monotonic_us is None
-    assert schedule.observation_due_at_monotonic_us == 10_800_000_100
+    assert schedule.observation_due_at_monotonic_us == 3_600_000_100
     assert schedule.tracking_poll_due_at_monotonic_us == 60_000_100
     holdover = observation_schedule(
         replace(sample, quality=Quality.RTC_HOLDOVER), zero_rate

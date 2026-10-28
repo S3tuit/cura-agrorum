@@ -18,10 +18,10 @@ from cura_receiver.persist_queue import (
     PersistenceAdmissionSnapshot,
 )
 from cura_receiver.persist_queue_entities import (
-    MEASUREMENT_PROFILE_V1_SPEC,
-    PROFILE_ONLY_V1_SPEC,
-    MeasurementProfileUnitV1,
-    ProfileOnlyUnitV1,
+    READING_RECEPTION_V2_SPEC,
+    RECEPTION_ONLY_V2_SPEC,
+    ReadingReceptionUnitV2,
+    ReceptionOnlyUnitV2,
 )
 from cura_receiver.protocol_ingress import (
     ProtocolIngress,
@@ -96,7 +96,7 @@ def test_accepted_reading_owns_one_slot_before_ack_and_publishes_without_readmis
     )
 
     assert finalized.admission is None
-    assert isinstance(finalized.published_entity, MeasurementProfileUnitV1)
+    assert isinstance(finalized.published_entity, ReadingReceptionUnitV2)
     assert finalized.published_entity.candidate is decision.candidate
     assert finalized.published_entity.profile.ack_tx_result is (
         AckTxResult.SUPPRESSED_AIRTIME_BUDGET
@@ -105,7 +105,7 @@ def test_accepted_reading_owns_one_slot_before_ack_and_publishes_without_readmis
     assert queue.snapshot().published_entities == 1
     lease = queue.claim_batch(max_entities=1)
     assert lease is not None
-    assert lease.entries[0].spec is MEASUREMENT_PROFILE_V1_SPEC
+    assert lease.entries[0].spec is READING_RECEPTION_V2_SPEC
     assert lease.entries[0].entity is finalized.published_entity
     lease.acknowledge_durable(completed_entities=1)
 
@@ -128,10 +128,10 @@ def test_authenticated_rejection_reserves_profile_only_before_ack() -> None:
     assert decision.admission.result is AdmissionResult.RESERVED
 
     finalized = ingress.finalize(decision, _terminal(AckTxResult.TX_DONE))
-    assert isinstance(finalized.published_entity, ProfileOnlyUnitV1)
+    assert isinstance(finalized.published_entity, ReceptionOnlyUnitV2)
     lease = queue.claim_batch(max_entities=1)
     assert lease is not None
-    assert lease.entries[0].spec is PROFILE_ONLY_V1_SPEC
+    assert lease.entries[0].spec is RECEPTION_ONLY_V2_SPEC
     assert lease.entries[0].entity is finalized.published_entity
 
 
@@ -162,7 +162,7 @@ def test_response_eligible_admission_failure_selects_retry_later_once(
     queue = PersistQueue(capacity_entities=1)
     _publish_state(queue, PersistenceAdmissionState.AVAILABLE)
     if prefill:
-        occupied = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+        occupied = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
         assert occupied.reservation is not None
         occupied.reservation.publish(object())
     if queue_state is not PersistenceAdmissionState.AVAILABLE:
@@ -182,7 +182,7 @@ def test_response_eligible_admission_failure_selects_retry_later_once(
 
     finalized = ingress.finalize(decision, _terminal(AckTxResult.TX_DONE))
 
-    assert finalized.admission is None
+    assert finalized.admission.result is expected_admission
     assert finalized.published_entity is None
     assert queue.snapshot().published_entities == published_before
 

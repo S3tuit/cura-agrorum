@@ -1,3 +1,4 @@
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 import sqlite3
 from dataclasses import replace
 
@@ -7,10 +8,10 @@ from cura_receiver.generated import receiver_enums_generated as enum
 from cura_receiver.ordinary_persistence import OrdinaryBatchCommitOutcome as Outcome
 from cura_receiver.persist_queue_entities import (
     CLOCK_OBSERVATION_V1_SPEC,
-    MEASUREMENT_PROFILE_V1_SPEC,
-    PROFILE_ONLY_V1_SPEC,
+    READING_RECEPTION_V2_SPEC,
+    RECEPTION_ONLY_V2_SPEC,
     RECEIVER_HEALTH_REQUEST_V1_SPEC,
-    ProfileOnlyUnitV1,
+    ReceptionOnlyUnitV2,
 )
 from cura_receiver.quarantine_evidence import (
     encode_quarantine_evidence_v1,
@@ -53,22 +54,22 @@ def test_mixed_batch_quarantine_and_remaining_lease(setup):
     path, connection, queue, clock, create = setup
     persistence = create()
     persistence.enable_admission()
-    poison = ProfileOnlyUnitV1(replace(_profile(sequence=2), busy_wait_count=-1))
-    _publish(queue, _measurement(), MEASUREMENT_PROFILE_V1_SPEC)
-    _publish(queue, poison, PROFILE_ONLY_V1_SPEC)
+    poison = ReceptionOnlyUnitV2(replace(_profile(sequence=2), busy_wait_count=-1), received_frame=REVIEWED_RECEPTION_FRAME)
+    _publish(queue, _measurement(), READING_RECEPTION_V2_SPEC)
+    _publish(queue, poison, RECEPTION_ONLY_V2_SPEC)
     _publish(
         queue,
         _measurement(sequence=3, message=101, domain=2),
-        MEASUREMENT_PROFILE_V1_SPEC,
+        READING_RECEPTION_V2_SPEC,
     )
     assert persistence.attempt(max_entities=3).outcome is Outcome.NOT_COMMITTED
-    assert connection.execute("SELECT count(*) FROM message_profiles").fetchone() == (
+    assert connection.execute("SELECT count(*) FROM packet_receptions").fetchone() == (
         0,
     )
     assert queue.snapshot().claimed_entities == 3
     # The valid prefix leaves the queue while the remaining lease stays owned.
     assert persistence.attempt(max_entities=3).acknowledged_entities == 1
-    assert connection.execute("SELECT count(*) FROM message_profiles").fetchone() == (
+    assert connection.execute("SELECT count(*) FROM packet_receptions").fetchone() == (
         1,
     )
     assert queue.snapshot().published_entities == 2
@@ -84,11 +85,11 @@ def test_mixed_batch_quarantine_and_remaining_lease(setup):
         "SELECT count(*) FROM quarantined_entities"
     ).fetchone() == (1,)
     assert persistence.attempt(max_entities=3).acknowledged_entities == 1
-    evidence = encode_quarantine_evidence_v1(poison, spec=PROFILE_ONLY_V1_SPEC)
+    evidence = encode_quarantine_evidence_v1(poison, spec=RECEPTION_ONLY_V2_SPEC)
     assert connection.execute("SELECT * FROM quarantined_entities").fetchone() == (
         quarantine_evidence_sha256(evidence),
         2,
-        1,
+        2,
         len(evidence),
         evidence,
         INSTANCE,
@@ -102,7 +103,7 @@ def test_mixed_batch_quarantine_and_remaining_lease(setup):
         1,
     )
     assert connection.execute(
-        "SELECT occurrence_sequence,persistence_classification_id FROM message_profiles ORDER BY occurrence_sequence"
+        "SELECT occurrence_sequence,persistence_classification_id FROM packet_receptions ORDER BY occurrence_sequence"
     ).fetchall() == [(1, 1), (3, 3)]
     assert connection.execute("SELECT count(*) FROM diagnostics").fetchone() == (0,)
     assert persistence.counters.batch_entities_committed == 2
@@ -127,16 +128,16 @@ def test_reachable_poison_reasons(setup, kind, reason):
     if kind == "decoding":
         valid = _measurement()
         entity = replace(valid, candidate=replace(valid.candidate, reading_body=b"bad"))
-        spec = MEASUREMENT_PROFILE_V1_SPEC
+        spec = READING_RECEPTION_V2_SPEC
     elif kind == "binding":
-        entity = ProfileOnlyUnitV1(replace(_profile(), busy_wait_count="wrong type"))
-        spec = PROFILE_ONLY_V1_SPEC
+        entity = ReceptionOnlyUnitV2(replace(_profile(), busy_wait_count="wrong type"), received_frame=REVIEWED_RECEPTION_FRAME)
+        spec = RECEPTION_ONLY_V2_SPEC
     elif kind == "range":
-        entity = ProfileOnlyUnitV1(replace(_profile(), busy_wait_total_us=1 << 63))
-        spec = PROFILE_ONLY_V1_SPEC
+        entity = ReceptionOnlyUnitV2(replace(_profile(), busy_wait_total_us=1 << 63), received_frame=REVIEWED_RECEPTION_FRAME)
+        spec = RECEPTION_ONLY_V2_SPEC
     elif kind == "constraint":
-        entity = ProfileOnlyUnitV1(replace(_profile(), busy_wait_count=-1))
-        spec = PROFILE_ONLY_V1_SPEC
+        entity = ReceptionOnlyUnitV2(replace(_profile(), busy_wait_count=-1), received_frame=REVIEWED_RECEPTION_FRAME)
+        spec = RECEPTION_ONLY_V2_SPEC
     else:
         entity = replace(_health_request(), radio_recovery_attempts_by_reason=(0,))
         spec = RECEIVER_HEALTH_REQUEST_V1_SPEC
@@ -160,7 +161,7 @@ def test_nonquarantinable_clock_boundary(setup):
         replace(_observation(), sampled_at_monotonic_us=1 << 63),
         CLOCK_OBSERVATION_V1_SPEC,
     )
-    _publish(queue, ProfileOnlyUnitV1(_profile()), PROFILE_ONLY_V1_SPEC)
+    _publish(queue, ReceptionOnlyUnitV2(_profile(), received_frame=REVIEWED_RECEPTION_FRAME), RECEPTION_ONLY_V2_SPEC)
     _drain(persistence, queue, clock)
     assert queue.snapshot().claimed_entities == 2
     assert (
@@ -170,7 +171,7 @@ def test_nonquarantinable_clock_boundary(setup):
     assert connection.execute(
         "SELECT count(*) FROM quarantined_entities"
     ).fetchone() == (0,)
-    assert connection.execute("SELECT count(*) FROM message_profiles").fetchone() == (
+    assert connection.execute("SELECT count(*) FROM packet_receptions").fetchone() == (
         0,
     )
 
@@ -182,8 +183,8 @@ def test_evidence_encoding_failure_retains_batch(setup):
     persistence.enable_admission()
     _publish(
         queue,
-        ProfileOnlyUnitV1(replace(_profile(), busy_wait_count=1.5)),
-        PROFILE_ONLY_V1_SPEC,
+        ReceptionOnlyUnitV2(replace(_profile(), busy_wait_count=1.5), received_frame=REVIEWED_RECEPTION_FRAME),
+        RECEPTION_ONLY_V2_SPEC,
     )
     _drain(persistence, queue, clock)
     assert queue.snapshot().claimed_entities == 1
@@ -201,9 +202,9 @@ def test_nonreproducing_constraint_is_not_poison(setup):
     path, connection, queue, clock, create = setup
     persistence = create()
     persistence.enable_admission()
-    _publish(queue, ProfileOnlyUnitV1(_profile()), PROFILE_ONLY_V1_SPEC)
+    _publish(queue, ReceptionOnlyUnitV2(_profile(), received_frame=REVIEWED_RECEPTION_FRAME), RECEPTION_ONLY_V2_SPEC)
     connection.execute(
-        "CREATE TEMP TRIGGER one_failure BEFORE INSERT ON message_profiles BEGIN SELECT RAISE(ABORT,'test'); END"
+        "CREATE TEMP TRIGGER one_failure BEFORE INSERT ON packet_receptions BEGIN SELECT RAISE(ABORT,'test'); END"
     )
     assert persistence.attempt(max_entities=1).outcome is Outcome.NOT_COMMITTED
     connection.execute("DROP TRIGGER one_failure")
@@ -248,8 +249,8 @@ def test_quarantine_commit_recovery(setup, mode):
     transactions = QuarantineFault()
     persistence = create(transactions)
     persistence.enable_admission()
-    poison = ProfileOnlyUnitV1(replace(_profile(), busy_wait_count=-1))
-    _publish(queue, poison, PROFILE_ONLY_V1_SPEC)
+    poison = ReceptionOnlyUnitV2(replace(_profile(), busy_wait_count=-1), received_frame=REVIEWED_RECEPTION_FRAME)
+    _publish(queue, poison, RECEPTION_ONLY_V2_SPEC)
     persistence.attempt(max_entities=1)
     persistence.attempt(max_entities=1)
     transactions.ready = True
@@ -279,17 +280,17 @@ def test_poisoned_reading_precedes_valid_same_sample(setup):
     persistence.enable_admission()
     poison = _measurement()
     poison = replace(poison, profile=replace(poison.profile, busy_wait_count=-1))
-    _publish(queue, poison, MEASUREMENT_PROFILE_V1_SPEC)
-    _publish(queue, _measurement(sequence=2, message=101), MEASUREMENT_PROFILE_V1_SPEC)
+    _publish(queue, poison, READING_RECEPTION_V2_SPEC)
+    _publish(queue, _measurement(sequence=2, message=101), READING_RECEPTION_V2_SPEC)
     _drain(persistence, queue, clock)
     assert queue.snapshot().published_entities == 0
     assert connection.execute(
-        "SELECT message_id,is_canonical_for_sample,first_occurrence_sequence FROM reading_messages"
-    ).fetchall() == [(101, 1, 2)]
+        "SELECT message_id,is_canonical FROM reading_messages"
+    ).fetchall() == [(101, 1)]
     assert connection.execute(
         "SELECT entity_bytes FROM quarantined_entities"
     ).fetchone() == (
-        encode_quarantine_evidence_v1(poison, spec=MEASUREMENT_PROFILE_V1_SPEC),
+        encode_quarantine_evidence_v1(poison, spec=READING_RECEPTION_V2_SPEC),
     )
 
 
@@ -311,8 +312,8 @@ def test_quarantine_exact_row_collision(setup, column):
     persistence.enable_admission()
     _publish(
         queue,
-        ProfileOnlyUnitV1(replace(_profile(), busy_wait_count=-1)),
-        PROFILE_ONLY_V1_SPEC,
+        ReceptionOnlyUnitV2(replace(_profile(), busy_wait_count=-1), received_frame=REVIEWED_RECEPTION_FRAME),
+        RECEPTION_ONLY_V2_SPEC,
     )
     persistence.attempt(max_entities=1)
     persistence.attempt(max_entities=1)
@@ -386,8 +387,8 @@ def test_quarantine_storage_failure_precedence(setup, code, expected):
     persistence.enable_admission()
     _publish(
         queue,
-        ProfileOnlyUnitV1(replace(_profile(), busy_wait_count=-1)),
-        PROFILE_ONLY_V1_SPEC,
+        ReceptionOnlyUnitV2(replace(_profile(), busy_wait_count=-1), received_frame=REVIEWED_RECEPTION_FRAME),
+        RECEPTION_ONLY_V2_SPEC,
     )
     persistence.attempt(max_entities=1)
     persistence.attempt(max_entities=1)
@@ -415,8 +416,8 @@ def test_global_failure_interrupts_isolation(setup):
     persistence.enable_admission()
     _publish(
         queue,
-        ProfileOnlyUnitV1(replace(_profile(), busy_wait_count=-1)),
-        PROFILE_ONLY_V1_SPEC,
+        ReceptionOnlyUnitV2(replace(_profile(), busy_wait_count=-1), received_frame=REVIEWED_RECEPTION_FRAME),
+        RECEPTION_ONLY_V2_SPEC,
     )
     persistence.attempt(max_entities=1)
     result = persistence.attempt(max_entities=1)
@@ -465,13 +466,13 @@ def test_counter_ownership_through_isolation(setup):
 
     persistence = create(TimedCommit())
     persistence.enable_admission()
-    _publish(queue, ProfileOnlyUnitV1(_profile()), PROFILE_ONLY_V1_SPEC)
+    _publish(queue, ReceptionOnlyUnitV2(_profile(), received_frame=REVIEWED_RECEPTION_FRAME), RECEPTION_ONLY_V2_SPEC)
     _publish(
         queue,
-        ProfileOnlyUnitV1(replace(_profile(sequence=2), busy_wait_count=-1)),
-        PROFILE_ONLY_V1_SPEC,
+        ReceptionOnlyUnitV2(replace(_profile(sequence=2), busy_wait_count=-1), received_frame=REVIEWED_RECEPTION_FRAME),
+        RECEPTION_ONLY_V2_SPEC,
     )
-    _publish(queue, ProfileOnlyUnitV1(_profile(sequence=3)), PROFILE_ONLY_V1_SPEC)
+    _publish(queue, ReceptionOnlyUnitV2(_profile(sequence=3), received_frame=REVIEWED_RECEPTION_FRAME), RECEPTION_ONLY_V2_SPEC)
     _drain(persistence, queue, clock)
     counts = persistence.counters
     assert (

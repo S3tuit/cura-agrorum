@@ -1,8 +1,46 @@
 {
   "schema_format_version": 1,
   "application_id": 1129665106,
-  "database_schema_version": 17,
+  "database_schema_version": 18,
   "enums": [
+    {
+      "name": "PACKET_EXCEPTION_REASON",
+      "storage": "u8",
+      "persistence": {
+        "mode": "scalar_foreign_key",
+        "table": "packet_exception_reason_codes"
+      },
+      "values": [
+        {
+          "name": "REJECTED_UNSUPPORTED_CONTROL",
+          "value": 1
+        },
+        {
+          "name": "REJECTED_UNSUPPORTED_DOMAIN",
+          "value": 2
+        },
+        {
+          "name": "REJECTED_MALFORMED_LENGTH",
+          "value": 3
+        },
+        {
+          "name": "REJECTED_MALFORMED_BODY",
+          "value": 4
+        },
+        {
+          "name": "WRONG_DIRECTION",
+          "value": 5
+        },
+        {
+          "name": "DUPLICATE_CONFLICT",
+          "value": 6
+        },
+        {
+          "name": "MESSAGE_ID_CONFLICT",
+          "value": 7
+        }
+      ]
+    },
     {
       "name": "RADIO_CHIP_MODE",
       "storage": "u8",

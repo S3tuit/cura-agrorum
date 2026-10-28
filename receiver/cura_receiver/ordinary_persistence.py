@@ -23,7 +23,6 @@ from .elapsed_duration import (
 from .generated import receiver_entities_generated as rows
 from .generated.receiver_enums_generated import (
     DATABASE_SCHEMA_VERSION,
-    AckSelection,
     AckTxResult,
     DiagnosticErrorDomain,
     DiagnosticSeverity,
@@ -54,8 +53,8 @@ from .persist_queue import (
     PersistQueueBatchLease,
 )
 from .persist_queue_entities import (
-    MeasurementProfileUnitV1,
-    ProfileOnlyUnitV1,
+    ReadingReceptionUnitV2,
+    ReceptionOnlyUnitV2,
     ReceiverHealthRequestV1,
 )
 from .persistence_failures import classify_entity_failure, classify_global_failure
@@ -78,9 +77,10 @@ from .reading_persistence import (
     exact_sql_row,
     prepare_reading,
     prepare_replayed_reading,
-    validate_prepared_reading,
+    write_prepared_reading,
 )
 from .receiver_startup import ReceiverInstanceStart
+from .packet_reception_persistence import reception_exception
 from .sqlite_database import (
     DatabaseFailure,
     StorageUnavailable,
@@ -101,13 +101,12 @@ def _require_enum_fields(entity: object, **expected_types: type[Enum]) -> None:
             raise TypeError(f"{name} must be a {expected.__name__}")
 
 
-def _validate_profile_enums(profile: rows.MessageProfilingV1) -> None:
-    if type(profile) is not rows.MessageProfilingV1:
+def _validate_profile_enums(profile: rows.PacketReceptionV1) -> None:
+    if type(profile) is not rows.PacketReceptionV1:
         raise TypeError("invalid profiling record")
     _require_enum_fields(
         profile,
         processing_result=ProcessingResult,
-        ack_selected=AckSelection,
         ack_tx_result=AckTxResult,
     )
 
@@ -144,13 +143,14 @@ class _PreparedUnit:
     row: (
         rows.ClockObservationV1
         | rows.DiagnosticV1
-        | rows.MessageProfileRowV1
+        | rows.PacketReceptionRowV1
         | rows.ReceiverHealthV1
         | rows.RadioObservationV1
     )
     reading: PreparedReading | None = None
-    measurement: MeasurementProfileUnitV1 | None = None
+    measurement: ReadingReceptionUnitV2 | None = None
     observation: rows.RadioObservationV1 | None = None
+    exception: rows.PacketReceptionExceptionRowV1 | None = None
 
 
 class OrdinaryPersistence:
@@ -297,10 +297,10 @@ class OrdinaryPersistence:
             return _PreparedUnit(entity)
         if (
             kind is Kind.MEASUREMENT_PROFILE
-            and type(entity) is MeasurementProfileUnitV1
+            and type(entity) is ReadingReceptionUnitV2
         ):
             _validate_profile_enums(entity.profile)
-            existing = self._repository.find_message_profile(
+            existing = self._repository.find_packet_reception(
                 entity.profile.receiver_instance_id, entity.profile.occurrence_sequence
             )
             reading = (
@@ -324,12 +324,15 @@ class OrdinaryPersistence:
             return _PreparedUnit(entity)
         if (
             kind is Kind.PROFILE_ONLY
-            and type(entity) is ProfileOnlyUnitV1
-            and type(entity.profile) is rows.MessageProfilingV1
+            and type(entity) is ReceptionOnlyUnitV2
+            and type(entity.profile) is rows.PacketReceptionV1
         ):
             _validate_profile_enums(entity.profile)
+            if entity.profile.processing_result is ProcessingResult.ACCEPTED:
+                raise ValueError("accepted reception requires its reading candidate")
             return _PreparedUnit(
-                rows.MessageProfileRowV1(entity.profile, Classification.NOT_APPLICABLE)
+                rows.PacketReceptionRowV1(entity.profile, Classification.NOT_APPLICABLE),
+                exception=reception_exception(entity.profile, entity.received_frame, Classification.NOT_APPLICABLE),
             )
         if (
             kind is Kind.RECEIVER_HEALTH_REQUEST
@@ -399,6 +402,9 @@ class OrdinaryPersistence:
         raise TypeError("entity does not match its queue specification")
 
     def _write(self, work: _PreparedUnit) -> None:
+        if work.reading is not None:
+            write_prepared_reading(self._repository, work.reading, work.measurement)
+            return
         entity = work.row
         if work.observation is not None:
             # Both effects belong to this queue unit, including exact replay after
@@ -422,9 +428,9 @@ class OrdinaryPersistence:
                 rows.DIAGNOSTIC_V1_COLUMNS,
                 rows.diagnostic_v1_parameters,
             ),
-            rows.MessageProfileRowV1: (
-                rows.MESSAGE_PROFILE_ROW_V1_COLUMNS,
-                rows.message_profile_row_v1_parameters,
+            rows.PacketReceptionRowV1: (
+                rows.PACKET_RECEPTION_ROW_V1_COLUMNS,
+                rows.packet_reception_row_v1_parameters,
             ),
             rows.ReceiverHealthV1: (
                 rows.RECEIVER_HEALTH_V1_COLUMNS,
@@ -449,30 +455,23 @@ class OrdinaryPersistence:
             )
             parameters = rows.diagnostic_v1_parameters(entity)
             insert = self._repository.insert_diagnostic
-        elif type(entity) is rows.MessageProfileRowV1:
+        elif type(entity) is rows.PacketReceptionRowV1:
             profile = entity.profile
-            existing = self._repository.find_message_profile(
+            existing = self._repository.find_packet_reception(
                 profile.receiver_instance_id, profile.occurrence_sequence
             )
-            parameters = rows.message_profile_row_v1_parameters(entity)
-            insert = self._repository.insert_message_profile
-            if work.reading is not None:
-                candidate = work.measurement.candidate
-                reading = self._repository.find_reading_message(
-                    candidate.node_id, candidate.message_id
-                )
-                if (
-                    existing is None
-                    and reading is not None
-                    and reading[-2:]
-                    == (profile.receiver_instance_id, profile.occurrence_sequence)
-                ):
-                    raise PersistenceIdentityCollision(
-                        "reading effect exists without its profile"
-                    )
-                validate_prepared_reading(
-                    self._repository, work.reading, work.measurement
-                )
+            parameters = rows.packet_reception_row_v1_parameters(entity)
+            insert = self._repository.insert_packet_reception
+            saved_exception = self._repository.find_packet_reception_exception(
+                profile.receiver_instance_id, profile.occurrence_sequence)
+            if existing is None:
+                if saved_exception is not None:
+                    raise PersistenceIdentityCollision("exception lacks its reception")
+            elif work.exception is None:
+                if saved_exception is not None:
+                    raise PersistenceIdentityCollision("unexpected reception exception")
+            elif not exact_sql_row(saved_exception, rows.packet_reception_exception_row_v1_parameters(work.exception)):
+                raise PersistenceIdentityCollision("missing or contradictory reception exception")
         elif type(entity) is rows.ReceiverHealthV1:
             existing = self._repository.find_receiver_health(
                 entity.receiver_instance_id, entity.health_sequence
@@ -486,17 +485,8 @@ class OrdinaryPersistence:
                 raise PersistenceIdentityCollision("ordinary row identity collision")
         else:
             insert(entity)
-        if work.reading is not None and work.reading.insertion is not None:
-            effect = work.reading.insertion
-            existing = self._repository.find_reading_message(
-                effect.node_id, effect.message_id
-            )
-            if existing is None:
-                self._repository.insert_reading_message(effect)
-            elif not exact_sql_row(
-                existing, rows.reading_message_row_v1_parameters(effect)
-            ):
-                raise PersistenceIdentityCollision("reading effect collision")
+        if type(entity) is rows.PacketReceptionRowV1 and existing is None and work.exception is not None:
+            self._repository.insert_packet_reception_exception(work.exception)
 
     def _rollback_failure(
         self, failure: DatabaseFailure, *, item_failure: bool = False

@@ -73,22 +73,19 @@ def test_radio_failure_completion_reaches_real_sqlite(
     )
 
     assert finalized.published_entity.candidate is candidate
-    assert finalized.published_entity.profile.ack_frame == REVIEWED_ACCEPTED_ACK
+    assert occurrence.pre_tx_profile.ack_frame == REVIEWED_ACCEPTED_ACK
     assert persistence.attempt(max_entities=1).outcome is (
         OrdinaryBatchCommitOutcome.COMMITTED
     )
     assert connection.execute(
         "SELECT ack_tx_result_id, t4_set_tx_attempted_monotonic_us, "
-        "t5_tx_done_monotonic_us, t6_set_rx_issued_monotonic_us, "
-        "received_frame, ack_frame FROM message_profiles"
+        "t5_tx_done_monotonic_us, t6_set_rx_issued_monotonic_us FROM packet_receptions"
     ).fetchall() == [
         (
             stored_code,
             t4,
             None,
             t6,
-            REVIEWED_CURRENT_FRAME + bytes(255 - len(REVIEWED_CURRENT_FRAME)),
-            REVIEWED_ACCEPTED_ACK,
         )
     ]
     assert connection.execute("SELECT count(*) FROM reading_messages").fetchone() == (1,)
@@ -171,6 +168,7 @@ def test_radio_snapshot_through_real_ingress_and_sqlite(setup):
         AckTxResult.SUPPRESSED_AIRTIME_BUDGET, None, None,
         restored.t6_set_rx_issued_monotonic_us, radio_state=restored.state,
     ))
-    assert finalized.published_entity.profile.received_frame[:len(REVIEWED_CURRENT_FRAME)] == REVIEWED_CURRENT_FRAME
+    assert finalized.published_entity.received_frame == REVIEWED_CURRENT_FRAME
     assert persistence.attempt(max_entities=1).outcome is OrdinaryBatchCommitOutcome.COMMITTED
-    assert connection.execute("SELECT received_frame FROM message_profiles").fetchone()[0] == REVIEWED_CURRENT_FRAME + bytes(255 - len(REVIEWED_CURRENT_FRAME))
+    assert connection.execute("SELECT node_id,message_id,sample_id FROM reading_messages").fetchone() == (occurrence.candidate.node_id, occurrence.candidate.message_id, occurrence.candidate.sample_id)
+    assert connection.execute("SELECT count(*) FROM packet_reception_exceptions").fetchone() == (0,)

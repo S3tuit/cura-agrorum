@@ -8,12 +8,12 @@ import struct
 from dataclasses import dataclass
 
 from .receiver_enums_generated import (
-    AckSelection,
     AckTxResult,
     DiagnosticErrorDomain,
     DiagnosticOperation,
     DiagnosticSeverity,
     HealthConsistency,
+    PacketExceptionReason,
     PersistenceAdmissionState,
     PersistenceClassification,
     PersistQueueEntityKind,
@@ -28,10 +28,11 @@ from .receiver_enums_generated import (
     SystemTimeQuality,
 )
 
-RECEIVER_ENTITY_MANIFEST_SHA256 = 'ced92d7786e630fe43585d93683f55d358669b0952e72fe1643fee4632c94ed7'
+RECEIVER_ENTITY_MANIFEST_SHA256 = 'e942afb3f0b2fd98f03405414fa78b6b81f0d7402ff6754447db0a23dece0d8b'
 
 __all__ = [
     "RECEIVER_ENTITY_MANIFEST_SHA256",
+    "REQUIRED_FOREIGN_KEYS",
     "CLOCK_OBSERVATION_V1_TABLE",
     "CLOCK_OBSERVATION_V1_COLUMNS",
     "DIAGNOSTIC_V1_TABLE",
@@ -42,23 +43,29 @@ __all__ = [
     "RADIO_OBSERVATION_V1_COLUMNS",
     "RECEIVER_HEALTH_V1_TABLE",
     "RECEIVER_HEALTH_V1_COLUMNS",
-    "MESSAGE_PROFILE_ROW_V1_TABLE",
-    "MESSAGE_PROFILE_ROW_V1_COLUMNS",
-    "READING_MESSAGE_ROW_V1_TABLE",
-    "READING_MESSAGE_ROW_V1_COLUMNS",
+    "RECEIVED_MESSAGE_ROW_V1_TABLE",
+    "RECEIVED_MESSAGE_ROW_V1_COLUMNS",
+    "READING_MESSAGE_ROW_V2_TABLE",
+    "READING_MESSAGE_ROW_V2_COLUMNS",
+    "PACKET_RECEPTION_ROW_V1_TABLE",
+    "PACKET_RECEPTION_ROW_V1_COLUMNS",
+    "PACKET_RECEPTION_EXCEPTION_ROW_V1_TABLE",
+    "PACKET_RECEPTION_EXCEPTION_ROW_V1_COLUMNS",
     "COMMUNICATOR_STATE_V2_TABLE",
     "COMMUNICATOR_STATE_V2_COLUMNS",
     "NetworkClockEvidenceV1",
     "RtcClockEvidenceV1",
-    "MessageProfilingV1",
+    "PacketReceptionV1",
     "RadioSnapshotV1",
     "ClockObservationV1",
     "DiagnosticV1",
     "QuarantinedEntityRowV1",
     "RadioObservationV1",
     "ReceiverHealthV1",
-    "MessageProfileRowV1",
-    "ReadingMessageRowV1",
+    "ReceivedMessageRowV1",
+    "ReadingMessageRowV2",
+    "PacketReceptionRowV1",
+    "PacketReceptionExceptionRowV1",
     "RtcProvenanceV1",
     "AirtimeEntryV2",
     "AirtimeSnapshotV1",
@@ -70,10 +77,47 @@ __all__ = [
     "quarantined_entity_row_v1_parameters",
     "radio_observation_v1_parameters",
     "receiver_health_v1_parameters",
-    "message_profile_row_v1_parameters",
-    "reading_message_row_v1_parameters",
+    "received_message_row_v1_parameters",
+    "reading_message_row_v2_parameters",
+    "packet_reception_row_v1_parameters",
+    "packet_reception_exception_row_v1_parameters",
     "communicator_state_v2_parameters",
 ]
+
+REQUIRED_FOREIGN_KEYS = (
+    ('clock_observations', ('receiver_instance_id',), 'receiver_instances', ('receiver_instance_id',)),
+    ('clock_observations', ('system_time_quality_id',), 'system_time_quality_codes', ('id',)),
+    ('clock_observations', ('rtc_health_id',), 'rtc_health_codes', ('id',)),
+    ('diagnostics', ('receiver_instance_id',), 'receiver_instances', ('receiver_instance_id',)),
+    ('diagnostics', ('severity_id',), 'diagnostic_severity_codes', ('id',)),
+    ('diagnostics', ('error_domain_id',), 'diagnostic_error_domain_codes', ('id',)),
+    ('diagnostics', ('operation_id',), 'diagnostic_operation_codes', ('id',)),
+    ('diagnostics', ('error_domain_id', 'error_code_id'), 'diagnostic_error_codes', ('error_domain_id', 'id')),
+    ('diagnostics', ('error_domain_id', 'context_schema_id'), 'diagnostic_context_schemas', ('error_domain_id', 'id')),
+    ('quarantined_entities', ('entity_kind_id',), 'persist_queue_entity_kind_codes', ('id',)),
+    ('quarantined_entities', ('receiver_instance_id',), 'receiver_instances', ('receiver_instance_id',)),
+    ('quarantined_entities', ('failure_reason_id',), 'quarantine_failure_reason_codes', ('id',)),
+    ('quarantined_entities', ('failure_operation_id',), 'diagnostic_operation_codes', ('id',)),
+    ('radio_observations', ('receiver_instance_id',), 'receiver_instances', ('receiver_instance_id',)),
+    ('radio_observations', ('trigger_id',), 'radio_observation_trigger_codes', ('id',)),
+    ('radio_observations', ('software_state_id',), 'radio_state_codes', ('id',)),
+    ('radio_observations', ('capture_status_id',), 'radio_capture_status_codes', ('id',)),
+    ('radio_observations', ('chip_mode_id',), 'radio_chip_mode_codes', ('id',)),
+    ('receiver_health', ('receiver_instance_id',), 'receiver_instances', ('receiver_instance_id',)),
+    ('receiver_health', ('system_time_quality_id',), 'system_time_quality_codes', ('id',)),
+    ('receiver_health', ('rtc_health_id',), 'rtc_health_codes', ('id',)),
+    ('receiver_health', ('persistence_admission_state_id',), 'persistence_admission_state_codes', ('id',)),
+    ('receiver_health', ('receiver_instance_id', 'radio_observation_sequence'), 'radio_observations', ('receiver_instance_id', 'observation_sequence')),
+    ('receiver_health', ('consistency_id',), 'health_consistency_codes', ('id',)),
+    ('receiver_health', ('rtc_read_status_id',), 'rtc_read_status_codes', ('id',)),
+    ('reading_messages', ('node_id', 'message_id'), 'received_messages', ('node_id', 'message_id')),
+    ('packet_receptions', ('receiver_instance_id',), 'receiver_instances', ('receiver_instance_id',)),
+    ('packet_receptions', ('processing_result_id',), 'processing_result_codes', ('id',)),
+    ('packet_receptions', ('ack_tx_result_id',), 'ack_tx_result_codes', ('id',)),
+    ('packet_receptions', ('persistence_classification_id',), 'persistence_classification_codes', ('id',)),
+    ('packet_reception_exceptions', ('receiver_instance_id', 'occurrence_sequence'), 'packet_receptions', ('receiver_instance_id', 'occurrence_sequence')),
+    ('packet_reception_exceptions', ('reason_id',), 'packet_exception_reason_codes', ('id',)),
+)
 
 CLOCK_OBSERVATION_V1_TABLE = 'clock_observations'
 
@@ -266,50 +310,21 @@ RECEIVER_HEALTH_V1_COLUMNS = (
     'receiver_process_write_bytes',
 )
 
-MESSAGE_PROFILE_ROW_V1_TABLE = 'message_profiles'
+RECEIVED_MESSAGE_ROW_V1_TABLE = 'received_messages'
 
-MESSAGE_PROFILE_ROW_V1_COLUMNS = (
-    'receiver_instance_id',
-    'occurrence_sequence',
-    'received_at_monotonic_us',
-    'received_frame_length',
-    'received_frame',
-    'claimed_control',
-    'claimed_domain',
-    'claimed_node_id',
-    'claimed_message_id',
-    'header_authenticated',
-    'decoded_sample_id',
-    'rssi_dbm_x2',
-    'snr_db_x4',
-    'irq_status',
-    'device_errors',
-    'processing_result_id',
-    'ack_selected_id',
-    'ack_tx_result_id',
-    'ack_frame',
-    'busy_wait_total_us',
-    'busy_wait_max_us',
-    'busy_wait_count',
-    'busy_timeout_count',
-    'last_busy_timeout_opcode',
-    't1_handler_started_monotonic_us',
-    't2_packet_copied_monotonic_us',
-    't3_authentication_completed_monotonic_us',
-    't4_set_tx_attempted_monotonic_us',
-    't5_tx_done_monotonic_us',
-    't6_set_rx_issued_monotonic_us',
-    'persistence_classification_id',
+RECEIVED_MESSAGE_ROW_V1_COLUMNS = (
+    'node_id',
+    'message_id',
+    'domain',
 )
 
-READING_MESSAGE_ROW_V1_TABLE = 'reading_messages'
+READING_MESSAGE_ROW_V2_TABLE = 'reading_messages'
 
-READING_MESSAGE_ROW_V1_COLUMNS = (
+READING_MESSAGE_ROW_V2_COLUMNS = (
     'node_id',
     'message_id',
     'sample_id',
-    'reading_body',
-    'is_canonical_for_sample',
+    'is_canonical',
     'run_ms',
     'soil_0_mv',
     'soil_1_mv',
@@ -325,8 +340,46 @@ READING_MESSAGE_ROW_V1_COLUMNS = (
     'previous_cycle_tx_attempts',
     'previous_cycle_accepted_readings',
     'flags',
-    'first_receiver_instance_id',
-    'first_occurrence_sequence',
+)
+
+PACKET_RECEPTION_ROW_V1_TABLE = 'packet_receptions'
+
+PACKET_RECEPTION_ROW_V1_COLUMNS = (
+    'receiver_instance_id',
+    'occurrence_sequence',
+    'received_at_monotonic_us',
+    'domain',
+    'node_id',
+    'message_id',
+    'decoded_sample_id',
+    'rssi_dbm_x2',
+    'snr_db_x4',
+    'irq_status',
+    'device_errors',
+    'processing_result_id',
+    'ack_tx_result_id',
+    'busy_wait_total_us',
+    'busy_wait_max_us',
+    'busy_wait_count',
+    'busy_timeout_count',
+    'last_busy_timeout_opcode',
+    't1_handler_started_monotonic_us',
+    't2_packet_copied_monotonic_us',
+    't3_authentication_completed_monotonic_us',
+    't4_set_tx_attempted_monotonic_us',
+    't5_tx_done_monotonic_us',
+    't6_set_rx_issued_monotonic_us',
+    'persistence_classification_id',
+)
+
+PACKET_RECEPTION_EXCEPTION_ROW_V1_TABLE = 'packet_reception_exceptions'
+
+PACKET_RECEPTION_EXCEPTION_ROW_V1_COLUMNS = (
+    'receiver_instance_id',
+    'occurrence_sequence',
+    'received_frame_length',
+    'received_frame',
+    'reason_id',
 )
 
 COMMUNICATOR_STATE_V2_TABLE = 'communicator_state'
@@ -390,26 +443,20 @@ class RtcClockEvidenceV1:
     drift_contribution_us: int
 
 @dataclass(frozen=True, slots=True)
-class MessageProfilingV1:
+class PacketReceptionV1:
     receiver_instance_id: bytes
     occurrence_sequence: int
     received_at_monotonic_us: int
-    received_frame_length: int | None
-    received_frame: bytes | None
-    claimed_control: int | None
-    claimed_domain: int | None
-    claimed_node_id: bytes | None
-    claimed_message_id: int | None
-    header_authenticated: bool
+    domain: int
+    node_id: bytes
+    message_id: int
     decoded_sample_id: int | None
     rssi_dbm_x2: int | None
     snr_db_x4: int | None
     irq_status: int | None
     device_errors: int | None
     processing_result: ProcessingResult
-    ack_selected: AckSelection
     ack_tx_result: AckTxResult
-    ack_frame: bytes | None
     busy_wait_total_us: int
     busy_wait_max_us: int
     busy_wait_count: int
@@ -769,52 +816,24 @@ def receiver_health_v1_parameters(entity: ReceiverHealthV1) -> tuple[object, ...
     )
 
 @dataclass(frozen=True, slots=True)
-class MessageProfileRowV1:
-    profile: MessageProfilingV1
-    persistence_classification: PersistenceClassification
+class ReceivedMessageRowV1:
+    node_id: bytes
+    message_id: int
+    domain: int
 
-def message_profile_row_v1_parameters(entity: MessageProfileRowV1) -> tuple[object, ...]:
+def received_message_row_v1_parameters(entity: ReceivedMessageRowV1) -> tuple[object, ...]:
     return (
-        entity.profile.receiver_instance_id,
-        entity.profile.occurrence_sequence,
-        entity.profile.received_at_monotonic_us,
-        entity.profile.received_frame_length,
-        entity.profile.received_frame,
-        entity.profile.claimed_control,
-        entity.profile.claimed_domain,
-        entity.profile.claimed_node_id,
-        entity.profile.claimed_message_id,
-        entity.profile.header_authenticated,
-        entity.profile.decoded_sample_id,
-        entity.profile.rssi_dbm_x2,
-        entity.profile.snr_db_x4,
-        entity.profile.irq_status,
-        entity.profile.device_errors,
-        entity.profile.processing_result.value,
-        entity.profile.ack_selected.value,
-        entity.profile.ack_tx_result.value,
-        entity.profile.ack_frame,
-        entity.profile.busy_wait_total_us,
-        entity.profile.busy_wait_max_us,
-        entity.profile.busy_wait_count,
-        entity.profile.busy_timeout_count,
-        entity.profile.last_busy_timeout_opcode,
-        entity.profile.t1_handler_started_monotonic_us,
-        entity.profile.t2_packet_copied_monotonic_us,
-        entity.profile.t3_authentication_completed_monotonic_us,
-        entity.profile.t4_set_tx_attempted_monotonic_us,
-        entity.profile.t5_tx_done_monotonic_us,
-        entity.profile.t6_set_rx_issued_monotonic_us,
-        entity.persistence_classification.value,
+        entity.node_id,
+        entity.message_id,
+        entity.domain,
     )
 
 @dataclass(frozen=True, slots=True)
-class ReadingMessageRowV1:
+class ReadingMessageRowV2:
     node_id: bytes
     message_id: int
     sample_id: int
-    reading_body: bytes
-    is_canonical_for_sample: bool
+    is_canonical: bool
     run_ms: int
     soil_0_mv: int
     soil_1_mv: int
@@ -830,16 +849,13 @@ class ReadingMessageRowV1:
     previous_cycle_tx_attempts: int
     previous_cycle_accepted_readings: int
     flags: int
-    first_receiver_instance_id: bytes
-    first_occurrence_sequence: int
 
-def reading_message_row_v1_parameters(entity: ReadingMessageRowV1) -> tuple[object, ...]:
+def reading_message_row_v2_parameters(entity: ReadingMessageRowV2) -> tuple[object, ...]:
     return (
         entity.node_id,
         entity.message_id,
         entity.sample_id,
-        entity.reading_body,
-        entity.is_canonical_for_sample,
+        entity.is_canonical,
         entity.run_ms,
         entity.soil_0_mv,
         entity.soil_1_mv,
@@ -855,8 +871,57 @@ def reading_message_row_v1_parameters(entity: ReadingMessageRowV1) -> tuple[obje
         entity.previous_cycle_tx_attempts,
         entity.previous_cycle_accepted_readings,
         entity.flags,
-        entity.first_receiver_instance_id,
-        entity.first_occurrence_sequence,
+    )
+
+@dataclass(frozen=True, slots=True)
+class PacketReceptionRowV1:
+    profile: PacketReceptionV1
+    persistence_classification: PersistenceClassification
+
+def packet_reception_row_v1_parameters(entity: PacketReceptionRowV1) -> tuple[object, ...]:
+    return (
+        entity.profile.receiver_instance_id,
+        entity.profile.occurrence_sequence,
+        entity.profile.received_at_monotonic_us,
+        entity.profile.domain,
+        entity.profile.node_id,
+        entity.profile.message_id,
+        entity.profile.decoded_sample_id,
+        entity.profile.rssi_dbm_x2,
+        entity.profile.snr_db_x4,
+        entity.profile.irq_status,
+        entity.profile.device_errors,
+        entity.profile.processing_result.value,
+        entity.profile.ack_tx_result.value,
+        entity.profile.busy_wait_total_us,
+        entity.profile.busy_wait_max_us,
+        entity.profile.busy_wait_count,
+        entity.profile.busy_timeout_count,
+        entity.profile.last_busy_timeout_opcode,
+        entity.profile.t1_handler_started_monotonic_us,
+        entity.profile.t2_packet_copied_monotonic_us,
+        entity.profile.t3_authentication_completed_monotonic_us,
+        entity.profile.t4_set_tx_attempted_monotonic_us,
+        entity.profile.t5_tx_done_monotonic_us,
+        entity.profile.t6_set_rx_issued_monotonic_us,
+        entity.persistence_classification.value,
+    )
+
+@dataclass(frozen=True, slots=True)
+class PacketReceptionExceptionRowV1:
+    receiver_instance_id: bytes
+    occurrence_sequence: int
+    received_frame_length: int
+    received_frame: bytes
+    reason: PacketExceptionReason
+
+def packet_reception_exception_row_v1_parameters(entity: PacketReceptionExceptionRowV1) -> tuple[object, ...]:
+    return (
+        entity.receiver_instance_id,
+        entity.occurrence_sequence,
+        entity.received_frame_length,
+        entity.received_frame,
+        entity.reason.value,
     )
 
 @dataclass(frozen=True, slots=True)

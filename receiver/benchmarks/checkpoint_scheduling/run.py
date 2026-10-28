@@ -91,7 +91,7 @@ def main():
     from cura_receiver.generated.receiver_enums_generated import AdmissionResult
     from cura_receiver.ordinary_persistence import OrdinaryPersistence
     from cura_receiver.persist_queue import PersistQueue
-    from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC, ProfileOnlyUnitV1
+    from cura_receiver.persist_queue_entities import RECEPTION_ONLY_V2_SPEC, ReceptionOnlyUnitV2
     from cura_receiver.persistence_control_values import (
         CommunicatorStateLoadStatus, ReceiverCleanStopV1, ReceiverCleanStopCommitDisposition,
     )
@@ -99,7 +99,7 @@ def main():
     from cura_receiver.receiver_startup import ReceiverInstanceStart, insert_receiver_instance_start
     from cura_receiver.sqlite_database import open_receiver_database
     from cura_receiver.sqlite_transactions import SqliteTransactions
-    from tests.support.builders.persistence import GROUP, INSTANCE, _profile
+    from tests.support.builders.persistence import GROUP, INSTANCE, _profile, REVIEWED_RECEPTION_FRAME
     from tests.support.coordination.persistence_worker import CheckedPersistenceWorker, prepare_worker_files
 
     args.fixture_root.mkdir(parents=False, exist_ok=False)
@@ -118,10 +118,10 @@ def main():
                 sequence += 1
                 if sequence > 30_000:
                     raise RuntimeError("bounded fixture preparation did not allocate 5 MiB WAL")
-                reservation = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+                reservation = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
                 if reservation.status is not AdmissionResult.RESERVED:
                     raise RuntimeError("fixture preparation exceeded queue limits")
-                reservation.reservation.publish(ProfileOnlyUnitV1(_profile(sequence=sequence)))
+                reservation.reservation.publish(ReceptionOnlyUnitV2(_profile(sequence=sequence), received_frame=REVIEWED_RECEPTION_FRAME))
             result = preparer.attempt(max_entities=128)
             if result.acknowledged_entities != 128:
                 raise RuntimeError("fixture preparation failed to commit its batch")
@@ -189,7 +189,7 @@ def main():
 
         reader = sqlite3.connect(path, isolation_level=None)
         reader.execute("BEGIN")
-        reader.execute("SELECT count(*) FROM message_profiles").fetchone()
+        reader.execute("SELECT count(*) FROM packet_receptions").fetchone()
         traffic_start = clock.now_monotonic_us()
         traffic_bytes_before = written_bytes(args.block_stat)
         offered = max(1, math.ceil(args.traffic_seconds / args.period_seconds))
@@ -205,14 +205,15 @@ def main():
             profile = replace(
                 _profile(sequence=n + 1), receiver_instance_id=instance.receiver_instance_id,
                 received_at_monotonic_us=now, t1_handler_started_monotonic_us=now + 1,
-                t2_packet_copied_monotonic_us=now + 2, t6_set_rx_issued_monotonic_us=now + 4,
+                t2_packet_copied_monotonic_us=now + 2, t3_authentication_completed_monotonic_us=now + 3,
+                t6_set_rx_issued_monotonic_us=now + 4,
             )
-            reservation = owner.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+            reservation = owner.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
             if reservation.status is not AdmissionResult.RESERVED:
                 raise RuntimeError("fixture traffic was rejected")
             with arrivals_lock:
                 arrivals.append(now)
-                reservation.reservation.publish(ProfileOnlyUnitV1(profile))
+                reservation.reservation.publish(ReceptionOnlyUnitV2(profile, received_frame=REVIEWED_RECEPTION_FRAME))
             queue_peak = max(queue_peak, owner.queue.snapshot().published_entities)
             start = clock.now_monotonic_us()
             loaded = owner.control.load_communicator_state(deadline_monotonic_us=start + 5_000_000)
@@ -243,7 +244,7 @@ def main():
             if verification.execute("PRAGMA integrity_check").fetchone() != ("ok",):
                 raise RuntimeError("fixture integrity failed")
             count = verification.execute(
-                "SELECT count(*) FROM message_profiles WHERE receiver_instance_id=?", (instance.receiver_instance_id,)
+                "SELECT count(*) FROM packet_receptions WHERE receiver_instance_id=?", (instance.receiver_instance_id,)
             ).fetchone()[0]
             if count != offered or len(queue_us) != offered:
                 raise RuntimeError("fixture durable count did not match offered traffic")

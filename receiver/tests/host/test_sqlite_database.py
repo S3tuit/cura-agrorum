@@ -14,6 +14,7 @@ from cura_receiver.generated.receiver_enums_generated import (
     DATABASE_SCHEMA_VERSION,
     SQLITE_APPLICATION_ID,
     PersistenceAdmissionState as State,
+    PersistenceClassification,
 )
 from cura_receiver.sqlite_database import database_failure, open_receiver_database
 
@@ -214,6 +215,19 @@ def test_real_corruption_is_preserved(tmp_path: Path, case: str) -> None:
             stream.write(b"\xff" * 32)
     before = path.read_bytes()
     result = open_receiver_database(path, GROUP, minimum_free_bytes=0)
+    if case == "page":
+        # Preparation does not touch historical pages; the actual lifecycle
+        # operation must report corruption when it encounters this page.
+        from cura_receiver.receiver_startup import ReceiverInstanceStart, insert_receiver_instance_start
+        before_started = path.read_bytes()
+        started = insert_receiver_instance_start(
+            result.database.connection,
+            ReceiverInstanceStart(bytes.fromhex("00112233445546778899aabbccddeeff"), 0),
+            bytes(16))
+        assert started.failure.admission_state is State.UNAVAILABLE_CORRUPT
+        result.database.close()
+        assert path.read_bytes() == before_started
+        return
     assert result.database is None
     assert result.failure.admission_state is State.UNAVAILABLE_CORRUPT
     assert path.read_bytes() == before
@@ -410,7 +424,7 @@ def test_corrupt_database_keeps_wal_and_shared_memory(tmp_path: Path) -> None:
         ("clock_observations", "observation_sequence"),
         ("diagnostics", "diagnostic_sequence"),
         ("receiver_health", "health_sequence"),
-        ("message_profiles", "occurrence_sequence"),
+        ("packet_receptions", "occurrence_sequence"),
         ("reading_messages", "message_id"),
         ("quarantined_entities", "quarantine_id"),
         ("receiver_instances", "started_at_monotonic_us"),
@@ -490,3 +504,112 @@ def test_required_projections_preserve_rejected_storage(
     finally:
         if database is not None:
             database.close()
+
+
+def test_readiness_and_recovery_ignore_unrelated_old_orphan(tmp_path, monkeypatch):
+    path = _database(tmp_path)
+    with sqlite3.connect(path) as connection:
+        connection.execute("INSERT INTO packet_reception_exceptions VALUES (?, 1, 22, ?, 5)",
+                           (bytes(16), bytes(22)))
+    statements = []
+    connect = sqlite_database._connect
+    def observed(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        connection.set_trace_callback(statements.append)
+        return connection
+    monkeypatch.setattr(sqlite_database, "_connect", observed)
+    opened = open_receiver_database(path, GROUP, minimum_free_bytes=0)
+    assert opened.failure is None
+    try:
+        assert opened.database.revalidate(minimum_free_bytes=0) is None
+        assert not any("integrity_check" in sql.lower() or "foreign_key_check" in sql.lower()
+                       for sql in statements)
+        assert len(opened.database.connection.execute("PRAGMA foreign_key_check").fetchall()) == 1
+    finally:
+        opened.database.close()
+
+
+def test_lifecycle_allows_gaps_and_rejects_nonmonotonic_ordinals(tmp_path):
+    path = _database(tmp_path)
+    with sqlite3.connect(path) as connection:
+        connection.execute("INSERT INTO receiver_instances VALUES (7, ?, ?, 0, NULL, NULL)", (b"a"*16,b"b"*16))
+        connection.execute("INSERT INTO receiver_instances VALUES (19, ?, ?, 0, NULL, NULL)", (b"c"*16,b"b"*16))
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute("INSERT INTO receiver_instances VALUES (8, ?, ?, 0, NULL, NULL)", (b"d"*16,b"b"*16))
+        plan = connection.execute("EXPLAIN QUERY PLAN SELECT instance_ordinal FROM receiver_instances ORDER BY instance_ordinal DESC LIMIT 1").fetchall()
+        assert not any("TEMP B-TREE" in row[-1] for row in plan)
+
+
+@pytest.mark.parametrize("history_size", [0, 20_000])
+def test_readiness_and_instance_start_do_not_scan_history(tmp_path, monkeypatch, history_size):
+    from cura_receiver.generated import receiver_entities_generated as rows
+    from cura_receiver.receiver_startup import ReceiverInstanceStart, insert_receiver_instance_start
+    from tests.support.builders.persistence import INSTANCE, _observation, _profile
+    from cura_receiver.sqlite_repository import SqliteRepository
+
+    path = _database(tmp_path)
+    with sqlite3.connect(path) as db:
+        db.execute("INSERT INTO receiver_instances VALUES (1, ?, ?, 0, NULL, NULL)", (INSTANCE, b"b"*16))
+        repo = SqliteRepository(db)
+        for i in range(history_size):
+            db.execute("INSERT INTO receiver_instances VALUES (?, ?, ?, 0, NULL, NULL)",
+                       (i + 2, i.to_bytes(16, "little"), b"b"*16))
+            repo.insert_clock_observation(_observation(sequence=i))
+            repo.insert_packet_reception(rows.PacketReceptionRowV1(_profile(sequence=i),
+                PersistenceClassification.NOT_APPLICABLE))
+    steps = 0
+    statements = []
+    connect = sqlite_database._connect
+    def budget():
+        nonlocal steps
+        steps += 100
+        return steps > 20_000
+    def observed(*args, **kwargs):
+        db = connect(*args, **kwargs)
+        db.set_progress_handler(budget, 100)
+        db.set_trace_callback(statements.append)
+        return db
+    monkeypatch.setattr(sqlite_database, "_connect", observed)
+    opened = open_receiver_database(path, GROUP, minimum_free_bytes=0)
+    assert opened.failure is None
+    try:
+        assert opened.database.revalidate(minimum_free_bytes=0) is None
+        result = insert_receiver_instance_start(opened.database.connection,
+            ReceiverInstanceStart(bytes.fromhex("ff112233445546778899aabbccddeeff"), 10), b"b"*16)
+        assert result.failure is None
+        assert result.instance_ordinal == history_size + 2
+        assert steps < 20_000
+        assert not any("count(" in s.lower() or "integrity_check" in s.lower()
+                       or "foreign_key_check" in s.lower() for s in statements)
+    finally:
+        opened.database.close()
+
+
+def test_operation_preparation_survives_cached_trigger_recompilation(tmp_path):
+    # Isolate the native engine regression so a failure cannot kill the suite.
+    import subprocess
+    import sys
+    path = _database(tmp_path)
+    code = """
+import sqlite3, sys
+from cura_receiver.sqlite_database import _validate_required_projections
+db = sqlite3.connect(sys.argv[1], isolation_level=None)
+db.execute('PRAGMA foreign_keys=ON')
+for index in range(6):
+    _validate_required_projections(db)
+    with sqlite3.connect(sys.argv[1]) as other:
+        if index % 2 == 0:
+            other.execute("CREATE TRIGGER fail_delete BEFORE DELETE ON airtime_commissioning BEGIN SELECT RAISE(ABORT, 'test'); END")
+        else:
+            other.execute("DROP TRIGGER fail_delete")
+    try:
+        db.execute('DELETE FROM airtime_commissioning')
+    except sqlite3.IntegrityError:
+        pass
+    db.execute("INSERT OR IGNORE INTO airtime_commissioning VALUES ('KNOWN_EMPTY_AIRTIME_V1')")
+db.close()
+"""
+    result = subprocess.run([sys.executable, "-c", code, str(path)],
+                            capture_output=True, text=True, timeout=15,
+                            env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)})
+    assert result.returncode == 0, result.stderr

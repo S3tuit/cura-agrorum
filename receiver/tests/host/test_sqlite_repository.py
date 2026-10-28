@@ -28,28 +28,22 @@ NODE = bytes.fromhex("0102030405060708")
 FRAME = REVIEWED_CURRENT_FRAME + bytes(255 - len(REVIEWED_CURRENT_FRAME))
 
 
-def _profile() -> row.MessageProfileRowV1:
-    return row.MessageProfileRowV1(
-        row.MessageProfilingV1(
+def _profile() -> row.PacketReceptionRowV1:
+    return row.PacketReceptionRowV1(
+        row.PacketReceptionV1(
             receiver_instance_id=INSTANCE,
             occurrence_sequence=1,
             received_at_monotonic_us=10,
-            received_frame_length=len(REVIEWED_CURRENT_FRAME),
-            received_frame=FRAME,
-            claimed_control=0x20,
-            claimed_domain=1,
-            claimed_node_id=NODE,
-            claimed_message_id=0x11223344,
-            header_authenticated=True,
+            domain=1,
+            node_id=NODE,
+            message_id=0x11223344,
             decoded_sample_id=0x55667788,
             rssi_dbm_x2=-140,
             snr_db_x4=12,
             irq_status=2,
             device_errors=0,
             processing_result=enum.ProcessingResult.ACCEPTED,
-            ack_selected=enum.AckSelection.ACCEPTED,
             ack_tx_result=enum.AckTxResult.SUPPRESSED_AIRTIME_BUDGET,
-            ack_frame=REVIEWED_ACCEPTED_ACK,
             busy_wait_total_us=0,
             busy_wait_max_us=0,
             busy_wait_count=0,
@@ -66,13 +60,12 @@ def _profile() -> row.MessageProfileRowV1:
     )
 
 
-def _reading() -> row.ReadingMessageRowV1:
-    return row.ReadingMessageRowV1(
+def _reading() -> row.ReadingMessageRowV2:
+    return row.ReadingMessageRowV2(
         node_id=NODE,
         message_id=0x11223344,
         sample_id=0x55667788,
-        reading_body=REVIEWED_READING_BODY,
-        is_canonical_for_sample=True,
+        is_canonical=True,
         run_ms=4660,
         soil_0_mv=1000,
         soil_1_mv=2000,
@@ -88,8 +81,6 @@ def _reading() -> row.ReadingMessageRowV1:
         previous_cycle_tx_attempts=7,
         previous_cycle_accepted_readings=2,
         flags=1023,
-        first_receiver_instance_id=INSTANCE,
-        first_occurrence_sequence=1,
     )
 
 
@@ -229,71 +220,20 @@ def _examples():
             (bytes(32),),
         ),
         (
-            "message_profile",
-            _profile(),
-            (
-                INSTANCE,
-                1,
-                10,
-                len(REVIEWED_CURRENT_FRAME),
-                FRAME,
-                32,
-                1,
-                NODE,
-                0x11223344,
-                1,
-                0x55667788,
-                -140,
-                12,
-                2,
-                0,
-                11,
-                3,
-                2,
-                REVIEWED_ACCEPTED_ACK,
-                0,
-                0,
-                0,
-                0,
-                None,
-                11,
-                12,
-                13,
-                None,
-                None,
-                14,
-                1,
-            ),
-            (INSTANCE, 1),
+            "packet_reception", _profile(),
+            (INSTANCE,1,10,1,NODE,0x11223344,0x55667788,-140,12,2,0,11,2,
+             0,0,0,0,None,11,12,13,None,None,14,1),
+            (INSTANCE,1),
         ),
         (
-            "reading_message",
-            _reading(),
-            (
-                NODE,
-                0x11223344,
-                0x55667788,
-                REVIEWED_READING_BODY,
-                1,
-                4660,
-                1000,
-                2000,
-                -123,
-                456,
-                -789,
-                100000,
-                5432,
-                8,
-                3,
-                30000,
-                2500,
-                7,
-                2,
-                1023,
-                INSTANCE,
-                1,
-            ),
-            (NODE, 0x11223344),
+            "received_message", row.ReceivedMessageRowV1(NODE,0x11223344,1),
+            (NODE,0x11223344,1), (NODE,0x11223344),
+        ),
+        (
+            "reading_message", _reading(),
+            (NODE,0x11223344,0x55667788,1,4660,1000,2000,-123,456,-789,
+             100000,5432,8,3,30000,2500,7,2,1023),
+            (NODE,0x11223344),
         ),
         (
             "receiver_health",
@@ -371,7 +311,7 @@ def test_complete_row_insert_lookup_and_collision(
     assert find(*key) is None
     connection.execute("BEGIN IMMEDIATE")
     if kind == "reading_message":
-        repository.insert_message_profile(_profile())
+        repository.insert_received_message(row.ReceivedMessageRowV1(NODE,0x11223344,1))
     if kind == "receiver_health":
         from tests.support.builders.persistence import _radio_observation
         repository.insert_radio_observation(_radio_observation())
@@ -409,20 +349,17 @@ def test_insert_requires_transaction(
 def test_reading_profile_rollback_and_canonical_lookup(database) -> None:
     connection, repository, _ = database
     assert repository.find_canonical_sample(NODE, 0x55667788) is None
-    assert repository.find_first_profile_frame(NODE, 0x11223344) is None
+    assert repository.find_received_message(NODE, 0x11223344) is None
     connection.execute("BEGIN")
-    repository.insert_message_profile(_profile())
+    repository.insert_received_message(row.ReceivedMessageRowV1(NODE,0x11223344,1))
     repository.insert_reading_message(_reading())
-    assert repository.find_first_profile_frame(NODE, 0x11223344) == (
-        len(REVIEWED_CURRENT_FRAME),
-        FRAME,
-    )
+    assert repository.find_received_message(NODE,0x11223344) == (NODE,0x11223344,1)
     canonical = repository.find_reading_message(NODE, 0x11223344)
     assert repository.find_canonical_sample(NODE, 0x55667788) == canonical
     with pytest.raises(sqlite3.IntegrityError, match="append-only"):
         repository.insert_reading_message(replace(_reading(), message_id=7))
     connection.execute("ROLLBACK")
-    assert repository.find_message_profile(INSTANCE, 1) is None
+    assert repository.find_packet_reception(INSTANCE, 1) is None
     assert repository.find_reading_message(NODE, 0x11223344) is None
 
 
@@ -507,7 +444,7 @@ def test_referential_closure(database) -> None:
     with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
         repository.insert_reading_message(_reading())
     with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
-        repository.insert_message_profile(
+        repository.insert_packet_reception(
             replace(
                 _profile(),
                 profile=replace(_profile().profile, receiver_instance_id=bytes(16)),
@@ -551,7 +488,7 @@ def _u64_cases():
         definitions.append(definition)
         definitions.extend(definition["persistence"].get("targets", ()))
     for kind, entity, _, _ in _examples():
-        target = entity.profile if kind == "message_profile" else entity
+        target = entity.profile if kind == "packet_reception" else entity
         definition = next(
             item
             for item in definitions
@@ -598,10 +535,10 @@ def test_each_bound_u64(
     value: int,
 ) -> None:
     connection, repository, _ = database
-    target = entity.profile if kind == "message_profile" else entity
+    target = entity.profile if kind == "packet_reception" else entity
     replacement = _replace_index(getattr(target, field), indices, value)
     target = replace(target, **{field: replacement})
-    updated = replace(entity, profile=target) if kind == "message_profile" else target
+    updated = replace(entity, profile=target) if kind == "packet_reception" else target
     connection.execute("BEGIN")
     if kind == "reading_message":
         profile = _profile()
@@ -609,7 +546,7 @@ def test_each_bound_u64(
             profile = replace(
                 profile, profile=replace(profile.profile, occurrence_sequence=value)
             )
-        repository.insert_message_profile(profile)
+        repository.insert_received_message(row.ReceivedMessageRowV1(NODE,0x11223344,1))
     executed = []
     connection.set_trace_callback(executed.append)
     if value == 1 << 63:
@@ -626,8 +563,9 @@ def test_each_bound_u64(
             "diagnostic": "diagnostics",
             "quarantined_entity": "quarantined_entities",
             "receiver_health": "receiver_health",
-            "message_profile": "message_profiles",
+            "packet_reception": "packet_receptions",
             "reading_message": "reading_messages",
+            "received_message": "received_messages",
         }[kind]
         assert connection.execute(
             f"SELECT {column}, typeof({column}) FROM {table}"
@@ -647,7 +585,7 @@ def test_each_bound_u64(
 def test_narrow_integer_bounds(database, field: str, value: int) -> None:
     connection, repository, _ = database
     connection.execute("BEGIN")
-    repository.insert_message_profile(_profile())
+    repository.insert_received_message(row.ReceivedMessageRowV1(NODE,0x11223344,1))
     with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
         repository.insert_reading_message(replace(_reading(), **{field: value}))
     assert repository.find_reading_message(NODE, 0x11223344) is None

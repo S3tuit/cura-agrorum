@@ -483,7 +483,7 @@ receiver, and resetting `sample_id` would still collide with stored readings.
 - A reading occurrence is accepted after it has been authenticated, decoded
   and checked while receiver persistence admission is available, and after one
   atomic bounded-queue reservation exclusively owns one entity slot for its
-  eventual immutable application-candidate/packet-occurrence-profile unit. The
+  eventual immutable reading-candidate/reception unit. The
   communicator does not consult transport-message or
   reading-duplicate history before admission.
 - An ACK does not guarantee durable disk persistence. The receiver may persist
@@ -496,7 +496,7 @@ receiver, and resetting `sample_id` would still collide with stored readings.
   pair produces `RETRY_LATER`; partial admission is forbidden.
 - Unsupported and malformed authenticated readings receive their corresponding
   permanent rejection after persistence admission is available and one entity
-  slot for their occurrence profile is reserved. If either prerequisite fails,
+  slot for their reception is reserved. If either prerequisite fails,
   they receive `RETRY_LATER` instead. The node attempts to retain a permanently
   rejected reading for diagnosis, but that quarantine copy is best-effort; the
   node favors backlog progress if local archival fails.
@@ -548,7 +548,7 @@ The receiver processes a packet in this order:
 6. Require the exact 32-byte reading body, decode authenticated `sample_id`, and
    enforce the structural encoding rules above; otherwise select
    `REJECTED_MALFORMED`.
-7. Construct and validate the stable application/profile inputs and
+7. Construct and validate the stable application/reception inputs and
    deterministic candidate `ACCEPTED` ACK without consulting receiver message
    history. Those inputs include that exact ACK frame.
 8. Require receiver persistence admission to be available, then atomically
@@ -562,7 +562,7 @@ The receiver processes a packet in this order:
     of ACK budget does not undo validation or the successful reservation.
 11. For a successfully reserved occurrence, after TX, suppression or bounded
     radio recovery reaches a terminal outcome, construct one complete frozen
-    application/profile unit containing `ack_tx_result` and the TX-dependent
+    reading/reception unit containing `ack_tx_result` and the TX-dependent
     timestamps, then publish that existing object reference against its
     reservation. Queue publication performs no new capacity check, payload copy
     or serialization and cannot fail because of queue pressure; Python object
@@ -578,43 +578,55 @@ reconstructed from the current uplink and selected outcome.
 
 ### Asynchronous identity classification
 
-The persistence thread classifies accepted reading occurrences in queue order
-inside the SQLite transaction that stores them. It maintains two independent
-canonical identities:
+The persistence thread classifies admitted reading receptions in FIFO order,
+inside the transaction that stores them. `received_messages` owns the immutable
+first domain for `(node_id, message_id)`. Its one-to-one `reading_messages`
+subtype owns the first complete decoded payload, including every cycle metric
+and flag. The `is_canonical` partial unique index selects one authoritative
+reading for `(node_id, sample_id)`; there is no separate canonical-reading table.
+The [receiver schema](../../receiver/schemas/receiver_entities.json) defines
+the stored fields and constraints.
 
-- a transport-message table with a unique key on `(node_id, message_id)`,
-  storing the first exact authenticated frame, domain and decoded `sample_id`;
-- a reading table with a unique key on `(node_id, sample_id)`, storing the
-  first accepted application contents.
+For an existing transport identity, compare domain and complete decoded contents
+with that transport's first record before checking canonical sample contents:
 
-For an existing `(node_id, message_id)`, persistence compares the newly received
-frame and decoded sample with the canonical transport record:
+- A changed sample identity or domain is a `MESSAGE_ID_CONFLICT`.
+- Unchanged sample identity/domain with changed decoded contents is a
+  `DUPLICATE_CONFLICT`.
+- An exact decoded/domain repeat is `RETRANSMISSION` only if its contents also
+  agree with the canonical sample. Repeats of a sample-conflicting transport
+  remain `DUPLICATE_CONFLICT`.
 
-- same `message_id`, same `sample_id` and same exact frame is a
-  `RETRANSMISSION`;
-- same `message_id`, same `sample_id` and a different frame is a
-  `DUPLICATE_CONFLICT`;
-- same `message_id` and a different `sample_id` is a `MESSAGE_ID_CONFLICT`.
+For a new transport identity, retain its domain and complete decoded reading
+even when the sample conflicts. An absent sample becomes canonical and gives
+`FIRST_SEEN`. An existing sample gives `DUPLICATE_SAME_CONTENT` for equal
+contents or `DUPLICATE_CONFLICT` otherwise. Neither case changes existing rows.
 
-A transport conflict never replaces the canonical transport record and its
-application candidate is not inserted into the canonical reading table. The
-packet-occurrence profile stores the derived conflict classification. Together
-with the immutable canonical transport and reading rows, that profile is the
-durable conflict evidence; a separate conflict diagnostic is not required.
+For example, M1/S1/A establishes canonical S1=A; M2/S1/B retains M2's first
+payload without replacing S1. M2/S2/C then conflicts with M2's sample identity,
+and M2/S1/A still conflicts with M2's original payload despite matching S1.
+A transport conflict cannot establish a new canonical sample. Message IDs
+are not an arrival-order fence: bound backlog frames may arrive after newer
+current messages. Current-to-backlog conversion uses a new message ID.
 
-For a first-seen transport message, persistence then applies the reading-table
-constraint. A first-seen `(node_id, sample_id)` inserts the measurement. An
-existing sample with identical application contents is
-`DUPLICATE_SAME_CONTENT`; an existing sample with different contents is
-`DUPLICATE_CONFLICT`. Neither case updates the canonical measurement.
+Only supported, structurally valid, admitted uplinks establish transport
+authority. Authenticated malformed/unsupported packets, reflected ACKs and
+retry-later outcomes may have reception evidence without claiming an uplink ID.
+Classification never consults historical receptions or raw exception bytes.
+Missing required transport/subtype authority is an explicit storage failure;
+joins must not turn an existing identity with missing related data into absence.
 
-Conflict handling is a successful persistence outcome, not a SQLite failure.
-The application candidate, canonical effects, occurrence and classification
-commit atomically before the queue items are removed. A transaction failure
-leaves the complete pair queued for retry.
-Because classification occurs after ACK selection, `ACCEPTED` means that the
-validated occurrence entered the bounded persistence pipeline; it does not
-assert that the occurrence was first-seen or conflict-free.
+Conflict handling is a successful persistence outcome. Each admitted reception
+is recorded, with raw bytes only in its one-to-one rejection/conflict extension.
+Transport/subtype/canonical effects, reception and any exception commit as one
+queue unit before release. An unknown commit retains the original classification
+and exact intended effects for reconciliation; it must not reinterpret its own
+completed FIRST_SEEN insertion as a later retransmission.
+
+Because classification occurs after ACK selection, ACCEPTED means validated and
+admitted to the bounded pipeline, not durable or conflict-free. Each attempt
+makes a fresh admission/airtime decision without consulting committed or pending
+message history. Earlier RETRY_LATER does not prevent later acceptance.
 
 ### Receiver TX-airtime budget
 
@@ -796,206 +808,58 @@ occurs before deep sleep and outside the 30-second radio-cycle deadline.
 
 ### Receiver packet log
 
-The receiver attempts to record every packet occurrence delivered by the
-radio. The pilot persistence queue has no priority classes: profile-only units,
-atomic measurement/profile units and all other published queue objects have
-equal importance and FIFO treatment. The reception event is captured as Linux
-monotonic time at `RX_DONE`, rather than when the record is written. Canonical
-UTC is derived later from the receiver's same-Linux-boot clock-observation
-timeline. The receiver's bounded slew disciplines system UTC and its monotonic
-source together, so a slew does not invalidate that correlation; intentional
-steps require the exact `STEP_DISCONTINUITY_BOUNDARY` observation to be durably
-stored before the chrony step command. Analysis assigns no UTC to events from
-that boundary through, but excluding, the first later trusted observation, and
-never uses that later observation to extrapolate backward across the boundary.
-See
-[receiver clock correlation](../../receiver/cura_receiver/clock_correlation.py).
+`packet_receptions` records authenticated receptions, including the first and
+every later admitted reading reception. Unknown-node, unauthenticated and
+unusable pre-authentication packets create no transport, reception or exception
+rows. Radio observations and health retain their own role. Authenticated
+wrong-direction packets have raw exception evidence but receive no response.
 
-`PersistQueue` preallocates 500 generic circular slots and admits by entity
-count only. It stores an opaque reference to each complete immutable typed
-object and performs no normal-path entity encoding, copying, recursive object
-sizing or per-kind byte charging. Fixed-capacity fields such as a received-frame
-buffer remain part of their entity contract rather than queue storage policy.
+The bounded FIFO queue reserves one slot for a complete reading/reception unit,
+or for an authenticated rejection. Admission precedes response selection;
+publication follows TX, suppression or bounded recovery with the terminal radio
+facts. All queue kinds have equal FIFO treatment. `PersistQueue` stores immutable
+object references without normal-path encoding or copying; raw received bytes
+remain bounded transient evidence until persistence determines exception capture.
 
-For every accepted reading occurrence, admission is one atomic one-slot
-reservation for the eventual application-candidate/packet-occurrence-profile
-unit. The complete pair is published as one immutable queue object after the
-terminal radio outcome, and persistence does not split it across transactions.
-Any authenticated packet eligible for a response requires available
-persistence admission and one free entity slot before TX. If either
-prerequisite fails, the receiver selects `ACK_RETRY_LATER_DOWNLINK`; packets
-that cannot be authenticated remain silent.
+Queue pressure or unavailable storage can prevent recording the admission failure
+itself. Authenticated RETRY_LATER receptions are best effort, carry
+NOT_APPLICABLE and do not require raw capture. Admission counters in receiver
+health preserve cumulative outcomes without recursive diagnostic reservations.
 
-Queue exhaustion or unavailable persistence can therefore prevent the receiver
-from retaining the very profile that reports the admission failure. This is an
-explicit pilot exception to the per-occurrence recording requirement. After
-each `try_reserve_one()` attempt returns, the communicator increments exactly
-one `persist_queue_admission_counts[entity_kind][result]` cell. The cumulative
-matrix is offered later in `ReceiverHealthRequestV1`; queue-full or persistence-
-unavailable results never cause a recursive diagnostic reservation.
+The [entity manifest](../../receiver/schemas/receiver_entities.json) owns fields
+and the [enum manifest](../../receiver/schemas/receiver_enums.json) owns closed
+processing, persistence, TX and exception codes. Reception identity is
+`(receiver_instance_id, occurrence_sequence)`. The RX_DONE monotonic timestamp
+and T1 through T6 describe this reception, as do RSSI/SNR, IRQ/device errors and
+BUSY metrics. Subtype payloads do not duplicate these measurements.
 
-Each record contains:
+Authenticated received node/message/domain and any decoded sample identity
+describe the actual occurrence, including conflicts; they must not be replaced
+by the first authoritative transport's values. `processing_result` describes
+ingress/admission, while `persistence_classification` describes the subsequent
+history comparison. NOT_APPLICABLE means no reading classification was performed.
 
-```text
-receiver_instance_id
-occurrence_sequence
-received_at_monotonic_us
-received_frame_length
-received_frame
-claimed_node_id
-claimed_message_id
-claimed_domain
-header_authenticated
-decoded_sample_id
-rssi
-snr
-processing_result
-persistence_classification
-ack_selected
-ack_tx_result
-ack_frame
-t1_handler_started_monotonic_us
-t2_packet_copied_monotonic_us
-t3_authentication_completed_monotonic_us
-t4_set_tx_attempted_monotonic_us
-t5_tx_done_monotonic_us
-t6_set_rx_issued_monotonic_us
-```
+ACK bytes are transient. ACK selection follows ingress/admission, while
+`ack_tx_result` independently preserves airtime suppression, definite SetTx
+failure, timeout, confirmed TX, and uncertain outcomes. T4 is absent when SetTx
+was not attempted. TX_TIMEOUT requires a confirmed radio timeout IRQ;
+TX_UNCONFIRMED preserves unresolved TX-profile/SetTx effects or terminal IRQs.
+UNKNOWN_INTERRUPTED is reserved for a terminal instance path that regains control
+without determining the attempted TX outcome. A hard process loss before queue
+publication leaves no partial reception because reservations are volatile.
 
-`receiver_instance_id` and the monotonically increasing per-instance
-`occurrence_sequence` together identify one logical profiling row.
-`received_at_monotonic_us` is the former `T0` kernel-recorded DIO1 timestamp.
-`MessageProfilingV1` queues only the receiver-instance-scoped monotonic
-reception time. `receiver_instances` is the sole persisted mapping from
-`receiver_instance_id` to `linux_boot_id`; the stored profiling row does not
-duplicate the boot ID. Analysis resolves that mapping and joins the occurrence
-to the immutable same-boot clock-observation timeline. No UTC or
-source-observation columns are added to or updated in the profiling row.
-Per-occurrence system-time quality and RTC health are not duplicated into this
-record; they remain available from the clock-observation and receiver-health
-timelines.
+`packet_reception_exceptions` shares its reception's primary key and stores the
+exact unpadded frame, matching length and rejection/conflict reason. Normal
+retransmissions and same-content duplicates have no raw extension. The extension
+is diagnostic evidence and never a future classification authority.
 
-The clear-header identity fields are untrusted claims unless
-`header_authenticated` is true. `decoded_sample_id` is null unless the frame
-authenticated and the exact reading body decoded successfully.
-`processing_result` is one of:
-
-```text
-ACCEPTED
-RETRY_LATER_QUEUE_FULL
-RETRY_LATER_PERSISTENCE_UNAVAILABLE
-REJECTED_UNSUPPORTED_CONTROL
-REJECTED_UNSUPPORTED_DOMAIN
-REJECTED_MALFORMED_LENGTH
-REJECTED_MALFORMED_BODY
-UNKNOWN_NODE
-AUTHENTICATION_FAILED
-WRONG_DIRECTION
-RADIO_ERROR
-```
-
-`persistence_classification` is one of:
-
-```text
-NOT_APPLICABLE
-FIRST_SEEN
-RETRANSMISSION
-DUPLICATE_SAME_CONTENT
-DUPLICATE_CONFLICT
-MESSAGE_ID_CONFLICT
-```
-
-The persistence thread derives this value while applying the transport and
-reading uniqueness constraints. `NOT_APPLICABLE` is used when authentication
-or valid reading-body decoding did not complete. `processing_result` remains
-the communicator's pre-ACK decision: an `ACCEPTED` occurrence may later be
-classified as either conflict because acceptance means bounded queue admission,
-not canonical SQLite insertion. `RETRANSMISSION` means a later occurrence with
-the same `node_id`, `message_id`, decoded `sample_id` and exact authenticated
-frame. It identifies repetition of one logical transport message without
-claiming why it was repeated. A new `message_id` carrying the same `sample_id`
-and identical reading body is instead `DUPLICATE_SAME_CONTENT`; this includes
-the expected current-to-backlog conversion.
-
-`ack_selected` is either none or one of the four ACK domains. The exact ACK
-frame is constructed before capacity reservation and remains locally owned by
-the communicator until the complete profile is published.
-
-One logical profiling row is inserted once. Every stored field, including its
-persistence classification, is immutable. For a packet that may receive an ACK,
-the communicator validates the stable profile inputs and reserves one entity
-slot before TX. After TX, suppression or bounded radio recovery reaches a
-terminal outcome, it constructs the complete frozen profile containing
-`ack_tx_result` and `T4` through `T6`, then publishes that existing object
-reference without another capacity check, copy or serialization. A packet that
-cannot receive an ACK may instead be returned to RX first and then admitted once
-as a complete profile with `ack_tx_result` set to `NOT_APPLICABLE`.
-
-`ack_tx_result` independently records what happened after selection:
-
-```text
-NOT_APPLICABLE
-SUPPRESSED_AIRTIME_BUDGET
-SET_TX_FAILED
-TX_TIMEOUT
-TX_DONE
-UNKNOWN_INTERRUPTED
-TX_UNCONFIRMED
-```
-
-`UNKNOWN_INTERRUPTED` is used only when the running communicator regains
-control but cannot determine the attempted ACK's terminal radio outcome. A hard
-process crash or power loss before publication leaves no partial profiling row
-because queue reservations are volatile.
-
-The receiver uses `TX_UNCONFIRMED` for bounded radio handling whose
-TX-profile/SetTx effect or terminal TX IRQ remains unconfirmed, including when
-recovery restores reception. `TX_TIMEOUT` requires a confirmed radio timeout
-IRQ. A definite failure before SetTx uses `SET_TX_FAILED`; T4 remains absent
-if SetTx was never attempted. `UNKNOWN_INTERRUPTED` remains the exceptional
-terminal-instance path. These are receiver profiling results, not ACK domains
-or changes to the radio frame encoding; exact values belong to
-[receiver enum assignments](../../receiver/schemas/receiver_enums.json).
-
-When an ACK is constructed, its exact 23-byte frame is stored in `ack_frame`
-whether or not transmission succeeds. Separating `processing_result`,
-`ack_selected` and `ack_tx_result` preserves cases such as an accepted reading
-whose ACK was suppressed by the receiver airtime budget.
-
-A PHY-header, payload-CRC or radio failure may not expose a usable frame or
-identity. The receiver stores it as a profile-only occurrence with monotonic
-time, IRQ/error state and RSSI/SNR when available; identity and frame fields
-are absent. Analysis derives any UTC from the same clock-observation timeline
-without updating the stored profile.
-
-## Deferred delivery approaches
-
-These are possible successors to the one-reading-per-packet pilot, not current
-protocol decisions.
-
-### Atomic reading batches
-
-- Put at most five readings in one encrypted packet to share the PHY framing,
-  AAD, CCM tag and ACK overhead.
-- Keep `sample_id` in each reading and use the existing persistent `message_id`
-  in the outer header and CCM nonce. Retain distinct uplink and ACK domains.
-- The receiver authenticates and validates the entire batch, deduplicates its
-  readings and reserves queue space for every new reading before inserting any.
-- Return the existing one-byte `ACCEPTED` only when the complete batch is
-  accepted atomically; otherwise accept none and return one packet-level error.
-- A lost batch requires sending the complete batch again, so its airtime saving
-  must be weighed against the higher cost of losing a longer packet.
-
-### Selective bitmap synchronization
-
-- Send a configurable window of readings without opening an ACK wait after each
-  one, while retaining every reading locally.
-- Periodically send a synchronization request. The receiver replies with a
-  `base_sample_id` and bitmap indicating which consecutive sample IDs it has.
-- Remove only bitmap-confirmed readings and send the missing readings again.
-- This can greatly reduce receive-window energy but requires persistent window
-  state, wraparound rules, receiver-restart recovery and bounded synchronization
-  intervals.
+Every stored reception is immutable. `receiver_instances` supplies the Linux
+boot identity for its monotonic provenance; UTC, clock quality and RTC health
+are derived from their owning timelines rather than copied into each reception.
+Intentional clock steps require a durable STEP_DISCONTINUITY_BOUNDARY before
+the command. Correlation assigns no UTC from that boundary until the first later
+trusted observation and never extrapolates that observation backward across it.
+See [clock correlation](../../receiver/cura_receiver/clock_correlation.py).
 
 ## Timestamp reconstruction
 
@@ -1010,7 +874,7 @@ because the pilot requires only minute-level precision.
 The earliest anchor-eligible accepted `CURRENT_READING_UPLINK` occurrence for
 a sample supplies its direct receiver-time anchor, whether or not the node
 received its ACK. Accepted means `processing_result = ACCEPTED`: the complete
-measurement/profile unit entered the bounded persistence queue. Authentication
+reading/reception unit entered the bounded persistence queue. Authentication
 without queue admission is insufficient. Analysis derives the occurrence UTC
 from its `RX_DONE` monotonic time and the stored same-boot clock-observation
 timeline.

@@ -16,8 +16,10 @@ from service_probe import validate_config
 sys.path[:0] = [str(REPO / 'receiver'), str(REPO / 'protocol/protocol-v2-lora/python')]
 from cura_receiver.generated.receiver_enums_generated import (
     DATABASE_SCHEMA_FINGERPRINT, DATABASE_SCHEMA_VERSION, SQLITE_APPLICATION_ID, AckTxResult,
+    PacketExceptionReason, PersistenceClassification,
 )
 from cura_receiver.generated.protocol_v2_lora_generated import decode_reading
+from verify_service import BODY, FIELDS
 
 
 def read_database(path, group, node):
@@ -35,8 +37,12 @@ def read_database(path, group, node):
                 db.execute('PRAGMA application_id').fetchone()[0] != SQLITE_APPLICATION_ID):
             raise ValueError('database group/schema mismatch')
         return dict(
+            transports=[dict(r) for r in db.execute('SELECT * FROM received_messages WHERE node_id=?', (bytes.fromhex(node),))],
+            exceptions=[dict(r) for r in db.execute(
+                'SELECT e.* FROM packet_reception_exceptions e LEFT JOIN packet_receptions p '
+                'USING(receiver_instance_id,occurrence_sequence) WHERE p.node_id=? OR p.node_id IS NULL', (bytes.fromhex(node),))],
             readings=[dict(r) for r in db.execute('SELECT * FROM reading_messages WHERE node_id=?', (bytes.fromhex(node),))],
-            profiles=[dict(r) for r in db.execute('SELECT * FROM message_profiles WHERE claimed_node_id=? AND header_authenticated=1', (bytes.fromhex(node),))],
+            profiles=[dict(r) for r in db.execute('SELECT * FROM packet_receptions WHERE node_id=?', (bytes.fromhex(node),))],
             instances=[dict(r) for r in db.execute('SELECT * FROM receiver_instances ORDER BY instance_ordinal')],
         )
 
@@ -99,7 +105,13 @@ def reconcile(before, after, initial, final):
     new_rows = indexed(after['readings'], ('node_id', 'message_id'))
     old_profiles = indexed(before['profiles'], ('receiver_instance_id', 'occurrence_sequence'))
     new_profiles = indexed(after['profiles'], ('receiver_instance_id', 'occurrence_sequence'))
-    for old, new in ((old_rows, new_rows), (old_profiles, new_profiles)):
+    old_transports = indexed(before['transports'], ('node_id', 'message_id'))
+    new_transports = indexed(after['transports'], ('node_id', 'message_id'))
+    old_exceptions = indexed(before['exceptions'], ('receiver_instance_id', 'occurrence_sequence'))
+    new_exceptions = indexed(after['exceptions'], ('receiver_instance_id', 'occurrence_sequence'))
+    immutable = [(old_rows, new_rows), (old_profiles, new_profiles),
+                 (old_transports, new_transports), (old_exceptions, new_exceptions)]
+    for old, new in immutable:
         if any(new.get(k) != v for k, v in old.items()):
             raise ValueError('receiver observation disappeared or changed')
     for name in ('delivery.log', 'diagnostic.log'):
@@ -133,18 +145,44 @@ def reconcile(before, after, initial, final):
                     (retained if is_final else initial_retained).add(r['sample_id'])
     canonical = Counter()
     for r in after['readings']:
-        body(r['sample_id'], r['reading_body'])
-        if r['is_canonical_for_sample']:
+        body(r['sample_id'], BODY.pack(*(r[name] for name in FIELDS)))
+        if r['is_canonical']:
             durable.add(r['sample_id']); canonical[r['sample_id']] += 1
     if any(n != 1 for n in canonical.values()):
         raise ValueError('duplicate canonical sample')
     profiles = [r for k, r in new_profiles.items() if k not in old_profiles]
+    reception_conflicts = []
     received = Counter()
-    prior_received = Counter(p['claimed_message_id'] for p in before['profiles'])
+    prior_received = Counter(p['message_id'] for p in before['profiles'])
     for p in profiles:
         if p['decoded_sample_id'] is not None:
             observed.add(p['decoded_sample_id']); new_evidence.add(p['decoded_sample_id'])
-        received[p['claimed_message_id']] += 1
+        received[p['message_id']] += 1
+        classification = PersistenceClassification(p['persistence_classification_id'])
+        exception = new_exceptions.get((p['receiver_instance_id'], p['occurrence_sequence']))
+        reason = None if exception is None else PacketExceptionReason(exception['reason_id'])
+        if (classification in (PersistenceClassification.DUPLICATE_CONFLICT,
+                               PersistenceClassification.MESSAGE_ID_CONFLICT)
+                or reason in (PacketExceptionReason.DUPLICATE_CONFLICT,
+                              PacketExceptionReason.MESSAGE_ID_CONFLICT)):
+            # Changed occurrences do not replace first-payload authority. The stored
+            # outcome exposes their conflict without pretending to decode ciphertext.
+            transport = new_transports.get((p['node_id'], p['message_id']))
+            reading = new_rows.get((p['node_id'], p['message_id']))
+            reception_conflicts.append(dict(
+                receiver_instance_id=p['receiver_instance_id'].hex(),
+                occurrence_sequence=p['occurrence_sequence'],
+                received_at_monotonic_us=p['received_at_monotonic_us'],
+                node_id=p['node_id'].hex(), message_id=p['message_id'],
+                domain=p['domain'], decoded_sample_id=p['decoded_sample_id'],
+                authoritative_domain=None if transport is None else transport['domain'],
+                authoritative_sample_id=None if reading is None else reading['sample_id'],
+                persistence_classification=classification.name,
+                exception_reason=None if reason is None else reason.name))
+            if (classification is PersistenceClassification.DUPLICATE_CONFLICT
+                    or reason is PacketExceptionReason.DUPLICATE_CONFLICT):
+                if p['decoded_sample_id'] is not None:
+                    conflicts.append(p['decoded_sample_id'])
     observed.update(r['sample_id'] for r in delta)
     # Include starting backlog even when it was already recorded by the receiver.
     scope = (observed - baseline) | new_evidence | initial_retained
@@ -176,15 +214,21 @@ def reconcile(before, after, initial, final):
     if absent_profiles:
         gaps.append('node-accepted messages without interval receiver profiles; volatile profile loss is possible')
     transport_ids = set(received) | {r['message_id'] for r in delta}
+    reading_authority = {r['message_id']: r for r in new_rows.values()}
+    transport_authority = {r['message_id']: r for r in new_transports.values()}
     messages = []
     for message in sorted(transport_ids):
-        samples = {p['decoded_sample_id'] for p in profiles if p['claimed_message_id'] == message
+        samples = {p['decoded_sample_id'] for p in profiles if p['message_id'] == message
                    and p['decoded_sample_id'] is not None}
         samples.update(r['sample_id'] for r in delta if r['message_id'] == message)
         outcomes = [r for r in finished.values() if r['message_id'] == message]
-        if len(samples) > 1:
-            raise ValueError('transport identity maps to conflicting samples')
+        # A reception's changed sample claim is evidence, not a replacement for
+        # the transport's first payload, which may predate this interval.
+        reading = reading_authority.get(message)
+        transport = transport_authority.get(message)
         messages.append(dict(message_id=message, sample_ids=sorted(samples),
+                             authoritative_sample_id=None if reading is None else reading['sample_id'],
+                             authoritative_domain=None if transport is None else transport['domain'],
                              received_profiles=received[message], prior_received_profiles=prior_received[message],
                              recorded_node_attempts=sum(r['attempt_count'] for r in outcomes),
                              node_outcomes=[dict(cycle_sample_id=r['cycle_sample_id'], domain=r['domain'],
@@ -203,6 +247,7 @@ def reconcile(before, after, initial, final):
         samples=[dict(sample_id=s, durable=s in durable, retained=s in retained,
                       quarantined=s in quarantined) for s in sorted(scope)],
         missing_from_both=missing, conflicting_bodies=sorted(set(conflicts) & scope),
+        reception_conflicts=reception_conflicts,
         unfinished_deliveries=unfinished, sample_counter_gap_ranges=counter_gaps,
         accepted_without_profile=absent_profiles, observation_gaps=gaps,
         receiver_instances=[dict(instance_id=r['receiver_instance_id'].hex(), boot_id=r['linux_boot_id'].hex(),

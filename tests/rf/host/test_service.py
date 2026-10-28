@@ -37,24 +37,19 @@ def transcript(path, *, interval=12_000_000, samples=(40, 41)):
         message = 100 + i
         body = BODY.pack(sample, 1100, 2300, 2350, 2100, 2200, 2300, 101325, 4500,
                          8 if i else 1, i, 1500 if i else 0, 300 if i else 0, i, i, 0x3ff if i else 0xfe)
-        frame = struct.pack("<BB8sI", 32, 1, NODE, message)
-        frame += AESCCM(KEY, tag_length=8).encrypt(struct.pack("<8sIB", NODE, message, 1), body, frame)
-        ack = struct.pack("<BB8sI", 32, 3, NODE, message)
-        ack += AESCCM(KEY, tag_length=8).encrypt(struct.pack("<8sIB", NODE, message, 3), b"\0", ack)
         at = 10_000_000 + i * interval
-        p = {r[1]: (0 if r[3] and r[2] == "INTEGER" else None) for r in db.execute("PRAGMA table_info(message_profiles)")}
+        p = {r[1]: (0 if r[3] and r[2] == "INTEGER" else None) for r in db.execute("PRAGMA table_info(packet_receptions)")}
         p.update(receiver_instance_id=INSTANCE, occurrence_sequence=i + 1, received_at_monotonic_us=at,
-            received_frame_length=54, received_frame=frame + bytes(201), claimed_control=32,
-            claimed_domain=1, claimed_node_id=NODE, claimed_message_id=message, header_authenticated=1,
-            decoded_sample_id=sample, processing_result_id=11, ack_selected_id=3, ack_tx_result_id=5,
-            ack_frame=ack, persistence_classification_id=1, t1_handler_started_monotonic_us=at + 1,
+            domain=1, node_id=NODE, message_id=message,
+            decoded_sample_id=sample, processing_result_id=11, ack_tx_result_id=5,
+            persistence_classification_id=1, t1_handler_started_monotonic_us=at + 1,
             t2_packet_copied_monotonic_us=at + 2, t3_authentication_completed_monotonic_us=at + 3,
             t4_set_tx_attempted_monotonic_us=at + 150000, t5_tx_done_monotonic_us=at + 211696,
             t6_set_rx_issued_monotonic_us=at + 212000)
-        insert(db, "message_profiles", p)
+        insert(db, "packet_receptions", p)
         r = dict(zip(FIELDS, BODY.unpack(body), strict=True))
-        r.update(node_id=NODE, message_id=message, reading_body=body, is_canonical_for_sample=1,
-                 first_receiver_instance_id=INSTANCE, first_occurrence_sequence=i + 1)
+        r.update(node_id=NODE, message_id=message, is_canonical=1)
+        insert(db, "received_messages", dict(node_id=NODE, message_id=message, domain=1))
         insert(db, "reading_messages", r)
         identity = dict(cycle_sample_id=sample, sample_id=sample, message_id=message, domain=1)
         deliveries.extend([dict(type=4, **identity), dict(type=5, **identity, final_result=1, attempt_count=1)])
@@ -71,14 +66,14 @@ def test_consistent_real_sqlite_and_two_wake_node_capture(tmp_path):
     output = tmp_path / "snapshot.sqlite3"
     binding = snapshot(path, output)
     assert binding["sha256"] == digest(output)
-    assert verify_service(output, NODE, KEY, decoded, INSTANCE)["wakes"] == 2
+    assert verify_service(output, NODE, decoded, INSTANCE)["wakes"] == 2
     observed = database_observation(path)
     assert observed["instance"] == INSTANCE.hex() and observed["samples"] == 2
     with pytest.raises(FileExistsError):
         snapshot(path, output)
 
 
-@pytest.mark.parametrize("damage", ["frame", "ack", "projection", "missing_timestamp", "no_clean_stop", "wrong_interval", "missing_reading"])
+@pytest.mark.parametrize("damage", ["domain", "ack_outcome", "sensor_range", "missing_timestamp", "no_clean_stop", "wrong_interval", "missing_reading"])
 def test_incomplete_or_wrong_sqlite_cannot_pass(tmp_path, damage):
     path = tmp_path / "receiver.sqlite3"
     decoded = transcript(path)
@@ -87,17 +82,17 @@ def test_incomplete_or_wrong_sqlite_cannot_pass(tmp_path, damage):
         for (name,) in db.execute("SELECT name FROM sqlite_master WHERE type='trigger'").fetchall():
             db.execute('DROP TRIGGER "' + name + '"')
         changes = {
-            "frame": "UPDATE message_profiles SET received_frame=zeroblob(255) WHERE occurrence_sequence=1",
-            "ack": "UPDATE message_profiles SET ack_frame=zeroblob(23) WHERE occurrence_sequence=1",
-            "projection": "UPDATE reading_messages SET soil_0_mv=2400 WHERE message_id=100",
-            "missing_timestamp": "UPDATE message_profiles SET t5_tx_done_monotonic_us=NULL WHERE occurrence_sequence=1",
+            "domain": "UPDATE received_messages SET domain=2 WHERE message_id=100",
+            "ack_outcome": "UPDATE packet_receptions SET ack_tx_result_id=4 WHERE occurrence_sequence=1",
+            "sensor_range": "UPDATE reading_messages SET soil_0_mv=65000 WHERE message_id=100",
+            "missing_timestamp": "UPDATE packet_receptions SET t5_tx_done_monotonic_us=NULL WHERE occurrence_sequence=1",
             "no_clean_stop": "UPDATE receiver_instances SET clean_stopped_at_monotonic_us=NULL, clean_stop_state_generation=NULL",
-            "wrong_interval": "UPDATE message_profiles SET received_at_monotonic_us=11000000 WHERE occurrence_sequence=2",
+            "wrong_interval": "UPDATE packet_receptions SET received_at_monotonic_us=11000000 WHERE occurrence_sequence=2",
             "missing_reading": "DELETE FROM reading_messages WHERE message_id=101",
         }
         db.execute(changes[damage])
     with pytest.raises(ValueError):
-        verify_service(path, NODE, KEY, decoded, INSTANCE)
+        verify_service(path, NODE, decoded, INSTANCE)
 
 
 @pytest.mark.parametrize("damage", ["missing_finish", "unaccepted", "attempts", "pending", "diagnostic"])
@@ -116,7 +111,7 @@ def test_node_consequences_are_required(tmp_path, damage):
     else:
         logs["diagnostic.log"] = [dict(error_code=1)]
     with pytest.raises(ValueError):
-        verify_service(path, NODE, KEY, decoded, INSTANCE)
+        verify_service(path, NODE, decoded, INSTANCE)
 
 
 def config():
@@ -362,7 +357,7 @@ def test_accelerated_wake_bound(tmp_path, elapsed, valid):
     path = tmp_path / "receiver.sqlite3"
     decoded = transcript(path, interval=elapsed)
     if valid:
-        assert verify_service(path, NODE, KEY, decoded, INSTANCE)["wakes"] == 2
+        assert verify_service(path, NODE, decoded, INSTANCE)["wakes"] == 2
     else:
         with pytest.raises(ValueError, match="accelerated 10-second wake"):
-            verify_service(path, NODE, KEY, decoded, INSTANCE)
+            verify_service(path, NODE, decoded, INSTANCE)

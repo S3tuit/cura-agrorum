@@ -1,3 +1,4 @@
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 import json
 import os
 from pathlib import Path
@@ -9,7 +10,7 @@ import subprocess
 import sys
 
 from cura_receiver.persist_queue import PersistQueueBatchLease
-from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC, ProfileOnlyUnitV1
+from cura_receiver.persist_queue_entities import RECEPTION_ONLY_V2_SPEC, ReceptionOnlyUnitV2
 from cura_receiver.persistence_control_values import ReceiverCleanStopV1
 from cura_receiver.persistence_worker import PersistenceWorker
 from cura_receiver.receiver_startup import ReceiverInstanceStart
@@ -120,8 +121,8 @@ def child(root, boundary):
             synthetic(), deadline_monotonic_us=3_600_000_100
         )
     elif boundary.startswith("ordinary_"):
-        owner.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-            ProfileOnlyUnitV1(_profile())
+        owner.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+            ReceptionOnlyUnitV2(_profile(), received_frame=REVIEWED_RECEPTION_FRAME)
         )
     else:
         owner.queue.close()
@@ -235,7 +236,7 @@ def exercise_worker_crash(worker_files, boundary):
             assert db.execute(
                 "SELECT count(*) FROM quarantined_communicator_states"
             ).fetchone() == (0,)
-            assert db.execute("SELECT count(*) FROM message_profiles").fetchone() == (
+            assert db.execute("SELECT count(*) FROM packet_receptions").fetchone() == (
                 int(boundary.startswith("ordinary_")),
             )
             assert db.execute("PRAGMA integrity_check").fetchall() == [("ok",)]

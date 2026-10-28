@@ -83,14 +83,14 @@ def matrix(*, active, unknown, revoked, first_message, first_sample):
 
 
 def verify_profile(vector, profile):
-    """Check a saved protocol profile; ACK selection is not physical TX/silence proof."""
+    """Check transient ingress facts; this is neither SQL nor physical TX/silence proof."""
     frame = vector.frame
     expected_claims = dict(claimed_control=frame[0] if len(frame) >= 1 else None,
                            claimed_domain=frame[1] if len(frame) >= 2 else None,
                            claimed_node_id=frame[2:10] if len(frame) >= 10 else None,
                            claimed_message_id=int.from_bytes(frame[10:14], 'little') if len(frame) >= 14 else None)
     ack_selected = AckSelection.NONE.value if vector.ack is None else vector.ack[1]
-    expected = dict(received_frame_length=len(frame), received_frame=frame + bytes(255 - len(frame)),
+    expected = dict(received_frame_length=len(frame), received_frame=frame,
                     processing_result_id=ProcessingResult[vector.processing_result].value,
                     ack_selected_id=ack_selected, header_authenticated=int(vector.authenticated),
                     decoded_sample_id=vector.sample_id, ack_frame=vector.ack, **expected_claims)

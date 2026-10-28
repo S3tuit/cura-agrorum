@@ -11,10 +11,8 @@ from .elapsed_duration import checked_monotonic_deadline
 from .generated import receiver_enums_generated as E
 from .ports.radio import RadioTxAuthorization, Outcome
 from .radio import ReceiveDisposition
-from .protocol_ingress import (ProtocolIngressPacketV1, ProtocolIngressTerminalV1,
-                               ProtocolIngressFinalizationV1, ProtocolIngressAdmissionV1)
-from .generated.receiver_entities_generated import MessageProfilingV1, RadioObservationV1
-from .persist_queue_entities import PROFILE_ONLY_V1_SPEC, ProfileOnlyUnitV1
+from .protocol_ingress import ProtocolIngressPacketV1, ProtocolIngressTerminalV1
+from .generated.receiver_entities_generated import RadioObservationV1
 from .tx_airtime import TxCertainty
 from .producer_admission import ProducerAdmission
 from .persist_queue import PersistQueueInterfaceError
@@ -146,47 +144,10 @@ class Communicator:
         return completed
 
     def _finish_failed_receive(self):
-        event = self._failed_receive
+        # No authenticated occurrence exists; radio observations own this evidence.
         self._failed_receive = None
-        # This occurrence has no reservation; a clock boundary still takes priority.
         self.time.expire_due()
-        if self.time.ordinary_admission_blocked:
-            return None
-        frame = event.frame
-        length = 0 if frame is None else len(frame)
-        busy = event.busy
-        profile = MessageProfilingV1(
-            receiver_instance_id=self.instance_id, occurrence_sequence=self.occurrence_sequence,
-            received_at_monotonic_us=event.received_at_monotonic_us,
-            received_frame_length=None if frame is None else length,
-            received_frame=None if frame is None else frame + bytes(255 - length),
-            claimed_control=frame[0] if length >= 1 else None,
-            claimed_domain=frame[1] if length >= 2 else None,
-            claimed_node_id=frame[2:10] if length >= 10 else None,
-            claimed_message_id=int.from_bytes(frame[10:14], "little") if length >= 14 else None,
-            header_authenticated=False, decoded_sample_id=None,
-            rssi_dbm_x2=event.rssi_dbm_x2, snr_db_x4=event.snr_db_x4,
-            irq_status=event.irq_status, device_errors=event.device_errors,
-            processing_result=E.ProcessingResult.RADIO_ERROR,
-            ack_selected=E.AckSelection.NONE, ack_tx_result=E.AckTxResult.NOT_APPLICABLE, ack_frame=None,
-            busy_wait_total_us=busy.total_us, busy_wait_max_us=busy.maximum_us,
-            busy_wait_count=busy.count, busy_timeout_count=busy.timeout_count,
-            last_busy_timeout_opcode=busy.last_timeout_opcode,
-            t1_handler_started_monotonic_us=event.t1_handler_started_monotonic_us,
-            t2_packet_copied_monotonic_us=event.t2_packet_copied_monotonic_us,
-            t3_authentication_completed_monotonic_us=None,
-            t4_set_tx_attempted_monotonic_us=None, t5_tx_done_monotonic_us=None,
-            t6_set_rx_issued_monotonic_us=self._result.t6_set_rx_issued_monotonic_us,
-        )
-        # Terminal facts are complete; construction must not strand a reservation.
-        prepared_entity = ProfileOnlyUnitV1(profile)
-        reserve = self.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
-        entity = None
-        if reserve.status is E.AdmissionResult.RESERVED:
-            entity = prepared_entity
-            reserve.reservation.publish(entity)
-        return ProtocolIngressFinalizationV1(
-            ProtocolIngressAdmissionV1(E.PersistQueueEntityKind.PROFILE_ONLY, reserve.status), entity)
+        return None
 
     def receive_once(self, *, deadline_monotonic_us):
         """One bounded receive/exchange; pending boundaries never enter ingress.

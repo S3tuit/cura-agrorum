@@ -112,7 +112,5 @@ def test_target_runtime_rejects_invalid_authenticated_frame_without_radio() -> N
             radio_state=RadioState.RX_SINGLE,
         ),
     )
-    assert finalized.published_entity is not None
-    lease = queue.claim_batch(max_entities=1)
-    assert lease is not None
-    assert lease.entries[0].entity is finalized.published_entity
+    assert finalized.published_entity is None
+    assert queue.claim_batch(max_entities=1) is None

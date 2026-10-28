@@ -25,6 +25,7 @@ from .persistence_control_values import (
 )
 from .sqlite_repository import (
     COMMUNICATOR_STATE_STORAGE_CLASSES,
+    COMMUNICATOR_STATE_MAX_BLOB_BYTES,
     CommunicatorStateRow,
     SqliteRepository,
 )
@@ -139,7 +140,7 @@ def classify_communicator_state_rows(
 ) -> LoadResult:
     """Apply the exclusive envelope/digest/version/structure/policy decision tree.
 
-    The caller has already validated the database itself. Original SQL values
+    The caller has checked usability, not historical integrity. Original SQL values
     remain in the database for explicit atomic archive-and-replace transactions.
     SQLite errors propagate to that caller's control transaction boundary.
     """
@@ -171,8 +172,8 @@ def classify_communicator_state_rows(
         or type(blob) is not bytes
         or type(digest) is not bytes
         or len(digest) != 32
+        or not 2 <= len(blob) <= COMMUNICATOR_STATE_MAX_BLOB_BYTES
         or hashlib.sha256(blob).digest() != digest
-        or len(blob) < 2
         or int.from_bytes(blob[:2], "little") != version
     ):
         return unavailable(Condition.CORRUPT)

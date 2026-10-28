@@ -3,7 +3,7 @@
 import pytest
 from cura_receiver.generated import receiver_enums_generated as E
 from cura_receiver.persist_queue import PersistQueue, PersistenceAdmissionSnapshot, PersistQueueInterfaceError
-from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC, RECEIVER_HEALTH_REQUEST_V1_SPEC
+from cura_receiver.persist_queue_entities import RECEPTION_ONLY_V2_SPEC, RECEIVER_HEALTH_REQUEST_V1_SPEC
 from cura_receiver.producer_admission import ProducerAdmission
 from tests.host.test_runtime_time import runtime, sample, tracking
 from tests.support.fakes.chrony import FakeChronyControl
@@ -31,13 +31,13 @@ def test_two_clock_publications_in_one_poll_are_both_counted():
 def test_cancelled_reservation_counts_and_interface_error_does_not():
     queue = PersistQueue(capacity_entities=1)
     producer = ProducerAdmission(queue)
-    unavailable = producer.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+    unavailable = producer.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
     assert unavailable.status is E.AdmissionResult.PERSISTENCE_UNAVAILABLE
     queue.publish_admission_state(PersistenceAdmissionSnapshot(1, E.PersistenceAdmissionState.AVAILABLE, 0))
-    reserved = producer.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+    reserved = producer.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
     frozen = producer.counts
     with pytest.raises(PersistQueueInterfaceError):
-        producer.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+        producer.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
     assert producer.counts == frozen
     reserved.reservation.cancel()
     assert producer.counts[1] == (1, 1, 0)

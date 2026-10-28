@@ -1,4 +1,5 @@
 """Real owner-thread SQLite coverage, using manual time and named boundaries."""
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 
 from dataclasses import replace
 from queue import Queue
@@ -11,7 +12,7 @@ from cura_receiver.generated.receiver_enums_generated import (
     AdmissionResult,
     PersistenceAdmissionState as State,
 )
-from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC, ProfileOnlyUnitV1
+from cura_receiver.persist_queue_entities import RECEPTION_ONLY_V2_SPEC, ReceptionOnlyUnitV2
 from cura_receiver.persistence_control_values import (
     CommunicatorStateCommitDisposition as Commit,
     ReceiverCleanStopV1,
@@ -83,9 +84,9 @@ def publish(owner, sequence=1, *, poison=False):
     profile = _profile(sequence=sequence)
     if poison:
         profile = replace(profile, busy_wait_count=-1)
-    reservation = owner.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+    reservation = owner.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
     assert reservation.status is AdmissionResult.RESERVED
-    reservation.reservation.publish(ProfileOnlyUnitV1(profile))
+    reservation.reservation.publish(ReceptionOnlyUnitV2(profile, received_frame=REVIEWED_RECEPTION_FRAME))
     return owner.wait()
 
 
@@ -160,8 +161,8 @@ def test_reads_idempotence_and_uncommitted_publication_do_not_arm(create):
         value, deadline_monotonic_us=owner._clock.now_monotonic_us() + 5_000_000
     ).disposition is Commit.ALREADY_COMMITTED
     assert owner.wait() is None
-    reservation = owner.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
-    reservation.reservation.publish(ProfileOnlyUnitV1(_profile()))
+    reservation = owner.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
+    reservation.reservation.publish(ReceptionOnlyUnitV2(_profile(), received_frame=REVIEWED_RECEPTION_FRAME))
     assert owner.wait() == 80.0  # ordinary flush has its separate deadline
     assert not owner._checkpoint.pending
 
@@ -184,7 +185,7 @@ def test_reader_partial_retries_without_new_writes(create, worker_files, recover
     reader = sqlite3.connect(worker_files[0], isolation_level=None)
     try:
         reader.execute("BEGIN")
-        reader.execute("SELECT count(*) FROM message_profiles").fetchone()
+        reader.execute("SELECT count(*) FROM packet_receptions").fetchone()
         assert publish(owner) == 5.0
         if recovering:
             backend.fail = True
@@ -216,7 +217,7 @@ def test_quarantine_commit_arms_maintenance(create, worker_files):
     assert owner._checkpoint.pending
     assert owner._recovery.counters.durable_quarantine_successes == 1
     with sqlite3.connect(worker_files[0]) as db:
-        assert db.execute("SELECT count(*) FROM message_profiles").fetchone() == (0,)
+        assert db.execute("SELECT count(*) FROM packet_receptions").fetchone() == (0,)
         assert db.execute("SELECT count(*) FROM quarantined_entities").fetchone() == (1,)
     assert owner.advance(5_000_000) is None
 
@@ -273,8 +274,8 @@ def test_due_checkpoint_gets_turn_under_ordinary_and_control_load(
 
     def caller():
         for sequence in range(1, 9):
-            reservation = owner.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
-            reservation.reservation.publish(ProfileOnlyUnitV1(_profile(sequence=sequence)))
+            reservation = owner.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
+            reservation.reservation.publish(ReceptionOnlyUnitV2(_profile(sequence=sequence), received_frame=REVIEWED_RECEPTION_FRAME))
         for _ in range(4):
             owner.control.load_communicator_state(deadline_monotonic_us=50_000_100)
 
@@ -297,7 +298,7 @@ def test_due_checkpoint_gets_turn_under_ordinary_and_control_load(
         assert owner._recovery.counters.wal_checkpoint_attempts == 1
         assert owner._checkpoint.deadline_monotonic_us == 10_000_100
         with sqlite3.connect(worker_files[0]) as db:
-            assert db.execute("SELECT count(*) FROM message_profiles").fetchone() == (8,)
+            assert db.execute("SELECT count(*) FROM packet_receptions").fetchone() == (8,)
     finally:
         release_idle.set()
 

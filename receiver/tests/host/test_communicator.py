@@ -80,7 +80,6 @@ def test_valid_packet_to_real_sqlite(composition):
     c = composition()
     result = deliver(c)
     entity = result.finalization.published_entity
-    assert entity.profile.ack_frame == REVIEWED_ACCEPTED_ACK
     assert entity.profile.processing_result is E.ProcessingResult.ACCEPTED
     assert entity.profile.ack_tx_result is E.AckTxResult.TX_DONE
     assert entity.profile.t5_tx_done_monotonic_us - entity.profile.t4_set_tx_attempted_monotonic_us == 61_696
@@ -90,7 +89,7 @@ def test_valid_packet_to_real_sqlite(composition):
     assert not c.worker.is_alive() and c.worker.failure is None
     with sqlite3.connect(c.database) as db:
         assert db.execute('SELECT count(*) FROM reading_messages').fetchone() == (1,)
-        assert db.execute('SELECT count(*) FROM message_profiles').fetchone() == (1,)
+        assert db.execute('SELECT count(*) FROM packet_receptions').fetchone() == (1,)
 
 
 # With no acknowledged grant acceptance survives without issuing SetTx or a state commit.
@@ -175,14 +174,12 @@ def test_fatal_after_confirmed_tx_done(composition):
 # Receive errors never authenticate/admit a reading, including valid copied bytes.
 @pytest.mark.parametrize("status", [0x52, 0x24])
 def test_handled_header_has_no_occurrence_profile_or_diagnostic(composition, monkeypatch, status):
-    from cura_receiver import communicator as module
     c = composition()
     runtime = runtime_dispatch(c)
     counts, counters = c.communicator.queue.counts, c.radio.counters
     def forbidden(*args, **kwargs):
         pytest.fail("handled HeaderErr must not construct a profile or enter protocol ingress")
     with monkeypatch.context() as guard:
-        guard.setattr(module, "MessageProfilingV1", forbidden)
         guard.setattr(c.communicator.ingress, "begin", forbidden)
         c.io.irq, c.io.status = 0x20, status
         c.io.edges.append(Dio1Edge(c.clock.now_monotonic_us() * 1000, 1))
@@ -210,7 +207,7 @@ def test_failed_header_handling_still_profiles_and_diagnoses(composition, opcode
         raise RadioBackendError(RadioFailure(Error.IO, Stage.WRITE_COMMAND, opcode=opcode, os_errno=5))
     c.io.hooks[opcode] = fail_once
     turn = runtime.step()
-    assert turn.exchange.finalization.published_entity.profile.processing_result is E.ProcessingResult.RADIO_ERROR
+    assert turn.exchange.finalization is None
     assert c.radio.state is E.RadioState.RX_SINGLE
     assert runtime.telemetry.diagnostic_sequence == 1
     assert c.radio.counters.recovery_attempts == c.radio.counters.recovery_successes == 1
@@ -219,7 +216,7 @@ def test_failed_header_handling_still_profiles_and_diagnoses(composition, opcode
 
 
 @pytest.mark.parametrize("fault", ["crc", "header", "read_buffer", "packet_status", "clear_irq"])
-def test_failed_receive_is_profile_only(composition, fault):
+def test_failed_receive_has_radio_evidence_without_packet_records(composition, fault):
     from cura_receiver.ports.radio import RadioBackendError, RadioFailure, Error, Stage
     c = composition()
     c.io.buffer[:] = REVIEWED_CURRENT_FRAME
@@ -234,136 +231,28 @@ def test_failed_receive_is_profile_only(composition, fault):
             raise RadioBackendError(RadioFailure(Error.IO, Stage.READ_BUFFER, os_errno=5))
         c.io.hooks[opcode] = fail_once
     result = c.communicator.receive_once(deadline_monotonic_us=t0 + 500_000)
-    entity = result.finalization.published_entity
-    profile = entity.profile
-    assert not hasattr(entity, "candidate")
-    assert profile.processing_result is E.ProcessingResult.RADIO_ERROR
-    assert profile.ack_selected is E.AckSelection.NONE
-    assert profile.ack_tx_result is E.AckTxResult.NOT_APPLICABLE
-    assert profile.ack_frame is None and not profile.header_authenticated
-    assert profile.decoded_sample_id is None
-    assert profile.received_at_monotonic_us == t0
-    assert profile.t1_handler_started_monotonic_us >= t0
-    assert profile.t3_authentication_completed_monotonic_us is None
-    assert profile.t4_set_tx_attempted_monotonic_us is None
-    assert profile.t5_tx_done_monotonic_us is None
-    assert profile.t6_set_rx_issued_monotonic_us is not None
-    copied = fault in ("packet_status", "clear_irq")
-    assert profile.received_frame_length == (len(REVIEWED_CURRENT_FRAME) if copied else None)
-    assert profile.received_frame == (REVIEWED_CURRENT_FRAME.ljust(255, b"\0") if copied else None)
-    assert (profile.t2_packet_copied_monotonic_us is not None) is copied
-    assert profile.claimed_node_id == (REVIEWED_NODE_ID if copied else None)
+    assert result.finalization is None
     assert not any(command[0] in (0x0e, 0x83) for command in c.io.commands)
     assert c.communicator.occurrence_sequence == 1
-    assert c.communicator.queue.counts[1] == (1, 0, 0)
+    assert c.communicator.queue.counts[1] == (0, 0, 0)
     assert c.communicator.queue.counts[4] == (1, 0, 0)
     c.worker.request_stop(deadline_monotonic_us=c.clock.now_monotonic_us() + 5_000_000)
     c.worker.join(5)
     assert not c.worker.is_alive() and c.worker.failure is None
     with sqlite3.connect(c.database) as db:
         assert db.execute('SELECT count(*) FROM reading_messages').fetchone() == (0,)
-        assert db.execute('SELECT count(*) FROM message_profiles').fetchone() == (1,)
+        assert db.execute('SELECT count(*) FROM packet_receptions').fetchone() == (0,)
 
 
-# Best-effort failed-event profiles do not reserve over the initial clock boundary.
-def test_failed_receive_profile_queue_full(composition):
+# Failed pre-authentication events leave packet admission untouched.
+def test_failed_receive_does_not_need_packet_queue_capacity(composition):
     c = composition(isolated_queue=True)
     c.io.irq, c.io.status = 0x42, 0x24
     c.io.edges.append(Dio1Edge(c.clock.now_monotonic_us() * 1000, 1))
     result = c.communicator.receive_once(deadline_monotonic_us=c.clock.now_monotonic_us() + 500_000)
-    assert result.finalization.admission.result is E.AdmissionResult.QUEUE_FULL
-    assert result.finalization.published_entity is None
+    assert result.finalization is None
     assert c.queue.snapshot().reserved_entities == 0
     assert not any(command[0] == 0x83 for command in c.io.commands)
-
-
-# F-004: complete failed-event construction must precede admission, including allocation failure.
-@pytest.mark.parametrize("fault", ["crc", "header", "clear_irq"])
-@pytest.mark.parametrize("error_type", [MemoryError, RuntimeError])
-def test_failed_receive_construction_failure_cannot_strand_reservation(composition, monkeypatch, fault, error_type):
-    from cura_receiver import communicator as module
-    from cura_receiver.ports.radio import RadioBackendError, RadioFailure, Error, Stage
-
-    c = composition(isolated_queue=True)
-    c.queue.claim_batch(max_entities=1).acknowledge_durable(completed_entities=1)
-    c.io.buffer[:] = REVIEWED_CURRENT_FRAME
-    c.io.irq = {"crc": 0x42, "header": 0x22}.get(fault, 2)
-    c.io.status = 0x24
-    c.io.edges.append(Dio1Edge(c.clock.now_monotonic_us() * 1000, 1))
-    if fault == "clear_irq":
-        def fail_once(command):
-            del c.io.hooks[0x02]
-            raise RadioBackendError(RadioFailure(Error.IO, Stage.CLEAR_IRQ, os_errno=5))
-        c.io.hooks[0x02] = fail_once
-    error = error_type("injected failed-receive entity construction failure")
-    attempts = []
-
-    def fail_construction(profile):
-        attempts.append(profile)
-        raise error
-
-    monkeypatch.setattr(module, "ProfileOnlyUnitV1", fail_construction)
-    with pytest.raises(CommunicatorFailure) as caught:
-        c.communicator.receive_once(deadline_monotonic_us=c.clock.now_monotonic_us() + 500_000)
-
-    assert caught.value.original is error
-    assert caught.value.cleanup_error is None
-    assert caught.value.result.radio_result.state is E.RadioState.SHUTDOWN
-    assert caught.value.result.finalization is None
-    assert len(attempts) == 1
-    assert attempts[0].processing_result is E.ProcessingResult.RADIO_ERROR
-    assert attempts[0].ack_selected is E.AckSelection.NONE
-    assert not attempts[0].header_authenticated
-    assert c.communicator.ingress.active_occurrence is None
-    assert c.communicator._failed_receive is None
-    assert c.communicator.queue.counts[0] == (0, 0, 0)
-    assert c.communicator.queue.counts[1] == (0, 0, 0)
-    assert not any(command[0] == 0x83 for command in c.io.commands)
-    c.queue.close()
-    snapshot = c.queue.snapshot()
-    assert snapshot.reserved_entities == snapshot.published_entities == 0
-    assert snapshot.closed_and_drained
-
-
-# F-004: failed-event construction retains the existing CORE allocation policy and queue drain.
-@pytest.mark.parametrize("error_type", [MemoryError, RuntimeError])
-def test_failed_receive_construction_failure_preserves_core_policy_and_drain(composition, monkeypatch, error_type):
-    from cura_receiver import communicator as module
-
-    c = composition(isolated_queue=True)
-    c.queue.claim_batch(max_entities=1).acknowledge_durable(completed_entities=1)
-    runtime = runtime_dispatch(c)
-    c.io.irq, c.io.status = 0x42, 0x24
-    c.io.edges.append(Dio1Edge(c.clock.now_monotonic_us() * 1000, 1))
-    error = error_type("injected failed-receive entity construction failure")
-
-    def fail_construction(profile):
-        raise error
-
-    monkeypatch.setattr(module, "ProfileOnlyUnitV1", fail_construction)
-    assert runtime.step() is None
-    assert runtime.terminal and runtime.failure.original is error
-    assert runtime.failure.queue_sound
-    assert c.communicator.queue.counts[1] == (0, 0, 0)
-    assert c.radio.state is E.RadioState.SHUTDOWN
-    c.queue.close()
-    batch = c.queue.claim_batch(max_entities=1)
-    if error_type is MemoryError:
-        assert runtime.failure.diagnostic_result is None
-        assert runtime.telemetry.diagnostic_sequence == 0
-        assert c.communicator.queue.counts[3] == (0, 0, 0)
-        assert batch.entries[0].entity.snapshot.trigger is E.RadioObservationTrigger.PHY_REJECTION
-        batch.acknowledge_durable(completed_entities=1)
-    else:
-        assert runtime.failure.diagnostic_result is E.AdmissionResult.RESERVED
-        assert runtime.telemetry.diagnostic_sequence == 1
-        assert c.communicator.queue.counts[3] == (1, 0, 0)
-        assert len(batch.entries) == 1
-        diagnostic = batch.entries[0].entity
-        assert diagnostic.error_domain is E.DiagnosticErrorDomain.CORE
-        assert diagnostic.error_code == E.CoreDiagnosticErrorCode.UNEXPECTED_EXCEPTION.value
-        batch.acknowledge_durable(completed_entities=1)
-    assert c.queue.snapshot().closed_and_drained
 
 
 # When radio and health are ready together the complete exchange wins.
@@ -378,7 +267,7 @@ def test_scheduler_radio_precedes_health(composition):
     c.io.edges.append(Dio1Edge(c.clock.now_monotonic_us() * 1000, 1))
     turn = scheduler.run_once()
     assert turn.work is Work.RADIO
-    assert turn.exchange.finalization.published_entity.profile.processing_result is E.ProcessingResult.REJECTED_MALFORMED_LENGTH
+    assert turn.exchange.finalization.published_entity is None
     assert scheduler.run_once().work is Work.HEALTH
 
 
@@ -590,7 +479,7 @@ def test_runtime_radio_failure_emits_one_operational_diagnostic(composition):
     c.io.hooks[0x14] = fail_once
     turn = runtime.step()
     assert not runtime.terminal
-    assert turn.exchange.finalization.published_entity.profile.processing_result is E.ProcessingResult.RADIO_ERROR
+    assert turn.exchange.finalization is None
     assert runtime.telemetry.diagnostic_sequence == 1
     c.worker.request_stop(deadline_monotonic_us=c.clock.now_monotonic_us() + 5_000_000)
     c.worker.join(5)
@@ -927,14 +816,13 @@ def test_duplicate_after_lost_ack_and_backlog_keep_all_occurrences(composition):
     # Peer receipt is not visible here: repeat after a confirmed physical TxDone.
     for frame in (REVIEWED_CURRENT_FRAME, REVIEWED_CURRENT_FRAME, REVIEWED_BACKLOG_FRAME):
         result = deliver(c, frame)
-        assert result.finalization.published_entity.profile.ack_frame == REVIEWED_ACCEPTED_ACK
         assert result.finalization.published_entity.candidate is not None
     c.worker.request_stop(deadline_monotonic_us=c.clock.now_monotonic_us()+5_000_000)
     c.worker.join(5)
     assert not c.worker.is_alive() and c.worker.failure is None
     with sqlite3.connect(c.database) as db:
         assert db.execute('SELECT count(*) FROM reading_messages').fetchone() == (1,)
-        assert db.execute('SELECT count(*) FROM message_profiles').fetchone() == (3,)
+        assert db.execute('SELECT count(*) FROM packet_receptions').fetchone() == (3,)
 
 
 @pytest.mark.parametrize('frame,expected_ack', [
@@ -944,8 +832,7 @@ def test_duplicate_after_lost_ack_and_backlog_keep_all_occurrences(composition):
 def test_unauthenticated_packets_remain_silent(composition, frame, expected_ack):
     c = composition()
     result = deliver(c, frame)
-    profile = result.finalization.published_entity.profile
-    assert profile.ack_frame is expected_ack
+    assert result.finalization.published_entity is None
     assert not any(command[0] == 0x83 for command in c.io.commands)
     assert c.communicator.ingress.active_occurrence is None
 
@@ -961,7 +848,6 @@ def test_queue_pressure_retry_then_recovery_accepts_same_packet(composition):
     lease.acknowledge_durable(completed_entities=1)
     second = deliver(c)
     assert second.finalization.published_entity.candidate is not None
-    assert second.finalization.published_entity.profile.ack_frame == REVIEWED_ACCEPTED_ACK
     assert c.communicator.occurrence_sequence == 2
 
 
@@ -977,7 +863,6 @@ def test_authenticated_rejection_transmits_exact_reviewed_ack(composition, malfo
     result = deliver(c, frame)
     entity = result.finalization.published_entity
     assert not hasattr(entity, 'candidate')
-    assert entity.profile.ack_frame == expected
     assert b'\x0e\x00' + expected in c.io.commands
 
 

@@ -11,10 +11,19 @@ from state_analysis import (seal_capture, report, read_database, reconcile,
                           DATABASE_SCHEMA_VERSION, DATABASE_SCHEMA_FINGERPRINT, SQLITE_APPLICATION_ID)
 from capture import REPO, digest
 from host.test_service import transcript, NODE
+from verify_service import BODY, FIELDS
 from host.test_node_capture import binaries, finished_payload, image_from, record
+from cura_receiver.database_initializer import initialize_database
+from cura_receiver.ordinary_persistence import OrdinaryPersistence
+from cura_receiver.persist_queue import PersistQueue
+from cura_receiver.persist_queue_entities import READING_RECEPTION_V2_SPEC
+from cura_receiver.receiver_startup import ReceiverInstanceStart, insert_receiver_instance_start
+from cura_receiver.sqlite_database import open_receiver_database
+from tests.support.builders.persistence import _measurement, GROUP as PERSISTENCE_GROUP, INSTANCE as PERSISTENCE_INSTANCE
+from tests.support.fakes.os_clock import FakeOsClock
 
 GROUP = '1122334455667788'
-EMPTY = dict(readings=[], profiles=[], instances=[])
+EMPTY = dict(readings=[], profiles=[], instances=[], transports=[], exceptions=[])
 LOGS = {k: [] for k in ('pending.log', 'quarantine.log', 'delivery.log', 'diagnostic.log')}
 DIAGNOSTIC_40 = record(3, struct.pack('<HHHIIIHBB', 1, 6, 7, 12, 40, 73, 1, 7, 1) + bytes(7))
 DIAGNOSTIC_41 = record(3, struct.pack('<HHHIIIHBB', 1, 6, 7, 12, 41, 73, 1, 7, 1) + bytes(7))
@@ -34,12 +43,142 @@ def observed(tmp_path):
     return read_database(path, GROUP, NODE.hex()), logs
 
 
+@pytest.fixture
+def persisted_receptions(tmp_path):
+    """Exercise production classification/atomic effects before reading a real backup."""
+    path = tmp_path / 'live.sqlite3'
+    initialize_database(path, PERSISTENCE_GROUP, known_empty_airtime=False)
+    database = open_receiver_database(path, PERSISTENCE_GROUP, minimum_free_bytes=0).database
+    instance = ReceiverInstanceStart(PERSISTENCE_INSTANCE, 0)
+    insert_receiver_instance_start(database.connection, instance, b'b' * 16)
+    queue = PersistQueue()
+    persistence = OrdinaryPersistence(database, queue, instance=instance,
+                                      clock=FakeOsClock(monotonic_us=100))
+    persistence.enable_admission()
+    snapshots = 0
+
+    def persist(*units):
+        nonlocal snapshots
+        for unit in units:
+            queue.try_reserve_one(READING_RECEPTION_V2_SPEC).reservation.publish(unit)
+        assert persistence.attempt(max_entities=len(units)).acknowledged_entities == len(units)
+        backup = tmp_path / f'snapshot-{snapshots}.sqlite3'
+        snapshots += 1
+        target = sqlite3.connect(backup)
+        try:
+            database.connection.backup(target)
+        finally:
+            target.close()
+        return read_database(backup, PERSISTENCE_GROUP.hex(), (b'n' * 8).hex())
+
+    try:
+        yield persist
+    finally:
+        persistence.close()
+        database.close()
+
+
+@pytest.mark.parametrize('boundary', [False, True], ids=['same-interval', 'across-captures'])
+@pytest.mark.parametrize('changes, classification, body_conflicts', [
+    ({'soil': 2000}, 'DUPLICATE_CONFLICT', [200]),
+    ({'domain': 2}, 'MESSAGE_ID_CONFLICT', []),
+    ({'message': 101, 'soil': 2000}, 'DUPLICATE_CONFLICT', [200]),
+    ({}, None, []),
+    ({'message': 101, 'domain': 2}, None, []),
+], ids=['changed-body', 'changed-domain', 'noncanonical-transport', 'retransmission', 'same-content-backlog'])
+def test_persisted_conflicts_are_reported_without_node_body_evidence(
+        persisted_receptions, boundary, changes, classification, body_conflicts):
+    first = persisted_receptions(_measurement())
+    after = persisted_receptions(_measurement(sequence=2, **changes))
+    result = reconcile(first if boundary else EMPTY, after, LOGS, LOGS)
+    assert result['conflicting_bodies'] == body_conflicts
+    assert result['counts']['durable_samples'] == 1
+    assert result['counts']['received_authenticated_profiles'] == (1 if boundary else 2)
+    # Repeated transport counts describe identity reuse, independently of content.
+    assert result['counts']['received_retries'] == (0 if changes.get('message') == 101 else 1)
+    expected = [] if classification is None else [dict(
+        receiver_instance_id=PERSISTENCE_INSTANCE.hex(), occurrence_sequence=2,
+        received_at_monotonic_us=10, node_id=(b'n' * 8).hex(),
+        message_id=changes.get('message', 100), domain=changes.get('domain', 1),
+        decoded_sample_id=200, authoritative_domain=changes.get('domain', 1) if changes.get('message') == 101 else 1,
+        authoritative_sample_id=200, persistence_classification=classification,
+        exception_reason=classification)]
+    assert result['reception_conflicts'] == expected
+    assert after['readings'][0]['soil_0_mv'] == 1000
+    assert after['readings'][0]['is_canonical'] == 1
+    json.dumps(result)  # Reception provenance must be serializable in report().
+
+
+def test_historical_reception_conflict_is_not_an_interval_conflict(persisted_receptions):
+    before = persisted_receptions(_measurement(), _measurement(sequence=2, soil=2000))
+    after = persisted_receptions(_measurement(sequence=3))
+    result = reconcile(before, after, LOGS, LOGS)
+    assert result['reception_conflicts'] == []
+    assert result['conflicting_bodies'] == []
+    assert result['counts']['received_authenticated_profiles'] == 1
+
+
+def test_known_conflict_is_not_hidden_by_missing_exception(persisted_receptions):
+    after = persisted_receptions(_measurement(), _measurement(sequence=2, soil=2000))
+    after['exceptions'].clear()
+    result = reconcile(EMPTY, after, LOGS, LOGS)
+    assert result['conflicting_bodies'] == [200]
+    assert len(result['reception_conflicts']) == 1
+    assert result['reception_conflicts'][0]['exception_reason'] is None
+
+
+@pytest.mark.parametrize('boundary', [False, True], ids=['same-interval', 'across-captures'])
+@pytest.mark.parametrize('node_sample', [None, 200, 201], ids=['no-node-log', 'original-node-claim', 'changed-node-claim'])
+def test_changed_sample_claim_preserves_report_and_first_authority(
+        persisted_receptions, boundary, node_sample):
+    first = persisted_receptions(_measurement())
+    after = persisted_receptions(_measurement(sequence=2, sample=201))
+    final = deepcopy(LOGS)
+    if node_sample is not None:
+        final['delivery.log'] = [dict(type=kind, cycle_sample_id=node_sample,
+            sample_id=node_sample, message_id=100, domain=1, final_result=1, attempt_count=1)
+            for kind in (4, 5)]
+    original = deepcopy(after)
+    result = reconcile(first if boundary else EMPTY, after, LOGS, final)
+    message, = result['messages']
+    assert message['message_id'] == 100
+    assert message['authoritative_sample_id'] == 200
+    assert message['authoritative_domain'] == 1
+    assert message['sample_ids'] == ([201] if boundary and node_sample != 200 else [200, 201])
+    assert message['received_profiles'] == (1 if boundary else 2)
+    assert result['counts']['observed_samples'] == (1 if boundary and node_sample != 200 else 2)
+    assert result['counts']['durable_samples'] == (0 if boundary and node_sample != 200 else 1)
+    assert result['missing_from_both'] == [201]
+    assert result['conflicting_bodies'] == []  # Identity conflict alone proves no body comparison.
+    conflict, = result['reception_conflicts']
+    assert conflict['persistence_classification'] == conflict['exception_reason'] == 'MESSAGE_ID_CONFLICT'
+    assert conflict['decoded_sample_id'] == 201
+    assert conflict['authoritative_sample_id'] == 200
+    assert conflict['occurrence_sequence'] == 2
+    assert after['readings'] == first['readings']
+    assert after['transports'] == first['transports']
+    assert after == original
+    json.dumps(result)
+
+
+def test_repeated_sample_conflict_then_original_does_not_rebind_authority(persisted_receptions):
+    after = persisted_receptions(_measurement(), _measurement(sequence=2, sample=201),
+                                _measurement(sequence=3, sample=201), _measurement(sequence=4))
+    result = reconcile(EMPTY, after, LOGS, LOGS)
+    assert result['messages'][0]['sample_ids'] == [200, 201]
+    assert result['messages'][0]['authoritative_sample_id'] == 200
+    assert [r['occurrence_sequence'] for r in result['reception_conflicts']] == [2, 3]
+    assert result['counts']['durable_transport_rows_added'] == 1
+    assert result['counts']['durable_samples'] == 1
+    assert result['missing_from_both'] == [201]
+
+
 def test_accounting_does_not_invent_received_attempts(tmp_path):
     after, logs = observed(tmp_path)
     # Sample41 was not received durably, but remains on the node.
     retained = after['readings'].pop()
     after['profiles'].pop()
-    logs['pending.log'] = [dict(type=1, sample_id=41, reading_body=retained['reading_body'].hex())]
+    logs['pending.log'] = [dict(type=1, sample_id=41, reading_body=BODY.pack(*(retained[name] for name in FIELDS)).hex())]
     logs['delivery.log'][-1].update(final_result=6, attempt_count=7)
     result = reconcile(EMPTY, after, LOGS, logs)
     assert result['counts']['observed_samples'] == 2
@@ -71,7 +210,7 @@ def test_incomplete_delivery_reports_unknown_attempt_count(tmp_path):
 
 def test_conflicting_retained_body_is_not_silently_counted(tmp_path):
     after, logs = observed(tmp_path)
-    raw = bytearray(after['readings'][0]['reading_body']); raw[6] ^= 1
+    raw = bytearray(BODY.pack(*(after['readings'][0][name] for name in FIELDS))); raw[6] ^= 1
     logs['pending.log'] = [dict(type=1, sample_id=40, reading_body=raw.hex())]
     assert reconcile(EMPTY, after, LOGS, logs)['conflicting_bodies'] == [40]
 
@@ -92,7 +231,7 @@ def test_inconsistent_histories_rejected(tmp_path, damage):
 def test_baseline_is_excluded_but_starting_backlog_is_retained(tmp_path):
     after, logs = observed(tmp_path)
     before = deepcopy(after)
-    raw = after['readings'][0]['reading_body'].hex()
+    raw = BODY.pack(*(after['readings'][0][name] for name in FIELDS)).hex()
     initial = deepcopy(logs)
     initial['pending.log'] = [dict(type=1, sample_id=40, reading_body=raw)]
     result = reconcile(before, after, initial, logs)
@@ -272,3 +411,14 @@ def test_reboot_and_missing_clean_stop_are_reported_not_relabelled(tmp_path):
     assert len(result['receiver_instances']) == 2
     assert all(not i['clean_stop_recorded'] for i in result['receiver_instances'])
     assert 'no UTC' in result['time_basis']
+
+
+@pytest.mark.parametrize("collection", ["transports", "exceptions"])
+def test_authority_and_exception_history_cannot_disappear(tmp_path, collection):
+    after, logs = observed(tmp_path)
+    if collection == "exceptions":
+        after[collection].append(dict(receiver_instance_id=b"e"*16, occurrence_sequence=1))
+    before = deepcopy(after)
+    after[collection].pop()
+    with pytest.raises(ValueError, match="disappeared or changed"):
+        reconcile(before, after, logs, logs)

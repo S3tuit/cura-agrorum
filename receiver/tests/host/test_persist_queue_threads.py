@@ -12,7 +12,7 @@ from cura_receiver.persist_queue import (
     PersistQueue,
     PersistenceAdmissionSnapshot,
 )
-from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC
+from cura_receiver.persist_queue_entities import RECEPTION_ONLY_V2_SPEC
 from tests.support.coordination.threads import (
     join_checked_threads,
     start_checked_threads,
@@ -54,7 +54,7 @@ def test_reservation_and_admission_publication_have_one_atomic_order(
         _arrive(both_workers_ready)
         if publication_first:
             _wait(first_operation_completed)
-        results.append(queue.try_reserve_one(PROFILE_ONLY_V1_SPEC))
+        results.append(queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC))
         if not publication_first:
             first_operation_completed.set()
 
@@ -91,7 +91,7 @@ def test_reservation_and_admission_publication_have_one_atomic_order(
 def test_publication_and_claim_have_one_visibility_order(publication_first: bool) -> None:
     queue = PersistQueue(capacity_entities=1)
     _make_available(queue)
-    result = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+    result = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
     assert result.reservation is not None
     payload = object()
     both_workers_ready = Barrier(3)
@@ -138,7 +138,7 @@ def test_acknowledgement_and_new_reservation_have_one_capacity_order(
 ) -> None:
     queue = PersistQueue(capacity_entities=1)
     _make_available(queue)
-    first = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+    first = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
     assert first.reservation is not None
     first.reservation.publish(object())
     lease = queue.claim_batch(max_entities=1)
@@ -151,7 +151,7 @@ def test_acknowledgement_and_new_reservation_have_one_capacity_order(
         _arrive(both_workers_ready)
         if acknowledgement_first:
             _wait(first_operation_completed)
-        results.append(queue.try_reserve_one(PROFILE_ONLY_V1_SPEC))
+        results.append(queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC))
         if not acknowledgement_first:
             first_operation_completed.set()
 
@@ -176,7 +176,7 @@ def test_acknowledgement_and_new_reservation_have_one_capacity_order(
         result.reservation.cancel()
     else:
         assert result.status is AdmissionResult.QUEUE_FULL
-        retry = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+        retry = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
         assert retry.status is AdmissionResult.RESERVED
         assert retry.reservation is not None
         retry.reservation.cancel()
@@ -188,7 +188,7 @@ def test_release_for_retry_and_tail_publication_preserve_fifo(complete_prefix) -
     queue = PersistQueue(capacity_entities=2 if complete_prefix else 3)
     _make_available(queue)
     for value in (0, 1):
-        result = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+        result = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
         assert result.reservation is not None
         result.reservation.publish(value)
     first_lease = queue.claim_batch(max_entities=2)
@@ -201,7 +201,7 @@ def test_release_for_retry_and_tail_publication_preserve_fifo(complete_prefix) -
     def communicator() -> None:
         _arrive(both_workers_ready)
         _wait(prefix_released)
-        result = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+        result = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
         assert result.reservation is not None
         result.reservation.publish(2)
         tail_published.set()
@@ -237,7 +237,7 @@ def test_release_for_retry_and_tail_publication_preserve_fifo(complete_prefix) -
 def test_closure_publication_and_drain_do_not_lose_the_reserved_entity() -> None:
     queue = PersistQueue(capacity_entities=1)
     _make_available(queue)
-    result = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+    result = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
     assert result.reservation is not None
     producer_closed = Event()
     entity_published = Event()
@@ -274,7 +274,7 @@ def test_clear_then_recheck_prevents_lost_wakeup_when_publication_precedes_clear
 
     def communicator() -> None:
         _wait(initially_empty_observed)
-        result = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+        result = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
         assert result.reservation is not None
         result.reservation.publish("work")
         entity_published.set()
@@ -305,7 +305,7 @@ def test_clear_then_recheck_prevents_lost_wakeup_when_publication_follows_clear(
 
     def communicator() -> None:
         _wait(wakeup_cleared)
-        result = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+        result = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
         assert result.reservation is not None
         result.reservation.publish("work")
         entity_published.set()
@@ -338,14 +338,14 @@ def test_sustained_spsc_wraparound_has_stable_entity_accounting() -> None:
     def communicator() -> None:
         for value in range(item_count):
             while True:
-                result = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+                result = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
                 if result.status is AdmissionResult.RESERVED:
                     assert result.reservation is not None
                     result.reservation.publish(value)
                     break
                 assert result.status is AdmissionResult.QUEUE_FULL
                 space_available.clear()
-                retry = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+                retry = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
                 if retry.status is AdmissionResult.RESERVED:
                     assert retry.reservation is not None
                     retry.reservation.publish(value)

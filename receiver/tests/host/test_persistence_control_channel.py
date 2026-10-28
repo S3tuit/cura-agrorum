@@ -1,3 +1,4 @@
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 import sqlite3
 from queue import Queue
 from threading import Event, TIMEOUT_MAX
@@ -24,7 +25,7 @@ from cura_receiver.receiver_configuration import (
 )
 from cura_receiver.receiver_startup import ReceiverInstanceStart
 from cura_receiver.sqlite_transactions import SqliteTransactions
-from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC, ProfileOnlyUnitV1
+from cura_receiver.persist_queue_entities import RECEPTION_ONLY_V2_SPEC, ReceptionOnlyUnitV2
 from tests.support.builders.persistence import INSTANCE, _profile
 from tests.support.builders.persistence_control import synthetic
 from tests.support.fakes.os_clock import FakeOsClock
@@ -159,8 +160,8 @@ def test_control_ordinary_bounded_alternation(worker_files):
     def caller():
         assert idle.wait(5)
         for sequence in range(1, 6):
-            owner.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-                ProfileOnlyUnitV1(_profile(sequence=sequence))
+            owner.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+                ReceptionOnlyUnitV2(_profile(sequence=sequence), received_frame=REVIEWED_RECEPTION_FRAME)
             )
         for _ in range(4):
             assert (
@@ -282,8 +283,8 @@ def test_no_ordinary_transaction_preemption(worker_files):
     results = []
 
     def caller():
-        owner.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-            ProfileOnlyUnitV1(_profile())
+        owner.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+            ReceptionOnlyUnitV2(_profile(), received_frame=REVIEWED_RECEPTION_FRAME)
         )
         assert arrived.wait(5)
         results.append(
@@ -484,8 +485,8 @@ def test_large_deadline_during_ordinary_commit(worker_files, kind, deadline):
 
     try:
         assert owner.wait_started(deadline_monotonic_us=5_000_100)
-        owner.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-            ProfileOnlyUnitV1(_profile())
+        owner.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+            ReceptionOnlyUnitV2(_profile(), received_frame=REVIEWED_RECEPTION_FRAME)
         )
         assert arrived.wait(5)
         threads = start_checked_threads([("large-deadline-caller", caller)])

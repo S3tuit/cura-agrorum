@@ -440,7 +440,7 @@ def test_clean_stop_cannot_ignore_reservation(controls):
     from cura_receiver.generated.receiver_enums_generated import (
         PersistenceAdmissionState,
     )
-    from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC
+    from cura_receiver.persist_queue_entities import RECEPTION_ONLY_V2_SPEC
     from cura_receiver.persistence_control_values import (
         ReceiverCleanStopV1,
         ReceiverCleanStopCommitDisposition as SD,
@@ -450,7 +450,7 @@ def test_clean_stop_cannot_ignore_reservation(controls):
     operations.queue.publish_admission_state(
         PersistenceAdmissionSnapshot(1, PersistenceAdmissionState.AVAILABLE, 1)
     )
-    reservation = operations.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation
+    reservation = operations.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation
     operations.queue.close()
     marker = ReceiverCleanStopV1(INSTANCE, 100, 0)
     assert (
@@ -559,3 +559,14 @@ def test_clean_stop_precommit_deadline(controls):
     assert connection.execute(
         "SELECT clean_stopped_at_monotonic_us, clean_stop_state_generation FROM receiver_instances"
     ).fetchall() == [(None, None)]
+
+
+def test_recovery_archives_beyond_readiness_prefix_and_preserves_oversized_blob(controls):
+    operations, connection, _, command = controls
+    raw = [(1, 2, n, b"bad", bytes(32)) for n in range(1, 8)]
+    connection.executemany("INSERT INTO communicator_state VALUES (?, ?, ?, ?, ?)", raw)
+    connection.execute("INSERT INTO communicator_state VALUES (1, 2, 8, zeroblob(16777216), ?)", (bytes(32),))
+    assert operations.commit_state(synthetic(), command()).disposition is D.COMMITTED
+    assert connection.execute("SELECT observed_generation, length(observed_state_blob) FROM quarantined_communicator_states ORDER BY quarantined_state_id").fetchall() == [(n, 3) for n in range(1, 8)] + [(8, 16777216)]
+    assert connection.execute("SELECT calculated_blob_sha256 FROM quarantined_communicator_states WHERE observed_generation = 8").fetchone() == (None,)
+    assert connection.execute("SELECT count(*) FROM communicator_state").fetchone() == (1,)

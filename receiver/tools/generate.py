@@ -2437,6 +2437,7 @@ def generate_entity_python(
             "",
             "__all__ = [",
             '    "RECEIVER_ENTITY_MANIFEST_SHA256",',
+            '    "REQUIRED_FOREIGN_KEYS",',
         ]
     )
     lines.extend(f'    "{name}",' for name in layout_constant_names)
@@ -2444,6 +2445,14 @@ def generate_entity_python(
     lines.extend(f'    "{name}",' for name in codec_names)
     lines.extend(f'    "{name}",' for name in binder_names)
     lines.extend(["]", ""])
+
+    lines.append("REQUIRED_FOREIGN_KEYS = (")
+    for row in rows:
+        for fk in row.get("foreign_keys", ()):
+            edge = (row["table"], tuple(fk["columns"]),
+                    fk["references"]["table"], tuple(fk["references"]["columns"]))
+            lines.append(f"    {edge!r},")
+    lines.extend([")", ""])
 
     for row in rows:
         emitted_fields = sqlite_bound_fields(row, entity_manifest)

@@ -281,3 +281,28 @@ def test_truncated_current_layout_is_corrupt(setup):
     _, connection, *_ = setup
     blob = encode_communicator_state_v2(state())[:-8]
     assert classify(connection, ((1, 2, 1, blob, hashlib.sha256(blob).digest()),)).state_condition is Condition.CORRUPT
+
+
+def test_readiness_limits_rows_and_blob_materialization(setup, monkeypatch):
+    _, connection, *_ = setup
+    connection.execute("INSERT INTO communicator_state VALUES (1, 2, 1, zeroblob(16777216), zeroblob(16777216))")
+    connection.executemany("INSERT INTO communicator_state VALUES (1, 2, 1, ?, ?)",
+                           [(b"bad", bytes(32))] * 20000)
+    repository = SqliteRepository(connection)
+    instructions = 0
+    def bounded():
+        nonlocal instructions
+        instructions += 1
+        return instructions > 10
+    connection.set_progress_handler(bounded, 100)
+    try:
+        observed = repository.read_communicator_state_rows()
+    finally:
+        connection.set_progress_handler(None, 0)
+    assert len(observed) == 2
+    assert observed[0].values[3:] == (None, None)
+    def forbidden(*args, **kwargs):
+        raise AssertionError("nonsingleton/oversized state must not be hashed")
+    monkeypatch.setattr(hashlib, "sha256", forbidden)
+    assert classify_communicator_state_rows(observed, repository, CommunicatorStatePolicy()).state_condition is Condition.CORRUPT
+    assert classify_communicator_state_rows(observed[:1], repository, CommunicatorStatePolicy()).state_condition is Condition.CORRUPT

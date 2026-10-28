@@ -14,7 +14,7 @@ from typing import TypeAlias
 from .generated.receiver_entities_generated import (
     ClockObservationV1,
     DiagnosticV1,
-    MessageProfilingV1,
+    PacketReceptionV1,
     RadioObservationV1,
 )
 from .generated.receiver_enums_generated import (
@@ -26,7 +26,7 @@ from .generated.receiver_enums_generated import (
 )
 
 
-PERSIST_QUEUE_ENTITY_SCHEMA_VERSION = 1
+PERSIST_QUEUE_ENTITY_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,11 +37,11 @@ class PersistQueueEntitySpec:
     schema_version: int
 
 
-MEASUREMENT_PROFILE_V1_SPEC = PersistQueueEntitySpec(
+READING_RECEPTION_V2_SPEC = PersistQueueEntitySpec(
     kind=PersistQueueEntityKind.MEASUREMENT_PROFILE,
     schema_version=PERSIST_QUEUE_ENTITY_SCHEMA_VERSION,
 )
-PROFILE_ONLY_V1_SPEC = PersistQueueEntitySpec(
+RECEPTION_ONLY_V2_SPEC = PersistQueueEntitySpec(
     kind=PersistQueueEntityKind.PROFILE_ONLY,
     schema_version=PERSIST_QUEUE_ENTITY_SCHEMA_VERSION,
 )
@@ -65,8 +65,8 @@ RADIO_OBSERVATION_V1_SPEC = PersistQueueEntitySpec(
 
 SUPPORTED_PERSIST_QUEUE_ENTITY_SPECS = frozenset(
     {
-        MEASUREMENT_PROFILE_V1_SPEC,
-        PROFILE_ONLY_V1_SPEC,
+        READING_RECEPTION_V2_SPEC,
+        RECEPTION_ONLY_V2_SPEC,
         RECEIVER_HEALTH_REQUEST_V1_SPEC,
         DIAGNOSTIC_V1_SPEC,
         CLOCK_OBSERVATION_V1_SPEC,
@@ -87,18 +87,20 @@ class AuthenticatedReadingCandidateV1:
 
 
 @dataclass(frozen=True, slots=True)
-class MeasurementProfileUnitV1:
-    """Indivisible accepted-reading and occurrence-profile queue unit."""
+class ReadingReceptionUnitV2:
+    """Indivisible admitted reading, reception and transient raw evidence."""
 
     candidate: AuthenticatedReadingCandidateV1
-    profile: MessageProfilingV1
+    profile: PacketReceptionV1
+    received_frame: bytes
 
 
 @dataclass(frozen=True, slots=True)
-class ProfileOnlyUnitV1:
-    """One complete occurrence profile without an accepted reading."""
+class ReceptionOnlyUnitV2:
+    """Authenticated reception and transient raw evidence without an admitted reading."""
 
-    profile: MessageProfilingV1
+    profile: PacketReceptionV1
+    received_frame: bytes
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,9 +139,9 @@ class ReceiverHealthRequestV1:
     persist_queue_admission_counts: tuple[tuple[int, ...], ...]
 
 
-PersistQueueEntityV1: TypeAlias = (
-    MeasurementProfileUnitV1
-    | ProfileOnlyUnitV1
+PersistQueueEntityV2: TypeAlias = (
+    ReadingReceptionUnitV2
+    | ReceptionOnlyUnitV2
     | RadioObservationV1
     | ReceiverHealthRequestV1
     | DiagnosticV1
@@ -150,16 +152,16 @@ PersistQueueEntityV1: TypeAlias = (
 __all__ = [
     "PERSIST_QUEUE_ENTITY_SCHEMA_VERSION",
     "PersistQueueEntitySpec",
-    "MEASUREMENT_PROFILE_V1_SPEC",
-    "PROFILE_ONLY_V1_SPEC",
+    "READING_RECEPTION_V2_SPEC",
+    "RECEPTION_ONLY_V2_SPEC",
     "RECEIVER_HEALTH_REQUEST_V1_SPEC",
     "DIAGNOSTIC_V1_SPEC",
     "CLOCK_OBSERVATION_V1_SPEC",
     "RADIO_OBSERVATION_V1_SPEC",
     "SUPPORTED_PERSIST_QUEUE_ENTITY_SPECS",
     "AuthenticatedReadingCandidateV1",
-    "MeasurementProfileUnitV1",
-    "ProfileOnlyUnitV1",
+    "ReadingReceptionUnitV2",
+    "ReceptionOnlyUnitV2",
     "ReceiverHealthRequestV1",
-    "PersistQueueEntityV1",
+    "PersistQueueEntityV2",
 ]

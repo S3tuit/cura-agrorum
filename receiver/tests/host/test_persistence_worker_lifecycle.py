@@ -1,3 +1,4 @@
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 import sqlite3
 from queue import Queue
 from threading import Event, current_thread
@@ -7,7 +8,7 @@ import pytest
 from cura_receiver.generated.receiver_enums_generated import (
     PersistenceAdmissionState as State,
 )
-from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC, ProfileOnlyUnitV1
+from cura_receiver.persist_queue_entities import RECEPTION_ONLY_V2_SPEC, ReceptionOnlyUnitV2
 from cura_receiver.persistence_control_values import (
     ReceiverCleanStopV1,
     ReceiverCleanStopCommitDisposition as D,
@@ -114,13 +115,13 @@ def test_shutdown_outstanding_reservation(worker_files, resolution):
     start(owner)
     try:
         assert waits.get(timeout=5) == 5.0
-        reservation = owner.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation
+        reservation = owner.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation
         owner.request_stop(deadline_monotonic_us=1_000_100)
         assert waits.get(timeout=5) == 1.0
         assert owner.queue.snapshot().reserved_entities == 1
         assert not owner.queue.snapshot().closed_and_drained
         if resolution == "publish":
-            reservation.publish(ProfileOnlyUnitV1(_profile()))
+            reservation.publish(ReceptionOnlyUnitV2(_profile(), received_frame=REVIEWED_RECEPTION_FRAME))
         elif resolution == "cancel":
             reservation.cancel()
         else:
@@ -131,7 +132,7 @@ def test_shutdown_outstanding_reservation(worker_files, resolution):
         assert owner.queue.snapshot().closed_and_drained == (resolution != "expire")
         assert marker_rows(worker_files[0]) == [(None, None)]
         with sqlite3.connect(worker_files[0]) as db:
-            assert db.execute("SELECT count(*) FROM message_profiles").fetchone() == (
+            assert db.execute("SELECT count(*) FROM packet_receptions").fetchone() == (
                 int(resolution == "publish"),
             )
         assert owner._recovery.counters.wal_checkpoint_attempts == int(
@@ -246,8 +247,8 @@ def test_stop_open_ordinary_transaction(worker_files, phase):
 
     owner = worker(worker_files, transactions=Gated(), wake_threshold_entities=1)
     start(owner)
-    owner.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-        ProfileOnlyUnitV1(_profile())
+    owner.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+        ReceptionOnlyUnitV2(_profile(), received_frame=REVIEWED_RECEPTION_FRAME)
     )
     try:
         assert arrived.wait(5)
@@ -298,8 +299,8 @@ def test_stop_unknown_ordinary_work(worker_files, phase):
     start(owner)
     try:
         assert waits.get(timeout=5) == 5.0
-        owner.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-            ProfileOnlyUnitV1(_profile())
+        owner.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+            ReceptionOnlyUnitV2(_profile(), received_frame=REVIEWED_RECEPTION_FRAME)
         )
         assert waits.get(timeout=5) == 0.250925
         assert owner.queue.snapshot().claimed_entities == 1
@@ -313,7 +314,7 @@ def test_stop_unknown_ordinary_work(worker_files, phase):
         assert not owner.is_alive()
         assert owner.queue.snapshot().published_entities == int(phase == "backoff")
         with sqlite3.connect(worker_files[0]) as db:
-            assert db.execute("SELECT count(*) FROM message_profiles").fetchone() == (
+            assert db.execute("SELECT count(*) FROM packet_receptions").fetchone() == (
                 1,
             )
         assert marker_rows(worker_files[0]) == [(None, None)]

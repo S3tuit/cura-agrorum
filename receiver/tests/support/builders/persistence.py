@@ -4,6 +4,7 @@ from dataclasses import replace
 
 from cura_receiver.generated import receiver_entities_generated as row
 from cura_receiver.generated import receiver_enums_generated as enum
+from tests.support.builders.protocol_ingress import authenticated_frame
 
 INSTANCE = bytes.fromhex("00112233445546778899aabbccddeeff")
 GROUP = b"g" * 8
@@ -68,26 +69,20 @@ def _rtc_observation(*, sequence=1):
 
 
 def _profile(*, sequence=1):
-    return row.MessageProfilingV1(
+    return row.PacketReceptionV1(
         receiver_instance_id=INSTANCE,
         occurrence_sequence=sequence,
         received_at_monotonic_us=10,
-        received_frame_length=0,
-        received_frame=bytes(255),
-        claimed_control=None,
-        claimed_domain=None,
-        claimed_node_id=None,
-        claimed_message_id=None,
-        header_authenticated=False,
+        domain=3,
+        node_id=b"n" * 8,
+        message_id=100,
         decoded_sample_id=None,
         rssi_dbm_x2=None,
         snr_db_x4=None,
         irq_status=2,
         device_errors=0,
-        processing_result=enum.ProcessingResult.REJECTED_MALFORMED_LENGTH,
-        ack_selected=enum.AckSelection.NONE,
+        processing_result=enum.ProcessingResult.WRONG_DIRECTION,
         ack_tx_result=enum.AckTxResult.NOT_APPLICABLE,
-        ack_frame=None,
         busy_wait_total_us=0,
         busy_wait_max_us=0,
         busy_wait_count=0,
@@ -95,7 +90,7 @@ def _profile(*, sequence=1):
         last_busy_timeout_opcode=None,
         t1_handler_started_monotonic_us=11,
         t2_packet_copied_monotonic_us=12,
-        t3_authentication_completed_monotonic_us=None,
+        t3_authentication_completed_monotonic_us=13,
         t4_set_tx_attempted_monotonic_us=None,
         t5_tx_done_monotonic_us=None,
         t6_set_rx_issued_monotonic_us=14,
@@ -176,7 +171,7 @@ def _measurement(
 ):
     from cura_receiver.persist_queue_entities import (
         AuthenticatedReadingCandidateV1,
-        MeasurementProfileUnitV1,
+        ReadingReceptionUnitV2,
     )
 
     from tests.support.builders.protocol_ingress import (
@@ -196,22 +191,15 @@ def _measurement(
     profile = replace(
         _profile(sequence=sequence),
         receiver_instance_id=instance,
-        received_frame_length=54,
-        received_frame=frame + bytes(201),
-        claimed_control=0x20,
-        claimed_domain=domain,
-        claimed_node_id=node,
-        claimed_message_id=message,
-        header_authenticated=True,
+        domain=domain, node_id=node, message_id=message,
         decoded_sample_id=sample,
         processing_result=enum.ProcessingResult.ACCEPTED,
-        ack_selected=enum.AckSelection.ACCEPTED,
         ack_tx_result=enum.AckTxResult.SUPPRESSED_AIRTIME_BUDGET,
-        ack_frame=authenticated_frame(
-            node_id=node, message_id=message, domain=3, body=b"\x00"
-        ),
         t3_authentication_completed_monotonic_us=13,
     )
-    return MeasurementProfileUnitV1(
-        AuthenticatedReadingCandidateV1(node, message, domain, sample, body), profile
+    return ReadingReceptionUnitV2(
+        AuthenticatedReadingCandidateV1(node, message, domain, sample, body), profile, frame
     )
+
+
+REVIEWED_RECEPTION_FRAME = authenticated_frame(node_id=b"n"*8, message_id=100, domain=3, body=b"\x00")

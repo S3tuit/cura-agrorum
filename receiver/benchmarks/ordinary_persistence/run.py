@@ -26,10 +26,10 @@ from cura_receiver.persist_queue import PersistQueue
 from cura_receiver.persist_queue_entities import (
     CLOCK_OBSERVATION_V1_SPEC,
     DIAGNOSTIC_V1_SPEC,
-    MEASUREMENT_PROFILE_V1_SPEC,
-    PROFILE_ONLY_V1_SPEC,
+    READING_RECEPTION_V2_SPEC,
+    RECEPTION_ONLY_V2_SPEC,
     RECEIVER_HEALTH_REQUEST_V1_SPEC,
-    ProfileOnlyUnitV1,
+    ReceptionOnlyUnitV2,
 )
 from cura_receiver.platform.linux_clocks import LinuxOsClock
 from cura_receiver.receiver_startup import (
@@ -40,6 +40,7 @@ from cura_receiver.sqlite_database import open_receiver_database
 from cura_receiver.sqlite_transactions import SqliteTransactions
 from tests.support.builders.persistence import (
     GROUP,
+    REVIEWED_RECEPTION_FRAME,
     INSTANCE,
     _diagnostic,
     _health_request,
@@ -65,12 +66,12 @@ def _inputs(count):
                         sample=200 + index // 2,
                         domain=1 if index % 2 == 0 else 2,
                     ),
-                    MEASUREMENT_PROFILE_V1_SPEC,
+                    READING_RECEPTION_V2_SPEC,
                 )
             )
         elif phase == 16:
             units.append(
-                (ProfileOnlyUnitV1(_profile(sequence=sequence)), PROFILE_ONLY_V1_SPEC)
+                (ReceptionOnlyUnitV2(_profile(sequence=sequence), received_frame=REVIEWED_RECEPTION_FRAME), RECEPTION_ONLY_V2_SPEC)
             )
         elif phase == 17:
             units.append((_observation(sequence=sequence), CLOCK_OBSERVATION_V1_SPEC))
@@ -246,7 +247,7 @@ def _case(output, units, mode, batch_size, rate, checkpoint_every):
             table: connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
             for table in (
                 "clock_observations",
-                "message_profiles",
+                "packet_receptions",
                 "reading_messages",
                 "diagnostics",
                 "receiver_health",
@@ -257,7 +258,7 @@ def _case(output, units, mode, batch_size, rate, checkpoint_every):
                 counts[t]
                 for t in (
                     "clock_observations",
-                    "message_profiles",
+                    "packet_receptions",
                     "diagnostics",
                     "receiver_health",
                 )

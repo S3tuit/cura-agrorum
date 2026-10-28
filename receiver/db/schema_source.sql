@@ -85,7 +85,11 @@ END;
 
 CREATE TRIGGER receiver_instances_monotonic_ordinal
 AFTER INSERT ON receiver_instances
-WHEN NEW.instance_ordinal != (SELECT count(*) FROM receiver_instances)
+WHEN NEW.instance_ordinal <= 0
+     OR NEW.instance_ordinal != (
+         SELECT instance_ordinal FROM receiver_instances
+         ORDER BY instance_ordinal DESC LIMIT 1
+     )
 BEGIN
     SELECT RAISE(ABORT, 'receiver_instances ordinal must be database ordered');
 END;

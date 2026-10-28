@@ -1,5 +1,7 @@
 from __future__ import annotations
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 
+import struct
 import shutil
 import tempfile
 from dataclasses import replace
@@ -12,9 +14,9 @@ from cura_receiver.ordinary_persistence import OrdinaryPersistence
 from cura_receiver.persist_queue import PersistQueue
 from cura_receiver.persist_queue_entities import (
     CLOCK_OBSERVATION_V1_SPEC,
-    MEASUREMENT_PROFILE_V1_SPEC,
-    PROFILE_ONLY_V1_SPEC,
-    ProfileOnlyUnitV1,
+    READING_RECEPTION_V2_SPEC,
+    RECEPTION_ONLY_V2_SPEC,
+    ReceptionOnlyUnitV2,
 )
 from cura_receiver.receiver_startup import (
     ReceiverInstanceStart,
@@ -107,15 +109,15 @@ class PersistenceMachine(RuleBasedStateMachine):
             )
             spec = CLOCK_OBSERVATION_V1_SPEC
         elif kind == "profile":
-            entity = ProfileOnlyUnitV1(
+            entity = ReceptionOnlyUnitV2(
                 replace(
                     _profile(sequence=self.uid),
                     receiver_instance_id=self.instance,
                     busy_wait_count=-1 if poison else 0,
                 )
-            )
-            work = replace(work, frame=bytes(255), poison=poison)
-            spec = PROFILE_ONLY_V1_SPEC
+            , received_frame=REVIEWED_RECEPTION_FRAME)
+            work = replace(work, frame=REVIEWED_RECEPTION_FRAME, poison=poison)
+            spec = RECEPTION_ONLY_V2_SPEC
         else:
             entity = _measurement(
                 sequence=self.uid,
@@ -133,10 +135,11 @@ class PersistenceMachine(RuleBasedStateMachine):
                 node=node,
                 message=message,
                 sample=sample,
-                frame=entity.profile.received_frame,
+                frame=entity.received_frame,
+                domain=domain,
                 body=entity.candidate.reading_body,
             )
-            spec = MEASUREMENT_PROFILE_V1_SPEC
+            spec = READING_RECEPTION_V2_SPEC
         self._publish(work, entity, spec)
 
     @rule(
@@ -213,15 +216,21 @@ class PersistenceMachine(RuleBasedStateMachine):
         assert {
             (i, s): (f, c)
             for i, s, f, c in self.connection.execute(
-                "SELECT receiver_instance_id,occurrence_sequence,received_frame,persistence_classification_id FROM message_profiles"
+                "SELECT receiver_instance_id,occurrence_sequence,domain,persistence_classification_id FROM packet_receptions"
             )
         } == self.model.rows["profiles"]
         assert {
             (n, m): tuple(rest)
             for n, m, *rest in self.connection.execute(
-                "SELECT node_id,message_id,sample_id,reading_body,is_canonical_for_sample,first_receiver_instance_id,first_occurrence_sequence FROM reading_messages"
-            )
-        } == self.model.rows["readings"]
+                "SELECT node_id,message_id,sample_id,is_canonical,run_ms,soil_0_mv,soil_1_mv,"
+                "soil_temp_0_centi_c,soil_temp_1_centi_c,enclosure_centi_c,enclosure_pressure_pa,"
+                "enclosure_humidity_centi_pct,reset_reason,previous_current_tx_attempts,"
+                "previous_awake_ms,previous_current_delivery_ms,previous_cycle_tx_attempts,"
+                "previous_cycle_accepted_readings,flags FROM reading_messages")
+        } == {key: (sample, canonical, *struct.unpack("<IHHHhhhIHBBHHBBH", body)[1:])
+              for key, (sample, body, canonical) in self.model.rows["readings"].items()}
+        assert {(n,m): d for n,m,d in self.connection.execute("SELECT node_id,message_id,domain FROM received_messages")} == self.model.rows["messages"]
+        assert {(i,s): (f,r) for i,s,f,r in self.connection.execute("SELECT receiver_instance_id,occurrence_sequence,received_frame,reason_id FROM packet_reception_exceptions")} == self.model.rows["exceptions"]
         assert self.connection.execute(
             "SELECT count(*) FROM quarantined_entities"
         ).fetchone() == (len(self.model.rows["quarantine"]),)
@@ -229,8 +238,10 @@ class PersistenceMachine(RuleBasedStateMachine):
         # stable, including fields outside the model's policy projection.
         for table in (
             "clock_observations",
-            "message_profiles",
+            "packet_receptions",
             "reading_messages",
+            "received_messages",
+            "packet_reception_exceptions",
             "quarantined_entities",
         ):
             current = set(self.connection.execute(f"SELECT * FROM {table}").fetchall())

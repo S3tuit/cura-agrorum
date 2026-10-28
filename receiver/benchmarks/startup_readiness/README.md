@@ -5,17 +5,18 @@ The pilot startup budget selected on **2026-10-06 is 12 seconds**:
 measured completion time. Application startup now accepts this explicit budget
 through `CURA_RECEIVER_STARTUP_BUDGET_US=12000000`; see the
 [deployment procedure](../../deploy/README.md). Installed application qualification
-is separate from these worker measurements. Current-schema fixtures include a
-radio observation for every health row. Their size and validation cost differ
-from the retained measurements; rerun on the Pi before claiming that the measured
-startup envelope covers this schema.
+is separate from these worker measurements. Current-schema fixtures include paired
+health/radio observations and authenticated receptions with exception evidence. Startup prepares required operations
+and bounds state inspection instead of auditing all historical rows. Their size
+and validation cost differ from the retained measurements; rerun on the Pi before
+claiming that the measured startup envelope covers this schema.
 
 For this pilot, **large database** means the measured synthetic fixture:
 21,315,584 main-database bytes (21.316 decimal MB, approximately 20.33 MiB),
 100,000 health rows, 100,000 clock observations, 8,000 profiles, and an initially
 empty WAL. “21 MB” is its short name, not a guarantee for any database with that
 file size. This budget applies to the pilot implementation and fixture envelope.
-Future production integrity checks and their budget require a fresh decision.
+Current readiness timings require a fresh source-bound campaign.
 The benchmark observation cap remains **60 seconds**, independent of the
 selected 12-second application budget.
 
@@ -57,8 +58,8 @@ without power. This is a power reset, not temperature conditioning.
 Database validation and component setup dominate. In the measured code, full
 `integrity_check` and `foreign_key_check` run on the initial read-only connection,
 again on the read/write connection, and again during `OrdinaryPersistence`
-construction. Stage measurements do not isolate individual SQL checks. Changing
-that validation design is deferred beyond this pilot budget decision.
+construction. Stage measurements do not isolate individual SQL checks. Those measurements describe the old source/schema only. Current readiness performs
+no history-wide integrity/FK scans; the retained results do not measure that design.
 
 The initial large reboot reached its 10-second cap without terminal publication
 (`PERSISTENCE_STARTUP_INCOMPLETE`, observed at 10.010311 s). Its completion time
@@ -136,7 +137,7 @@ it. A separate ten-second cleanup follows. The service uses
 `post_cleanup_startup` snapshot retains late publication without changing the
 original outcome. Late success is excluded from that request's timing sample.
 
-Offline preparation at `--scale 1` creates:
+The retained old-schema fixture sizes were:
 
 | Fixture | Health / clock / profile rows | Measured DB bytes | Initial WAL bytes |
 |---|---|---:|---:|
@@ -144,7 +145,10 @@ Offline preparation at `--scale 1` creates:
 | `large` | 100,000 / 100,000 / 8,000 | 21,315,584 | 0 |
 | `wal` | Same as `pilot` | 233,472 | 2,105,352 |
 
-All contain valid synthetic communicator state. These are controlled histories,
+Current preparation at `--scale 1` uses the same row-count scale, with one raw
+exception per synthetic authenticated wrong-direction reception. It records actual
+current sizes in each inventory. All contain valid synthetic communicator state.
+These are controlled histories,
 not production data; never point a production receiver at them. New schemas or
 SQLite versions can change fixture bytes/sizes: retain the new inventory.
 

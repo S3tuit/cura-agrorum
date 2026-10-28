@@ -21,7 +21,7 @@ There are two owners in one Python process:
 ```text
 SX1262 <--> communicator: radio / ingress / time / airtime
                   |
-                  +-- immutable readings, profiles, observations, diagnostics
+                  +-- immutable readings, receptions, observations, diagnostics
                   |                          |
                   |                     PersistQueue
                   |                          |
@@ -54,7 +54,7 @@ this guard.
 
 [`ProtocolIngress`](cura_receiver/protocol_ingress.py) authenticates and validates
 copied packet bytes, then reserves one bounded queue slot for a reading and its
-occurrence profile. An accepted ACK means that this RAM reservation succeeded
+reception record. An accepted ACK means that this RAM reservation succeeded
 while persistence admission was available. **It does not confirm a SQLite commit.**
 A crash or power loss can therefore lose an acknowledged reading before persistence.
 Waiting for a journal or database commit before ACK would require a different
@@ -67,20 +67,54 @@ The persistence owner frees a FIFO prefix only after durable completion or exact
 reconciliation. A separate admission snapshot closes new acceptance during storage
 failures without invalidating already owned work.
 
-The communicator keeps no duplicate-message history. Each physical occurrence gets
-its own profile; [reading persistence](cura_receiver/reading_persistence.py) classifies
-retransmissions, duplicate contents, and conflicts against immutable SQLite history.
-This keeps database decisions off the ACK path and retains conflicting observations.
-ACK suppression by airtime policy is independent of valid reading acceptance.
+The communicator keeps no duplicate-message history. Every admitted reading
+reception, including repeats, gets its own immutable record. Only authenticated
+packets can produce reception records; pre-authentication failures remain radio
+observations or health counts. [Reading persistence](cura_receiver/reading_persistence.py)
+classifies against the first transport domain and complete decoded payload, then
+the canonical sample. Neither reception history nor raw exception bytes are
+classification authority. ACK suppression by airtime policy is independent of
+valid reading acceptance.
+
+Transport identity is `(node_id, message_id)` in `received_messages`.
+`reading_messages` extends it with the first complete decoded reading, even when
+that candidate conflicts with an existing sample. Its `is_canonical` partial
+unique index selects at most one message per `(node_id, sample_id)`. This keeps
+a later reuse of a conflicting message ID detectable without copying payloads
+into a separate canonical table. Other message types can have other subtypes.
+
+`packet_receptions` owns reception identity, monotonic provenance, radio/timing
+facts and processing outcomes. Its one-to-one exception extension retains raw
+authenticated rejection/conflict evidence. Malformed, unsupported, wrong-direction
+and retry-later receptions do not establish transport authority; in particular,
+a reflected ACK cannot occupy an uplink ID. Normal repeats retain reception facts
+without raw copies. Field definitions and constraints belong to the
+[schema manifests](schemas/receiver_entities.json).
 
 ## Persistence and recovery
 
-SQLite uses WAL and `synchronous=FULL`, exact schema/group validation, and a single
-owner. Batches amortize write cost; explicit checkpoints avoid surprise checkpoint
+SQLite uses WAL and `synchronous=FULL`, exact metadata/schema-fingerprint/group
+compatibility checks, and a single owner. Batches amortize write cost; explicit checkpoints avoid surprise checkpoint
 work at connection close or arbitrary commit boundaries. See
 [`checkpoint_maintenance.py`](cura_receiver/checkpoint_maintenance.py) for commit
 coverage and scheduling, and [database maintenance](deploy/README.md#database-maintenance) for creation and
 restore procedures. Runtime never creates, migrates, or silently replaces a database.
+
+Readiness prepares required SQL operations, checks durability/FK settings, inspects
+only bounded operational state and necessary provenance, and commits the actual
+receiver-instance start. Historical integrity/FK scans are explicit offline
+maintenance, not startup or transient-recovery gates. Fresh database initialization
+still performs full validation. Indexed lifecycle ordering permits historical
+ordinal gaps. This bounds the set of readiness operations, not B-tree access,
+WAL recovery or kernel I/O latency.
+
+Usability is not a certificate of historical integrity. Queries must not hide an
+existing transport, reception or exception through an inner join to missing
+related history. Missing authority needed for the current decision is an explicit
+failure; an unrelated old orphan is not an admission failure. Detected corruption
+and contradictory current effects remain failures, never permission to repair or
+overwrite history. Bounded state inspection must not be mistaken for the complete
+set of rejected rows that a later recovery transaction must preserve.
 
 [Ordinary persistence](cura_receiver/ordinary_persistence.py) freezes derived values
 before attempting a commit. A lost commit result retains the lease until exact rows
@@ -89,7 +123,7 @@ failure, not permission to overwrite it. Item-local poison can be isolated and
 quarantined; global I/O faults retain the original work and close admission.
 
 [Shared recovery](cura_receiver/persistence_recovery.py) uses paced retries and
-requires storage validation, resolution of pending effects, and any required
+requires the same storage-usability checks, resolution of pending effects, and any required
 checkpoint before reopening admission. Corrupt/incompatible storage needs operator
 recovery. Same-process reopen remains bound to the original database file: restoring
 older history requires stopping the receiver and restarting through normal validation.
@@ -160,7 +194,7 @@ a confirmed complete uplink profile; ACK transmission installs its complete down
 profile, then restores uplink RX. Bounded recovery retains command certainty and
 reports a single episode rather than hiding uncertain effects behind retries.
 
-[Telemetry](cura_receiver/communicator_telemetry.py) publishes profiles before their
+[Telemetry](cura_receiver/communicator_telemetry.py) publishes authenticated receptions before their
 separate diagnostic attempt. A shared telemetry gate fences clock expiry before
 publication, including after blocking health probes and terminal cleanup. Accepted
 packet completion retains its existing ownership and bypasses that gate.

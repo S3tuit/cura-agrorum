@@ -7,13 +7,14 @@ import selectors
 import shutil
 import signal
 import subprocess
+import struct
 import sys
 from pathlib import Path
 
 from cura_receiver.database_initializer import initialize_database
 from cura_receiver.ordinary_persistence import OrdinaryPersistence
 from cura_receiver.persist_queue import PersistQueue, PersistQueueBatchLease
-from cura_receiver.persist_queue_entities import MEASUREMENT_PROFILE_V1_SPEC
+from cura_receiver.persist_queue_entities import READING_RECEPTION_V2_SPEC
 from cura_receiver.receiver_startup import (
     ReceiverInstanceStart,
     insert_receiver_instance_start,
@@ -82,7 +83,7 @@ def _child(path: Path, boundary: str, intended_path: Path):
     connection, queue, owner = _owner(path, transactions=CrashTransactions())
     connection.create_function("crash_boundary", 1, arrive)
     for table, name in (
-        ("message_profiles", "after_profile_write"),
+        ("packet_receptions", "after_profile_write"),
         ("reading_messages", "after_reading_write"),
     ):
         connection.execute(
@@ -96,7 +97,7 @@ def _child(path: Path, boundary: str, intended_path: Path):
         arrive("after_acknowledgement")
 
     PersistQueueBatchLease.acknowledge_durable = acknowledge
-    reservation = queue.try_reserve_one(MEASUREMENT_PROFILE_V1_SPEC)
+    reservation = queue.try_reserve_one(READING_RECEPTION_V2_SPEC)
     reservation.reservation.publish(intended)
     owner.attempt(max_entities=1)
     raise RuntimeError(f"child did not reach {boundary}")
@@ -176,7 +177,7 @@ def exercise_pair_crash(tmp_path, boundary):
     try:
         expected_count = int(boundary in DURABLE_BOUNDARIES)
         assert connection.execute(
-            "SELECT count(*) FROM message_profiles"
+            "SELECT count(*) FROM packet_receptions"
         ).fetchone() == (expected_count,)
         assert connection.execute(
             "SELECT count(*) FROM reading_messages"
@@ -186,24 +187,24 @@ def exercise_pair_crash(tmp_path, boundary):
         assert queue.snapshot().published_entities == 0
         before = tuple(
             connection.execute(f"SELECT * FROM {table}").fetchall()
-            for table in ("message_profiles", "reading_messages")
+            for table in ("packet_receptions", "reading_messages")
         )
-        queue.try_reserve_one(MEASUREMENT_PROFILE_V1_SPEC).reservation.publish(intended)
+        queue.try_reserve_one(READING_RECEPTION_V2_SPEC).reservation.publish(intended)
         assert owner.attempt(max_entities=1).acknowledged_entities == 1
         assert queue.snapshot().published_entities == 0
         after = tuple(
             connection.execute(f"SELECT * FROM {table}").fetchall()
-            for table in ("message_profiles", "reading_messages")
+            for table in ("packet_receptions", "reading_messages")
         )
         assert [len(rows) for rows in after] == [1, 1]
         if expected_count:
             assert after == before
         assert connection.execute(
-            "SELECT persistence_classification_id FROM message_profiles"
+            "SELECT persistence_classification_id FROM packet_receptions"
         ).fetchone() == (1,)
         assert connection.execute(
-            "SELECT node_id,message_id,sample_id,is_canonical_for_sample,reading_body FROM reading_messages"
-        ).fetchone() == (b"n" * 8, 100, 200, 1, intended.candidate.reading_body)
+            "SELECT node_id,message_id,sample_id,is_canonical,run_ms,soil_0_mv,soil_1_mv,soil_temp_0_centi_c,soil_temp_1_centi_c,enclosure_centi_c,enclosure_pressure_pa,enclosure_humidity_centi_pct,reset_reason,previous_current_tx_attempts,previous_awake_ms,previous_current_delivery_ms,previous_cycle_tx_attempts,previous_cycle_accepted_readings,flags FROM reading_messages"
+        ).fetchone() == (b"n" * 8, 100, 200, 1, *struct.unpack("<IHHHhhhIHBBHHBBH", intended.candidate.reading_body)[1:])
         assert connection.execute("PRAGMA integrity_check").fetchall() == [("ok",)]
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     finally:

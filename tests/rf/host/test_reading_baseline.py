@@ -36,16 +36,17 @@ def test_existing_history_does_not_count_as_new_wakes(tmp_path):
         db.execute('PRAGMA foreign_keys=ON')
         db.execute("insert into receiver_instances(instance_ordinal,receiver_instance_id,linux_boot_id,started_at_monotonic_us) values(2,?,?,1)",(b'o'*16,b'b'*16))
         db.row_factory=sqlite3.Row
-        profile=dict(db.execute('select * from message_profiles where occurrence_sequence=1').fetchone())
-        profile.update(receiver_instance_id=b'o'*16, claimed_message_id=1, decoded_sample_id=1)
+        profile=dict(db.execute('select * from packet_receptions where occurrence_sequence=1').fetchone())
+        profile.update(receiver_instance_id=b'o'*16, message_id=1, decoded_sample_id=1)
         cols=list(profile)
-        db.execute('insert into message_profiles('+','.join(cols)+') values('+','.join('?' for _ in cols)+')',list(profile.values()))
+        db.execute('insert into packet_receptions('+','.join(cols)+') values('+','.join('?' for _ in cols)+')',list(profile.values()))
         old=dict(db.execute('select * from reading_messages where message_id=100').fetchone())
-        old.update(message_id=1,sample_id=1,first_receiver_instance_id=b'o'*16)
+        old.update(message_id=1,sample_id=1)
+        db.execute("insert into received_messages values (?,?,1)", (NODE,1))
         cols=list(old)
         db.execute('insert into reading_messages('+','.join(cols)+') values('+','.join('?' for _ in cols)+')',list(old.values()))
     all_rows=capture_readings(p,NODE)
     before=dict(all_rows,rows={'1':all_rows['rows']['1']})
-    assert verify_service(p,NODE,KEY,decoded,INSTANCE,before)['wakes']==2
+    assert verify_service(p,NODE,decoded,INSTANCE,before)['wakes']==2
     with pytest.raises(ValueError,match='missing/extra canonical'):
-        verify_service(p,NODE,KEY,decoded,INSTANCE,all_rows)
+        verify_service(p,NODE,decoded,INSTANCE,all_rows)

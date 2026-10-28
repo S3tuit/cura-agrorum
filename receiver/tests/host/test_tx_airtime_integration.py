@@ -11,7 +11,7 @@ from cura_receiver.generated.receiver_enums_generated import (
     RadioState,
     RtcHealth as RH,
 )
-from cura_receiver.persist_queue_entities import MeasurementProfileUnitV1
+from cura_receiver.persist_queue_entities import ReadingReceptionUnitV2
 from cura_receiver.ports.chrony import ChronyTrackingResult, ChronyQueryStatus as CQ
 from cura_receiver.ports.ds3231 import (
     Ds3231ReadResult,
@@ -66,7 +66,7 @@ def test_budget_suppression_preserves_real_ingress_acceptance(airtime_component)
         ),
     )
     entity = finalized.published_entity
-    assert finalized.admission is None and isinstance(entity, MeasurementProfileUnitV1)
+    assert finalized.admission is None and isinstance(entity, ReadingReceptionUnitV2)
     assert entity.candidate is occurrence.candidate
     assert entity.profile.processing_result is ProcessingResult.ACCEPTED
     assert entity.profile.ack_tx_result is AckTxResult.SUPPRESSED_AIRTIME_BUDGET

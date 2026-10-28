@@ -148,6 +148,12 @@ class CommunicatorRuntime:
                           and exchange.finalization is not None else None)
                 active = c.ingress.active_occurrence
                 profile = entity.profile if entity is not None else active.pre_tx_profile if active is not None else None
+                ack_selected = (
+                    entity.profile.processing_result is not E.ProcessingResult.WRONG_DIRECTION
+                    if entity is not None else
+                    active.pre_tx_profile.ack_selected is not E.AckSelection.NONE
+                    if active is not None else False
+                )
                 candidate = entity.candidate if entity is not None and hasattr(entity, 'candidate') else active.candidate if active is not None else None
                 entity_kind = (E.PersistQueueEntityKind.MEASUREMENT_PROFILE if candidate is not None
                                else E.PersistQueueEntityKind.PROFILE_ONLY if profile is not None else None)
@@ -160,7 +166,7 @@ class CommunicatorRuntime:
                     safe_radio=radio_result is not None and radio_result.safe_shutdown is True,
                     related_occurrence_sequence=(c.occurrence_sequence if exchange is not None and c.occurrence_sequence else None),
                     related_entity_kind=entity_kind, occurrence_accepted=candidate is not None,
-                    ack_selected=profile is not None and profile.ack_selected is not E.AckSelection.NONE,
+                    ack_selected=ack_selected,
                     tx_may_have_started=tx is not None and tx.t4_set_tx_attempted_monotonic_us is not None
                         and tx.facts.set_tx_outcome is not Outcome.DEFINITELY_NOT_APPLIED,
                     airtime_group_outstanding=c.airtime.group_outstanding,

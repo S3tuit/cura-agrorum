@@ -4,6 +4,7 @@ Control deadlines are 5 s; an additional 0.5 s allows caller scheduling after
 completion. These are asymmetric acceptance bounds, not hard real-time claims.
 The slow case runs 30 s with one CPU/storage load process and a fixed seed.
 """
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 
 from dataclasses import replace
 import json
@@ -23,10 +24,10 @@ from cura_receiver.generated.receiver_enums_generated import AdmissionResult
 from cura_receiver.persist_queue_entities import (
     CLOCK_OBSERVATION_V1_SPEC,
     DIAGNOSTIC_V1_SPEC,
-    MEASUREMENT_PROFILE_V1_SPEC,
-    PROFILE_ONLY_V1_SPEC,
+    READING_RECEPTION_V2_SPEC,
+    RECEPTION_ONLY_V2_SPEC,
     RECEIVER_HEALTH_REQUEST_V1_SPEC,
-    ProfileOnlyUnitV1,
+    ReceptionOnlyUnitV2,
 )
 from cura_receiver.persistence_control_values import (
     CommunicatorStateLoadStatus as L,
@@ -78,9 +79,9 @@ def deadline(owner, seconds=5):
 
 
 def publish(owner, sequence):
-    reservation = owner.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+    reservation = owner.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
     assert reservation.status is AdmissionResult.RESERVED
-    reservation.reservation.publish(ProfileOnlyUnitV1(_profile(sequence=sequence)))
+    reservation.reservation.publish(ReceptionOnlyUnitV2(_profile(sequence=sequence), received_frame=REVIEWED_RECEPTION_FRAME))
 
 
 def evidence(root, **values):
@@ -253,7 +254,7 @@ def test_target_timer_checkpoint_stall(tmp_path):
         assert wal_sizes[0] > 0
         assert owner.queue.snapshot().published_entities == 0
         with sqlite3.connect(path) as db:
-            assert db.execute("SELECT count(*) FROM message_profiles").fetchone() == (
+            assert db.execute("SELECT count(*) FROM packet_receptions").fetchone() == (
                 96,
             )
     finally:
@@ -369,13 +370,13 @@ def test_target_worker_mixed_race_soak(tmp_path):
                 )
             elif choice == 1:
                 spec, entity = (
-                    MEASUREMENT_PROFILE_V1_SPEC,
+                    READING_RECEPTION_V2_SPEC,
                     _measurement(sequence=sequence, message=sequence, sample=sequence),
                 )
             elif choice == 2:
                 spec, entity = (
-                    PROFILE_ONLY_V1_SPEC,
-                    ProfileOnlyUnitV1(_profile(sequence=sequence)),
+                    RECEPTION_ONLY_V2_SPEC,
+                    ReceptionOnlyUnitV2(_profile(sequence=sequence), received_frame=REVIEWED_RECEPTION_FRAME),
                 )
             elif choice == 3:
                 spec, entity = DIAGNOSTIC_V1_SPEC, _diagnostic(sequence=sequence)

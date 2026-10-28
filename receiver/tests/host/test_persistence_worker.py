@@ -1,3 +1,4 @@
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 import sqlite3
 from threading import Event, current_thread
 
@@ -253,8 +254,8 @@ def test_worker_rejects_missing_control_schema(worker_files, table):
 def test_flush_deadline_and_unrelated_wake(worker_files):
     from queue import Queue
     from cura_receiver.persist_queue_entities import (
-        PROFILE_ONLY_V1_SPEC,
-        ProfileOnlyUnitV1,
+        RECEPTION_ONLY_V2_SPEC,
+        ReceptionOnlyUnitV2,
     )
     from tests.support.builders.persistence import _profile
 
@@ -279,8 +280,8 @@ def test_flush_deadline_and_unrelated_wake(worker_files):
     try:
         assert worker.wait_started(deadline_monotonic_us=5_000_100)
         assert waits.get(timeout=5) == 5.0
-        worker.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-            ProfileOnlyUnitV1(_profile())
+        worker.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+            ReceptionOnlyUnitV2(_profile(), received_frame=REVIEWED_RECEPTION_FRAME)
         )
         assert waits.get(timeout=5) == 5.0
         clock.advance_elapsed_us(4_999_999)
@@ -293,7 +294,7 @@ def test_flush_deadline_and_unrelated_wake(worker_files):
         assert worker.queue.snapshot().published_entities == 0
         with sqlite3.connect(database) as observer:
             assert observer.execute(
-                "SELECT count(*) FROM message_profiles"
+                "SELECT count(*) FROM packet_receptions"
             ).fetchone() == (1,)
     finally:
         stop_worker(worker)
@@ -304,8 +305,8 @@ def test_worker_reuses_retry_deadline(worker_files):
     from queue import Queue
     from cura_receiver.sqlite_transactions import SqliteTransactions
     from cura_receiver.persist_queue_entities import (
-        PROFILE_ONLY_V1_SPEC,
-        ProfileOnlyUnitV1,
+        RECEPTION_ONLY_V2_SPEC,
+        ReceptionOnlyUnitV2,
     )
     from tests.support.builders.persistence import _profile
 
@@ -339,8 +340,8 @@ def test_worker_reuses_retry_deadline(worker_files):
     try:
         assert worker.wait_started(deadline_monotonic_us=5_000_100)
         assert waits.get(timeout=5) == 5.0
-        worker.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-            ProfileOnlyUnitV1(_profile())
+        worker.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+            ReceptionOnlyUnitV2(_profile(), received_frame=REVIEWED_RECEPTION_FRAME)
         )
         first_wait = waits.get(timeout=5)
         assert first_wait > 0.25
@@ -363,8 +364,8 @@ def test_count_threshold_and_batch_limit(worker_files):
     from queue import Queue
     from cura_receiver.sqlite_transactions import SqliteTransactions
     from cura_receiver.persist_queue_entities import (
-        PROFILE_ONLY_V1_SPEC,
-        ProfileOnlyUnitV1,
+        RECEPTION_ONLY_V2_SPEC,
+        ReceptionOnlyUnitV2,
     )
     from tests.support.builders.persistence import _profile
 
@@ -403,12 +404,12 @@ def test_count_threshold_and_batch_limit(worker_files):
         assert worker.wait_started(deadline_monotonic_us=5_000_100)
         assert waits.get(timeout=5) == 5.0
         for sequence in (1, 2):
-            worker.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-                ProfileOnlyUnitV1(_profile(sequence=sequence))
+            worker.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+                ReceptionOnlyUnitV2(_profile(sequence=sequence), received_frame=REVIEWED_RECEPTION_FRAME)
             )
         assert arrived.wait(5)
-        worker.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-            ProfileOnlyUnitV1(_profile(sequence=3))
+        worker.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+            ReceptionOnlyUnitV2(_profile(sequence=3), received_frame=REVIEWED_RECEPTION_FRAME)
         )
         release.set()
         waits.get(timeout=5)
@@ -478,7 +479,7 @@ def test_worker_empty_checkpoint_recovery_through_cap(worker_files):
         with sqlite3.connect(database) as observer:
             for table in (
                 "clock_observations",
-                "message_profiles",
+                "packet_receptions",
                 "receiver_health",
                 "diagnostics",
                 "quarantined_entities",

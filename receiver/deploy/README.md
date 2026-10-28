@@ -514,21 +514,29 @@ running, allow a sample and persistence flush, then inspect recent readings:
 ```bash
 sudo -u cura-receiver sqlite3 -readonly -header -column \
   /var/lib/cura-agrorum/receiver.sqlite3 <<'SQL'
-SELECT lower(hex(m.node_id)) AS node_id, m.message_id, m.sample_id,
-       printf('0x%04x', m.flags) AS flags, m.soil_0_mv, m.soil_1_mv,
+SELECT p.occurrence_sequence, lower(hex(p.node_id)) AS node_id,
+       p.message_id, p.decoded_sample_id AS received_sample_id,
+       p.domain AS received_domain, t.domain AS first_domain,
+       p.persistence_classification_id, m.sample_id AS first_sample_id,
+       m.is_canonical, m.flags, m.soil_0_mv, m.soil_1_mv,
        m.soil_temp_0_centi_c, m.soil_temp_1_centi_c
-FROM reading_messages AS m
-JOIN message_profiles AS p
-  ON p.receiver_instance_id = m.first_receiver_instance_id
- AND p.occurrence_sequence = m.first_occurrence_sequence
-WHERE m.first_receiver_instance_id = (
+FROM packet_receptions AS p
+LEFT JOIN received_messages AS t
+  ON t.node_id = p.node_id AND t.message_id = p.message_id
+LEFT JOIN reading_messages AS m
+  ON m.node_id = p.node_id AND m.message_id = p.message_id
+WHERE p.receiver_instance_id = (
     SELECT receiver_instance_id FROM receiver_instances ORDER BY instance_ordinal DESC LIMIT 1
 )
-ORDER BY p.received_at_monotonic_us DESC LIMIT 5;
+ORDER BY p.occurrence_sequence DESC LIMIT 5;
 SQL
 ```
 
-Require the provisioned node ID and advancing samples. `flags` determines which
+The left joins retain rejections without transport authority and expose missing
+authority as NULL instead of hiding the reception. A conflict's received sample
+or domain may differ from the immutable first payload; use its classification
+before interpreting the decoded values. Require the provisioned node ID and
+advancing samples. `flags` determines which
 sensor values are valid; the [reading format](../../protocol/protocol-v2-lora/README.md#reading-payload)
 owns its interpretation. Stored readings confirm receiver ingestion, while S3
 delivery reports establish whether it received ACKs. Detailed installed-system
@@ -538,7 +546,7 @@ and RF qualification remain owned by [the test guide](../tests/README.md).
 
 Ordinary redeployment preserves the database. Runtime requires the installed
 schema version and fingerprint exactly and performs no migration. If a schema
-change requires a fresh database (including the radio-observation schema), stop
+change requires a fresh database (including the transport/reception schema), stop
 all users, preserve the complete existing database/WAL/SHM set, and follow [database initialization](#11-initialize-the-group-bound-database)
 at an absent destination. Do not overwrite field history to install a new schema.
 
@@ -546,6 +554,25 @@ A commissioning image must not be restored or reused after transmissions without
 establishing empty radio history again. Restoring an older database does not
 restore the physical radio's past airtime allowance. Follow the initialization
 step's known-empty-history requirements whenever commissioning a fresh database.
+
+Startup and transient recovery check compatibility, required operations,
+durability settings, bounded operational state and necessary provenance. A durable
+instance start establishes current usability; it does not certify historical
+integrity. Unrelated historical orphans do not block admission, but unusable
+authority needed for classification and detected structural corruption remain
+explicit failures. See [storage ownership](../ARCHITECTURE.md#acceptance-and-durability).
+
+For a historical audit, first preserve the stopped database/WAL/SHM set as
+described below and work on a separate consistent copy. Full checks can take
+time proportional to history:
+
+```sh
+sqlite3 -readonly /path/to/consistent-copy.sqlite3 'PRAGMA integrity_check; PRAGMA foreign_key_check;'
+```
+
+Require `ok` and no foreign-key rows. An audit does not repair missing data or
+authorize writes to the preserved originals. Fresh initialization still runs
+full checks before publishing the new database.
 
 ### Last-resort operator restoration
 

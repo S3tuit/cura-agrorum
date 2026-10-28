@@ -306,7 +306,7 @@ def run(args):
         service.capture_journal()
         database = service.capture_database()
         captured = node.capture_after()
-        record["results"].append(verify_service(database, node_id, keys[node_id], captured,
+        record["results"].append(verify_service(database, node_id, captured,
                                                bytes.fromhex(ready["instance"]), reading_baseline))
     record["status"] = "PASS"
     write_json(root / "run.json", record)

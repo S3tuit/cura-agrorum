@@ -15,7 +15,7 @@ from cura_receiver.persist_queue import (
     PersistQueue,
     PersistenceAdmissionSnapshot,
 )
-from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC
+from cura_receiver.persist_queue_entities import RECEPTION_ONLY_V2_SPEC
 from tests.support.coordination.threads import (
     join_checked_threads,
     start_checked_threads,
@@ -69,11 +69,11 @@ def test_production_queue_preallocates_and_uses_all_500_slots() -> None:
     )
 
     for value in range(500):
-        result = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+        result = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
         assert result.status is AdmissionResult.RESERVED
         assert result.reservation is not None
         result.reservation.publish(value)
-    assert queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).status is AdmissionResult.QUEUE_FULL
+    assert queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).status is AdmissionResult.QUEUE_FULL
     assert _ack_all(queue, 500) == tuple(range(500))
     assert backing_identities == (
         id(queue._payload_slots),
@@ -87,10 +87,10 @@ def test_target_queue_pressure_recovers_after_consumer_acknowledgement() -> None
     queue = PersistQueue()
     _make_available(queue)
     for value in range(500):
-        result = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+        result = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
         assert result.reservation is not None
         result.reservation.publish(value)
-    assert queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).status is AdmissionResult.QUEUE_FULL
+    assert queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).status is AdmissionResult.QUEUE_FULL
 
     consumer_ready = Event()
     allow_acknowledgement = Event()
@@ -110,7 +110,7 @@ def test_target_queue_pressure_recovers_after_consumer_acknowledgement() -> None
     allow_acknowledgement.set()
     _wait(capacity_released)
 
-    result = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+    result = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
     assert result.status is AdmissionResult.RESERVED
     assert result.reservation is not None
     result.reservation.publish(500)
@@ -143,7 +143,7 @@ def test_target_sustained_handoff_wraparound_latency_and_close_drain(
         for value in range(item_count):
             while True:
                 started = perf_counter_ns()
-                result = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+                result = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
                 reservation_call_ns.append(perf_counter_ns() - started)
                 if result.status is AdmissionResult.RESERVED:
                     assert result.reservation is not None
@@ -154,7 +154,7 @@ def test_target_sustained_handoff_wraparound_latency_and_close_drain(
                 assert result.status is AdmissionResult.QUEUE_FULL
                 capacity_released.clear()
                 started = perf_counter_ns()
-                retry = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+                retry = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
                 reservation_call_ns.append(perf_counter_ns() - started)
                 if retry.status is AdmissionResult.RESERVED:
                     assert retry.reservation is not None

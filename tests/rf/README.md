@@ -416,9 +416,12 @@ The production service user and sandbox are unchanged.
 
 Capture includes UART, the service invocation journal, source/configuration
 hashes, a consistent SQLite backup, and the full read-only node image. Independent
-reconciliation checks authenticated 54/23-byte frames, canonical body/projections,
-nominal sensor flags and established ranges, classification/timestamp completeness,
+reconciliation checks decoded transport/reading authority, authenticated reception
+outcomes, nominal sensor flags and established ranges, classification/timestamp completeness,
 node delivery outcomes, counters, next-wake metrics and the clean service marker.
+Normal uplink and ACK bytes are not retained in SQL, so this service check cannot
+independently decrypt or compare those wire bytes. Raw conflict/rejection bytes
+remain in the reception exception table.
 Missing evidence, changed sources/configuration, service restart, extra wakes,
 or failed cleanup cannot pass. Host tests do not establish physical service.reading_delivery PASS.
 

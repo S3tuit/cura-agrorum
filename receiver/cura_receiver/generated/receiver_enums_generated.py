@@ -5,11 +5,11 @@ from __future__ import annotations
 
 from enum import Enum, unique
 
-RECEIVER_ENUM_MANIFEST_SHA256 = 'd8cd609e2fcb0296895339554f94bcca85ccc21fefdc23c96e526e5fee2d1a9a'
-RECEIVER_ENTITY_MANIFEST_SHA256 = 'ced92d7786e630fe43585d93683f55d358669b0952e72fe1643fee4632c94ed7'
+RECEIVER_ENUM_MANIFEST_SHA256 = 'f7f289a2a9ef69fffa0df34232f699fed12c3ed7dc078a7a2c9aa307055b9984'
+RECEIVER_ENTITY_MANIFEST_SHA256 = 'e942afb3f0b2fd98f03405414fa78b6b81f0d7402ff6754447db0a23dece0d8b'
 SQLITE_APPLICATION_ID = 0x43555252
-DATABASE_SCHEMA_VERSION = 17
-DATABASE_SCHEMA_SHA256 = 'b974b9e3ac4aba05af8a9def99c8188f09a5a25901a3c8591c17b6fb7f0117d2'
+DATABASE_SCHEMA_VERSION = 18
+DATABASE_SCHEMA_SHA256 = '54a8bb06815396d41adca442bfffe7d214d68dc693a4d3c484058e18d1e6c19e'
 DATABASE_SCHEMA_FINGERPRINT = bytes.fromhex(DATABASE_SCHEMA_SHA256)
 
 __all__ = [
@@ -19,6 +19,7 @@ __all__ = [
     "DATABASE_SCHEMA_VERSION",
     "DATABASE_SCHEMA_SHA256",
     "DATABASE_SCHEMA_FINGERPRINT",
+    "PacketExceptionReason",
     "RadioChipMode",
     "RadioObservationTrigger",
     "RadioCaptureStatus",
@@ -72,6 +73,16 @@ __all__ = [
     "PersistQueueViolationDetailCode",
     "PersistenceControlViolationDetailCode",
 ]
+
+@unique
+class PacketExceptionReason(Enum):
+    REJECTED_UNSUPPORTED_CONTROL = 1
+    REJECTED_UNSUPPORTED_DOMAIN = 2
+    REJECTED_MALFORMED_LENGTH = 3
+    REJECTED_MALFORMED_BODY = 4
+    WRONG_DIRECTION = 5
+    DUPLICATE_CONFLICT = 6
+    MESSAGE_ID_CONFLICT = 7
 
 @unique
 class RadioChipMode(Enum):

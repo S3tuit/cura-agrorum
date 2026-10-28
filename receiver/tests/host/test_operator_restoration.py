@@ -1,3 +1,4 @@
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 import json
 import shutil
 import sqlite3
@@ -8,7 +9,7 @@ from cura_receiver.generated.receiver_enums_generated import (
 )
 from cura_receiver.ordinary_persistence import OrdinaryPersistence
 from cura_receiver.persist_queue import PersistQueue
-from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC, ProfileOnlyUnitV1
+from cura_receiver.persist_queue_entities import RECEPTION_ONLY_V2_SPEC, ReceptionOnlyUnitV2
 from cura_receiver.receiver_configuration import ReceiverConfigurationReader
 from cura_receiver.receiver_startup import (
     create_receiver_instance,
@@ -38,14 +39,14 @@ def test_operator_restore_loses_queue_and_newer_history(setup, tmp_path):
     owner = create(CorruptQuarantine())
     owner.enable_admission()
     for profile in (_profile(), replace(_profile(sequence=2), busy_wait_count=-1)):
-        queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-            ProfileOnlyUnitV1(profile)
+        queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+            ReceptionOnlyUnitV2(profile, received_frame=REVIEWED_RECEPTION_FRAME)
         )
     owner.attempt(max_entities=2)  # Roll back the mixed batch for isolation.
     assert owner.attempt(max_entities=2).acknowledged_entities == 1
     assert queue.snapshot().published_entities == queue.snapshot().claimed_entities == 1
     assert connection.execute(
-        "SELECT occurrence_sequence FROM message_profiles"
+        "SELECT occurrence_sequence FROM packet_receptions"
     ).fetchall() == [(1,)]
     owner.attempt(max_entities=2)  # Reproduce poison B alone.
     failure = owner.attempt(max_entities=2).failure
@@ -130,7 +131,7 @@ def test_operator_restore_loses_queue_and_newer_history(setup, tmp_path):
         restarted.enable_admission()
         assert restarted_queue.snapshot().published_entities == 0
         assert restarted.attempt(max_entities=2) is None
-        for table in ("message_profiles", "quarantined_entities"):
+        for table in ("packet_receptions", "quarantined_entities"):
             assert startup.database.connection.execute(
                 f"SELECT count(*) FROM {table}"
             ).fetchone() == (0,)
@@ -140,12 +141,12 @@ def test_operator_restore_loses_queue_and_newer_history(setup, tmp_path):
         profile = replace(
             _profile(), receiver_instance_id=instance.receiver_instance_id
         )
-        restarted_queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-            ProfileOnlyUnitV1(profile)
+        restarted_queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+            ReceptionOnlyUnitV2(profile, received_frame=REVIEWED_RECEPTION_FRAME)
         )
         assert restarted.attempt(max_entities=1).acknowledged_entities == 1
         assert startup.database.connection.execute(
-            "SELECT receiver_instance_id FROM message_profiles"
+            "SELECT receiver_instance_id FROM packet_receptions"
         ).fetchall() == [(instance.receiver_instance_id,)]
         assert {saved: saved.read_bytes() for saved in preserved} == preserved
     finally:

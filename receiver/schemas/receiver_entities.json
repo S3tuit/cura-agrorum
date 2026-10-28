@@ -98,63 +98,93 @@
       ]
     },
     {
-      "name": "MESSAGE_PROFILING_V1",
-      "python_name": "MessageProfilingV1",
+      "name": "PACKET_RECEPTION_V1",
+      "python_name": "PacketReceptionV1",
       "fields": [
-        {"name": "receiver_instance_id", "type": "bytes[16]"},
-        {"name": "occurrence_sequence", "type": "u64"},
-        {"name": "received_at_monotonic_us", "type": "u64"},
         {
-          "name": "received_frame_length",
+          "name": "receiver_instance_id",
+          "type": "bytes[16]"
+        },
+        {
+          "name": "occurrence_sequence",
+          "type": "u64"
+        },
+        {
+          "name": "received_at_monotonic_us",
+          "type": "u64"
+        },
+        {
+          "name": "domain",
+          "type": "u8"
+        },
+        {
+          "name": "node_id",
+          "type": "bytes[8]"
+        },
+        {
+          "name": "message_id",
+          "type": "u32"
+        },
+        {
+          "name": "decoded_sample_id",
+          "type": "u32",
+          "nullable": true
+        },
+        {
+          "name": "rssi_dbm_x2",
+          "type": "i16",
+          "nullable": true
+        },
+        {
+          "name": "snr_db_x4",
+          "type": "i16",
+          "nullable": true
+        },
+        {
+          "name": "irq_status",
           "type": "u16",
-          "maximum": 255,
           "nullable": true
         },
         {
-          "name": "received_frame",
-          "type": "bytes[255]",
+          "name": "device_errors",
+          "type": "u16",
           "nullable": true
         },
-        {"name": "claimed_control", "type": "u8", "nullable": true},
-        {"name": "claimed_domain", "type": "u8", "nullable": true},
-        {
-          "name": "claimed_node_id",
-          "type": "bytes[8]",
-          "nullable": true
-        },
-        {"name": "claimed_message_id", "type": "u32", "nullable": true},
-        {"name": "header_authenticated", "type": "bool8"},
-        {"name": "decoded_sample_id", "type": "u32", "nullable": true},
-        {"name": "rssi_dbm_x2", "type": "i16", "nullable": true},
-        {"name": "snr_db_x4", "type": "i16", "nullable": true},
-        {"name": "irq_status", "type": "u16", "nullable": true},
-        {"name": "device_errors", "type": "u16", "nullable": true},
         {
           "name": "processing_result",
           "type": "enum:PROCESSING_RESULT",
           "column": "processing_result_id"
         },
         {
-          "name": "ack_selected",
-          "type": "enum:ACK_SELECTION",
-          "column": "ack_selected_id"
-        },
-        {
           "name": "ack_tx_result",
           "type": "enum:ACK_TX_RESULT",
           "column": "ack_tx_result_id"
         },
-        {"name": "ack_frame", "type": "bytes[23]", "nullable": true},
-        {"name": "busy_wait_total_us", "type": "u64"},
-        {"name": "busy_wait_max_us", "type": "u64"},
-        {"name": "busy_wait_count", "type": "u32"},
-        {"name": "busy_timeout_count", "type": "u32"},
+        {
+          "name": "busy_wait_total_us",
+          "type": "u64"
+        },
+        {
+          "name": "busy_wait_max_us",
+          "type": "u64"
+        },
+        {
+          "name": "busy_wait_count",
+          "type": "u32"
+        },
+        {
+          "name": "busy_timeout_count",
+          "type": "u32"
+        },
         {
           "name": "last_busy_timeout_opcode",
           "type": "u8",
           "nullable": true
         },
-        {"name": "t1_handler_started_monotonic_us", "type": "u64"},
+        {
+          "name": "t1_handler_started_monotonic_us",
+          "type": "u64"
+        },
         {
           "name": "t2_packet_copied_monotonic_us",
           "type": "u64",
@@ -1258,93 +1288,78 @@
       ]
     },
     {
-      "name": "MESSAGE_PERSISTENCE_TRANSACTION_V1",
+      "name": "MESSAGE_PERSISTENCE_TRANSACTION_V2",
       "persistence": {
         "mode": "multi_table_transaction",
         "atomic": true,
         "targets": [
           {
-            "name": "MESSAGE_PROFILE_ROW_V1",
-            "python_name": "MessageProfileRowV1",
-            "table": "message_profiles",
+            "name": "RECEIVED_MESSAGE_ROW_V1",
+            "python_name": "ReceivedMessageRowV1",
+            "table": "received_messages",
             "write_policy": "append_only",
             "primary_key": [
-              "receiver_instance_id",
-              "occurrence_sequence"
+              "node_id",
+              "message_id"
             ],
             "without_rowid": true,
             "fields": [
               {
-                "name": "profile",
-                "type": "logical_record:MESSAGE_PROFILING_V1",
-                "sql": {"flatten": true}
+                "name": "node_id",
+                "type": "bytes[8]"
               },
               {
-                "name": "persistence_classification",
-                "type": "enum:PERSISTENCE_CLASSIFICATION",
-                "column": "persistence_classification_id"
+                "name": "message_id",
+                "type": "u32"
+              },
+              {
+                "name": "domain",
+                "type": "u8",
+                "minimum": 1,
+                "maximum": 2
               }
             ],
-            "foreign_keys": [
-              {
-                "columns": ["receiver_instance_id"],
-                "references": {
-                  "table": "receiver_instances",
-                  "columns": ["receiver_instance_id"]
-                }
-              },
-              {
-                "columns": ["processing_result_id"],
-                "references": {
-                  "table": "processing_result_codes",
-                  "columns": ["id"]
-                }
-              },
-              {
-                "columns": ["ack_selected_id"],
-                "references": {
-                  "table": "ack_selection_codes",
-                  "columns": ["id"]
-                }
-              },
-              {
-                "columns": ["ack_tx_result_id"],
-                "references": {
-                  "table": "ack_tx_result_codes",
-                  "columns": ["id"]
-                }
-              },
-              {
-                "columns": ["persistence_classification_id"],
-                "references": {
-                  "table": "persistence_classification_codes",
-                  "columns": ["id"]
-                }
-              }
-            ]
+            "foreign_keys": []
           },
           {
-            "name": "READING_MESSAGE_ROW_V1",
-            "python_name": "ReadingMessageRowV1",
+            "name": "READING_MESSAGE_ROW_V2",
+            "python_name": "ReadingMessageRowV2",
             "table": "reading_messages",
             "write_policy": "append_only",
-            "primary_key": ["node_id", "message_id"],
+            "primary_key": [
+              "node_id",
+              "message_id"
+            ],
             "without_rowid": true,
             "fields": [
-              {"name": "node_id", "type": "bytes[8]"},
-              {"name": "message_id", "type": "u32"},
-              {"name": "sample_id", "type": "u32"},
               {
-                "name": "reading_body",
-                "type": "bytes[32]"
+                "name": "node_id",
+                "type": "bytes[8]"
               },
               {
-                "name": "is_canonical_for_sample",
+                "name": "message_id",
+                "type": "u32"
+              },
+              {
+                "name": "sample_id",
+                "type": "u32"
+              },
+              {
+                "name": "is_canonical",
                 "type": "bool8"
               },
-              {"name": "run_ms", "type": "u16"},
-              {"name": "soil_0_mv", "type": "u16"},
-              {"name": "soil_1_mv", "type": "u16"},
+              {
+                "name": "run_ms",
+                "type": "u16"
+              },
+              {
+                "name": "soil_0_mv",
+                "type": "u16"
+              },
+              {
+                "name": "soil_1_mv",
+                "type": "u16"
+              },
               {
                 "name": "soil_temp_0_centi_c",
                 "type": "i16"
@@ -1389,23 +1404,21 @@
                 "name": "previous_cycle_accepted_readings",
                 "type": "u8"
               },
-              {"name": "flags", "type": "u16"},
               {
-                "name": "first_receiver_instance_id",
-                "type": "bytes[16]"
-              },
-              {
-                "name": "first_occurrence_sequence",
-                "type": "u64"
+                "name": "flags",
+                "type": "u16"
               }
             ],
             "indexes": [
               {
                 "name": "reading_messages_one_canonical_sample",
-                "columns": ["node_id", "sample_id"],
+                "columns": [
+                  "node_id",
+                  "sample_id"
+                ],
                 "unique": true,
                 "where": {
-                  "column": "is_canonical_for_sample",
+                  "column": "is_canonical",
                   "equals": 1
                 }
               }
@@ -1413,14 +1426,150 @@
             "foreign_keys": [
               {
                 "columns": [
-                  "first_receiver_instance_id",
-                  "first_occurrence_sequence"
+                  "node_id",
+                  "message_id"
                 ],
                 "references": {
-                  "table": "message_profiles",
+                  "table": "received_messages",
+                  "columns": [
+                    "node_id",
+                    "message_id"
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "name": "PACKET_RECEPTION_ROW_V1",
+            "python_name": "PacketReceptionRowV1",
+            "table": "packet_receptions",
+            "write_policy": "append_only",
+            "primary_key": [
+              "receiver_instance_id",
+              "occurrence_sequence"
+            ],
+            "without_rowid": true,
+            "fields": [
+              {
+                "name": "profile",
+                "type": "logical_record:PACKET_RECEPTION_V1",
+                "sql": {
+                  "flatten": true
+                }
+              },
+              {
+                "name": "persistence_classification",
+                "type": "enum:PERSISTENCE_CLASSIFICATION",
+                "column": "persistence_classification_id"
+              }
+            ],
+            "foreign_keys": [
+              {
+                "columns": [
+                  "receiver_instance_id"
+                ],
+                "references": {
+                  "table": "receiver_instances",
+                  "columns": [
+                    "receiver_instance_id"
+                  ]
+                }
+              },
+              {
+                "columns": [
+                  "processing_result_id"
+                ],
+                "references": {
+                  "table": "processing_result_codes",
+                  "columns": [
+                    "id"
+                  ]
+                }
+              },
+              {
+                "columns": [
+                  "ack_tx_result_id"
+                ],
+                "references": {
+                  "table": "ack_tx_result_codes",
+                  "columns": [
+                    "id"
+                  ]
+                }
+              },
+              {
+                "columns": [
+                  "persistence_classification_id"
+                ],
+                "references": {
+                  "table": "persistence_classification_codes",
+                  "columns": [
+                    "id"
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "name": "PACKET_RECEPTION_EXCEPTION_ROW_V1",
+            "python_name": "PacketReceptionExceptionRowV1",
+            "table": "packet_reception_exceptions",
+            "write_policy": "append_only",
+            "primary_key": [
+              "receiver_instance_id",
+              "occurrence_sequence"
+            ],
+            "without_rowid": true,
+            "fields": [
+              {
+                "name": "receiver_instance_id",
+                "type": "bytes[16]"
+              },
+              {
+                "name": "occurrence_sequence",
+                "type": "u64"
+              },
+              {
+                "name": "received_frame_length",
+                "type": "u16",
+                "minimum": 22,
+                "maximum": 255
+              },
+              {
+                "name": "received_frame",
+                "type": "bytes",
+                "minimum_length": 22,
+                "maximum_length": 255,
+                "length_field": "received_frame_length"
+              },
+              {
+                "name": "reason",
+                "type": "enum:PACKET_EXCEPTION_REASON",
+                "column": "reason_id"
+              }
+            ],
+            "foreign_keys": [
+              {
+                "columns": [
+                  "receiver_instance_id",
+                  "occurrence_sequence"
+                ],
+                "references": {
+                  "table": "packet_receptions",
                   "columns": [
                     "receiver_instance_id",
                     "occurrence_sequence"
+                  ]
+                }
+              },
+              {
+                "columns": [
+                  "reason_id"
+                ],
+                "references": {
+                  "table": "packet_exception_reason_codes",
+                  "columns": [
+                    "id"
                   ]
                 }
               }

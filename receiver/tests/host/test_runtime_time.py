@@ -1,3 +1,4 @@
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 from cura_receiver.generated.receiver_entities_generated import AirtimeSnapshotV1
 from dataclasses import replace
 
@@ -1201,7 +1202,7 @@ def step_crash_child(root, milestone, pipe):
     from threading import Event
     import sqlite3
     from cura_receiver.persist_queue_entities import (
-        PROFILE_ONLY_V1_SPEC, ProfileOnlyUnitV1,
+        RECEPTION_ONLY_V2_SPEC, ReceptionOnlyUnitV2,
     )
     from tests.support.builders.persistence import _profile
 
@@ -1252,15 +1253,15 @@ def step_crash_child(root, milestone, pipe):
         t1_handler_started_monotonic_us=1002, t2_packet_copied_monotonic_us=1003,
         t6_set_rx_issued_monotonic_us=1004,
     )
-    reservation = rt.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+    reservation = rt.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
     assert reservation.status is E.AdmissionResult.RESERVED
-    reservation.reservation.publish(ProfileOnlyUnitV1(profile))
+    reservation.reservation.publish(ReceptionOnlyUnitV2(profile, received_frame=REVIEWED_RECEPTION_FRAME))
     assert arrived.wait(5), "worker did not reach its named persistence boundary"
     with sqlite3.connect(database) as db:
         boundary_rows = db.execute(
             "SELECT count(*) FROM clock_observations"
         ).fetchone()[0]
-        profile_rows = db.execute("SELECT count(*) FROM message_profiles").fetchone()[0]
+        profile_rows = db.execute("SELECT count(*) FROM packet_receptions").fetchone()[0]
     assert boundary_rows == int(committed_count >= 1)
     assert profile_rows == int(committed_count == 2)
     pipe.send({
@@ -1341,7 +1342,7 @@ def test_step_publication_process_crash_restart(tmp_path, milestone, committed):
                     "SELECT count(*) FROM clock_observations"
                 ).fetchone()[0] == int(committed >= 1)
                 assert db.execute(
-                    "SELECT count(*) FROM message_profiles"
+                    "SELECT count(*) FROM packet_receptions"
                 ).fetchone()[0] == int(committed == 2)
             kernel = FakeKernelClock()
             rt = RuntimeTime(

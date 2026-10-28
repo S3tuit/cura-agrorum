@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 
 import base64
 from dataclasses import fields
@@ -13,7 +14,7 @@ from tests.support.builders.persistence import _radio_observation
 from cura_receiver.generated.receiver_entities_generated import (
     ClockObservationV1,
     DiagnosticV1,
-    MessageProfilingV1,
+    PacketReceptionV1,
 )
 from cura_receiver.generated.protocol_v2_lora_generated import Domain
 from cura_receiver.generated.receiver_enums_generated import (
@@ -30,12 +31,12 @@ from cura_receiver.generated.receiver_enums_generated import (
 from cura_receiver.persist_queue_entities import (
     CLOCK_OBSERVATION_V1_SPEC,
     DIAGNOSTIC_V1_SPEC,
-    MEASUREMENT_PROFILE_V1_SPEC,
-    PROFILE_ONLY_V1_SPEC,
+    READING_RECEPTION_V2_SPEC,
+    RECEPTION_ONLY_V2_SPEC,
     RECEIVER_HEALTH_REQUEST_V1_SPEC,
     AuthenticatedReadingCandidateV1,
-    MeasurementProfileUnitV1,
-    ProfileOnlyUnitV1,
+    ReadingReceptionUnitV2,
+    ReceptionOnlyUnitV2,
     ReceiverHealthRequestV1,
 )
 from cura_receiver.quarantine_evidence import (
@@ -63,27 +64,21 @@ from cura_receiver.quarantine_evidence import (
 )
 
 
-def _profile() -> MessageProfilingV1:
-    return MessageProfilingV1(
+def _profile() -> PacketReceptionV1:
+    return PacketReceptionV1(
         receiver_instance_id=b"r" * 16,
         occurrence_sequence=1,
         received_at_monotonic_us=2,
-        received_frame_length=3,
-        received_frame=b"abc" + bytes(252),
-        claimed_control=32,
-        claimed_domain=1,
-        claimed_node_id=b"n" * 8,
-        claimed_message_id=5,
-        header_authenticated=True,
+        domain=1,
+        node_id=b"n" * 8,
+        message_id=5,
         decoded_sample_id=6,
         rssi_dbm_x2=-140,
         snr_db_x4=12,
         irq_status=7,
         device_errors=0,
         processing_result=ProcessingResult.ACCEPTED,
-        ack_selected=AckSelection.ACCEPTED,
         ack_tx_result=AckTxResult.TX_DONE,
-        ack_frame=b"a" * 23,
         busy_wait_total_us=8,
         busy_wait_max_us=9,
         busy_wait_count=10,
@@ -133,7 +128,7 @@ def _queue_entities() -> tuple[tuple[object, object], ...]:
     profile = _profile()
     return (
         (
-            MeasurementProfileUnitV1(
+            ReadingReceptionUnitV2(
                 candidate=AuthenticatedReadingCandidateV1(
                     node_id=b"n" * 8,
                     message_id=1,
@@ -142,10 +137,10 @@ def _queue_entities() -> tuple[tuple[object, object], ...]:
                     reading_body=b"b" * 32,
                 ),
                 profile=profile,
-            ),
-            MEASUREMENT_PROFILE_V1_SPEC,
+             received_frame=REVIEWED_RECEPTION_FRAME),
+            READING_RECEPTION_V2_SPEC,
         ),
-        (ProfileOnlyUnitV1(profile=profile), PROFILE_ONLY_V1_SPEC),
+        (ReceptionOnlyUnitV2(profile=profile, received_frame=REVIEWED_RECEPTION_FRAME), RECEPTION_ONLY_V2_SPEC),
         (_health_request(), RECEIVER_HEALTH_REQUEST_V1_SPEC),
         (
             DiagnosticV1(
@@ -217,10 +212,10 @@ def test_wrong_supported_types_lengths_and_large_integers_remain_exact() -> None
         sample_id=True,
         reading_body=b"",
     )
-    unit = MeasurementProfileUnitV1(candidate=candidate, profile=_profile())
+    unit = ReadingReceptionUnitV2(candidate=candidate, profile=_profile(), received_frame=REVIEWED_RECEPTION_FRAME)
 
     evidence = decode_quarantine_evidence_v1(
-        encode_quarantine_evidence_v1(unit, spec=MEASUREMENT_PROFILE_V1_SPEC)
+        encode_quarantine_evidence_v1(unit, spec=READING_RECEPTION_V2_SPEC)
     )
     assert isinstance(evidence.value, NeutralRecordV1)
     candidate_node = evidence.value.fields[0].value
@@ -279,12 +274,12 @@ ALLOWED_ENUM_MEMBERS = tuple(
 def test_every_allowlisted_enum_assignment_round_trips(member: Enum) -> None:
     evidence = decode_quarantine_evidence_v1(
         encode_quarantine_evidence_v1(
-            ProfileOnlyUnitV1(profile=member),  # type: ignore[arg-type]
-            spec=PROFILE_ONLY_V1_SPEC,
+            ReceptionOnlyUnitV2(profile=member, received_frame=REVIEWED_RECEPTION_FRAME),  # type: ignore[arg-type]
+            spec=RECEPTION_ONLY_V2_SPEC,
         )
     )
     assert isinstance(evidence.value, NeutralRecordV1)
-    assert len(evidence.value.fields) == 1
+    assert len(evidence.value.fields) == 2
     assert evidence.value.fields[0].name == "profile"
     enum_node = evidence.value.fields[0].value
     assert enum_node == NeutralEnumV1(
@@ -308,19 +303,19 @@ def test_every_allowlisted_enum_assignment_round_trips(member: Enum) -> None:
 def test_encoder_rejects_values_outside_the_closed_algebra(
     unsupported: object,
 ) -> None:
-    unit = ProfileOnlyUnitV1(profile=unsupported)  # type: ignore[arg-type]
+    unit = ReceptionOnlyUnitV2(profile=unsupported, received_frame=REVIEWED_RECEPTION_FRAME)  # type: ignore[arg-type]
 
     with pytest.raises(QuarantineEvidenceEncodeError, match="unsupported"):
-        encode_quarantine_evidence_v1(unit, spec=PROFILE_ONLY_V1_SPEC)
+        encode_quarantine_evidence_v1(unit, spec=RECEPTION_ONLY_V2_SPEC)
 
 
 # Deliberately corrupted frozen records cannot induce recursive evidence encoding.
 def test_encoder_rejects_cycles() -> None:
-    unit = ProfileOnlyUnitV1(profile=_profile())
+    unit = ReceptionOnlyUnitV2(profile=_profile(), received_frame=REVIEWED_RECEPTION_FRAME)
     object.__setattr__(unit, "profile", unit)
 
     with pytest.raises(QuarantineEvidenceEncodeError, match="cycle"):
-        encode_quarantine_evidence_v1(unit, spec=PROFILE_ONLY_V1_SPEC)
+        encode_quarantine_evidence_v1(unit, spec=RECEPTION_ONLY_V2_SPEC)
 
 
 # Each scalar and collection bound is enforced before canonical evidence is returned.
@@ -334,10 +329,10 @@ def test_encoder_rejects_cycles() -> None:
     ),
 )
 def test_encoder_rejects_scalar_and_tuple_bounds(oversized: object) -> None:
-    unit = ProfileOnlyUnitV1(profile=oversized)  # type: ignore[arg-type]
+    unit = ReceptionOnlyUnitV2(profile=oversized, received_frame=REVIEWED_RECEPTION_FRAME)  # type: ignore[arg-type]
 
     with pytest.raises(QuarantineEvidenceEncodeError, match="limit"):
-        encode_quarantine_evidence_v1(unit, spec=PROFILE_ONLY_V1_SPEC)
+        encode_quarantine_evidence_v1(unit, spec=RECEPTION_ONLY_V2_SPEC)
 
 
 # Aggregate depth, node-count and document-size limits fail closed independently.
@@ -347,19 +342,19 @@ def test_encoder_rejects_depth_node_and_total_output_bounds(
     nested: object = 0
     for _ in range(40):
         nested = (nested,)
-    too_deep = ProfileOnlyUnitV1(profile=nested)  # type: ignore[arg-type]
+    too_deep = ReceptionOnlyUnitV2(profile=nested, received_frame=REVIEWED_RECEPTION_FRAME)  # type: ignore[arg-type]
     with pytest.raises(QuarantineEvidenceEncodeError, match="depth limit"):
-        encode_quarantine_evidence_v1(too_deep, spec=PROFILE_ONLY_V1_SPEC)
+        encode_quarantine_evidence_v1(too_deep, spec=RECEPTION_ONLY_V2_SPEC)
 
     many_nodes = tuple((0, 1, 2, 3) for _ in range(1_024))
-    too_many = ProfileOnlyUnitV1(profile=many_nodes)  # type: ignore[arg-type]
+    too_many = ReceptionOnlyUnitV2(profile=many_nodes, received_frame=REVIEWED_RECEPTION_FRAME)  # type: ignore[arg-type]
     with pytest.raises(QuarantineEvidenceEncodeError, match="node limit"):
-        encode_quarantine_evidence_v1(too_many, spec=PROFILE_ONLY_V1_SPEC)
+        encode_quarantine_evidence_v1(too_many, spec=RECEPTION_ONLY_V2_SPEC)
 
     import cura_receiver.quarantine_evidence as evidence_module
 
     scalar = b"x" * QUARANTINE_EVIDENCE_MAX_SCALAR_BYTES
-    unit = ProfileOnlyUnitV1(profile=(scalar,) * 256)  # type: ignore[arg-type]
+    unit = ReceptionOnlyUnitV2(profile=(scalar,) * 256, received_frame=REVIEWED_RECEPTION_FRAME)  # type: ignore[arg-type]
     base64_calls = 0
     envelope_values: list[object] = []
     real_base64_encode = evidence_module.base64.b64encode
@@ -378,7 +373,7 @@ def test_encoder_rejects_depth_node_and_total_output_bounds(
     monkeypatch.setattr(evidence_module.base64, "b64encode", counted_base64_encode)
     monkeypatch.setattr(evidence_module, "_canonical_json", observed_canonical_json)
     with pytest.raises(QuarantineEvidenceEncodeError, match="byte limit"):
-        encode_quarantine_evidence_v1(unit, spec=PROFILE_ONLY_V1_SPEC)
+        encode_quarantine_evidence_v1(unit, spec=RECEPTION_ONLY_V2_SPEC)
     assert base64_calls < len(unit.profile)  # type: ignore[arg-type]
     assert envelope_values == [None]
 
@@ -398,8 +393,8 @@ def _canonical_mutation(encoded: bytes, mutation: object) -> bytes:
 def _canonical_evidence_document(value: object) -> bytes:
     return json.dumps(
         {
-            "entity_kind": PROFILE_ONLY_V1_SPEC.kind.value,
-            "entity_schema_version": PROFILE_ONLY_V1_SPEC.schema_version,
+            "entity_kind": RECEPTION_ONLY_V2_SPEC.kind.value,
+            "entity_schema_version": RECEPTION_ONLY_V2_SPEC.schema_version,
             "format": QUARANTINE_EVIDENCE_FORMAT,
             "format_version": QUARANTINE_EVIDENCE_VERSION,
             "value": value,
@@ -503,7 +498,7 @@ def test_decoder_rejects_depth_node_tuple_and_scalar_bounds() -> None:
 # The decoder accepts one bounded canonical ASCII JSON document and nothing around it.
 def test_decoder_rejects_noncanonical_duplicate_trailing_and_oversized_json() -> None:
     encoded = encode_quarantine_evidence_v1(
-        ProfileOnlyUnitV1(profile=_profile()), spec=PROFILE_ONLY_V1_SPEC
+        ReceptionOnlyUnitV2(profile=_profile(), received_frame=REVIEWED_RECEPTION_FRAME), spec=RECEPTION_ONLY_V2_SPEC
     )
     duplicate = encoded.replace(
         b'{"entity_kind":2,',
@@ -546,7 +541,7 @@ def test_decoder_rejects_unknown_envelope_tags_classes_and_fields(
     mutation: object,
 ) -> None:
     encoded = encode_quarantine_evidence_v1(
-        ProfileOnlyUnitV1(profile=_profile()), spec=PROFILE_ONLY_V1_SPEC
+        ReceptionOnlyUnitV2(profile=_profile(), received_frame=REVIEWED_RECEPTION_FRAME), spec=RECEPTION_ONLY_V2_SPEC
     )
 
     with pytest.raises(QuarantineEvidenceDecodeError):
@@ -556,7 +551,7 @@ def test_decoder_rejects_unknown_envelope_tags_classes_and_fields(
 # Alternate integer and base64 spellings cannot represent the same evidence bytes.
 def test_decoder_rejects_noncanonical_integer_and_base64_nodes() -> None:
     encoded = encode_quarantine_evidence_v1(
-        ProfileOnlyUnitV1(profile=_profile()), spec=PROFILE_ONLY_V1_SPEC
+        ReceptionOnlyUnitV2(profile=_profile(), received_frame=REVIEWED_RECEPTION_FRAME), spec=RECEPTION_ONLY_V2_SPEC
     )
 
     noncanonical_integer = _canonical_mutation(
@@ -595,7 +590,7 @@ def test_decoder_module_exposes_no_imported_production_entity_classes() -> None:
 def test_neutral_nodes_and_document_are_frozen_and_slotted() -> None:
     evidence = decode_quarantine_evidence_v1(
         encode_quarantine_evidence_v1(
-            ProfileOnlyUnitV1(profile=_profile()), spec=PROFILE_ONLY_V1_SPEC
+            ReceptionOnlyUnitV2(profile=_profile(), received_frame=REVIEWED_RECEPTION_FRAME), spec=RECEPTION_ONLY_V2_SPEC
         )
     )
 

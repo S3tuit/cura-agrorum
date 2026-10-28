@@ -11,6 +11,7 @@ from uuid import RFC_4122, UUID, uuid4
 from .generated.receiver_enums_generated import PersistenceAdmissionState
 from .ports.clocks import MonotonicClock
 from .persistence_startup import StartupStage
+from .sqlite_repository import INSTANCE_START_SQL
 from .receiver_configuration import (
     ReceiverConfigurationLoadResult,
     ReceiverConfigurationLoadStatus,
@@ -91,9 +92,7 @@ def insert_receiver_instance_start(
     try:
         connection.execute("BEGIN IMMEDIATE")
         cursor = connection.execute(
-            "INSERT INTO receiver_instances "
-            "(receiver_instance_id, linux_boot_id, started_at_monotonic_us) "
-            "VALUES (?, ?, ?)",
+            INSTANCE_START_SQL,
             (
                 instance.receiver_instance_id,
                 linux_boot_id,

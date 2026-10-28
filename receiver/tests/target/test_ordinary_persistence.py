@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 
 import json
 import os
@@ -19,10 +20,10 @@ from cura_receiver.persist_queue import PersistQueue
 from cura_receiver.persist_queue_entities import (
     CLOCK_OBSERVATION_V1_SPEC,
     DIAGNOSTIC_V1_SPEC,
-    MEASUREMENT_PROFILE_V1_SPEC,
-    PROFILE_ONLY_V1_SPEC,
+    READING_RECEPTION_V2_SPEC,
+    RECEPTION_ONLY_V2_SPEC,
     RECEIVER_HEALTH_REQUEST_V1_SPEC,
-    ProfileOnlyUnitV1,
+    ReceptionOnlyUnitV2,
 )
 from cura_receiver.platform.linux_clocks import LinuxOsClock
 from cura_receiver.platform.linux_host_observations import LinuxHostObservations
@@ -110,18 +111,18 @@ def test_target_mixed_ordinary_workload(tmp_path, batch_size):
             pair = _measurement(
                 sequence=sequence * 2, message=100 + sequence, sample=200 + sequence
             )
-            profile = ProfileOnlyUnitV1(_profile(sequence=sequence * 2 + 1))
+            profile = ReceptionOnlyUnitV2(_profile(sequence=sequence * 2 + 1), received_frame=REVIEWED_RECEPTION_FRAME)
             units = (
                 (_observation(sequence=sequence), CLOCK_OBSERVATION_V1_SPEC),
-                (pair, MEASUREMENT_PROFILE_V1_SPEC),
-                (profile, PROFILE_ONLY_V1_SPEC),
+                (pair, READING_RECEPTION_V2_SPEC),
+                (profile, RECEPTION_ONLY_V2_SPEC),
                 (_diagnostic(sequence=sequence), DIAGNOSTIC_V1_SPEC),
                 (_health_request(sequence=sequence), RECEIVER_HEALTH_REQUEST_V1_SPEC),
             )
             for entity, spec in units:
                 _publish(queue, entity, spec)
-            expected[pair.profile.occurrence_sequence] = pair.profile.received_frame
-            expected[profile.profile.occurrence_sequence] = bytes(255)
+            expected[pair.profile.occurrence_sequence] = pair.profile.message_id
+            expected[profile.profile.occurrence_sequence] = profile.profile.message_id
         acknowledged = 0
         while queue.snapshot().published_entities:
             result = owner.attempt(max_entities=batch_size)
@@ -131,7 +132,7 @@ def test_target_mixed_ordinary_workload(tmp_path, batch_size):
         assert (
             dict(
                 connection.execute(
-                    "SELECT occurrence_sequence,received_frame FROM message_profiles"
+                    "SELECT occurrence_sequence,message_id FROM packet_receptions"
                 )
             )
             == expected
@@ -140,7 +141,7 @@ def test_target_mixed_ordinary_workload(tmp_path, batch_size):
             "SELECT observation_sequence,sampled_at_monotonic_us FROM clock_observations ORDER BY observation_sequence"
         ).fetchall() == [(n, 10) for n in range(1, 25)]
         assert connection.execute(
-            "SELECT message_id,sample_id,is_canonical_for_sample,soil_0_mv FROM reading_messages ORDER BY message_id"
+            "SELECT message_id,sample_id,is_canonical,soil_0_mv FROM reading_messages ORDER BY message_id"
         ).fetchall() == [(100 + n, 200 + n, 1, 1000) for n in range(1, 25)]
         assert connection.execute(
             "SELECT diagnostic_sequence,context FROM diagnostics ORDER BY diagnostic_sequence"
@@ -166,7 +167,7 @@ def test_target_mixed_ordinary_workload(tmp_path, batch_size):
         ]
         tables = (
             "clock_observations",
-            "message_profiles",
+            "packet_receptions",
             "reading_messages",
             "diagnostics",
             "receiver_health",
@@ -219,7 +220,7 @@ def _check_bounded_full_recovery(bounded_storage, remount):
     filler.write_bytes(bytes(1024 * 1024))
     connection, queue, owner = _create(path, minimum_free_bytes=4 * 1024 * 1024)
     try:
-        _publish(queue, ProfileOnlyUnitV1(_profile()), PROFILE_ONLY_V1_SPEC)
+        _publish(queue, ReceptionOnlyUnitV2(_profile(), received_frame=REVIEWED_RECEPTION_FRAME), RECEPTION_ONLY_V2_SPEC)
         assert (
             owner.attempt(max_entities=64).failure.admission_state
             is State.UNAVAILABLE_LOW_SPACE
@@ -235,8 +236,8 @@ def _check_bounded_full_recovery(bounded_storage, remount):
                 sequence = 2 + batch * 64 + offset
                 _publish(
                     queue,
-                    ProfileOnlyUnitV1(_profile(sequence=sequence)),
-                    PROFILE_ONLY_V1_SPEC,
+                    ReceptionOnlyUnitV2(_profile(sequence=sequence), received_frame=REVIEWED_RECEPTION_FRAME),
+                    RECEPTION_ONLY_V2_SPEC,
                 )
             attempt = owner.attempt(max_entities=64)
             if attempt.failure is not None:
@@ -247,11 +248,11 @@ def _check_bounded_full_recovery(bounded_storage, remount):
         assert failure.admission_state is State.UNAVAILABLE_DISK_FULL
         assert queue.snapshot().published_entities == 64
         assert (
-            queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).status
+            queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).status
             is AdmissionResult.PERSISTENCE_UNAVAILABLE
         )
         assert connection.execute(
-            "SELECT count(*) FROM message_profiles"
+            "SELECT count(*) FROM packet_receptions"
         ).fetchone() == (committed,)
         assert owner.attempt(max_entities=64) is None
         filler.unlink()
@@ -260,7 +261,7 @@ def _check_bounded_full_recovery(bounded_storage, remount):
         assert result.acknowledged_entities == 64
         assert queue.snapshot().admission_snapshot.state is State.AVAILABLE
         assert connection.execute(
-            "SELECT count(*) FROM message_profiles"
+            "SELECT count(*) FROM packet_receptions"
         ).fetchone() == (committed + 64,)
         assert connection.execute("PRAGMA integrity_check").fetchall() == [("ok",)]
     finally:

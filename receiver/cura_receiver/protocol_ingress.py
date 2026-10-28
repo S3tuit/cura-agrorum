@@ -7,7 +7,7 @@ from types import MappingProxyType
 from typing import Mapping
 
 from .generated import protocol_v2_lora_generated as protocol
-from .generated.receiver_entities_generated import MessageProfilingV1
+from .generated.receiver_entities_generated import PacketReceptionV1
 from .generated.receiver_enums_generated import (
     AckSelection,
     AckTxResult,
@@ -21,11 +21,11 @@ from .producer_admission import ProducerAdmission
 from .core_diagnostics import CoreFault
 from .generated import receiver_enums_generated as E
 from .persist_queue_entities import (
-    MEASUREMENT_PROFILE_V1_SPEC,
-    PROFILE_ONLY_V1_SPEC,
+    READING_RECEPTION_V2_SPEC,
+    RECEPTION_ONLY_V2_SPEC,
     AuthenticatedReadingCandidateV1,
-    MeasurementProfileUnitV1,
-    ProfileOnlyUnitV1,
+    ReadingReceptionUnitV2,
+    ReceptionOnlyUnitV2,
 )
 from .ports.clocks import MonotonicClock
 from .protocol_v2_lora_crypto import (
@@ -295,12 +295,8 @@ class ProtocolIngressPreTxProfileV1:
         _require_exact_bytes(
             self.received_frame,
             "received_frame",
-            _PROFILE_FRAME_CAPACITY,
+            self.received_frame_length,
         )
-        if any(self.received_frame[self.received_frame_length :]):
-            raise ProtocolIngressInterfaceError(
-                "received_frame tail after received_frame_length must be zero"
-            )
         _require_optional_int_range(
             self.claimed_control,
             "claimed_control",
@@ -480,7 +476,7 @@ class ProtocolIngressFinalizationV1:
     """Publication result, including any admission deferred until rearm."""
 
     admission: ProtocolIngressAdmissionV1 | None
-    published_entity: MeasurementProfileUnitV1 | ProfileOnlyUnitV1 | None
+    published_entity: ReadingReceptionUnitV2 | ReceptionOnlyUnitV2 | None
 
 
 class ProtocolIngress:
@@ -640,7 +636,7 @@ class ProtocolIngress:
             occurrence_sequence=packet.occurrence_sequence,
             received_at_monotonic_us=packet.received_at_monotonic_us,
             received_frame_length=len(frame),
-            received_frame=frame + bytes(_PROFILE_FRAME_CAPACITY - len(frame)),
+            received_frame=frame,
             claimed_control=claimed_control,
             claimed_domain=claimed_domain,
             claimed_node_id=claimed_node_id,
@@ -676,8 +672,8 @@ class ProtocolIngress:
             self._active_occurrence = occurrence
             return occurrence
 
-        requested_spec = (MEASUREMENT_PROFILE_V1_SPEC
-            if processing_result is ProcessingResult.ACCEPTED else PROFILE_ONLY_V1_SPEC)
+        requested_spec = (READING_RECEPTION_V2_SPEC
+            if processing_result is ProcessingResult.ACCEPTED else RECEPTION_ONLY_V2_SPEC)
         retry_ack = self._build_ack(node_key=node_key, claimed_node_id=claimed_node_id,
             claimed_message_id=claimed_message_id, ack_selected=AckSelection.RETRY_LATER)
         prepared = {}
@@ -724,7 +720,7 @@ class ProtocolIngress:
         occurrence: ProtocolIngressOccurrenceV1,
         terminal: ProtocolIngressTerminalV1,
     ) -> ProtocolIngressFinalizationV1:
-        """Publish the terminal occurrence, admitting silent profiles after rearm."""
+        """Publish authenticated receptions, with best-effort admission after rearm."""
 
         if type(occurrence) is not ProtocolIngressOccurrenceV1:
             raise ProtocolIngressInterfaceError(
@@ -740,15 +736,23 @@ class ProtocolIngress:
             )
         self._validate_terminal(occurrence.pre_tx_profile, terminal)
 
+        if not occurrence.pre_tx_profile.header_authenticated:
+            if occurrence._reservation is not None:
+                raise ProtocolIngressInterfaceError("unauthenticated occurrence owns a reservation")
+            self._active_occurrence = None
+            return ProtocolIngressFinalizationV1(admission=None, published_entity=None)
+        raw_frame = occurrence.pre_tx_profile.received_frame
         profile = self._complete_profile(occurrence.pre_tx_profile, terminal)
         admission: ProtocolIngressAdmissionV1 | None = None
-        published_entity: MeasurementProfileUnitV1 | ProfileOnlyUnitV1 | None = None
+        published_entity: ReadingReceptionUnitV2 | ReceptionOnlyUnitV2 | None = None
 
-        if occurrence.admission is None:
-            prepared_entity = _representation(ProfileOnlyUnitV1, profile=profile, _phase=E.CorePhase.POST_RESPONSE_FINALIZATION)
+        if occurrence.admission is None or occurrence.admission.result is not AdmissionResult.RESERVED:
+            if occurrence._reservation is not None:
+                raise ProtocolIngressInterfaceError("failed ingress admission retained a reservation")
+            prepared_entity = _representation(ReceptionOnlyUnitV2, profile=profile, received_frame=raw_frame, _phase=E.CorePhase.POST_RESPONSE_FINALIZATION)
             prepared_admissions = {status: _representation(ProtocolIngressAdmissionV1,
                 PersistQueueEntityKind.PROFILE_ONLY, status) for status in AdmissionResult}
-            reserve_result = self._queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+            reserve_result = self._queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
             admission = prepared_admissions[reserve_result.status]
             if reserve_result.status is AdmissionResult.RESERVED:
                 if reserve_result.reservation is None:
@@ -761,26 +765,21 @@ class ProtocolIngress:
                 raise ProtocolIngressInterfaceError(
                     "failed queue admission returned a reservation"
                 )
-        elif occurrence.admission.result is AdmissionResult.RESERVED:
+        else:
             reservation = occurrence._reservation
             if reservation is None:
                 raise ProtocolIngressInterfaceError(
                     "reserved ingress occurrence lost its queue reservation"
                 )
             if occurrence.candidate is None:
-                published_entity = _representation(ProfileOnlyUnitV1, profile=profile, _phase=E.CorePhase.POST_RESPONSE_FINALIZATION)
+                published_entity = _representation(ReceptionOnlyUnitV2, profile=profile, received_frame=raw_frame, _phase=E.CorePhase.POST_RESPONSE_FINALIZATION)
             else:
-                published_entity = _representation(MeasurementProfileUnitV1, _phase=E.CorePhase.POST_RESPONSE_FINALIZATION,
+                published_entity = _representation(ReadingReceptionUnitV2, _phase=E.CorePhase.POST_RESPONSE_FINALIZATION,
                     candidate=occurrence.candidate,
                     profile=profile,
+                    received_frame=raw_frame,
                 )
             reservation.publish(published_entity)
-        else:
-            if occurrence._reservation is not None:
-                raise ProtocolIngressInterfaceError(
-                    "failed ingress admission retained a reservation"
-                )
-
         occurrence._reservation = None
         self._active_occurrence = None
 
@@ -939,27 +938,21 @@ class ProtocolIngress:
     def _complete_profile(
         pre_tx: ProtocolIngressPreTxProfileV1,
         terminal: ProtocolIngressTerminalV1,
-    ) -> MessageProfilingV1:
-        return _representation(MessageProfilingV1, _phase=E.CorePhase.POST_RESPONSE_FINALIZATION,
+    ) -> PacketReceptionV1:
+        return _representation(PacketReceptionV1, _phase=E.CorePhase.POST_RESPONSE_FINALIZATION,
             receiver_instance_id=pre_tx.receiver_instance_id,
             occurrence_sequence=pre_tx.occurrence_sequence,
             received_at_monotonic_us=pre_tx.received_at_monotonic_us,
-            received_frame_length=pre_tx.received_frame_length,
-            received_frame=pre_tx.received_frame,
-            claimed_control=pre_tx.claimed_control,
-            claimed_domain=pre_tx.claimed_domain,
-            claimed_node_id=pre_tx.claimed_node_id,
-            claimed_message_id=pre_tx.claimed_message_id,
-            header_authenticated=pre_tx.header_authenticated,
+            domain=pre_tx.claimed_domain,
+            node_id=pre_tx.claimed_node_id,
+            message_id=pre_tx.claimed_message_id,
             decoded_sample_id=pre_tx.decoded_sample_id,
             rssi_dbm_x2=pre_tx.rssi_dbm_x2,
             snr_db_x4=pre_tx.snr_db_x4,
             irq_status=pre_tx.irq_status,
             device_errors=pre_tx.device_errors,
             processing_result=pre_tx.processing_result,
-            ack_selected=pre_tx.ack_selected,
             ack_tx_result=terminal.ack_tx_result,
-            ack_frame=pre_tx.ack_frame,
             busy_wait_total_us=pre_tx.busy_wait_total_us,
             busy_wait_max_us=pre_tx.busy_wait_max_us,
             busy_wait_count=pre_tx.busy_wait_count,

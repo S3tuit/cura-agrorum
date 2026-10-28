@@ -95,7 +95,7 @@ def test_classified_failure_is_visible_while_cleanup_is_blocked(worker_files, mo
             return super().close()
     monkeypatch.setattr(sqlite3, 'connect', lambda *a, **k: connect(*a, factory=Connection, **k))
     if boundary == 'validation_close':
-        monkeypatch.setattr(database, '_validate_integrity', lambda *_: (_ for _ in ()).throw(OSError(errno.EIO, 'fixture')))
+        monkeypatch.setattr(database, '_validate_required_projections', lambda *_: (_ for _ in ()).throw(OSError(errno.EIO, 'fixture')))
         original_close = Connection.close
         def close(self):
             block()

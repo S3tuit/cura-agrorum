@@ -1,3 +1,4 @@
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 from dataclasses import replace
 from pathlib import Path
 from queue import Queue
@@ -10,7 +11,7 @@ from cura_receiver.generated.receiver_enums_generated import (
     AdmissionResult,
     PersistenceAdmissionState as State,
 )
-from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC, ProfileOnlyUnitV1
+from cura_receiver.persist_queue_entities import RECEPTION_ONLY_V2_SPEC, ReceptionOnlyUnitV2
 from cura_receiver.receiver_startup import ReceiverInstanceStart
 from cura_receiver.sqlite_transactions import SqliteTransactions
 from tests.support.builders.persistence import INSTANCE, _profile
@@ -171,13 +172,13 @@ def test_generated_worker_schedules(tmp_path, worker_file_factory):
                 woke = True
                 if action in ("publish", "ordinary_error", "ordinary_unknown"):
                     expected_admission = model.publish(action)
-                    admission = owner.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+                    admission = owner.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
                     assert (
                         admission.status is AdmissionResult.RESERVED
                     ) == expected_admission
                     if expected_admission:
                         admission.reservation.publish(
-                            ProfileOnlyUnitV1(_profile(sequence=model.sequence))
+                            ReceptionOnlyUnitV2(_profile(sequence=model.sequence), received_frame=REVIEWED_RECEPTION_FRAME)
                         )
                     else:
                         woke = False
@@ -219,7 +220,7 @@ def test_generated_worker_schedules(tmp_path, worker_file_factory):
                 assert owner._recovery.checkpoint_pending == model.checkpoint
                 with sqlite3.connect(path) as db:
                     assert db.execute(
-                        "SELECT occurrence_sequence FROM message_profiles ORDER BY occurrence_sequence"
+                        "SELECT occurrence_sequence FROM packet_receptions ORDER BY occurrence_sequence"
                     ).fetchall() == [(n,) for n in sorted(model.rows)]
                     assert db.execute(
                         "SELECT generation FROM communicator_state"

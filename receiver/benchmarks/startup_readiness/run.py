@@ -74,12 +74,13 @@ def prepare(root, scale, source_commit):
     from cura_receiver.generated import receiver_entities_generated as rows
     from cura_receiver.generated.receiver_enums_generated import PersistQueueEntityKind, PersistenceClassification
     from cura_receiver.ordinary_persistence import OrdinaryPersistence
+    from cura_receiver.packet_reception_persistence import reception_exception
     from cura_receiver.persist_queue import PersistQueue
     from cura_receiver.platform.linux_clocks import LinuxOsClock
     from cura_receiver.receiver_startup import ReceiverInstanceStart, insert_receiver_instance_start
     from cura_receiver.sqlite_database import open_receiver_database
     from cura_receiver.sqlite_repository import SqliteRepository
-    from tests.support.builders.persistence import GROUP, INSTANCE, _health_request, _observation, _profile
+    from tests.support.builders.persistence import GROUP, INSTANCE, _health_request, _observation, _profile, REVIEWED_RECEPTION_FRAME
     from tests.support.builders.persistence_control import synthetic
 
     if not root.is_absolute() or root.exists() or root.resolve() != root:
@@ -93,7 +94,7 @@ def prepare(root, scale, source_commit):
     (root / 'receiver-group.json').chmod(0o600)
     inventory = dict(format_version=1, source_commit=source_commit,
         source_files=source_manifest(), fixture_scale=scale, fixtures={},
-        fixture_basis='Synthetic current-schema rows: approximately 10000 health/paired radio observations, 10000 clock and 800 profiles for pilot; large is 10x. Historical pilot database was about 3 MiB. These are controlled size/history fixtures, not a byte replay of the historical database.',
+        fixture_basis='Synthetic current-schema rows: approximately 10000 health/paired radio observations, 10000 clock and 800 authenticated receptions/exceptions for pilot; large is 10x. Historical pilot database was about 3 MiB. These are controlled size/history fixtures, not a byte replay of the historical database.',
         prepared_on=dict(hostname=platform.node(), python=sys.version, sqlite=sqlite3.sqlite_version))
     for name in FIXTURES:
         directory = root / 'templates' / name
@@ -119,8 +120,11 @@ def prepare(root, scale, source_commit):
                                                           radio_observation_sequence=sequence))
                 repository.insert_clock_observation(_observation(sequence=sequence))
             for sequence in range(1, profile_count + 1):
-                repository.insert_message_profile(rows.MessageProfileRowV1(
+                repository.insert_packet_reception(rows.PacketReceptionRowV1(
                     _profile(sequence=sequence), PersistenceClassification.NOT_APPLICABLE))
+                repository.insert_packet_reception_exception(reception_exception(
+                    _profile(sequence=sequence), REVIEWED_RECEPTION_FRAME,
+                    PersistenceClassification.NOT_APPLICABLE))
             db.execute('INSERT INTO communicator_state VALUES (?,?,?,?,?)', rows.communicator_state_v2_parameters(synthetic()))
             db.execute('COMMIT')
             assert db.execute('PRAGMA integrity_check').fetchall() == [('ok',)]

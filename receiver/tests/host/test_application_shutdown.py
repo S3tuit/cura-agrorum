@@ -161,11 +161,11 @@ def test_durable_marker_survives_final_storage_cleanup_failure(tmp_path, monkeyp
 
 
 def test_unresolved_queue_reservation_cannot_get_clean_marker(tmp_path):
-    from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC
+    from cura_receiver.persist_queue_entities import RECEPTION_ONLY_V2_SPEC
     app, _, database, _ = make_application(tmp_path)
     try:
         assert start_application(app).ready
-        reserved = app.admission.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+        reserved = app.admission.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
         assert reserved.reservation is not None
         result = app.shutdown(clean_requested=True, wait=wait_for_worker(app))
         assert not result.queue_drained and not result.clean_stop_confirmed

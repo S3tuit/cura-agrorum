@@ -7,12 +7,12 @@ from cura_receiver.clock_correlation import AnalysisInstance, ClockCorrelation
 from cura_receiver.generated import protocol_v2_lora_generated as protocol
 from cura_receiver.generated.receiver_entities_generated import (
     ClockObservationV1,
-    MessageProfileRowV1,
-    MessageProfilingV1,
-    ReadingMessageRowV1,
+    PacketReceptionRowV1,
+    PacketReceptionV1,
+    ReadingMessageRowV2,
+    ReceivedMessageRowV1,
 )
 from cura_receiver.generated.receiver_enums_generated import (
-    AckSelection,
     AckTxResult,
     PersistenceClassification as Classification,
     ProcessingResult,
@@ -22,13 +22,25 @@ from cura_receiver.generated.receiver_enums_generated import (
 from cura_receiver.logical_timestamps import (
     ReadingTimestamp,
     TimestampSource as Source,
-    analyze_reading_timestamps,
+    analyze_reading_timestamps as analyze_history,
     direct_anchor_midpoint_us,
 )
-from tests.support.builders.protocol_ingress import authenticated_frame
 
 NODE = b"n" * 8
 INSTANCE = AnalysisInstance(1, b"i" * 16, b"b" * 16, 0)
+
+
+def analyze_reading_timestamps(readings, receptions, correlation, **kwargs):
+    """Fixture transport authority defaults to current for each unique message."""
+    readings, receptions = list(readings), list(receptions)
+    domains = {(r.profile.node_id, r.profile.message_id): r.profile.domain for r in receptions}
+    transports = {
+        (r.node_id, r.message_id): ReceivedMessageRowV1(
+            r.node_id, r.message_id, domains.get((r.node_id, r.message_id), 1)
+        ) for r in readings
+    }
+    return analyze_history(readings, receptions, correlation,
+                           received_messages=transports.values(), **kwargs)
 
 
 def reading(
@@ -59,13 +71,10 @@ def reading(
         0,
         flags,
     )
-    return ReadingMessageRowV1(
+    return ReadingMessageRowV2(
         node_id=node,
         message_id=sample if message is None else message,
-        reading_body=protocol.encode_reading(value),
-        is_canonical_for_sample=canonical,
-        first_receiver_instance_id=INSTANCE.receiver_instance_id,
-        first_occurrence_sequence=sample,
+        is_canonical=canonical,
         **asdict(value),
     )
 
@@ -80,39 +89,20 @@ def profile(
     classification=Classification.FIRST_SEEN,
     processing=ProcessingResult.ACCEPTED,
 ):
-    frame = authenticated_frame(
-        node_id=reading.node_id,
-        message_id=reading.message_id,
-        domain=domain,
-        body=reading.reading_body,
-    )
-    accepted = processing is ProcessingResult.ACCEPTED
-    ack = authenticated_frame(
-        node_id=reading.node_id,
-        message_id=reading.message_id,
-        domain=3 if accepted else 4,
-        body=b"\x00" if accepted else b"\x01",
-    )
-    value = MessageProfilingV1(
+    value = PacketReceptionV1(
         receiver_instance_id=instance.receiver_instance_id,
         occurrence_sequence=reading.sample_id if sequence is None else sequence,
         received_at_monotonic_us=received,
-        received_frame_length=len(frame),
-        received_frame=frame + bytes(255 - len(frame)),
-        claimed_control=32,
-        claimed_domain=domain,
-        claimed_node_id=reading.node_id,
-        claimed_message_id=reading.message_id,
-        header_authenticated=True,
+        domain=domain,
+        node_id=reading.node_id,
+        message_id=reading.message_id,
         decoded_sample_id=reading.sample_id,
         rssi_dbm_x2=-100,
         snr_db_x4=20,
         irq_status=2,
         device_errors=0,
         processing_result=processing,
-        ack_selected=AckSelection.ACCEPTED if accepted else AckSelection.RETRY_LATER,
         ack_tx_result=AckTxResult.SUPPRESSED_AIRTIME_BUDGET,
-        ack_frame=ack,
         busy_wait_total_us=0,
         busy_wait_max_us=0,
         busy_wait_count=0,
@@ -125,7 +115,7 @@ def profile(
         t5_tx_done_monotonic_us=None,
         t6_set_rx_issued_monotonic_us=received,
     )
-    return MessageProfileRowV1(value, classification)
+    return PacketReceptionRowV1(value, classification)
 
 
 def clocks(*, instances=(INSTANCE,), observations=None):
@@ -318,7 +308,7 @@ def test_step_gap_occurrence_cannot_anchor():
 # A later current message with the canonical body can anchor a sample first received as backlog.
 def test_current_duplicate_of_backlog():
     backlog = reading(100, message=10)
-    current = replace(backlog, message_id=11, is_canonical_for_sample=False)
+    current = replace(backlog, message_id=11, is_canonical=False)
     output = analyze_reading_timestamps(
         [backlog, current],
         [
@@ -539,3 +529,16 @@ def test_logical_chain_properties(facts):
         assert value.timestamp_source is (
             Source.DIRECT if sample in anchors else Source.EXTRAPOLATED
         )
+
+@pytest.mark.parametrize("transports", [[], [ReceivedMessageRowV1(NODE, 100, 2)]])
+def test_eligible_reception_requires_matching_transport(transports):
+    row = reading(100)
+    with pytest.raises(ValueError):
+        analyze_history([row], [profile(row)], clocks(), received_messages=transports)
+
+
+def test_anchor_compares_complete_decoded_content():
+    canonical = reading(100)
+    changed = replace(canonical, message_id=101, is_canonical=False, soil_0_mv=1)
+    with pytest.raises(ValueError, match="canonical reading"):
+        analyze_reading_timestamps([canonical, changed], [profile(changed)], clocks())

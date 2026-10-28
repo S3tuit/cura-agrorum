@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from bisect import bisect_left
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from enum import Enum
 
 from .clock_correlation import ClockCorrelation
@@ -23,10 +23,11 @@ from .elapsed_duration import (
     checked_utc_offset,
     checked_utc_us,
 )
-from .generated.protocol_v2_lora_generated import Domain, ReadingFlag
+from .generated.protocol_v2_lora_generated import Domain, Reading, ReadingFlag
 from .generated.receiver_entities_generated import (
-    MessageProfileRowV1,
-    ReadingMessageRowV1,
+    PacketReceptionRowV1,
+    ReadingMessageRowV2,
+    ReceivedMessageRowV1,
 )
 from .generated.receiver_enums_generated import (
     PersistenceClassification,
@@ -91,7 +92,7 @@ def direct_anchor_midpoint_us(
     return checked_utc_offset(minimum, checked_utc_difference(maximum, minimum) // 2)
 
 
-def _continuous(earlier: ReadingMessageRowV1, later: ReadingMessageRowV1) -> bool:
+def _continuous(earlier: ReadingMessageRowV2, later: ReadingMessageRowV2) -> bool:
     required = int(
         ReadingFlag.DEEP_SLEEP_BOOT | ReadingFlag.PREVIOUS_CYCLE_METRICS_VALID
     )
@@ -103,10 +104,11 @@ def _continuous(earlier: ReadingMessageRowV1, later: ReadingMessageRowV1) -> boo
 
 
 def analyze_reading_timestamps(
-    readings: Iterable[ReadingMessageRowV1],
-    profiles: Iterable[MessageProfileRowV1],
+    readings: Iterable[ReadingMessageRowV2],
+    receptions: Iterable[PacketReceptionRowV1],
     correlation: ClockCorrelation,
     *,
+    received_messages: Iterable[ReceivedMessageRowV1],
     materialized: Mapping[SampleKey, ReadingTimestamp] | None = None,
 ) -> dict[SampleKey, ReadingTimestamp]:
     """Return preserved output plus new estimates, keyed by (node_id, sample_id).
@@ -116,32 +118,45 @@ def analyze_reading_timestamps(
     Direct anchors come from currently eligible occurrences, not from prior
     extrapolated output. Existing materialized entries always win for their keys.
     """
-    messages: dict[tuple[bytes, int], ReadingMessageRowV1] = {}
-    canonical: dict[SampleKey, ReadingMessageRowV1] = {}
+    transports = {}
+    for transport in received_messages:
+        if type(transport) is not ReceivedMessageRowV1:
+            raise TypeError("analysis requires immutable transport rows")
+        key = (transport.node_id, transport.message_id)
+        _identity(key[0], 8)
+        _bounded(key[1], 32)
+        if key in transports or transport.domain not in (1, 2):
+            raise ValueError("duplicate or unsupported transport authority")
+        transports[key] = transport
+    payload_fields = tuple(field.name for field in fields(Reading))
+    messages: dict[tuple[bytes, int], ReadingMessageRowV2] = {}
+    canonical: dict[SampleKey, ReadingMessageRowV2] = {}
     for reading in readings:
-        if type(reading) is not ReadingMessageRowV1:
+        if type(reading) is not ReadingMessageRowV2:
             raise TypeError("analysis requires immutable reading rows")
         _identity(reading.node_id, 8)
         for value in (reading.message_id, reading.sample_id):
             _bounded(value, 32)
         for value in (reading.run_ms, reading.previous_awake_ms, reading.flags):
             _bounded(value, 16)
-        if type(reading.is_canonical_for_sample) is not bool:
+        if type(reading.is_canonical) is not bool:
             raise TypeError("canonical marker must be Boolean")
         message = (reading.node_id, reading.message_id)
         key = (reading.node_id, reading.sample_id)
         if message in messages or (
-            reading.is_canonical_for_sample and key in canonical
+            reading.is_canonical and key in canonical
         ):
             raise ValueError("duplicate reading-message or canonical-sample identity")
+        if message not in transports:
+            raise ValueError("reading subtype has no transport authority")
         messages[message] = reading
-        if reading.is_canonical_for_sample:
+        if reading.is_canonical:
             canonical[key] = reading
     direct: dict[SampleKey, tuple[tuple[int, int], ReadingTimestamp]] = {}
     occurrences: set[tuple[bytes, int]] = set()
-    for stored in profiles:
-        if type(stored) is not MessageProfileRowV1:
-            raise TypeError("analysis requires immutable stored profile rows")
+    for stored in receptions:
+        if type(stored) is not PacketReceptionRowV1:
+            raise TypeError("analysis requires immutable stored reception rows")
         profile = stored.profile
         identity = (profile.receiver_instance_id, profile.occurrence_sequence)
         _identity(identity[0], 16)
@@ -151,19 +166,21 @@ def analyze_reading_timestamps(
         occurrences.add(identity)
         if (
             profile.processing_result is not ProcessingResult.ACCEPTED
-            or profile.header_authenticated is not True
-            or profile.claimed_domain != Domain.CURRENT_READING_UPLINK
+            or profile.domain != Domain.CURRENT_READING_UPLINK
             or stored.persistence_classification not in _ANCHOR_CLASSIFICATIONS
         ):
             continue
-        message = messages.get((profile.claimed_node_id, profile.claimed_message_id))
-        key = (profile.claimed_node_id, profile.decoded_sample_id)
+        message = messages.get((profile.node_id, profile.message_id))
+        key = (profile.node_id, profile.decoded_sample_id)
         sample = canonical.get(key)
+        transport = transports.get((profile.node_id, profile.message_id))
         if (
             message is None
+            or transport is None
+            or transport.domain != profile.domain
             or sample is None
             or message.sample_id != profile.decoded_sample_id
-            or message.reading_body != sample.reading_body
+            or any(getattr(message, name) != getattr(sample, name) for name in payload_fields)
         ):
             raise ValueError(
                 "eligible occurrence does not resolve to its canonical reading"
@@ -205,7 +222,7 @@ def analyze_reading_timestamps(
             raise TypeError("materialized output requires immutable analysis values")
     # Partition by real protocol continuity. Prefix durations permit either direction
     # without propagating another sample's rounded or already materialized estimate.
-    components: list[list[ReadingMessageRowV1]] = []
+    components: list[list[ReadingMessageRowV2]] = []
     for key in sorted(canonical):
         reading = canonical[key]
         if not components or not _continuous(components[-1][-1], reading):

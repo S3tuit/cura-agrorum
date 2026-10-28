@@ -144,12 +144,12 @@ def database_observation(database):
             return dict(instance=None, health=None, profiles=0, samples=0, total_readings=total_readings)
         iid = instance["receiver_instance_id"]
         health = db.execute("SELECT o.software_state_id,o.chip_mode_id,h.consistency_id,h.communicator_sampled_at_monotonic_us "
-                            "FROM receiver_health h JOIN radio_observations o "
+                            "FROM receiver_health h LEFT JOIN radio_observations o "
                             "ON o.receiver_instance_id=h.receiver_instance_id AND o.observation_sequence=h.radio_observation_sequence "
                             "WHERE h.receiver_instance_id=? ORDER BY h.health_sequence DESC LIMIT 1", (iid,)).fetchone()
-        profiles = db.execute("SELECT count(*) FROM message_profiles WHERE receiver_instance_id=?", (iid,)).fetchone()[0]
-        samples = db.execute("SELECT count(*) FROM reading_messages WHERE first_receiver_instance_id=?", (iid,)).fetchone()[0]
-        latest = db.execute("SELECT max(received_at_monotonic_us) FROM message_profiles WHERE receiver_instance_id=?", (iid,)).fetchone()[0]
+        profiles = db.execute("SELECT count(*) FROM packet_receptions WHERE receiver_instance_id=?", (iid,)).fetchone()[0]
+        samples = db.execute("SELECT count(DISTINCT decoded_sample_id) FROM packet_receptions WHERE receiver_instance_id=? AND processing_result_id=11 AND persistence_classification_id IN (1,2,3)", (iid,)).fetchone()[0]
+        latest = db.execute("SELECT max(received_at_monotonic_us) FROM packet_receptions WHERE receiver_instance_id=?", (iid,)).fetchone()[0]
         clock = db.execute("SELECT clock_state_generation,system_time_quality_id,sampled_at_monotonic_us "
                            "FROM clock_observations WHERE receiver_instance_id=? "
                            "ORDER BY observation_sequence DESC LIMIT 1", (iid,)).fetchone()

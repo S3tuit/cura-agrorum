@@ -1,3 +1,4 @@
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 import sqlite3
 from dataclasses import replace
 from queue import Queue
@@ -7,7 +8,7 @@ import pytest
 from cura_receiver.generated.receiver_enums_generated import (
     PersistenceAdmissionState as State,
 )
-from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC, ProfileOnlyUnitV1
+from cura_receiver.persist_queue_entities import RECEPTION_ONLY_V2_SPEC, ReceptionOnlyUnitV2
 from cura_receiver.persistence_control_values import (
     CommunicatorStateCommitDisposition as D,
     CommunicatorStateCommitFailureKind as F,
@@ -277,8 +278,8 @@ def test_control_requirement_preserves_immediate_prefix(setup):
         profile = _profile(sequence=sequence)
         if sequence == 2:
             profile = replace(profile, busy_wait_count=-1)
-        queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-            ProfileOnlyUnitV1(profile)
+        queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+            ReceptionOnlyUnitV2(profile, received_frame=REVIEWED_RECEPTION_FRAME)
         )
     ordinary.attempt(
         max_entities=3
@@ -290,7 +291,7 @@ def test_control_requirement_preserves_immediate_prefix(setup):
     assert queue.snapshot().published_entities == 2
     assert queue.snapshot().admission_snapshot.state is State.UNAVAILABLE_IO
     assert db.execute(
-        "SELECT occurrence_sequence FROM message_profiles"
+        "SELECT occurrence_sequence FROM packet_receptions"
     ).fetchall() == [(1,)]
     for _ in range(4):
         if not queue.snapshot().published_entities:
@@ -302,7 +303,7 @@ def test_control_requirement_preserves_immediate_prefix(setup):
     assert ordinary.checkpoint().failure is None
     assert queue.snapshot().admission_snapshot.state is State.AVAILABLE
     assert db.execute(
-        "SELECT occurrence_sequence FROM message_profiles ORDER BY occurrence_sequence"
+        "SELECT occurrence_sequence FROM packet_receptions ORDER BY occurrence_sequence"
     ).fetchall() == [(1,), (3,)]
     assert db.execute("SELECT count(*) FROM quarantined_entities").fetchone() == (1,)
 
@@ -315,16 +316,16 @@ def test_control_recovery_checkpoint_progress(setup, reader_limited):
     ordinary.enable_admission()
     reader = sqlite3.connect(path, isolation_level=None)
     try:
-        queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-            ProfileOnlyUnitV1(_profile())
+        queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+            ReceptionOnlyUnitV2(_profile(), received_frame=REVIEWED_RECEPTION_FRAME)
         )
         ordinary.attempt(max_entities=1)
         ordinary.checkpoint()
         if reader_limited:
             reader.execute("BEGIN")
-            reader.execute("SELECT * FROM message_profiles").fetchall()
-            queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-                ProfileOnlyUnitV1(_profile(sequence=2))
+            reader.execute("SELECT * FROM packet_receptions").fetchall()
+            queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+                ReceptionOnlyUnitV2(_profile(sequence=2), received_frame=REVIEWED_RECEPTION_FRAME)
             )
             ordinary.attempt(max_entities=1)
         ordinary.recovery.fail(DatabaseFailure(State.UNAVAILABLE_IO), control=True)

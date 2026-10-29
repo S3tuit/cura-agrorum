@@ -1,6 +1,14 @@
 """Pinned chronyc CSV adapter with fixed commands and an explicit Unix socket."""
 
-from decimal import Decimal, InvalidOperation, localcontext, ROUND_CEILING, ROUND_UP
+from decimal import (
+    Decimal,
+    InvalidOperation,
+    localcontext,
+    ROUND_CEILING,
+    ROUND_DOWN,
+    ROUND_FLOOR,
+    ROUND_UP,
+)
 import ipaddress
 from pathlib import Path
 import re
@@ -57,6 +65,15 @@ def parse_tracking(data, start, finish):
             )
         )
         skew = int((numbers[6] * 1000).to_integral_value(rounding=ROUND_CEILING))
+        # Retained evidence only; policy keeps using the combined distance above.
+        reference_time = int(
+            (numbers[0] * 1_000_000).to_integral_value(rounding=ROUND_FLOOR)
+        )
+        frequency = int((numbers[4] * 1000).to_integral_value(rounding=ROUND_DOWN))
+        delay = int((numbers[7] * 1_000_000).to_integral_value(rounding=ROUND_CEILING))
+        dispersion = int(
+            (numbers[8] * 1_000_000).to_integral_value(rounding=ROUND_CEILING)
+        )
     selected = fields[0] not in ("00000000", "7F7F0101") and 1 <= int(fields[2]) <= 15
     return ChronyTrackingResult(
         Q.OK,
@@ -67,6 +84,12 @@ def parse_tracking(data, start, finish):
         correction,
         distance,
         skew,
+        reference_id=int(fields[0], 16),
+        reference_time_utc_us=reference_time,
+        stratum=int(fields[2]),
+        root_delay_us=delay,
+        root_dispersion_us=dispersion,
+        estimated_frequency_ppb=frequency,
     )
 
 

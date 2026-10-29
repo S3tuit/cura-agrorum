@@ -122,6 +122,105 @@ def test_cancel_unknown_commit_retains_exact_state_authority(rtc_runtime, genera
     assert (rt.rtc_provenance is not None) == (generation == 3)
 
 
+# Cancelling the caller releases its receipt; the owner keeps it only until exact reconciliation.
+@pytest.mark.parametrize('generation', [2, 3])
+def test_cancelled_rtc_receipt_lives_until_pending_commit_resolves(rtc_runtime, generation):
+    import gc
+    import weakref
+
+    rt, clock, _, rtc, worker, snapshot, _ = rtc_runtime
+    control = attach_ambiguous_owner(rt, worker, generation)
+    queue_success(rtc, clock)
+    for _ in range(2 if generation == 2 else 5):
+        assert rt.advance_rtc_refresh(rtc, snapshot) is None
+    reference = weakref.ref(rt.state_owner.pending.receipt)
+    assert rt.cancel_rtc_refresh().status is RS.SHUTDOWN_CANCELLED
+    gc.collect()
+    assert reference() is rt.state_owner.pending.receipt
+    control.loads_available = True
+    rt.state_owner.reconcile(deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000)
+    assert rt.state_owner.pending is None and rt.durable_state.generation == generation
+    gc.collect()
+    assert reference() is None
+
+
+# An installed receipt cannot override changed/unusable proof or reconcile a later unrelated request.
+@pytest.mark.parametrize('change', ['absent', 'different', 'unresolved'])
+def test_rtc_receipt_still_requires_usable_current_proof(rtc_runtime, change):
+    rt, clock, _, rtc, worker, snapshot, _ = rtc_runtime
+    control = attach_ambiguous_owner(rt, worker, 3)
+    queue_success(rtc, clock)
+    for _ in range(5):
+        assert rt.advance_rtc_refresh(rtc, snapshot) is None
+    control.loads_available = True
+    verified = rt.state_owner.reconcile(deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000)
+    provenance = verified.state.rtc_provenance
+    if change == 'absent':
+        provenance = None
+    elif change == 'different':
+        provenance = replace(provenance,
+            verification_uncertainty_us=provenance.verification_uncertainty_us + 1)
+    later = replace(verified.state, generation=4, rtc_provenance=provenance)
+    if change == 'unresolved':
+        control.generation = 4
+        control.loads_available = False
+    later_receipt = rt.state_owner.commit(later,
+        deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000)
+    loads = []
+    control.load_hook = lambda: loads.append('unexpected unrelated load')
+    result = rt.advance_rtc_refresh(rtc, snapshot)
+    assert result.status is RS.PERSISTENCE_FAILED
+    assert result.commit_result.disposition is CD.OUTCOME_UNKNOWN
+    assert result.reconciliation_result is verified
+    assert rt.last_refresh_monotonic_us is None
+    assert [call[0] for call in rtc.calls] == ['read', 'write', 'read']
+    assert loads == []
+    if change == 'unresolved':
+        assert rt.state_owner.pending.receipt is later_receipt
+        assert rt.rtc_provenance is None
+
+
+# A reconciled invalidation also survives a later snapshot before the bounded physical write.
+def test_rtc_invalidation_receipt_survives_later_snapshot(rtc_runtime):
+    rt, clock, _, rtc, worker, snapshot, _ = rtc_runtime
+    control = attach_ambiguous_owner(rt, worker, 2)
+    queue_success(rtc, clock)
+    for _ in range(2):
+        assert rt.advance_rtc_refresh(rtc, snapshot) is None
+    control.loads_available = True
+    invalidated = rt.state_owner.reconcile(
+        deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000).state
+    later = replace(invalidated, generation=3,
+        airtime_snapshot=replace(invalidated.airtime_snapshot, utc_us=invalidated.airtime_snapshot.utc_us + 1))
+    rt.state_owner.commit(later, deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000)
+    assert rt.durable_state is later and rt.rtc_provenance is None
+    for _ in range(4):
+        result = rt.advance_rtc_refresh(rtc, snapshot)
+    assert result.status is RS.VERIFIED
+    assert rt.durable_state.generation == 4 and rt.rtc_provenance is not None
+    assert [call[0] for call in rtc.calls] == ['read', 'write', 'read']
+
+
+# A receipt resolved by another policy still cannot carry expired or changed source authorization.
+@pytest.mark.parametrize('change', ['expiry', 'generation'])
+def test_rtc_receipt_rechecks_source_after_external_reconciliation(rtc_runtime, change):
+    rt, clock, _, rtc, worker, snapshot, _ = rtc_runtime
+    control = attach_ambiguous_owner(rt, worker, 3)
+    queue_success(rtc, clock)
+    for _ in range(5):
+        assert rt.advance_rtc_refresh(rtc, snapshot) is None
+    control.loads_available = True
+    rt.state_owner.reconcile(deadline_monotonic_us=clock.now_monotonic_us() + 5_000_000)
+    if change == 'expiry':
+        clock.advance_elapsed_us(60_000_000)
+    else:
+        rt.state = replace(rt.state, generation=rt.state.generation + 1)
+    result = rt.advance_rtc_refresh(rtc, snapshot)
+    assert result.status is RS.TRUST_INVALIDATED
+    assert rt.last_refresh_monotonic_us is None
+    assert [call[0] for call in rtc.calls] == ['read', 'write', 'read']
+
+
 def test_radio_delay_does_not_restart_read_retry_window(rtc_runtime):
     rt, clock, _, rtc, _, snapshot, _ = rtc_runtime
     now = clock.now_monotonic_us()

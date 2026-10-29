@@ -3,6 +3,12 @@
 The caller is the sole persistence owner. It completes startup before calling
 ``enable_admission`` and drives attempts at safe boundaries. This component
 never starts a thread or waits for work.
+
+Freeze derived values before the first commit attempt. An unknown outcome keeps
+the lease and those exact values until every stored column reconciles; replay
+must not resample health or reclassify a committed reading. A mismatching durable
+identity is a correctness failure, not a row to overwrite or quarantine. Only
+item-local defects permit poison isolation; global storage failures retain work.
 """
 
 from __future__ import annotations
@@ -17,12 +23,16 @@ from .elapsed_duration import (
 from .generated import receiver_entities_generated as rows
 from .generated.receiver_enums_generated import (
     DATABASE_SCHEMA_VERSION,
-    AckSelection,
     AckTxResult,
     DiagnosticErrorDomain,
     DiagnosticSeverity,
     ProcessingResult,
     RadioState,
+    RadioChipMode,
+    RadioCaptureStatus,
+    RadioObservationTrigger,
+    HealthConsistency,
+    RtcReadStatus,
     RtcHealth,
     SystemTimeQuality,
 )
@@ -43,8 +53,8 @@ from .persist_queue import (
     PersistQueueBatchLease,
 )
 from .persist_queue_entities import (
-    MeasurementProfileUnitV1,
-    ProfileOnlyUnitV1,
+    ReadingReceptionUnitV2,
+    ReceptionOnlyUnitV2,
     ReceiverHealthRequestV1,
 )
 from .persistence_failures import classify_entity_failure, classify_global_failure
@@ -67,9 +77,10 @@ from .reading_persistence import (
     exact_sql_row,
     prepare_reading,
     prepare_replayed_reading,
-    validate_prepared_reading,
+    write_prepared_reading,
 )
 from .receiver_startup import ReceiverInstanceStart
+from .packet_reception_persistence import reception_exception
 from .sqlite_database import (
     DatabaseFailure,
     StorageUnavailable,
@@ -90,15 +101,28 @@ def _require_enum_fields(entity: object, **expected_types: type[Enum]) -> None:
             raise TypeError(f"{name} must be a {expected.__name__}")
 
 
-def _validate_profile_enums(profile: rows.MessageProfilingV1) -> None:
-    if type(profile) is not rows.MessageProfilingV1:
+def _validate_profile_enums(profile: rows.PacketReceptionV1) -> None:
+    if type(profile) is not rows.PacketReceptionV1:
         raise TypeError("invalid profiling record")
     _require_enum_fields(
         profile,
         processing_result=ProcessingResult,
-        ack_selected=AckSelection,
         ack_tx_result=AckTxResult,
     )
+
+
+def _validate_radio_observation(entity):
+    if type(entity) is not rows.RadioObservationV1 or type(entity.snapshot) is not rows.RadioSnapshotV1:
+        raise TypeError("invalid radio observation")
+    snapshot = entity.snapshot
+    _require_enum_fields(snapshot, software_state=RadioState,
+                         trigger=RadioObservationTrigger, capture_status=RadioCaptureStatus)
+    if snapshot.chip_mode is not None:
+        _require_enum_fields(snapshot, chip_mode=RadioChipMode)
+    if snapshot.capture_finished_at_monotonic_us < snapshot.capture_started_at_monotonic_us:
+        raise ValueError("radio observation time regressed")
+    if type(snapshot.history) is not bytes:
+        raise TypeError("radio history must be immutable bytes")
 
 
 class OrdinaryBatchCommitOutcome(Enum):
@@ -119,11 +143,14 @@ class _PreparedUnit:
     row: (
         rows.ClockObservationV1
         | rows.DiagnosticV1
-        | rows.MessageProfileRowV1
+        | rows.PacketReceptionRowV1
         | rows.ReceiverHealthV1
+        | rows.RadioObservationV1
     )
     reading: PreparedReading | None = None
-    measurement: MeasurementProfileUnitV1 | None = None
+    measurement: ReadingReceptionUnitV2 | None = None
+    observation: rows.RadioObservationV1 | None = None
+    exception: rows.PacketReceptionExceptionRowV1 | None = None
 
 
 class OrdinaryPersistence:
@@ -144,7 +171,9 @@ class OrdinaryPersistence:
         instance: ReceiverInstanceStart,
         clock: MonotonicClock,
         transactions: SqliteTransactions | None = None,
+        checkpoint_maintenance=None,
         host_observations: HostObservationSource | None = None,
+        microsd_device: str | None = None,
         minimum_free_bytes: int = 0,
         monotonic_rate_bound_ppm: int = MONOTONIC_ELAPSED_RATE_BOUND_PPM,
     ) -> None:
@@ -193,7 +222,7 @@ class OrdinaryPersistence:
         self._host = (
             host_observations
             if host_observations is not None
-            else LinuxHostObservations(database.path)
+            else LinuxHostObservations(database.path, microsd_device=microsd_device)
         )
         self._suspected = {}
         self._isolation_attempts = {}
@@ -207,6 +236,7 @@ class OrdinaryPersistence:
             instance=instance,
             clock=clock,
             transactions=self._transactions,
+            checkpoint_maintenance=checkpoint_maintenance,
             minimum_free_bytes=minimum_free_bytes,
             monotonic_rate_bound_ppm=monotonic_rate_bound_ppm,
         )
@@ -262,12 +292,15 @@ class OrdinaryPersistence:
         return True
 
     def _prepare(self, entity: object, kind: Kind) -> _PreparedUnit:
+        if kind is Kind.RADIO_OBSERVATION and type(entity) is rows.RadioObservationV1:
+            _validate_radio_observation(entity)
+            return _PreparedUnit(entity)
         if (
             kind is Kind.MEASUREMENT_PROFILE
-            and type(entity) is MeasurementProfileUnitV1
+            and type(entity) is ReadingReceptionUnitV2
         ):
             _validate_profile_enums(entity.profile)
-            existing = self._repository.find_message_profile(
+            existing = self._repository.find_packet_reception(
                 entity.profile.receiver_instance_id, entity.profile.occurrence_sequence
             )
             reading = (
@@ -291,12 +324,15 @@ class OrdinaryPersistence:
             return _PreparedUnit(entity)
         if (
             kind is Kind.PROFILE_ONLY
-            and type(entity) is ProfileOnlyUnitV1
-            and type(entity.profile) is rows.MessageProfilingV1
+            and type(entity) is ReceptionOnlyUnitV2
+            and type(entity.profile) is rows.PacketReceptionV1
         ):
             _validate_profile_enums(entity.profile)
+            if entity.profile.processing_result is ProcessingResult.ACCEPTED:
+                raise ValueError("accepted reception requires its reading candidate")
             return _PreparedUnit(
-                rows.MessageProfileRowV1(entity.profile, Classification.NOT_APPLICABLE)
+                rows.PacketReceptionRowV1(entity.profile, Classification.NOT_APPLICABLE),
+                exception=reception_exception(entity.profile, entity.received_frame, Classification.NOT_APPLICABLE),
             )
         if (
             kind is Kind.RECEIVER_HEALTH_REQUEST
@@ -304,10 +340,18 @@ class OrdinaryPersistence:
         ):
             _require_enum_fields(
                 entity,
-                radio_state=RadioState,
+                consistency=HealthConsistency,
+                rtc_read_status=RtcReadStatus,
                 system_time_quality=SystemTimeQuality,
                 rtc_health=RtcHealth,
             )
+            _validate_radio_observation(entity.radio_observation)
+            if entity.radio_observation.receiver_instance_id != entity.receiver_instance_id:
+                raise ValueError("health observation belongs to another receiver instance")
+            if entity.rtc_read_finished_at_monotonic_us < entity.rtc_read_started_at_monotonic_us:
+                raise ValueError("RTC observation time regressed")
+            if (entity.rtc_read_utc_s is not None) != (entity.rtc_read_status is RtcReadStatus.OK):
+                raise ValueError("RTC time is present exactly on successful reads")
             for array in (
                 entity.radio_recovery_attempts_by_reason,
                 entity.chrony_step_command_results,
@@ -337,8 +381,9 @@ class OrdinaryPersistence:
                 rows.ReceiverHealthV1(
                     **{
                         field.name: getattr(entity, field.name)
-                        for field in fields(entity)
+                        for field in fields(entity) if field.name != "radio_observation"
                     },
+                    radio_observation_sequence=entity.radio_observation.observation_sequence,
                     persistence_sampled_at_monotonic_us=sampled,
                     persistence_admission_generation=admission.generation,
                     persistence_admission_state=admission.state,
@@ -351,13 +396,30 @@ class OrdinaryPersistence:
                         for field in fields(self.recovery.counters)
                     },
                     **{field.name: getattr(host, field.name) for field in fields(host)},
-                )
+                ),
+                observation=entity.radio_observation,
             )
         raise TypeError("entity does not match its queue specification")
 
     def _write(self, work: _PreparedUnit) -> None:
+        if work.reading is not None:
+            write_prepared_reading(self._repository, work.reading, work.measurement)
+            return
         entity = work.row
+        if work.observation is not None:
+            # Both effects belong to this queue unit, including exact replay after
+            # an unknown commit. Never repair a partial durable compound identity.
+            observation = work.observation
+            saved_observation = self._repository.find_radio_observation(
+                observation.receiver_instance_id, observation.observation_sequence)
+            saved_health = self._repository.find_receiver_health(entity.receiver_instance_id, entity.health_sequence)
+            if (saved_observation is None) != (saved_health is None):
+                raise PersistenceIdentityCollision("partial health/observation effect")
+            self._write(_PreparedUnit(observation))
         bindings = {
+            rows.RadioObservationV1: (
+                rows.RADIO_OBSERVATION_V1_COLUMNS, rows.radio_observation_v1_parameters,
+            ),
             rows.ClockObservationV1: (
                 rows.CLOCK_OBSERVATION_V1_COLUMNS,
                 rows.clock_observation_v1_parameters,
@@ -366,9 +428,9 @@ class OrdinaryPersistence:
                 rows.DIAGNOSTIC_V1_COLUMNS,
                 rows.diagnostic_v1_parameters,
             ),
-            rows.MessageProfileRowV1: (
-                rows.MESSAGE_PROFILE_ROW_V1_COLUMNS,
-                rows.message_profile_row_v1_parameters,
+            rows.PacketReceptionRowV1: (
+                rows.PACKET_RECEPTION_ROW_V1_COLUMNS,
+                rows.packet_reception_row_v1_parameters,
             ),
             rows.ReceiverHealthV1: (
                 rows.RECEIVER_HEALTH_V1_COLUMNS,
@@ -377,7 +439,11 @@ class OrdinaryPersistence:
         }
         columns, binder = bindings[type(entity)]
         validate_sqlite_parameters(columns, binder(entity))
-        if type(entity) is rows.ClockObservationV1:
+        if type(entity) is rows.RadioObservationV1:
+            existing = self._repository.find_radio_observation(entity.receiver_instance_id, entity.observation_sequence)
+            parameters = rows.radio_observation_v1_parameters(entity)
+            insert = self._repository.insert_radio_observation
+        elif type(entity) is rows.ClockObservationV1:
             existing = self._repository.find_clock_observation(
                 entity.receiver_instance_id, entity.observation_sequence
             )
@@ -389,30 +455,23 @@ class OrdinaryPersistence:
             )
             parameters = rows.diagnostic_v1_parameters(entity)
             insert = self._repository.insert_diagnostic
-        elif type(entity) is rows.MessageProfileRowV1:
+        elif type(entity) is rows.PacketReceptionRowV1:
             profile = entity.profile
-            existing = self._repository.find_message_profile(
+            existing = self._repository.find_packet_reception(
                 profile.receiver_instance_id, profile.occurrence_sequence
             )
-            parameters = rows.message_profile_row_v1_parameters(entity)
-            insert = self._repository.insert_message_profile
-            if work.reading is not None:
-                candidate = work.measurement.candidate
-                reading = self._repository.find_reading_message(
-                    candidate.node_id, candidate.message_id
-                )
-                if (
-                    existing is None
-                    and reading is not None
-                    and reading[-2:]
-                    == (profile.receiver_instance_id, profile.occurrence_sequence)
-                ):
-                    raise PersistenceIdentityCollision(
-                        "reading effect exists without its profile"
-                    )
-                validate_prepared_reading(
-                    self._repository, work.reading, work.measurement
-                )
+            parameters = rows.packet_reception_row_v1_parameters(entity)
+            insert = self._repository.insert_packet_reception
+            saved_exception = self._repository.find_packet_reception_exception(
+                profile.receiver_instance_id, profile.occurrence_sequence)
+            if existing is None:
+                if saved_exception is not None:
+                    raise PersistenceIdentityCollision("exception lacks its reception")
+            elif work.exception is None:
+                if saved_exception is not None:
+                    raise PersistenceIdentityCollision("unexpected reception exception")
+            elif not exact_sql_row(saved_exception, rows.packet_reception_exception_row_v1_parameters(work.exception)):
+                raise PersistenceIdentityCollision("missing or contradictory reception exception")
         elif type(entity) is rows.ReceiverHealthV1:
             existing = self._repository.find_receiver_health(
                 entity.receiver_instance_id, entity.health_sequence
@@ -426,17 +485,8 @@ class OrdinaryPersistence:
                 raise PersistenceIdentityCollision("ordinary row identity collision")
         else:
             insert(entity)
-        if work.reading is not None and work.reading.insertion is not None:
-            effect = work.reading.insertion
-            existing = self._repository.find_reading_message(
-                effect.node_id, effect.message_id
-            )
-            if existing is None:
-                self._repository.insert_reading_message(effect)
-            elif not exact_sql_row(
-                existing, rows.reading_message_row_v1_parameters(effect)
-            ):
-                raise PersistenceIdentityCollision("reading effect collision")
+        if type(entity) is rows.PacketReceptionRowV1 and existing is None and work.exception is not None:
+            self._repository.insert_packet_reception_exception(work.exception)
 
     def _rollback_failure(
         self, failure: DatabaseFailure, *, item_failure: bool = False

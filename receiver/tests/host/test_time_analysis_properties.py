@@ -3,6 +3,8 @@
 from hypothesis import settings, strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
 
+from cura_receiver.time_policy import TimePolicy
+from cura_receiver.elapsed_duration import exclusive_trust_distance_us
 from cura_receiver.clock_correlation import AnalysisInstance, ClockCorrelation
 from cura_receiver.generated.receiver_entities_generated import ClockObservationV1
 from cura_receiver.generated.receiver_enums_generated import (
@@ -111,6 +113,12 @@ class RecordedTimeHistory(RuleBasedStateMachine):
                 step,
                 quality,
                 health,
+                1_000_000 if utc is not None else None,
+                self.monotonic if utc is not None else None,
+                self.monotonic if utc is not None else None,
+                (self.monotonic) + exclusive_trust_distance_us(1_000_000, 40_000_000, rate_bound_ppm=3700) if utc is not None else None,
+                None,
+                None,
             )
         )
         self.primitives.append(
@@ -128,7 +136,7 @@ class RecordedTimeHistory(RuleBasedStateMachine):
     )
     def network_observation(self, delta, utc, health):
         self.monotonic += delta
-        self.append(utc, False, SystemTimeQuality.NETWORK_SYNCED, health)
+        self.append(utc, False, SystemTimeQuality.CHRONY_SYNCED, health)
 
     # An unusable RTC result records ordinary quality loss; usable direct evidence records holdover.
     @rule(
@@ -187,7 +195,8 @@ class RecordedTimeHistory(RuleBasedStateMachine):
     def assignments_match(self):
         expected = ReferenceTimeline().assign(self.starts, self.primitives, self.events)
         production = ClockCorrelation(
-            reversed(self.instances), reversed(self.observations)
+            reversed(self.instances), reversed(self.observations),
+            policy=TimePolicy(),
         )
         actual = []
         for identity, monotonic in self.events:

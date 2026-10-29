@@ -1,6 +1,0 @@
-{
-  "passed": 3434,
-  "seconds": 32.5,
-  "log_sha256": "8bd1e640c546e48fac3b6c4366a8ad91e57fa1e550dccc2d32081cbc8aae4aee",
-  "scope": "Full receiver host suite after helper digest and Chrony prefix corrections; installed runtime hashes in INSTALLED_SOURCE_MANIFEST.json"
-}

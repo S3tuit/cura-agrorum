@@ -5,11 +5,11 @@ from __future__ import annotations
 
 from enum import Enum, unique
 
-RECEIVER_ENUM_MANIFEST_SHA256 = 'a2a7b626e34bd4b8a4a92ab77f3265b32e2ffc524f5cc1c4b449572d9c98839e'
-RECEIVER_ENTITY_MANIFEST_SHA256 = 'b8b4f02d0bf2cd4314f451ed2faab7da87b36035532115755361cda60f6a3e2b'
+RECEIVER_ENUM_MANIFEST_SHA256 = 'be48a99f612cc3d416f92781062def405ba4b4955fedfbce37de9b6da7214584'
+RECEIVER_ENTITY_MANIFEST_SHA256 = '68dbca63f31af3f30b38ce74f58b8e998bfb404f7d3fc339f6dbc69c75f738a4'
 SQLITE_APPLICATION_ID = 0x43555252
-DATABASE_SCHEMA_VERSION = 12
-DATABASE_SCHEMA_SHA256 = '359f7261744a5d67b8b8f5b6d7966f15c77465d47a5d80c97b45da5ac3cb726e'
+DATABASE_SCHEMA_VERSION = 19
+DATABASE_SCHEMA_SHA256 = 'a452ffa30f433b7a8e0a737e95454b6c57aff5b4534e5afc801b77ae045d1432'
 DATABASE_SCHEMA_FINGERPRINT = bytes.fromhex(DATABASE_SCHEMA_SHA256)
 
 __all__ = [
@@ -19,6 +19,12 @@ __all__ = [
     "DATABASE_SCHEMA_VERSION",
     "DATABASE_SCHEMA_SHA256",
     "DATABASE_SCHEMA_FINGERPRINT",
+    "PacketExceptionReason",
+    "RadioChipMode",
+    "RadioObservationTrigger",
+    "RadioCaptureStatus",
+    "RtcReadStatus",
+    "HealthConsistency",
     "SystemTimeQuality",
     "RtcHealth",
     "RadioState",
@@ -69,10 +75,58 @@ __all__ = [
 ]
 
 @unique
+class PacketExceptionReason(Enum):
+    REJECTED_UNSUPPORTED_CONTROL = 1
+    REJECTED_UNSUPPORTED_DOMAIN = 2
+    REJECTED_MALFORMED_LENGTH = 3
+    REJECTED_MALFORMED_BODY = 4
+    WRONG_DIRECTION = 5
+    DUPLICATE_CONFLICT = 6
+    MESSAGE_ID_CONFLICT = 7
+
+@unique
+class RadioChipMode(Enum):
+    STBY_RC = 2
+    STBY_XOSC = 3
+    FS = 4
+    RX = 5
+    TX = 6
+
+@unique
+class RadioObservationTrigger(Enum):
+    HEALTH = 1
+    PHY_REJECTION = 2
+    UNEXPECTED_IRQ = 3
+    RECOVERY = 4
+    FINAL_FAILURE = 5
+    INITIALIZATION = 6
+
+@unique
+class RadioCaptureStatus(Enum):
+    COMPLETE = 1
+    PARTIAL = 2
+    UNAVAILABLE = 3
+
+@unique
+class RtcReadStatus(Enum):
+    OK = 1
+    MISSING = 2
+    INVALID = 3
+    IO_ERROR = 4
+    DEADLINE_EXCEEDED = 5
+    NOT_ATTEMPTED = 6
+
+@unique
+class HealthConsistency(Enum):
+    CONSISTENT = 1
+    INCONSISTENT = 2
+    INDETERMINATE = 3
+
+@unique
 class SystemTimeQuality(Enum):
     UNTRUSTED = 0
     RTC_HOLDOVER = 1
-    NETWORK_SYNCED = 2
+    CHRONY_SYNCED = 2
 
 @unique
 class RtcHealth(Enum):
@@ -127,6 +181,7 @@ class PersistQueueEntityKind(Enum):
     RECEIVER_HEALTH_REQUEST = 3
     DIAGNOSTIC = 4
     CLOCK_OBSERVATION = 5
+    RADIO_OBSERVATION = 6
 
 @unique
 class ProcessingResult(Enum):
@@ -405,6 +460,7 @@ class PersistenceControlPurpose(Enum):
     AIRTIME_HISTORY_RECOVERY = 6
     CLEAN_STOP = 7
     RECONCILIATION = 8
+    AIRTIME_USAGE_SAVE = 9
 
 @unique
 class PersistenceControlDispositionKind(Enum):

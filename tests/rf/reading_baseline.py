@@ -1,4 +1,4 @@
-"""Minimal read-only selected-node baseline for RF-020; no airtime mutation."""
+"""Minimal read-only selected-node baseline for service.reading_delivery; no airtime mutation."""
 import hashlib
 import json
 import sqlite3

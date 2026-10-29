@@ -29,6 +29,18 @@ static esp_err_t record_call(fake_esp_gpio_call_t call) {
 
 void fake_esp_gpio_reset(void) { s_fake_gpio = (fake_esp_gpio_state_t){0}; }
 
+esp_err_t gpio_hold_en(gpio_num_t gpio_num) {
+  return record_call((fake_esp_gpio_call_t){.operation = FAKE_ESP_GPIO_HOLD_EN,
+                                          .gpio_num = gpio_num});
+}
+esp_err_t gpio_hold_dis(gpio_num_t gpio_num) {
+  return record_call((fake_esp_gpio_call_t){.operation = FAKE_ESP_GPIO_HOLD_DIS,
+                                          .gpio_num = gpio_num});
+}
+void gpio_deep_sleep_hold_en(void) {
+  (void)record_call((fake_esp_gpio_call_t){.operation = FAKE_ESP_GPIO_SLEEP_HOLD});
+}
+
 void fake_esp_gpio_fail_call(size_t index, esp_err_t result) {
   s_fake_gpio.failure_enabled = true;
   s_fake_gpio.failing_call = index;

@@ -8,60 +8,116 @@ import struct
 from dataclasses import dataclass
 
 from .receiver_enums_generated import (
-    AckSelection,
     AckTxResult,
     DiagnosticErrorDomain,
     DiagnosticOperation,
     DiagnosticSeverity,
+    HealthConsistency,
+    PacketExceptionReason,
     PersistenceAdmissionState,
     PersistenceClassification,
     PersistQueueEntityKind,
     ProcessingResult,
     QuarantineFailureReason,
+    RadioCaptureStatus,
+    RadioChipMode,
+    RadioObservationTrigger,
     RadioState,
     RtcHealth,
+    RtcReadStatus,
     SystemTimeQuality,
 )
 
-RECEIVER_ENTITY_MANIFEST_SHA256 = 'b8b4f02d0bf2cd4314f451ed2faab7da87b36035532115755361cda60f6a3e2b'
+RECEIVER_ENTITY_MANIFEST_SHA256 = '68dbca63f31af3f30b38ce74f58b8e998bfb404f7d3fc339f6dbc69c75f738a4'
 
 __all__ = [
     "RECEIVER_ENTITY_MANIFEST_SHA256",
+    "REQUIRED_FOREIGN_KEYS",
     "CLOCK_OBSERVATION_V1_TABLE",
     "CLOCK_OBSERVATION_V1_COLUMNS",
     "DIAGNOSTIC_V1_TABLE",
     "DIAGNOSTIC_V1_COLUMNS",
     "QUARANTINED_ENTITY_ROW_V1_TABLE",
     "QUARANTINED_ENTITY_ROW_V1_COLUMNS",
+    "RADIO_OBSERVATION_V1_TABLE",
+    "RADIO_OBSERVATION_V1_COLUMNS",
     "RECEIVER_HEALTH_V1_TABLE",
     "RECEIVER_HEALTH_V1_COLUMNS",
-    "MESSAGE_PROFILE_ROW_V1_TABLE",
-    "MESSAGE_PROFILE_ROW_V1_COLUMNS",
-    "READING_MESSAGE_ROW_V1_TABLE",
-    "READING_MESSAGE_ROW_V1_COLUMNS",
-    "COMMUNICATOR_STATE_V1_TABLE",
-    "COMMUNICATOR_STATE_V1_COLUMNS",
-    "MessageProfilingV1",
+    "RECEIVED_MESSAGE_ROW_V1_TABLE",
+    "RECEIVED_MESSAGE_ROW_V1_COLUMNS",
+    "READING_MESSAGE_ROW_V2_TABLE",
+    "READING_MESSAGE_ROW_V2_COLUMNS",
+    "PACKET_RECEPTION_ROW_V1_TABLE",
+    "PACKET_RECEPTION_ROW_V1_COLUMNS",
+    "PACKET_RECEPTION_EXCEPTION_ROW_V1_TABLE",
+    "PACKET_RECEPTION_EXCEPTION_ROW_V1_COLUMNS",
+    "COMMUNICATOR_STATE_V2_TABLE",
+    "COMMUNICATOR_STATE_V2_COLUMNS",
+    "NetworkClockEvidenceV1",
+    "RtcClockEvidenceV2",
+    "PacketReceptionV1",
+    "RadioSnapshotV1",
     "ClockObservationV1",
     "DiagnosticV1",
     "QuarantinedEntityRowV1",
+    "RadioObservationV1",
     "ReceiverHealthV1",
-    "MessageProfileRowV1",
-    "ReadingMessageRowV1",
+    "ReceivedMessageRowV1",
+    "ReadingMessageRowV2",
+    "PacketReceptionRowV1",
+    "PacketReceptionExceptionRowV1",
     "RtcProvenanceV1",
-    "TxAirtimeBucketV1",
+    "AirtimeEntryV2",
     "AirtimeSnapshotV1",
-    "CommunicatorStateV1",
-    "encode_communicator_state_v1",
-    "decode_communicator_state_v1",
+    "CommunicatorStateV2",
+    "encode_communicator_state_v2",
+    "decode_communicator_state_v2",
     "clock_observation_v1_parameters",
     "diagnostic_v1_parameters",
     "quarantined_entity_row_v1_parameters",
+    "radio_observation_v1_parameters",
     "receiver_health_v1_parameters",
-    "message_profile_row_v1_parameters",
-    "reading_message_row_v1_parameters",
-    "communicator_state_v1_parameters",
+    "received_message_row_v1_parameters",
+    "reading_message_row_v2_parameters",
+    "packet_reception_row_v1_parameters",
+    "packet_reception_exception_row_v1_parameters",
+    "communicator_state_v2_parameters",
 ]
+
+REQUIRED_FOREIGN_KEYS = (
+    ('clock_observations', ('receiver_instance_id',), 'receiver_instances', ('receiver_instance_id',)),
+    ('clock_observations', ('system_time_quality_id',), 'system_time_quality_codes', ('id',)),
+    ('clock_observations', ('rtc_health_id',), 'rtc_health_codes', ('id',)),
+    ('diagnostics', ('receiver_instance_id',), 'receiver_instances', ('receiver_instance_id',)),
+    ('diagnostics', ('severity_id',), 'diagnostic_severity_codes', ('id',)),
+    ('diagnostics', ('error_domain_id',), 'diagnostic_error_domain_codes', ('id',)),
+    ('diagnostics', ('operation_id',), 'diagnostic_operation_codes', ('id',)),
+    ('diagnostics', ('error_domain_id', 'error_code_id'), 'diagnostic_error_codes', ('error_domain_id', 'id')),
+    ('diagnostics', ('error_domain_id', 'context_schema_id'), 'diagnostic_context_schemas', ('error_domain_id', 'id')),
+    ('quarantined_entities', ('entity_kind_id',), 'persist_queue_entity_kind_codes', ('id',)),
+    ('quarantined_entities', ('receiver_instance_id',), 'receiver_instances', ('receiver_instance_id',)),
+    ('quarantined_entities', ('failure_reason_id',), 'quarantine_failure_reason_codes', ('id',)),
+    ('quarantined_entities', ('failure_operation_id',), 'diagnostic_operation_codes', ('id',)),
+    ('radio_observations', ('receiver_instance_id',), 'receiver_instances', ('receiver_instance_id',)),
+    ('radio_observations', ('trigger_id',), 'radio_observation_trigger_codes', ('id',)),
+    ('radio_observations', ('software_state_id',), 'radio_state_codes', ('id',)),
+    ('radio_observations', ('capture_status_id',), 'radio_capture_status_codes', ('id',)),
+    ('radio_observations', ('chip_mode_id',), 'radio_chip_mode_codes', ('id',)),
+    ('receiver_health', ('receiver_instance_id',), 'receiver_instances', ('receiver_instance_id',)),
+    ('receiver_health', ('system_time_quality_id',), 'system_time_quality_codes', ('id',)),
+    ('receiver_health', ('rtc_health_id',), 'rtc_health_codes', ('id',)),
+    ('receiver_health', ('persistence_admission_state_id',), 'persistence_admission_state_codes', ('id',)),
+    ('receiver_health', ('receiver_instance_id', 'radio_observation_sequence'), 'radio_observations', ('receiver_instance_id', 'observation_sequence')),
+    ('receiver_health', ('consistency_id',), 'health_consistency_codes', ('id',)),
+    ('receiver_health', ('rtc_read_status_id',), 'rtc_read_status_codes', ('id',)),
+    ('reading_messages', ('node_id', 'message_id'), 'received_messages', ('node_id', 'message_id')),
+    ('packet_receptions', ('receiver_instance_id',), 'receiver_instances', ('receiver_instance_id',)),
+    ('packet_receptions', ('processing_result_id',), 'processing_result_codes', ('id',)),
+    ('packet_receptions', ('ack_tx_result_id',), 'ack_tx_result_codes', ('id',)),
+    ('packet_receptions', ('persistence_classification_id',), 'persistence_classification_codes', ('id',)),
+    ('packet_reception_exceptions', ('receiver_instance_id', 'occurrence_sequence'), 'packet_receptions', ('receiver_instance_id', 'occurrence_sequence')),
+    ('packet_reception_exceptions', ('reason_id',), 'packet_exception_reason_codes', ('id',)),
+)
 
 CLOCK_OBSERVATION_V1_TABLE = 'clock_observations'
 
@@ -74,6 +130,26 @@ CLOCK_OBSERVATION_V1_COLUMNS = (
     'step_discontinuity_boundary',
     'system_time_quality_id',
     'rtc_health_id',
+    'error_bound_us',
+    'sample_started_at_monotonic_us',
+    'sample_finished_at_monotonic_us',
+    'error_budget_expires_at_monotonic_us',
+    'network_tracking_started_at_monotonic_us',
+    'network_tracking_finished_at_monotonic_us',
+    'network_remaining_correction_us',
+    'network_root_delay_us',
+    'network_root_dispersion_us',
+    'network_root_distance_us',
+    'network_estimated_frequency_ppb',
+    'network_estimated_skew_ppb',
+    'network_reference_id',
+    'network_reference_time_utc_us',
+    'network_stratum',
+    'rtc_reference_receiver_instance_id',
+    'rtc_reference_verified_at_utc_us',
+    'rtc_reference_readback_utc_us',
+    'rtc_reference_uncertainty_us',
+    'rtc_reference_drift_bound_ppm',
 )
 
 DIAGNOSTIC_V1_TABLE = 'diagnostics'
@@ -110,13 +186,48 @@ QUARANTINED_ENTITY_ROW_V1_COLUMNS = (
     'isolation_attempt_count',
 )
 
+RADIO_OBSERVATION_V1_TABLE = 'radio_observations'
+
+RADIO_OBSERVATION_V1_COLUMNS = (
+    'receiver_instance_id',
+    'observation_sequence',
+    'trigger_id',
+    'software_state_id',
+    'capture_started_at_monotonic_us',
+    'capture_finished_at_monotonic_us',
+    'capture_status_id',
+    'chip_status',
+    'chip_mode_id',
+    'irq_status',
+    'device_errors',
+    'dio1_before',
+    'dio1_after',
+    'busy',
+    'gpio_event_pending',
+    'event_timestamp_ns',
+    'event_sequence',
+    'last_set_rx_issued_monotonic_us',
+    'failure_code',
+    'failure_stage',
+    'failure_opcode',
+    'os_errno',
+    'history',
+    'history_dropped',
+)
+
 RECEIVER_HEALTH_V1_TABLE = 'receiver_health'
 
 RECEIVER_HEALTH_V1_COLUMNS = (
     'receiver_instance_id',
     'health_sequence',
     'communicator_sampled_at_monotonic_us',
-    'radio_state_id',
+    'radio_observation_sequence',
+    'consistency_id',
+    'radio_header_errors_observed',
+    'radio_header_errors_handled',
+    'radio_crc_errors_observed',
+    'radio_crc_errors_handled',
+    'radio_observations_dropped',
     'radio_recovery_attempts',
     'radio_recovery_successes',
     'radio_recovery_failures',
@@ -130,6 +241,11 @@ RECEIVER_HEALTH_V1_COLUMNS = (
     'radio_recovery_attempts_by_reason_hardware_unreachable',
     'system_time_quality_id',
     'rtc_health_id',
+    'rtc_read_status_id',
+    'rtc_read_errno',
+    'rtc_read_started_at_monotonic_us',
+    'rtc_read_finished_at_monotonic_us',
+    'rtc_read_utc_s',
     'time_quality_transition_count',
     'rtc_health_transition_count',
     'last_time_quality_transition_monotonic_us',
@@ -157,6 +273,9 @@ RECEIVER_HEALTH_V1_COLUMNS = (
     'persist_queue_admission_counts_clock_observation_reserved',
     'persist_queue_admission_counts_clock_observation_persistence_unavailable',
     'persist_queue_admission_counts_clock_observation_queue_full',
+    'persist_queue_admission_counts_radio_observation_reserved',
+    'persist_queue_admission_counts_radio_observation_persistence_unavailable',
+    'persist_queue_admission_counts_radio_observation_queue_full',
     'persistence_sampled_at_monotonic_us',
     'persistence_admission_generation',
     'persistence_admission_state_id',
@@ -186,52 +305,25 @@ RECEIVER_HEALTH_V1_COLUMNS = (
     'sqlite_database_size_bytes',
     'sqlite_wal_size_bytes',
     'ntp_offset_us',
+    'storage_device_write_bytes',
+    'receiver_process_write_bytes',
 )
 
-MESSAGE_PROFILE_ROW_V1_TABLE = 'message_profiles'
+RECEIVED_MESSAGE_ROW_V1_TABLE = 'received_messages'
 
-MESSAGE_PROFILE_ROW_V1_COLUMNS = (
-    'receiver_instance_id',
-    'occurrence_sequence',
-    'received_at_monotonic_us',
-    'received_frame_length',
-    'received_frame',
-    'claimed_control',
-    'claimed_domain',
-    'claimed_node_id',
-    'claimed_message_id',
-    'header_authenticated',
-    'decoded_sample_id',
-    'rssi_dbm_x2',
-    'snr_db_x4',
-    'irq_status',
-    'device_errors',
-    'processing_result_id',
-    'ack_selected_id',
-    'ack_tx_result_id',
-    'ack_frame',
-    'busy_wait_total_us',
-    'busy_wait_max_us',
-    'busy_wait_count',
-    'busy_timeout_count',
-    'last_busy_timeout_opcode',
-    't1_handler_started_monotonic_us',
-    't2_packet_copied_monotonic_us',
-    't3_authentication_completed_monotonic_us',
-    't4_set_tx_attempted_monotonic_us',
-    't5_tx_done_monotonic_us',
-    't6_set_rx_issued_monotonic_us',
-    'persistence_classification_id',
+RECEIVED_MESSAGE_ROW_V1_COLUMNS = (
+    'node_id',
+    'message_id',
+    'domain',
 )
 
-READING_MESSAGE_ROW_V1_TABLE = 'reading_messages'
+READING_MESSAGE_ROW_V2_TABLE = 'reading_messages'
 
-READING_MESSAGE_ROW_V1_COLUMNS = (
+READING_MESSAGE_ROW_V2_COLUMNS = (
     'node_id',
     'message_id',
     'sample_id',
-    'reading_body',
-    'is_canonical_for_sample',
+    'is_canonical',
     'run_ms',
     'soil_0_mv',
     'soil_1_mv',
@@ -247,13 +339,51 @@ READING_MESSAGE_ROW_V1_COLUMNS = (
     'previous_cycle_tx_attempts',
     'previous_cycle_accepted_readings',
     'flags',
-    'first_receiver_instance_id',
-    'first_occurrence_sequence',
 )
 
-COMMUNICATOR_STATE_V1_TABLE = 'communicator_state'
+PACKET_RECEPTION_ROW_V1_TABLE = 'packet_receptions'
 
-COMMUNICATOR_STATE_V1_COLUMNS = (
+PACKET_RECEPTION_ROW_V1_COLUMNS = (
+    'receiver_instance_id',
+    'occurrence_sequence',
+    'received_at_monotonic_us',
+    'domain',
+    'node_id',
+    'message_id',
+    'decoded_sample_id',
+    'rssi_dbm_x2',
+    'snr_db_x4',
+    'irq_status',
+    'device_errors',
+    'processing_result_id',
+    'ack_tx_result_id',
+    'busy_wait_total_us',
+    'busy_wait_max_us',
+    'busy_wait_count',
+    'busy_timeout_count',
+    'last_busy_timeout_opcode',
+    't1_handler_started_monotonic_us',
+    't2_packet_copied_monotonic_us',
+    't3_authentication_completed_monotonic_us',
+    't4_set_tx_attempted_monotonic_us',
+    't5_tx_done_monotonic_us',
+    't6_set_rx_issued_monotonic_us',
+    'persistence_classification_id',
+)
+
+PACKET_RECEPTION_EXCEPTION_ROW_V1_TABLE = 'packet_reception_exceptions'
+
+PACKET_RECEPTION_EXCEPTION_ROW_V1_COLUMNS = (
+    'receiver_instance_id',
+    'occurrence_sequence',
+    'received_frame_length',
+    'received_frame',
+    'reason_id',
+)
+
+COMMUNICATOR_STATE_V2_TABLE = 'communicator_state'
+
+COMMUNICATOR_STATE_V2_COLUMNS = (
     'singleton_id',
     'state_format_version',
     'generation',
@@ -289,26 +419,42 @@ def _require_bytes_length(value: bytes, length: int, field: str) -> bytes:
     return value
 
 @dataclass(frozen=True, slots=True)
-class MessageProfilingV1:
+class NetworkClockEvidenceV1:
+    tracking_started_at_monotonic_us: int
+    tracking_finished_at_monotonic_us: int
+    remaining_correction_us: int
+    root_delay_us: int
+    root_dispersion_us: int
+    root_distance_us: int
+    estimated_frequency_ppb: int
+    estimated_skew_ppb: int
+    reference_id: int
+    reference_time_utc_us: int
+    stratum: int
+
+@dataclass(frozen=True, slots=True)
+class RtcClockEvidenceV2:
+    reference_receiver_instance_id: bytes
+    reference_verified_at_utc_us: int
+    reference_readback_utc_us: int
+    reference_uncertainty_us: int
+    reference_drift_bound_ppm: int
+
+@dataclass(frozen=True, slots=True)
+class PacketReceptionV1:
     receiver_instance_id: bytes
     occurrence_sequence: int
     received_at_monotonic_us: int
-    received_frame_length: int | None
-    received_frame: bytes | None
-    claimed_control: int | None
-    claimed_domain: int | None
-    claimed_node_id: bytes | None
-    claimed_message_id: int | None
-    header_authenticated: bool
+    domain: int
+    node_id: bytes
+    message_id: int
     decoded_sample_id: int | None
     rssi_dbm_x2: int | None
     snr_db_x4: int | None
     irq_status: int | None
     device_errors: int | None
     processing_result: ProcessingResult
-    ack_selected: AckSelection
     ack_tx_result: AckTxResult
-    ack_frame: bytes | None
     busy_wait_total_us: int
     busy_wait_max_us: int
     busy_wait_count: int
@@ -322,6 +468,31 @@ class MessageProfilingV1:
     t6_set_rx_issued_monotonic_us: int | None
 
 @dataclass(frozen=True, slots=True)
+class RadioSnapshotV1:
+    trigger: RadioObservationTrigger
+    software_state: RadioState
+    capture_started_at_monotonic_us: int
+    capture_finished_at_monotonic_us: int
+    capture_status: RadioCaptureStatus
+    chip_status: int | None
+    chip_mode: RadioChipMode | None
+    irq_status: int | None
+    device_errors: int | None
+    dio1_before: bool | None
+    dio1_after: bool | None
+    busy: bool | None
+    gpio_event_pending: bool | None
+    event_timestamp_ns: int | None
+    event_sequence: int | None
+    last_set_rx_issued_monotonic_us: int | None
+    failure_code: int | None
+    failure_stage: int | None
+    failure_opcode: int | None
+    os_errno: int | None
+    history: bytes
+    history_dropped: int
+
+@dataclass(frozen=True, slots=True)
 class ClockObservationV1:
     receiver_instance_id: bytes
     observation_sequence: int
@@ -331,6 +502,12 @@ class ClockObservationV1:
     step_discontinuity_boundary: bool
     system_time_quality: SystemTimeQuality
     rtc_health: RtcHealth
+    error_bound_us: int | None
+    sample_started_at_monotonic_us: int | None
+    sample_finished_at_monotonic_us: int | None
+    error_budget_expires_at_monotonic_us: int | None
+    network_evidence: NetworkClockEvidenceV1 | None
+    rtc_evidence: RtcClockEvidenceV2 | None
 
 def clock_observation_v1_parameters(entity: ClockObservationV1) -> tuple[object, ...]:
     return (
@@ -342,6 +519,26 @@ def clock_observation_v1_parameters(entity: ClockObservationV1) -> tuple[object,
         entity.step_discontinuity_boundary,
         entity.system_time_quality.value,
         entity.rtc_health.value,
+        entity.error_bound_us,
+        entity.sample_started_at_monotonic_us,
+        entity.sample_finished_at_monotonic_us,
+        entity.error_budget_expires_at_monotonic_us,
+        None if entity.network_evidence is None else entity.network_evidence.tracking_started_at_monotonic_us,
+        None if entity.network_evidence is None else entity.network_evidence.tracking_finished_at_monotonic_us,
+        None if entity.network_evidence is None else entity.network_evidence.remaining_correction_us,
+        None if entity.network_evidence is None else entity.network_evidence.root_delay_us,
+        None if entity.network_evidence is None else entity.network_evidence.root_dispersion_us,
+        None if entity.network_evidence is None else entity.network_evidence.root_distance_us,
+        None if entity.network_evidence is None else entity.network_evidence.estimated_frequency_ppb,
+        None if entity.network_evidence is None else entity.network_evidence.estimated_skew_ppb,
+        None if entity.network_evidence is None else entity.network_evidence.reference_id,
+        None if entity.network_evidence is None else entity.network_evidence.reference_time_utc_us,
+        None if entity.network_evidence is None else entity.network_evidence.stratum,
+        None if entity.rtc_evidence is None else entity.rtc_evidence.reference_receiver_instance_id,
+        None if entity.rtc_evidence is None else entity.rtc_evidence.reference_verified_at_utc_us,
+        None if entity.rtc_evidence is None else entity.rtc_evidence.reference_readback_utc_us,
+        None if entity.rtc_evidence is None else entity.rtc_evidence.reference_uncertainty_us,
+        None if entity.rtc_evidence is None else entity.rtc_evidence.reference_drift_bound_ppm,
     )
 
 @dataclass(frozen=True, slots=True)
@@ -407,17 +604,62 @@ def quarantined_entity_row_v1_parameters(entity: QuarantinedEntityRowV1) -> tupl
     )
 
 @dataclass(frozen=True, slots=True)
+class RadioObservationV1:
+    receiver_instance_id: bytes
+    observation_sequence: int
+    snapshot: RadioSnapshotV1
+
+def radio_observation_v1_parameters(entity: RadioObservationV1) -> tuple[object, ...]:
+    return (
+        entity.receiver_instance_id,
+        entity.observation_sequence,
+        entity.snapshot.trigger.value,
+        entity.snapshot.software_state.value,
+        entity.snapshot.capture_started_at_monotonic_us,
+        entity.snapshot.capture_finished_at_monotonic_us,
+        entity.snapshot.capture_status.value,
+        entity.snapshot.chip_status,
+        None if entity.snapshot.chip_mode is None else entity.snapshot.chip_mode.value,
+        entity.snapshot.irq_status,
+        entity.snapshot.device_errors,
+        entity.snapshot.dio1_before,
+        entity.snapshot.dio1_after,
+        entity.snapshot.busy,
+        entity.snapshot.gpio_event_pending,
+        entity.snapshot.event_timestamp_ns,
+        entity.snapshot.event_sequence,
+        entity.snapshot.last_set_rx_issued_monotonic_us,
+        entity.snapshot.failure_code,
+        entity.snapshot.failure_stage,
+        entity.snapshot.failure_opcode,
+        entity.snapshot.os_errno,
+        entity.snapshot.history,
+        entity.snapshot.history_dropped,
+    )
+
+@dataclass(frozen=True, slots=True)
 class ReceiverHealthV1:
     receiver_instance_id: bytes
     health_sequence: int
     communicator_sampled_at_monotonic_us: int
-    radio_state: RadioState
+    radio_observation_sequence: int
+    consistency: HealthConsistency
+    radio_header_errors_observed: int
+    radio_header_errors_handled: int
+    radio_crc_errors_observed: int
+    radio_crc_errors_handled: int
+    radio_observations_dropped: int
     radio_recovery_attempts: int
     radio_recovery_successes: int
     radio_recovery_failures: int
     radio_recovery_attempts_by_reason: tuple[int, ...]
     system_time_quality: SystemTimeQuality
     rtc_health: RtcHealth
+    rtc_read_status: RtcReadStatus
+    rtc_read_errno: int | None
+    rtc_read_started_at_monotonic_us: int
+    rtc_read_finished_at_monotonic_us: int
+    rtc_read_utc_s: int | None
     time_quality_transition_count: int
     rtc_health_transition_count: int
     last_time_quality_transition_monotonic_us: int | None
@@ -450,6 +692,8 @@ class ReceiverHealthV1:
     sqlite_database_size_bytes: int | None
     sqlite_wal_size_bytes: int | None
     ntp_offset_us: int | None
+    storage_device_write_bytes: int | None
+    receiver_process_write_bytes: int | None
 
 def receiver_health_v1_parameters(entity: ReceiverHealthV1) -> tuple[object, ...]:
     if len(entity.radio_recovery_attempts_by_reason) != 8:
@@ -464,9 +708,9 @@ def receiver_health_v1_parameters(entity: ReceiverHealthV1) -> tuple[object, ...
         raise ValueError(
             'rtc_write_results' + ' must have length 3'
         )
-    if len(entity.persist_queue_admission_counts) != 5:
+    if len(entity.persist_queue_admission_counts) != 6:
         raise ValueError(
-            'persist_queue_admission_counts' + ' must have length 5'
+            'persist_queue_admission_counts' + ' must have length 6'
         )
     if any(len(item) != 3 for item in entity.persist_queue_admission_counts):
         raise ValueError(
@@ -480,7 +724,13 @@ def receiver_health_v1_parameters(entity: ReceiverHealthV1) -> tuple[object, ...
         entity.receiver_instance_id,
         entity.health_sequence,
         entity.communicator_sampled_at_monotonic_us,
-        entity.radio_state.value,
+        entity.radio_observation_sequence,
+        entity.consistency.value,
+        entity.radio_header_errors_observed,
+        entity.radio_header_errors_handled,
+        entity.radio_crc_errors_observed,
+        entity.radio_crc_errors_handled,
+        entity.radio_observations_dropped,
         entity.radio_recovery_attempts,
         entity.radio_recovery_successes,
         entity.radio_recovery_failures,
@@ -494,6 +744,11 @@ def receiver_health_v1_parameters(entity: ReceiverHealthV1) -> tuple[object, ...
         entity.radio_recovery_attempts_by_reason[7],
         entity.system_time_quality.value,
         entity.rtc_health.value,
+        entity.rtc_read_status.value,
+        entity.rtc_read_errno,
+        entity.rtc_read_started_at_monotonic_us,
+        entity.rtc_read_finished_at_monotonic_us,
+        entity.rtc_read_utc_s,
         entity.time_quality_transition_count,
         entity.rtc_health_transition_count,
         entity.last_time_quality_transition_monotonic_us,
@@ -521,6 +776,9 @@ def receiver_health_v1_parameters(entity: ReceiverHealthV1) -> tuple[object, ...
         entity.persist_queue_admission_counts[4][0],
         entity.persist_queue_admission_counts[4][1],
         entity.persist_queue_admission_counts[4][2],
+        entity.persist_queue_admission_counts[5][0],
+        entity.persist_queue_admission_counts[5][1],
+        entity.persist_queue_admission_counts[5][2],
         entity.persistence_sampled_at_monotonic_us,
         entity.persistence_admission_generation,
         entity.persistence_admission_state.value,
@@ -550,55 +808,29 @@ def receiver_health_v1_parameters(entity: ReceiverHealthV1) -> tuple[object, ...
         entity.sqlite_database_size_bytes,
         entity.sqlite_wal_size_bytes,
         entity.ntp_offset_us,
+        entity.storage_device_write_bytes,
+        entity.receiver_process_write_bytes,
     )
 
 @dataclass(frozen=True, slots=True)
-class MessageProfileRowV1:
-    profile: MessageProfilingV1
-    persistence_classification: PersistenceClassification
+class ReceivedMessageRowV1:
+    node_id: bytes
+    message_id: int
+    domain: int
 
-def message_profile_row_v1_parameters(entity: MessageProfileRowV1) -> tuple[object, ...]:
+def received_message_row_v1_parameters(entity: ReceivedMessageRowV1) -> tuple[object, ...]:
     return (
-        entity.profile.receiver_instance_id,
-        entity.profile.occurrence_sequence,
-        entity.profile.received_at_monotonic_us,
-        entity.profile.received_frame_length,
-        entity.profile.received_frame,
-        entity.profile.claimed_control,
-        entity.profile.claimed_domain,
-        entity.profile.claimed_node_id,
-        entity.profile.claimed_message_id,
-        entity.profile.header_authenticated,
-        entity.profile.decoded_sample_id,
-        entity.profile.rssi_dbm_x2,
-        entity.profile.snr_db_x4,
-        entity.profile.irq_status,
-        entity.profile.device_errors,
-        entity.profile.processing_result.value,
-        entity.profile.ack_selected.value,
-        entity.profile.ack_tx_result.value,
-        entity.profile.ack_frame,
-        entity.profile.busy_wait_total_us,
-        entity.profile.busy_wait_max_us,
-        entity.profile.busy_wait_count,
-        entity.profile.busy_timeout_count,
-        entity.profile.last_busy_timeout_opcode,
-        entity.profile.t1_handler_started_monotonic_us,
-        entity.profile.t2_packet_copied_monotonic_us,
-        entity.profile.t3_authentication_completed_monotonic_us,
-        entity.profile.t4_set_tx_attempted_monotonic_us,
-        entity.profile.t5_tx_done_monotonic_us,
-        entity.profile.t6_set_rx_issued_monotonic_us,
-        entity.persistence_classification.value,
+        entity.node_id,
+        entity.message_id,
+        entity.domain,
     )
 
 @dataclass(frozen=True, slots=True)
-class ReadingMessageRowV1:
+class ReadingMessageRowV2:
     node_id: bytes
     message_id: int
     sample_id: int
-    reading_body: bytes
-    is_canonical_for_sample: bool
+    is_canonical: bool
     run_ms: int
     soil_0_mv: int
     soil_1_mv: int
@@ -614,16 +846,13 @@ class ReadingMessageRowV1:
     previous_cycle_tx_attempts: int
     previous_cycle_accepted_readings: int
     flags: int
-    first_receiver_instance_id: bytes
-    first_occurrence_sequence: int
 
-def reading_message_row_v1_parameters(entity: ReadingMessageRowV1) -> tuple[object, ...]:
+def reading_message_row_v2_parameters(entity: ReadingMessageRowV2) -> tuple[object, ...]:
     return (
         entity.node_id,
         entity.message_id,
         entity.sample_id,
-        entity.reading_body,
-        entity.is_canonical_for_sample,
+        entity.is_canonical,
         entity.run_ms,
         entity.soil_0_mv,
         entity.soil_1_mv,
@@ -639,8 +868,57 @@ def reading_message_row_v1_parameters(entity: ReadingMessageRowV1) -> tuple[obje
         entity.previous_cycle_tx_attempts,
         entity.previous_cycle_accepted_readings,
         entity.flags,
-        entity.first_receiver_instance_id,
-        entity.first_occurrence_sequence,
+    )
+
+@dataclass(frozen=True, slots=True)
+class PacketReceptionRowV1:
+    profile: PacketReceptionV1
+    persistence_classification: PersistenceClassification
+
+def packet_reception_row_v1_parameters(entity: PacketReceptionRowV1) -> tuple[object, ...]:
+    return (
+        entity.profile.receiver_instance_id,
+        entity.profile.occurrence_sequence,
+        entity.profile.received_at_monotonic_us,
+        entity.profile.domain,
+        entity.profile.node_id,
+        entity.profile.message_id,
+        entity.profile.decoded_sample_id,
+        entity.profile.rssi_dbm_x2,
+        entity.profile.snr_db_x4,
+        entity.profile.irq_status,
+        entity.profile.device_errors,
+        entity.profile.processing_result.value,
+        entity.profile.ack_tx_result.value,
+        entity.profile.busy_wait_total_us,
+        entity.profile.busy_wait_max_us,
+        entity.profile.busy_wait_count,
+        entity.profile.busy_timeout_count,
+        entity.profile.last_busy_timeout_opcode,
+        entity.profile.t1_handler_started_monotonic_us,
+        entity.profile.t2_packet_copied_monotonic_us,
+        entity.profile.t3_authentication_completed_monotonic_us,
+        entity.profile.t4_set_tx_attempted_monotonic_us,
+        entity.profile.t5_tx_done_monotonic_us,
+        entity.profile.t6_set_rx_issued_monotonic_us,
+        entity.persistence_classification.value,
+    )
+
+@dataclass(frozen=True, slots=True)
+class PacketReceptionExceptionRowV1:
+    receiver_instance_id: bytes
+    occurrence_sequence: int
+    received_frame_length: int
+    received_frame: bytes
+    reason: PacketExceptionReason
+
+def packet_reception_exception_row_v1_parameters(entity: PacketReceptionExceptionRowV1) -> tuple[object, ...]:
+    return (
+        entity.receiver_instance_id,
+        entity.occurrence_sequence,
+        entity.received_frame_length,
+        entity.received_frame,
+        entity.reason.value,
     )
 
 @dataclass(frozen=True, slots=True)
@@ -652,8 +930,8 @@ class RtcProvenanceV1:
     drift_bound_ppm: int
 
 @dataclass(frozen=True, slots=True)
-class TxAirtimeBucketV1:
-    charged_airtime_us: int
+class AirtimeEntryV2:
+    remaining_us: int
 
 @dataclass(frozen=True, slots=True)
 class AirtimeSnapshotV1:
@@ -661,17 +939,16 @@ class AirtimeSnapshotV1:
     error_bound_us: int
 
 @dataclass(frozen=True, slots=True)
-class CommunicatorStateV1:
+class CommunicatorStateV2:
     generation: int
     last_observed_system_time_quality: SystemTimeQuality
     last_observed_rtc_health: RtcHealth
     rtc_provenance: RtcProvenanceV1 | None
     rolling_window_us: int
     tx_airtime_budget_us: int
-    bucket_width_us: int
-    bucket_charge_limit_us: int
+    entry_charge_us: int
     airtime_snapshot: AirtimeSnapshotV1 | None
-    buckets: tuple[TxAirtimeBucketV1, ...]
+    entries: tuple[AirtimeEntryV2, ...]
 
 def _encode_rtc_provenance_v1(value: RtcProvenanceV1) -> bytes:
     chunks: list[bytes] = []
@@ -719,22 +996,22 @@ def _decode_rtc_provenance_v1(
         drift_bound_ppm=drift_bound_ppm,
     ), offset
 
-def _encode_tx_airtime_bucket_v1(value: TxAirtimeBucketV1) -> bytes:
+def _encode_airtime_entry_v2(value: AirtimeEntryV2) -> bytes:
     chunks: list[bytes] = []
-    chunks.append(_pack('<Q', value.charged_airtime_us, 'TxAirtimeBucketV1.charged_airtime_us'))
+    chunks.append(_pack('<Q', value.remaining_us, 'AirtimeEntryV2.remaining_us'))
     encoded = b''.join(chunks)
     if len(encoded) != 8:
-        raise RuntimeError('TX_AIRTIME_BUCKET_V1 generated an invalid size')
+        raise RuntimeError('AIRTIME_ENTRY_V2 generated an invalid size')
     return encoded
 
-def _decode_tx_airtime_bucket_v1(
+def _decode_airtime_entry_v2(
     blob: memoryview, offset: int
-) -> tuple[TxAirtimeBucketV1, int]:
-    charged_airtime_us, offset = _unpack(
-        blob, offset, '<Q', 'TxAirtimeBucketV1.charged_airtime_us'
+) -> tuple[AirtimeEntryV2, int]:
+    remaining_us, offset = _unpack(
+        blob, offset, '<Q', 'AirtimeEntryV2.remaining_us'
     )
-    return TxAirtimeBucketV1(
-        charged_airtime_us=charged_airtime_us,
+    return AirtimeEntryV2(
+        remaining_us=remaining_us,
     ), offset
 
 def _encode_airtime_snapshot_v1(value: AirtimeSnapshotV1) -> bytes:
@@ -760,45 +1037,44 @@ def _decode_airtime_snapshot_v1(
         error_bound_us=error_bound_us,
     ), offset
 
-def encode_communicator_state_v1(entity: CommunicatorStateV1) -> bytes:
-    if len(entity.buckets) != 62:
+def encode_communicator_state_v2(entity: CommunicatorStateV2) -> bytes:
+    if len(entity.entries) != 18:
         raise ValueError(
-            'buckets' + ' must have length 62'
+            'entries' + ' must have length 18'
         )
-    encoded_length = 624
+    encoded_length = 264
     validity_mask = ((1 << 0) if entity.rtc_provenance is not None else 0) | ((1 << 1) if entity.airtime_snapshot is not None else 0)
-    bucket_count = len(entity.buckets)
+    entry_count = len(entity.entries)
     chunks: list[bytes] = []
-    chunks.append(_pack('<H', 1, 'CommunicatorStateV1.state_format_version'))
-    chunks.append(_pack('<I', encoded_length, 'CommunicatorStateV1.encoded_length'))
-    chunks.append(_pack('<Q', entity.generation, 'CommunicatorStateV1.generation'))
-    chunks.append(_pack('<H', validity_mask, 'CommunicatorStateV1.validity_mask'))
-    chunks.append(_pack('<B', entity.last_observed_system_time_quality.value, 'CommunicatorStateV1.last_observed_system_time_quality'))
-    chunks.append(_pack('<B', entity.last_observed_rtc_health.value, 'CommunicatorStateV1.last_observed_rtc_health'))
-    chunks.append(_pack('<H', 0, 'CommunicatorStateV1.reserved_0'))
+    chunks.append(_pack('<H', 2, 'CommunicatorStateV2.state_format_version'))
+    chunks.append(_pack('<I', encoded_length, 'CommunicatorStateV2.encoded_length'))
+    chunks.append(_pack('<Q', entity.generation, 'CommunicatorStateV2.generation'))
+    chunks.append(_pack('<H', validity_mask, 'CommunicatorStateV2.validity_mask'))
+    chunks.append(_pack('<B', entity.last_observed_system_time_quality.value, 'CommunicatorStateV2.last_observed_system_time_quality'))
+    chunks.append(_pack('<B', entity.last_observed_rtc_health.value, 'CommunicatorStateV2.last_observed_rtc_health'))
+    chunks.append(_pack('<H', 0, 'CommunicatorStateV2.reserved_0'))
     if entity.rtc_provenance is None:
         chunks.append(bytes(48))
     else:
         chunks.append(_encode_rtc_provenance_v1(entity.rtc_provenance))
-    chunks.append(_pack('<Q', entity.rolling_window_us, 'CommunicatorStateV1.rolling_window_us'))
-    chunks.append(_pack('<Q', entity.tx_airtime_budget_us, 'CommunicatorStateV1.tx_airtime_budget_us'))
-    chunks.append(_pack('<Q', entity.bucket_width_us, 'CommunicatorStateV1.bucket_width_us'))
-    chunks.append(_pack('<Q', entity.bucket_charge_limit_us, 'CommunicatorStateV1.bucket_charge_limit_us'))
+    chunks.append(_pack('<Q', entity.rolling_window_us, 'CommunicatorStateV2.rolling_window_us'))
+    chunks.append(_pack('<Q', entity.tx_airtime_budget_us, 'CommunicatorStateV2.tx_airtime_budget_us'))
+    chunks.append(_pack('<Q', entity.entry_charge_us, 'CommunicatorStateV2.entry_charge_us'))
     if entity.airtime_snapshot is None:
         chunks.append(bytes(16))
     else:
         chunks.append(_encode_airtime_snapshot_v1(entity.airtime_snapshot))
-    chunks.append(_pack('<H', bucket_count, 'CommunicatorStateV1.bucket_count'))
-    chunks.append(_pack('<H', 0, 'CommunicatorStateV1.reserved_2'))
-    chunks.append(_pack('<Q', 0, 'CommunicatorStateV1.reserved_3'))
-    for item in entity.buckets:
-        chunks.append(_encode_tx_airtime_bucket_v1(item))
+    chunks.append(_pack('<H', entry_count, 'CommunicatorStateV2.entry_count'))
+    chunks.append(_pack('<H', 0, 'CommunicatorStateV2.reserved_2'))
+    chunks.append(_pack('<Q', 0, 'CommunicatorStateV2.reserved_3'))
+    for item in entity.entries:
+        chunks.append(_encode_airtime_entry_v2(item))
     encoded = b''.join(chunks)
     if len(encoded) != encoded_length:
-        raise RuntimeError('COMMUNICATOR_STATE_ENCODING_V1 generated an invalid length')
+        raise RuntimeError('COMMUNICATOR_STATE_ENCODING_V2 generated an invalid length')
     return encoded
 
-def decode_communicator_state_v1(blob: bytes) -> CommunicatorStateV1:
+def decode_communicator_state_v2(blob: bytes) -> CommunicatorStateV2:
     try:
         view = memoryview(blob)
     except TypeError as exc:
@@ -806,112 +1082,108 @@ def decode_communicator_state_v1(blob: bytes) -> CommunicatorStateV1:
     blob = view
     offset = 0
     state_format_version, offset = _unpack(
-        blob, offset, '<H', 'CommunicatorStateV1.state_format_version'
+        blob, offset, '<H', 'CommunicatorStateV2.state_format_version'
     )
-    if state_format_version != 1:
-        raise ValueError('CommunicatorStateV1.state_format_version' + ' has an invalid constant value')
+    if state_format_version != 2:
+        raise ValueError('CommunicatorStateV2.state_format_version' + ' has an invalid constant value')
     encoded_length, offset = _unpack(
-        blob, offset, '<I', 'CommunicatorStateV1.encoded_length'
+        blob, offset, '<I', 'CommunicatorStateV2.encoded_length'
     )
     if encoded_length != len(view):
-        raise ValueError('CommunicatorStateV1.encoded_length' + ' does not match the blob length')
+        raise ValueError('CommunicatorStateV2.encoded_length' + ' does not match the blob length')
     generation, offset = _unpack(
-        blob, offset, '<Q', 'CommunicatorStateV1.generation'
+        blob, offset, '<Q', 'CommunicatorStateV2.generation'
     )
     validity_mask, offset = _unpack(
-        blob, offset, '<H', 'CommunicatorStateV1.validity_mask'
+        blob, offset, '<H', 'CommunicatorStateV2.validity_mask'
     )
     if validity_mask & ~3:
-        raise ValueError('CommunicatorStateV1.validity_mask' + ' has reserved bits set')
+        raise ValueError('CommunicatorStateV2.validity_mask' + ' has reserved bits set')
     last_observed_system_time_quality_value, offset = _unpack(
-        blob, offset, '<B', 'CommunicatorStateV1.last_observed_system_time_quality'
+        blob, offset, '<B', 'CommunicatorStateV2.last_observed_system_time_quality'
     )
     try:
         last_observed_system_time_quality = SystemTimeQuality(last_observed_system_time_quality_value)
     except ValueError as exc:
-        raise ValueError('CommunicatorStateV1.last_observed_system_time_quality' + ' has an unknown enum value') from exc
+        raise ValueError('CommunicatorStateV2.last_observed_system_time_quality' + ' has an unknown enum value') from exc
     last_observed_rtc_health_value, offset = _unpack(
-        blob, offset, '<B', 'CommunicatorStateV1.last_observed_rtc_health'
+        blob, offset, '<B', 'CommunicatorStateV2.last_observed_rtc_health'
     )
     try:
         last_observed_rtc_health = RtcHealth(last_observed_rtc_health_value)
     except ValueError as exc:
-        raise ValueError('CommunicatorStateV1.last_observed_rtc_health' + ' has an unknown enum value') from exc
+        raise ValueError('CommunicatorStateV2.last_observed_rtc_health' + ' has an unknown enum value') from exc
     reserved_0, offset = _unpack(
-        blob, offset, '<H', 'CommunicatorStateV1.reserved_0'
+        blob, offset, '<H', 'CommunicatorStateV2.reserved_0'
     )
     if reserved_0 != 0:
-        raise ValueError('CommunicatorStateV1.reserved_0' + ' has an invalid constant value')
+        raise ValueError('CommunicatorStateV2.reserved_0' + ' has an invalid constant value')
     if validity_mask & (1 << 0):
         rtc_provenance, offset = _decode_rtc_provenance_v1(view, offset)
     else:
         rtc_provenance_absent, offset = _read_exact(
-            view, offset, 48, 'CommunicatorStateV1.rtc_provenance'
+            view, offset, 48, 'CommunicatorStateV2.rtc_provenance'
         )
         if any(rtc_provenance_absent):
-            raise ValueError('CommunicatorStateV1.rtc_provenance' + ' absent representation is not zero')
+            raise ValueError('CommunicatorStateV2.rtc_provenance' + ' absent representation is not zero')
         rtc_provenance = None
     rolling_window_us, offset = _unpack(
-        blob, offset, '<Q', 'CommunicatorStateV1.rolling_window_us'
+        blob, offset, '<Q', 'CommunicatorStateV2.rolling_window_us'
     )
     tx_airtime_budget_us, offset = _unpack(
-        blob, offset, '<Q', 'CommunicatorStateV1.tx_airtime_budget_us'
+        blob, offset, '<Q', 'CommunicatorStateV2.tx_airtime_budget_us'
     )
-    bucket_width_us, offset = _unpack(
-        blob, offset, '<Q', 'CommunicatorStateV1.bucket_width_us'
-    )
-    bucket_charge_limit_us, offset = _unpack(
-        blob, offset, '<Q', 'CommunicatorStateV1.bucket_charge_limit_us'
+    entry_charge_us, offset = _unpack(
+        blob, offset, '<Q', 'CommunicatorStateV2.entry_charge_us'
     )
     if validity_mask & (1 << 1):
         airtime_snapshot, offset = _decode_airtime_snapshot_v1(view, offset)
     else:
         airtime_snapshot_absent, offset = _read_exact(
-            view, offset, 16, 'CommunicatorStateV1.airtime_snapshot'
+            view, offset, 16, 'CommunicatorStateV2.airtime_snapshot'
         )
         if any(airtime_snapshot_absent):
-            raise ValueError('CommunicatorStateV1.airtime_snapshot' + ' absent representation is not zero')
+            raise ValueError('CommunicatorStateV2.airtime_snapshot' + ' absent representation is not zero')
         airtime_snapshot = None
-    bucket_count, offset = _unpack(
-        blob, offset, '<H', 'CommunicatorStateV1.bucket_count'
+    entry_count, offset = _unpack(
+        blob, offset, '<H', 'CommunicatorStateV2.entry_count'
     )
     reserved_2, offset = _unpack(
-        blob, offset, '<H', 'CommunicatorStateV1.reserved_2'
+        blob, offset, '<H', 'CommunicatorStateV2.reserved_2'
     )
     if reserved_2 != 0:
-        raise ValueError('CommunicatorStateV1.reserved_2' + ' has an invalid constant value')
+        raise ValueError('CommunicatorStateV2.reserved_2' + ' has an invalid constant value')
     reserved_3, offset = _unpack(
-        blob, offset, '<Q', 'CommunicatorStateV1.reserved_3'
+        blob, offset, '<Q', 'CommunicatorStateV2.reserved_3'
     )
     if reserved_3 != 0:
-        raise ValueError('CommunicatorStateV1.reserved_3' + ' has an invalid constant value')
-    if bucket_count != 62:
-        raise ValueError('CommunicatorStateV1.buckets' + ' has an invalid fixed length')
-    buckets_items: list[TxAirtimeBucketV1] = []
-    for _ in range(62):
-        item, offset = _decode_tx_airtime_bucket_v1(view, offset)
-        buckets_items.append(item)
-    buckets = tuple(buckets_items)
+        raise ValueError('CommunicatorStateV2.reserved_3' + ' has an invalid constant value')
+    if entry_count != 18:
+        raise ValueError('CommunicatorStateV2.entries' + ' has an invalid fixed length')
+    entries_items: list[AirtimeEntryV2] = []
+    for _ in range(18):
+        item, offset = _decode_airtime_entry_v2(view, offset)
+        entries_items.append(item)
+    entries = tuple(entries_items)
     if offset != len(view):
         raise ValueError('canonical blob has trailing bytes')
-    return CommunicatorStateV1(
+    return CommunicatorStateV2(
         generation=generation,
         last_observed_system_time_quality=last_observed_system_time_quality,
         last_observed_rtc_health=last_observed_rtc_health,
         rtc_provenance=rtc_provenance,
         rolling_window_us=rolling_window_us,
         tx_airtime_budget_us=tx_airtime_budget_us,
-        bucket_width_us=bucket_width_us,
-        bucket_charge_limit_us=bucket_charge_limit_us,
+        entry_charge_us=entry_charge_us,
         airtime_snapshot=airtime_snapshot,
-        buckets=buckets,
+        entries=entries,
     )
 
-def communicator_state_v1_parameters(entity: CommunicatorStateV1) -> tuple[object, ...]:
-    state_blob = encode_communicator_state_v1(entity)
+def communicator_state_v2_parameters(entity: CommunicatorStateV2) -> tuple[object, ...]:
+    state_blob = encode_communicator_state_v2(entity)
     return (
         1,
-        1,
+        2,
         entity.generation,
         state_blob,
         hashlib.sha256(state_blob).digest(),

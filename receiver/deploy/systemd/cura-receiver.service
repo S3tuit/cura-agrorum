@@ -8,6 +8,9 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cura-receiver
 User=cura-receiver
 Group=cura-receiver
 SupplementaryGroups=gpio spi

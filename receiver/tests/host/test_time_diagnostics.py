@@ -41,7 +41,7 @@ def test_context_present_fields_and_status_zero():
     value = context(
         primary_status=BackendStatus(E.TimeBackendStatusKind.ADJTIMEX_RETURN, 0),
         secondary_status=BackendStatus(E.TimeBackendStatusKind.DS3231_READ_STATUS, 4),
-        quality=(E.SystemTimeQuality.NETWORK_SYNCED, E.SystemTimeQuality.UNTRUSTED),
+        quality=(E.SystemTimeQuality.CHRONY_SYNCED, E.SystemTimeQuality.UNTRUSTED),
         rtc_health=(E.RtcHealth.PRESENT, E.RtcHealth.MISSING),
         flags=255,
         os_errno=5,

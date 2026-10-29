@@ -61,7 +61,7 @@ class ReceiverConfigurationReader:
     """Construct and call on the persistence thread; never transfers file work.
 
     ``read`` performs the worker-side operation only. The public control channel
-    will own its separate caller deadline, serialization and cancellation rules.
+    owns its separate caller deadline, serialization and cancellation rules.
     No caller-side timeout guarantee is implied by this synchronous primitive.
     """
 

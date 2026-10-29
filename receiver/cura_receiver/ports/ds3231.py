@@ -86,6 +86,14 @@ class Ds3231WriteResult:
 
 
 class Ds3231Control(Protocol):
+    """Device outcomes do not establish clock trust or verified RTC contents.
+
+    A completed write requires caller-owned read-back and durable provenance.
+    An uncertain write must not be blindly retried. INVALID (including EINVAL)
+    does not identify OSF specifically. Caller deadlines cannot preempt a kernel
+    ioctl; the Linux adapter also requires a measured complete-operation bound.
+    """
+
     def read_time(self, *, deadline_monotonic_us: int) -> Ds3231ReadResult: ...
     def write_time(
         self, *, rtc_utc_s: int, deadline_monotonic_us: int

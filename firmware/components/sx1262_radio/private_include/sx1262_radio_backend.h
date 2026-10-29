@@ -80,6 +80,7 @@ uint64_t sx1262_radio_backend_monotonic_us(void);
 
 bool sx1262_radio_backend_initialize(const sx1262_radio_profile_t *profile,
                                      sx1262_radio_backend_error_t *error);
+bool sx1262_radio_backend_disable_rf_path(sx1262_radio_backend_error_t *error);
 sx1262_radio_backend_call_result_t
 sx1262_radio_backend_set_standby(sx1262_radio_backend_error_t *error);
 sx1262_radio_backend_call_result_t

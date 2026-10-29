@@ -28,6 +28,15 @@ class CheckpointResult:
     checkpointed_frames: int | None = None
     failure: DatabaseFailure | None = None
 
+    @property
+    def complete(self):
+        return (
+            self.failure is None
+            and self.wal_frames is not None
+            and self.wal_frames >= 0
+            and self.checkpointed_frames == self.wal_frames
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class PersistenceCounters:
@@ -55,6 +64,7 @@ class PersistenceRecovery:
         transactions,
         minimum_free_bytes,
         monotonic_rate_bound_ppm,
+        checkpoint_maintenance=None,
     ):
         minimum_wait_monotonic_us(0, rate_bound_ppm=monotonic_rate_bound_ppm)
         self.database = database
@@ -62,6 +72,8 @@ class PersistenceRecovery:
         self.instance = instance
         self.clock = clock
         self.transactions = transactions
+        self._maintenance = checkpoint_maintenance
+        self._validated_connection = database.connection
         self.minimum_free_bytes = minimum_free_bytes
         self._rate_bound = monotonic_rate_bound_ppm
         self._enabled = False
@@ -165,6 +177,10 @@ class PersistenceRecovery:
         failure = self.database.revalidate(minimum_free_bytes=self.minimum_free_bytes)
         if failure is not None:
             raise StorageUnavailable(failure)
+        if self.database.connection is not self._validated_connection:
+            if self._maintenance is not None:
+                self._maintenance.mark_possible_work()
+            self._validated_connection = self.database.connection
         start = SqliteRepository(self.database.connection).find_receiver_instance(
             self.instance.receiver_instance_id
         )
@@ -207,15 +223,22 @@ class PersistenceRecovery:
             )
             if failure is not None:
                 raise StorageUnavailable(failure)
-            busy, total, completed = self.transactions.checkpoint(
-                self.database.connection
-            )
+            result = self.transactions.checkpoint(self.database.connection)
+            if (
+                not isinstance(result, (tuple, list))
+                or len(result) != 3
+                or any(type(value) is not int for value in result)
+            ):
+                raise StorageUnavailable(DatabaseFailure(State.UNAVAILABLE_IO))
+            busy, total, completed = result
             if busy:
                 raise StorageUnavailable(
                     DatabaseFailure(
                         State.UNAVAILABLE_IO, sqlite3.SQLITE_BUSY, sqlite3.SQLITE_BUSY
                     )
                 )
+            if not 0 <= completed <= total:
+                raise StorageUnavailable(DatabaseFailure(State.UNAVAILABLE_IO))
         except (
             sqlite3.Error,
             OSError,
@@ -224,12 +247,19 @@ class PersistenceRecovery:
         ) as error:
             failure = classify_global_failure(error)
             self.checkpoint_pending = True
+            if self._maintenance is not None:
+                self._maintenance.mark_possible_work()
             self.increment(wal_checkpoint_failures=1)
             self.fail(failure)
             return CheckpointResult(
                 self.clock.now_monotonic_us() - started, failure=failure
             )
         self.checkpoint_pending = False
+        if self._maintenance is not None:
+            if completed == total:
+                self._maintenance.complete()
+            else:
+                self._maintenance.partial()
         self.increment(wal_checkpoint_successes=1)
         self.complete(ordinary_pending=False)
         return CheckpointResult(

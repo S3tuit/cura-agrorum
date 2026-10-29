@@ -1,48 +1,44 @@
-# RF operating-envelope decision, 2026-09-18
+# RF operating envelope
 
-**RF-018 disposition: accepted. DEP-023 operating-envelope approval: accepted.**
-RF-018 physical power/carrier/emissions measurement remains **NOT RUN**.
+Controlled tests use the documented [XIAO/Wio B2B assembly](../../firmware/HARDWARE.md)
+and [Pi carrier](../../receiver/HARDWARE.md), including their declared
+component fault fixtures. The configured profile is 868.1 MHz, intended +14 dBm,
+SF7/BW125/CR4/5, explicit header, CRC, eight-symbol preamble, private sync word
+and direction-specific IQ. S3 fault connections and static checks belong to the
+[radio fixture](../../firmware/hardware/radio/tests/component/FIXTURE.md).
 
-The operator instructed:
+The configuration basis uses a nominal 2 dBi antenna and credits no unmeasured
+RF-path loss. The estimate `ERP_dBm = P_port + G_dBi - L_dB - 2.15` gives
+13.85 dBm (24.27 mW) at configured +14 dBm, only about 0.13 dB below the
+25 mW basis. Actual output tolerance, antenna gain and path loss remain unmeasured.
+The +22 dBm SetTxParams register and the Seeed Wio PA row selected by the
+[firmware profile](../../firmware/components/sx1262_radio/sx1262_radio.c) express
+the expected +14 dBm setting; it is not a measurement of output power.
+The retained basis is [EU Decision 2025/105, annex row 48](https://www.boe.es/buscar/doc.php?id=DOUE-L-2025-80100);
+the [ITU SRD report](https://www.itu.int/dms_pub/itu-r/opb/rep/R-REP-SM.2153-8-2021-PDF-E.pdf)
+describes the ERP/EIRP reference conversion. This estimate does not bound RF
+uncertainty, and reduced duty cycle cannot compensate for excessive power.
 
-> For RF-018 disposition, record the accepted evidence and defer physical measurement as NOT RUN.
-> For DEP-023 approval, the allowed hardware/configuration are the schematics documented for firmware and receiver. Autonomous wakes, retries and resets are allowed. We can close it.
+This operating envelope retains that configuration basis without measured
+output-power, carrier or emissions qualification; combined RF uncertainty is
+not bounded by a measurement. Component exchanges verify functional behavior,
+not output power, frequency accuracy or spectral characteristics.
 
-This extends the earlier authorization to operate at configured +14 dBm while
-trusting the SX1262 configuration without output-power measurement equipment.
-It explicitly accepts the existing source/configuration basis for this pilot;
-it does not claim that a new manufacturer uncertainty bound was found.
+Declared component cases and production autonomous wakes, retries and resets
+are allowed within the existing firmware wake/sleep policy. The operator owns
+per-transmitter airtime accounting, admission and pacing across tests. Receiver
+production airtime enforcement remains applicable.
 
-Accepted basis and scope:
+Use [spec.py](spec.py) for whole-case charges. Include retries and uncertain
+transmissions and preserve activity history across resets, reflashing and session
+restarts. Unknown prior activity cannot be treated as a fresh allowance. The
+configuration basis uses at most 36 seconds per continuous hour per transmitter;
+an hour boundary does not reset that rolling interval. The node's per-wake budget
+does not independently enforce it across unexpected resets.
 
-- Firmware hardware: [SENSOR_CARRIER.md](../../firmware/test_apps/on_device/SENSOR_CARRIER.md),
-  including its declared nominal and component fault fixtures.
-- Receiver hardware: [TEST_CARRIER.md](../../receiver/hardware/TEST_CARRIER.md),
-  with the documented Waveshare EU868 module/antenna chain and pin configuration.
-- Configured power and PHY: the existing [firmware assessment](../../firmware/TESTING.md#sx1262_radio-first-rf-operating-envelope)
-  and firmware/receiver interface configurations: intended +14 dBm, 868.1 MHz,
-  SF7/BW125/CR4/5, explicit header, CRC, preamble 8, private sync word and
-  direction-specific IQ. The existing nominal antenna/path estimate is accepted
-  as source-based evidence; actual combined uncertainty remains unbounded.
-- Allowed operation includes the declared component episodes and production
-  autonomous wakes, retries and resets under the existing protocol and
-  DEC-002-approved firmware wake-budget/sleep policy. Receiver production
-  enforcement is unchanged. The operator retains test airtime accounting,
-  admission and pacing; no automated harness ledger/scheduler is required.
-
-This decision supersedes DEC-003's previous requirement to establish numerical
-output uncertainty before approving this pilot envelope. It records operator
-acceptance of the documented basis and remaining uncertainty, not a measured
-RF result, an independent regulatory determination, or full-service/deployment
-acceptance. Nominal component exchanges only establish their recorded functional
-assertions and are not power, frequency or spectral measurements.
-
-Retain RF-018 measurement as a follow-up obligation. Revisit when suitable RF
-instruments become available, the module/antenna/path/power/PHY changes, or
-conflicting RF evidence appears. Predeclare calibrated instruments, quantities,
-limits and uncertainty before physical execution. Existing fixture readiness,
-test expectations, cleanup/restoration and aggregate acceptance gates remain.
-
-This is a maintained operating decision, not a retained test execution. The
-accepted hardware and configuration are specified by the linked contracts;
-changes to that basis require revisiting the approval as described above.
+The XIAO/Wio module and RF path require fresh output, supply and sleep
+qualification against this basis; earlier-board captures do not establish them.
+Reassess the envelope after module, antenna, RF-path, power or PHY changes, when
+suitable instruments become available, or observations contradict the basis. Physical measurement requires declared quantities, limits,
+calibrated instruments and uncertainty. Fixture checks and bounded cleanup are
+required for every controlled run.

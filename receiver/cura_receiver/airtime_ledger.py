@@ -1,12 +1,11 @@
-"""Positional monotonic airtime history; no persistence, radio or clock I/O."""
+"""Fixed-charge monotonic airtime history; no persistence, radio or clock I/O."""
 
-from collections import deque
 from dataclasses import dataclass
 
 from .communicator_state_persistence import (
     AIRTIME_TX_COMPLETION_US,
     AIRTIME_UTC_ERROR_CEILING_US,
-    COMMUNICATOR_STATE_BUCKET_CAPACITY as CAPACITY,
+    COMMUNICATOR_STATE_ENTRY_CAPACITY as CAPACITY,
     CommunicatorStatePolicy,
 )
 from .elapsed_duration import (
@@ -16,10 +15,10 @@ from .elapsed_duration import (
     checked_monotonic_deadline,
     checked_monotonic_elapsed,
     minimum_wait_monotonic_us,
-    maximum_lifetime_monotonic_us,
+    maximum_physical_duration_us,
     rate_growth_us,
 )
-from .generated.receiver_entities_generated import AirtimeSnapshotV1, TxAirtimeBucketV1
+from .generated.receiver_entities_generated import AirtimeSnapshotV1, AirtimeEntryV2
 from .time_observations import TrustedTimeSample
 
 
@@ -57,157 +56,104 @@ class AirtimeCorrelation:
                                 rate_bound_ppm=rate_bound_ppm).utc_us
 
 
-@dataclass(frozen=True, slots=True)
-class _LiveBucket:
-    charge: int
-    retention_deadline: int
-
-
 class AirtimeLedger:
-    """Fixed circular history with immutable deadlines and cached charge.
+    """18 reservations, one open group and one unsaved-usage counter.
 
-    A bucket identity is its current-process virtual interval start, possibly
-    negative for reconstructed history near boot. It is never serialized.
-    Admission does not iterate the ring; advance only retires elapsed heads.
+    Deadlines are process-local. Saved entries are physical lifetimes measured
+    at one correlation. Neither persistence acknowledgement nor UTC can rebase
+    a live deadline; only a TX or startup recovery extends a reservation.
     """
 
-    def __init__(self, policy, buckets, *, monotonic_us, elapsed_us=0,
-                 rate_bound_ppm=MONOTONIC_ELAPSED_RATE_BOUND_PPM):
+    def __init__(self, policy, entries=None, *, monotonic_us,
+                 elapsed_us=0, rate_bound_ppm=MONOTONIC_ELAPSED_RATE_BOUND_PPM):
         if type(policy) is not CommunicatorStatePolicy:
             raise TypeError("a validated airtime policy is required")
-        if type(buckets) is not tuple or len(buckets) != CAPACITY:
-            raise ValueError("ledger requires exactly 62 immutable positional buckets")
         self.policy = policy
         self._now = checked_duration_us(monotonic_us)
-        checked_duration_us(elapsed_us)
         self._rate = rate_bound_ppm
-        self.spacing = self._wait(policy.bucket_width_us)
-        self._lifetime = maximum_lifetime_monotonic_us(
-            policy.bucket_width_us, rate_bound_ppm=rate_bound_ppm)
-        self._horizon = checked_monotonic_deadline(
-            checked_monotonic_deadline(policy.rolling_window_us, policy.bucket_width_us),
-            AIRTIME_TX_COMPLETION_US)
-        whole, phase = divmod(elapsed_us, policy.bucket_width_us)
-        self.current_start = monotonic_us - self._wait(phase)
-        self._ring = [None] * CAPACITY
-        self._head = 0
-        self._active = deque()
-        self._total = 0
-        # Validate the entire snapshot before pruning can hide bad historical charges.
-        total = 0
-        for bucket in buckets:
-            if type(bucket) is not TxAirtimeBucketV1:
+        self.hold = minimum_wait_monotonic_us(checked_monotonic_deadline(
+            policy.rolling_window_us, AIRTIME_TX_COMPLETION_US), rate_bound_ppm=rate_bound_ppm)
+        elapsed_us = checked_duration_us(elapsed_us)
+        if entries is None:
+            entries = (AirtimeEntryV2(0),) * CAPACITY
+        if type(entries) is not tuple or len(entries) != CAPACITY:
+            raise ValueError("ledger requires exactly 18 immutable entries")
+        for entry in entries:
+            if type(entry) is not AirtimeEntryV2:
                 raise TypeError("ledger entry has a foreign type")
-            charge = checked_duration_us(bucket.charged_airtime_us)
-            if charge > policy.bucket_charge_limit_us:
-                raise ValueError("loaded charge exceeds bucket limit")
-            total = checked_monotonic_deadline(total, charge)
-        if total > policy.tx_airtime_budget_us:
-            raise ValueError("loaded charge exceeds global budget")
-        for position, bucket in enumerate(buckets):
-            distance = CAPACITY - 1 - position
-            remaining = self._horizon - distance * policy.bucket_width_us - elapsed_us
-            if not bucket.charged_airtime_us or remaining <= 0:
-                continue
-            age = distance + whole
-            if age >= CAPACITY:
-                raise ValueError("retained history exceeds positional capacity")
-            start = self.current_start - age * self.spacing
-            deadline = checked_monotonic_deadline(monotonic_us, self._wait(remaining))
-            self._ring[self._index(start)] = _LiveBucket(bucket.charged_airtime_us, deadline)
-            self._active.append(start)
-            self._total += bucket.charged_airtime_us
-
-    def _wait(self, duration):
-        return minimum_wait_monotonic_us(duration, rate_bound_ppm=self._rate)
+            checked_duration_us(entry.remaining_us)
+        self.deadlines = []
+        for entry in entries:
+            left = max(0, entry.remaining_us - elapsed_us)
+            self.deadlines.append(checked_monotonic_deadline(monotonic_us,
+                minimum_wait_monotonic_us(left, rate_bound_ppm=rate_bound_ppm)) if left else 0)
+        self.current_entry = None
+        self.used_since_save_us = 0
 
     @property
     def total_used(self):
-        return self._total
+        return sum(d > self._now for d in self.deadlines) * self.policy.entry_charge_us
 
     @property
-    def grant_deadline(self):
-        # A reconstructed, already closed interval can have a negative deadline.
-        return max(0, self.current_start + self._lifetime)
-
-    def _index(self, start):
-        if type(start) is not int:
-            raise TypeError("bucket identity must be an integer")
-        distance, remainder = divmod(self.current_start - start, self.spacing)
-        if remainder or not 0 <= distance < CAPACITY:
-            raise ValueError("bucket is outside the represented monotonic grid")
-        return (self._head + CAPACITY - 1 - distance) % CAPACITY
-
-    def charge_at(self, start):
-        # A previously held grant can have aged completely out of the ring.
-        if start < self.current_start - (CAPACITY - 1) * self.spacing:
+    def available_charge_us(self):
+        if self.current_entry is None and all(self.deadlines):
             return 0
-        bucket = self._ring[self._index(start)]
-        return 0 if bucket is None else bucket.charge
-
-    def retention_deadline(self, start):
-        bucket = self._ring[self._index(start)]
-        if bucket is None:
-            raise ValueError("unopened bucket has no retention deadline")
-        return bucket.retention_deadline
-
-    def set_charge(self, start, charge):
-        checked_duration_us(charge)
-        if charge > self.policy.bucket_charge_limit_us:
-            raise ValueError("charge exceeds bucket limit")
-        index = self._index(start)
-        old = self._ring[index]
-        total = checked_monotonic_deadline(self._total - (old.charge if old else 0), charge)
-        if total > self.policy.tx_airtime_budget_us:
-            raise ValueError("charge exceeds global budget")
-        if old is None:
-            if not charge:
-                return
-            if start != self.current_start:
-                raise ValueError("only the current interval can acquire new charge")
-            deadline = start + self._wait(self._horizon)
-            checked_duration_us(deadline)
-            if deadline <= self._now:
-                raise ValueError("cannot reopen an expired interval")
-            self._active.append(start)
-        else:
-            deadline = old.retention_deadline
-        self._ring[index] = _LiveBucket(charge, deadline)
-        self._total = total
+        return self.policy.entry_charge_us - self.used_since_save_us
 
     def advance(self, now_monotonic_us):
         checked_monotonic_elapsed(self._now, now_monotonic_us)
         self._now = now_monotonic_us
-        while self._active:
-            start = self._active[0]
-            index = self._index(start)
-            bucket = self._ring[index]
-            if now_monotonic_us < bucket.retention_deadline:
-                break
-            self._total -= bucket.charge
-            self._ring[index] = None
-            self._active.popleft()
-        steps = (now_monotonic_us - self.current_start) // self.spacing
-        if steps >= CAPACITY:
-            if self._active:
-                raise ValueError("unexpired history would be overwritten")
-            self._ring = [None] * CAPACITY
-            self._head = 0
-        elif steps:
-            for offset in range(steps):
-                if self._ring[(self._head + offset) % CAPACITY] is not None:
-                    raise ValueError("unexpired history would be overwritten")
-            self._head = (self._head + steps) % CAPACITY
-        self.current_start += steps * self.spacing
+        for index, deadline in enumerate(self.deadlines):
+            if deadline <= now_monotonic_us:
+                self.deadlines[index] = 0
+                if self.current_entry == index:
+                    self.current_entry = None
 
-    def snapshot_buckets(self):
-        return tuple(TxAirtimeBucketV1(0 if bucket is None else bucket.charge)
-                     for index in range(CAPACITY)
-                     for bucket in (self._ring[(self._head + index) % CAPACITY],))
+    def reserve(self, charge_us, now_monotonic_us):
+        charge_us = checked_duration_us(charge_us)
+        if not charge_us or charge_us > self.policy.entry_charge_us:
+            raise ValueError("packet charge must fit in one entry")
+        self.advance(now_monotonic_us)
+        if charge_us > self.available_charge_us:
+            return False
+        deadline = checked_monotonic_deadline(now_monotonic_us, self.hold)
+        index = self.current_entry
+        if index is None:
+            index = self.deadlines.index(0)
+        self.deadlines[index] = max(self.deadlines[index], deadline)
+        self.current_entry = index
+        self.used_since_save_us += charge_us
+        return True
 
-    def copy(self):
-        clone = object.__new__(type(self))
-        clone.__dict__.update(self.__dict__)
-        clone._ring = self._ring.copy()
-        clone._active = self._active.copy()
-        return clone
+    def refund(self, charge_us):
+        charge_us = checked_duration_us(charge_us)
+        if charge_us > self.used_since_save_us:
+            raise ValueError("refund exceeds unsaved usage")
+        self.used_since_save_us -= charge_us
+        # Keep the reservation even if its first attempted TX never started.
+
+    def confirm_coverage(self, covered_us):
+        covered_us = checked_duration_us(covered_us)
+        if covered_us > self.used_since_save_us:
+            raise ValueError("confirmed coverage exceeds unsaved usage")
+        self.used_since_save_us -= covered_us
+        if covered_us or not self.used_since_save_us:
+            # Full coverage closes even a zero-use group left by a refund.
+            self.current_entry = None
+
+    def add_recovery(self):
+        deadline = checked_monotonic_deadline(self._now, self.hold)
+        index = (self.deadlines.index(0) if 0 in self.deadlines else
+                 min(range(CAPACITY), key=self.deadlines.__getitem__))
+        self.deadlines[index] = max(self.deadlines[index], deadline)
+
+    def exhaust(self):
+        deadline = checked_monotonic_deadline(self._now, self.hold)
+        self.deadlines = [deadline] * CAPACITY
+        self.current_entry = None
+
+    def snapshot_entries(self, now_monotonic_us):
+        self.advance(now_monotonic_us)
+        return tuple(AirtimeEntryV2(maximum_physical_duration_us(
+            max(0, deadline - now_monotonic_us), rate_bound_ppm=self._rate))
+            for deadline in self.deadlines)

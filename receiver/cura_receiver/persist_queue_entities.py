@@ -2,7 +2,8 @@
 
 These types describe ownership and composition only.  They deliberately do not
 encode, copy, coerce, or semantically validate values; producer-side validators
-belong to later receiver stages.
+belong to the components constructing them. Publication requires deep immutability
+even though Python aliases remain reachable after ownership transfers.
 """
 
 from __future__ import annotations
@@ -13,17 +14,19 @@ from typing import TypeAlias
 from .generated.receiver_entities_generated import (
     ClockObservationV1,
     DiagnosticV1,
-    MessageProfilingV1,
+    PacketReceptionV1,
+    RadioObservationV1,
 )
 from .generated.receiver_enums_generated import (
     PersistQueueEntityKind,
-    RadioState,
+    HealthConsistency,
+    RtcReadStatus,
     RtcHealth,
     SystemTimeQuality,
 )
 
 
-PERSIST_QUEUE_ENTITY_SCHEMA_VERSION = 1
+PERSIST_QUEUE_ENTITY_SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,11 +37,11 @@ class PersistQueueEntitySpec:
     schema_version: int
 
 
-MEASUREMENT_PROFILE_V1_SPEC = PersistQueueEntitySpec(
+READING_RECEPTION_V2_SPEC = PersistQueueEntitySpec(
     kind=PersistQueueEntityKind.MEASUREMENT_PROFILE,
     schema_version=PERSIST_QUEUE_ENTITY_SCHEMA_VERSION,
 )
-PROFILE_ONLY_V1_SPEC = PersistQueueEntitySpec(
+RECEPTION_ONLY_V2_SPEC = PersistQueueEntitySpec(
     kind=PersistQueueEntityKind.PROFILE_ONLY,
     schema_version=PERSIST_QUEUE_ENTITY_SCHEMA_VERSION,
 )
@@ -55,13 +58,19 @@ CLOCK_OBSERVATION_V1_SPEC = PersistQueueEntitySpec(
     schema_version=PERSIST_QUEUE_ENTITY_SCHEMA_VERSION,
 )
 
+RADIO_OBSERVATION_V1_SPEC = PersistQueueEntitySpec(
+    kind=PersistQueueEntityKind.RADIO_OBSERVATION,
+    schema_version=PERSIST_QUEUE_ENTITY_SCHEMA_VERSION,
+)
+
 SUPPORTED_PERSIST_QUEUE_ENTITY_SPECS = frozenset(
     {
-        MEASUREMENT_PROFILE_V1_SPEC,
-        PROFILE_ONLY_V1_SPEC,
+        READING_RECEPTION_V2_SPEC,
+        RECEPTION_ONLY_V2_SPEC,
         RECEIVER_HEALTH_REQUEST_V1_SPEC,
         DIAGNOSTIC_V1_SPEC,
         CLOCK_OBSERVATION_V1_SPEC,
+        RADIO_OBSERVATION_V1_SPEC,
     }
 )
 
@@ -78,34 +87,47 @@ class AuthenticatedReadingCandidateV1:
 
 
 @dataclass(frozen=True, slots=True)
-class MeasurementProfileUnitV1:
-    """Indivisible accepted-reading and occurrence-profile queue unit."""
+class ReadingReceptionUnitV2:
+    """Indivisible admitted reading, reception and transient raw evidence."""
 
     candidate: AuthenticatedReadingCandidateV1
-    profile: MessageProfilingV1
+    profile: PacketReceptionV1
+    received_frame: bytes
 
 
 @dataclass(frozen=True, slots=True)
-class ProfileOnlyUnitV1:
-    """One complete occurrence profile without an accepted reading."""
+class ReceptionOnlyUnitV2:
+    """Authenticated reception and transient raw evidence without an admitted reading."""
 
-    profile: MessageProfilingV1
+    profile: PacketReceptionV1
+    received_frame: bytes
 
 
 @dataclass(frozen=True, slots=True)
 class ReceiverHealthRequestV1:
-    """Immutable communicator-owned portion of one receiver-health row."""
+    """Immutable health and radio evidence, committed as one persistence unit."""
 
     receiver_instance_id: bytes
     health_sequence: int
     communicator_sampled_at_monotonic_us: int
-    radio_state: RadioState
+    radio_observation: RadioObservationV1
+    consistency: HealthConsistency
+    radio_header_errors_observed: int
+    radio_header_errors_handled: int
+    radio_crc_errors_observed: int
+    radio_crc_errors_handled: int
+    radio_observations_dropped: int
     radio_recovery_attempts: int
     radio_recovery_successes: int
     radio_recovery_failures: int
     radio_recovery_attempts_by_reason: tuple[int, ...]
     system_time_quality: SystemTimeQuality
     rtc_health: RtcHealth
+    rtc_read_status: RtcReadStatus
+    rtc_read_errno: int | None
+    rtc_read_started_at_monotonic_us: int
+    rtc_read_finished_at_monotonic_us: int
+    rtc_read_utc_s: int | None
     time_quality_transition_count: int
     rtc_health_transition_count: int
     last_time_quality_transition_monotonic_us: int | None
@@ -117,9 +139,10 @@ class ReceiverHealthRequestV1:
     persist_queue_admission_counts: tuple[tuple[int, ...], ...]
 
 
-PersistQueueEntityV1: TypeAlias = (
-    MeasurementProfileUnitV1
-    | ProfileOnlyUnitV1
+PersistQueueEntityV2: TypeAlias = (
+    ReadingReceptionUnitV2
+    | ReceptionOnlyUnitV2
+    | RadioObservationV1
     | ReceiverHealthRequestV1
     | DiagnosticV1
     | ClockObservationV1
@@ -129,15 +152,16 @@ PersistQueueEntityV1: TypeAlias = (
 __all__ = [
     "PERSIST_QUEUE_ENTITY_SCHEMA_VERSION",
     "PersistQueueEntitySpec",
-    "MEASUREMENT_PROFILE_V1_SPEC",
-    "PROFILE_ONLY_V1_SPEC",
+    "READING_RECEPTION_V2_SPEC",
+    "RECEPTION_ONLY_V2_SPEC",
     "RECEIVER_HEALTH_REQUEST_V1_SPEC",
     "DIAGNOSTIC_V1_SPEC",
     "CLOCK_OBSERVATION_V1_SPEC",
+    "RADIO_OBSERVATION_V1_SPEC",
     "SUPPORTED_PERSIST_QUEUE_ENTITY_SPECS",
     "AuthenticatedReadingCandidateV1",
-    "MeasurementProfileUnitV1",
-    "ProfileOnlyUnitV1",
+    "ReadingReceptionUnitV2",
+    "ReceptionOnlyUnitV2",
     "ReceiverHealthRequestV1",
-    "PersistQueueEntityV1",
+    "PersistQueueEntityV2",
 ]

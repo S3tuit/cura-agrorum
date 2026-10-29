@@ -523,6 +523,7 @@ err_curag_t sx1262_radio_transmit_uplink(const uint8_t *payload,
   memcpy(captured->payload, payload, payload_length);
   captured->payload_length = payload_length;
   captured->deadline_us = deadline_monotonic_us;
+  captured->called_at_us = fake_node_core.now_us;
   assert(fake_node_core.tx_script_index < fake_node_core.tx_script_count);
   const fake_node_core_tx_script_t *script =
       &fake_node_core.tx_scripts[fake_node_core.tx_script_index++];

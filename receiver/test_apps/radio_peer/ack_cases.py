@@ -1,32 +1,12 @@
-"""RF-019's finite controlled-peer cases; no hardware or production policy edits."""
+"""Finite controlled-peer cases for the production node."""
 from dataclasses import asdict
 
 from cura_receiver.generated import protocol_v2_lora_generated as wire
 from cura_receiver.protocol_v2_lora_crypto import open_frame, seal_frame
 
+from spec import NODE_CASES as CASES, node_episode as episode
+
 STATUSES = {"accepted": 0, "retry_later": 1, "unsupported": 2, "malformed": 3}
-CASES = tuple(f"RF-019.{scope}.{status}" for scope in ("current", "backlog")
-              for status in STATUSES) + (
-    "RF-019.current.invalid_auth", "RF-019.current.wrong_message",
-    "RF-019.current.domain_status",
-)
-
-
-def episode(case, sleep_seconds=900):
-    if sleep_seconds not in (10, 900):
-        raise ValueError("unreviewed RF sleep duration")
-    if case not in CASES:
-        raise ValueError("unknown RF-019 case")
-    scope, action = case.split(".")[1:]
-    seeds = 2 if scope == "backlog" else 1
-    wakes = seeds + 2  # Setup, target, then next-wake metrics observation.
-    backlogs = (2 if action != "retry_later" else 1) if scope == "backlog" else (
-        1 if action in ("accepted", "invalid_auth") else 0)
-    replies = seeds + 1 + (2 if action == "invalid_auth" else 1) + backlogs
-    return dict(case=case, scope=scope, action=action, seed_wakes=seeds,
-                wakes=wakes, sleep_seconds=sleep_seconds,
-                lease_seconds=(wakes - 1) * 945 + 60 if sleep_seconds == 900 else wakes * 50 + 10,
-                c6_max_packets=70 * wakes, pi_max_packets=replies)
 
 
 class AckCase:
@@ -60,7 +40,7 @@ class AckCase:
         return seal_frame(self.key, header, bytes([status]))
 
     def receive(self, frame, received_at):
-        if self.packet_count >= self.plan["c6_max_packets"]:
+        if self.packet_count >= self.plan["node_max_packets"]:
             raise ValueError("uplink episode ceiling exceeded")
         opened = open_frame(self.key, frame)
         h = opened.header
@@ -99,7 +79,7 @@ class AckCase:
         if h.domain == 2:
             if index != self.target_index:
                 raise ValueError("backlog after a wake-stopping ACK")
-            if self.plan["scope"] == "current" and self.plan["action"] not in ("accepted", "invalid_auth"):
+            if self.plan["scope"] == "current" and self.plan["action"] not in ("accepted", "invalid_auth", "header_error_rearm", "header_error_retry"):
                 raise ValueError("backlog after rejected/unaccepted current")
             if self.plan["scope"] == "backlog" and self.plan["action"] == "retry_later" and self.backlog_seen:
                 raise ValueError("backlog continued after RETRY_LATER")
@@ -122,6 +102,9 @@ class AckCase:
         if index == self.target_index + 1:
             self.observation_started_at = current["at"]
         if h.message_id in self.replies:
+            if (self.replies[h.message_id]["action"] == "header_error_retry" and
+                    self.attempts[h.message_id] == 2):
+                return [bytes.fromhex(self.replies[h.message_id]["frames"][0])], self.observation()
             if self.replies[h.message_id]["action"] not in ("wrong_message", "domain_status"):
                 raise ValueError("retry after terminal ACK; stop, no automatic resend")
             return [], self.observation()
@@ -133,6 +116,8 @@ class AckCase:
             action = self.plan["action"] if h.domain == 2 and len(self.backlog_seen) == 1 else "accepted"
         if action in STATUSES:
             replies = [self.ack(h.message_id, STATUSES[action])]
+        elif action in ("header_error_rearm", "header_error_retry"):
+            replies = [self.ack(h.message_id, 0)] * (3 if action == "header_error_rearm" else 2)
         elif action == "invalid_auth":
             valid = self.ack(h.message_id, 0)
             replies = [valid[:-1] + bytes([valid[-1] ^ 1]), valid]

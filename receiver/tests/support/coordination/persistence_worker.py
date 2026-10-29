@@ -16,19 +16,22 @@ class CheckedPersistenceWorker(PersistenceWorker):
 
     def finish_test(self):
         self.request_stop(deadline_monotonic_us=0)
-        self.join(5)
+        if self.ident is not None:
+            self.join(5)
+        if self.startup_notification is not None:
+            self.startup_notification.close()
         assert not self.is_alive(), "persistence worker did not reach a safe exit"
         if self.failure is not None:
             raise self.failure
 
 
-def prepare_worker_files(tmp_path):
+def prepare_worker_files(tmp_path, *, known_empty_airtime=False):
     import json
     from cura_receiver.database_initializer import initialize_database
     from tests.support.builders.persistence import GROUP
 
     database = tmp_path / "worker.db"
-    initialize_database(database, GROUP)
+    initialize_database(database, GROUP, known_empty_airtime=known_empty_airtime)
     configuration = tmp_path / "test-group.json"
     configuration.write_text(
         json.dumps(

@@ -23,26 +23,26 @@ def test_invalid_uart(raw):
 
 
 def test_accelerated_completion_requires_bound_final_marker():
-    p = AckCase('RF-019.current.accepted', bytes(8), bytes(16), 10)
+    p = AckCase('node.current.accepted', bytes(8), bytes(16), 10)
     assert p.plan['lease_seconds'] == 160
     assert not p.complete(10**12)
-    command = 'SLEEP ' + 'a'*32 + ' RF-019.current.accepted 3\n'
+    command = 'SLEEP ' + 'a'*32 + ' node.current.accepted 3\n'
     with pytest.raises(ValueError):
-        p.observe_sleep(command, 'a'*32, 'RF-019.current.accepted')
+        p.observe_sleep(command, 'a'*32, 'node.current.accepted')
     p.currents = [{}, {}, {}]
     p.observation_started_at = 123
     with pytest.raises(ValueError):
-        p.observe_sleep(command, 'b'*32, 'RF-019.current.accepted')
-    p.observe_sleep(command, 'a'*32, 'RF-019.current.accepted')
+        p.observe_sleep(command, 'b'*32, 'node.current.accepted')
+    p.observe_sleep(command, 'a'*32, 'node.current.accepted')
     assert p.complete(124)
     with pytest.raises(ValueError):
-        p.observe_sleep(command, 'a'*32, 'RF-019.current.accepted')
+        p.observe_sleep(command, 'a'*32, 'node.current.accepted')
 
 
 def test_production_completion_keeps_original_bound():
-    p = AckCase('RF-019.current.accepted', bytes(8), bytes(16))
+    p = AckCase('node.current.accepted', bytes(8), bytes(16))
     p.observation_started_at = 100
     assert not p.complete(35000099)
     assert p.complete(35000100)
     with pytest.raises(ValueError):
-        episode('RF-019.current.accepted', 11)
+        episode('node.current.accepted', 11)

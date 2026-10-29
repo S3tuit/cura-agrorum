@@ -34,6 +34,11 @@ BEGIN
     SELECT RAISE(ABORT, 'database_metadata is immutable');
 END;
 
+-- Invalid contents are classified locally; missing schema remains incompatible.
+CREATE TABLE airtime_commissioning (
+    request ANY
+) STRICT;
+
 CREATE TABLE receiver_instances (
     instance_ordinal INTEGER PRIMARY KEY,
     receiver_instance_id BLOB NOT NULL UNIQUE
@@ -80,7 +85,11 @@ END;
 
 CREATE TRIGGER receiver_instances_monotonic_ordinal
 AFTER INSERT ON receiver_instances
-WHEN NEW.instance_ordinal != (SELECT count(*) FROM receiver_instances)
+WHEN NEW.instance_ordinal <= 0
+     OR NEW.instance_ordinal != (
+         SELECT instance_ordinal FROM receiver_instances
+         ORDER BY instance_ordinal DESC LIMIT 1
+     )
 BEGIN
     SELECT RAISE(ABORT, 'receiver_instances ordinal must be database ordered');
 END;

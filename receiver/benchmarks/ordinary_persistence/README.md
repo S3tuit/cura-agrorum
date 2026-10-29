@@ -53,3 +53,9 @@ under an offered load and include drain time; they are not universal saturation
 capacities. The experiment does not establish RF behavior, control fairness,
 worker scheduling, service lifecycle or physical power-loss behavior. FULL
 remains the pilot setting regardless of the measured difference.
+
+Batching can improve throughput while hiding commit cost in per-entity averages.
+Pi stress measurements filled the queue even with larger batches; use accepted
+throughput and queue pressure together rather than treating commit latency as
+service capacity. NORMAL's shorter commits do not justify relaxing the required
+FULL durability policy.

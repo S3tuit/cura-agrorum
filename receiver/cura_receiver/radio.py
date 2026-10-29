@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, replace
 from functools import wraps
+from enum import Enum
 import threading
 
 from .generated import receiver_enums_generated as E
@@ -32,7 +33,7 @@ def _operation(*states):
             self._claim()
             if self.state in _TERMINAL:
                 raise RuntimeError("terminal radio cannot operate")
-            if self._stop.is_set():
+            if self._stop_requested():
                 return self.shutdown()
             if self.state not in states:
                 return self._invalid(Error.INVALID_STATE)
@@ -44,11 +45,17 @@ def _operation(*states):
     return decorate
 
 
+class ReceiveDisposition(Enum):
+    PACKET = "packet"
+    HANDLED_NO_PACKET = "handled_no_packet"
+    FAILED = "failed"
+
+
 @dataclass(frozen=True, slots=True)
 class RadioReceiveEvent:
     edge_timestamp_ns: int
     t1_handler_started_monotonic_us: int
-    usable_for_ingress: bool = False
+    disposition: ReceiveDisposition = ReceiveDisposition.FAILED
     frame: bytes | None = None
     rssi_dbm_x2: int | None = None
     snr_db_x4: int | None = None
@@ -64,12 +71,20 @@ class RadioReceiveEvent:
 
 @dataclass(frozen=True, slots=True)
 class RadioCounters:
+    """Instance-local rejection events, separate from general recovery.
+
+    Both IRQ flags increment both observed counters once. Handled increments
+    only after the ordinary rejection path confirms RX; later soft/hard recovery
+    does not retroactively count that event as successfully handled.
+    """
     recovery_attempts: int = 0
     recovery_successes: int = 0
     recovery_failures: int = 0
     recovery_attempts_by_reason: tuple = (0,) * 8
-    header_errors: int = 0
-    crc_errors: int = 0
+    header_errors_observed: int = 0
+    header_errors_handled: int = 0
+    crc_errors_observed: int = 0
+    crc_errors_handled: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,7 +107,8 @@ class RadioResult:
 
 
 class Radio:
-    def __init__(self, backend):
+    def __init__(self, backend, *, stop_requested=lambda: False):
+        self.observation_sink = None
         self.backend = backend
         self.clock = backend.clock
         self._state = State.INITIALIZING
@@ -111,6 +127,7 @@ class Radio:
         self._completed = ()
         self._restoring_set_rx = False
         self._stop = threading.Event()
+        self._application_stop_requested = stop_requested
         self._cleaning = False
         self._safe_shutdown = None
         self._installing_tx = False
@@ -123,6 +140,22 @@ class Radio:
     @property
     def counters(self):
         return self._counters
+
+    def observe(self, trigger, *, deadline=None, event=None, edge=None, started=None):
+        self._claim()
+        return self.backend.observe(self.state, trigger, deadline=deadline, event=event,
+                                    edge=edge or self._edge or self.backend._pending_edge, started=started)
+
+    def _capture_incident(self, trigger, **context):
+        if self.observation_sink is not None:
+            self.observation_sink(self.observe(trigger, **context))
+
+    def capture_failure(self, *, deadline=None):
+        """Terminal evidence cannot prevent safety cleanup or replace its cause."""
+        try:
+            self._capture_incident(E.RadioObservationTrigger.FINAL_FAILURE, deadline=deadline)
+        except Exception:
+            pass
 
     def _claim(self):
         current = threading.get_ident()
@@ -194,6 +227,7 @@ class Radio:
             cleanup = [self._builder(Operation.CLEANUP, failure) for failure in _failures(error)[1:]]
             if cleanup:
                 self._safe_shutdown = False
+            self.capture_failure(deadline=deadline)
             self._cleaning = True
             try:
                 if self._opened and not error.failure.hardware_missing:
@@ -276,8 +310,20 @@ class Radio:
             deadline = self.backend.deadline(500_000)
             event = self.backend.observe_event(deadline)
             receive_event = replace(receive_event, irq_status=event.irq_status, device_errors=event.device_errors)
-            self.backend.validate_event(event, transmit=False)
             irq = event.irq_status
+            if irq & (IRQ_HEADER_ERROR | IRQ_CRC_ERROR):
+                if irq & IRQ_HEADER_ERROR:
+                    self._bump("header_errors_observed")
+                if irq & IRQ_CRC_ERROR:
+                    self._bump("crc_errors_observed")
+                # Pilot-only exploration: retain rejected PHY evidence before any
+                # standby/clear/rearm. Permanent counters do not identify senders.
+                self._capture_incident(E.RadioObservationTrigger.PHY_REJECTION,
+                    event=event, edge=edge, started=started, deadline=deadline)
+            elif not irq or irq & ~(IRQ_RX_DONE | IRQ_HEADER_ERROR | IRQ_CRC_ERROR):
+                self._capture_incident(E.RadioObservationTrigger.UNEXPECTED_IRQ,
+                    event=event, edge=edge, started=started, deadline=deadline)
+            self.backend.validate_event(event, transmit=False)
             if not irq or irq & ~(IRQ_RX_DONE | IRQ_HEADER_ERROR | IRQ_CRC_ERROR):
                 failure = RadioFailure(Error.UNEXPECTED_IRQ, Stage.READ_IRQ, opcode=0x12, irq_status=irq, hardware_touched=True)
                 episode = self._builder(Operation.RECEIVE, failure)
@@ -292,12 +338,15 @@ class Radio:
                 return self._result(receive_event=replace(receive_event, busy=self.backend.metrics))
             self.backend.standby(deadline)
             if irq & (IRQ_HEADER_ERROR | IRQ_CRC_ERROR):
-                if irq & IRQ_HEADER_ERROR:
-                    self._bump("header_errors")
-                if irq & IRQ_CRC_ERROR:
-                    self._bump("crc_errors")
                 self.backend.clear_irq(irq, deadline)
                 restored = self.rearm()
+                if restored.state is State.RX_SINGLE and not restored.episodes:
+                    if irq & IRQ_HEADER_ERROR:
+                        self._bump("header_errors_handled")
+                    if irq & IRQ_CRC_ERROR:
+                        self._bump("crc_errors_handled")
+                    if irq == IRQ_HEADER_ERROR:
+                        receive_event = replace(receive_event, disposition=ReceiveDisposition.HANDLED_NO_PACKET)
                 return replace(restored, receive_event=replace(receive_event, busy=self.backend.metrics))
             frame, copied = self.backend.copy_packet(deadline)
             receive_event = replace(receive_event, frame=frame, t2_packet_copied_monotonic_us=copied)
@@ -306,8 +355,24 @@ class Radio:
             self.backend.finish_receive(deadline)
             self.backend.clear_irq(irq, deadline)
             self._can_ack = True
-            return self._result(receive_event=replace(receive_event, usable_for_ingress=True, busy=self.backend.metrics))
+            return self._result(receive_event=replace(receive_event, disposition=ReceiveDisposition.PACKET, busy=self.backend.metrics))
         except RadioBackendError as error:
+            if (receive_event is not None and receive_event.irq_status is None
+                    and error.failure.irq_status is not None):
+                # IRQ completed but a subsequent evidence read failed. Do not
+                # lose those observed flags or count the later recovery twice.
+                irq = error.failure.irq_status
+                if irq & IRQ_HEADER_ERROR:
+                    self._bump("header_errors_observed")
+                if irq & IRQ_CRC_ERROR:
+                    self._bump("crc_errors_observed")
+                trigger = (E.RadioObservationTrigger.PHY_REJECTION
+                           if irq & (IRQ_HEADER_ERROR | IRQ_CRC_ERROR)
+                           else E.RadioObservationTrigger.RECOVERY)
+                self._capture_incident(trigger, event=error.failure, edge=edge,
+                                       started=started, deadline=deadline)
+                receive_event = replace(receive_event, irq_status=irq,
+                                        device_errors=error.failure.device_errors)
             if receive_event is not None:
                 receive_event = replace(receive_event, busy=self.backend.metrics)
             return self._recovering(Operation.RECEIVE, error.failure, receive_event=receive_event)
@@ -331,6 +396,7 @@ class Radio:
                 self._state = State.TX_ACTIVE
             return self._recovering(Operation.TRANSMIT, failure, tx_uncertain=True)
         episode = self._builder(Operation.TRANSMIT, failure)
+        self._capture_incident(E.RadioObservationTrigger.RECOVERY)
         try:
             self._restore(self.backend.deadline(500_000))
         except RadioBackendError as error:
@@ -426,8 +492,9 @@ class Radio:
             return self._recovering(Operation.RECEIVE, error.failure, restoring=True)
         return self._result()
 
-    def _recovery_terminal(self, state):
+    def _recovery_terminal(self, state, *, deadline=None):
         self._state = state
+        self.capture_failure(deadline=deadline)
         self._bump("recovery_failures")
         try:
             self.backend.close()
@@ -447,8 +514,11 @@ class Radio:
         for hard in (False, True):
             self._episode.start_level(hard=hard)
             deadline = self.backend.deadline(2_000_000 if hard else 500_000)
-            self.backend.last_set_rx_issued_us = None
             try:
+                self._capture_incident(E.RadioObservationTrigger.RECOVERY, deadline=deadline)
+                # Retain the preceding request in evidence before clearing the
+                # timing used to identify a SetRx issued by this recovery level.
+                self.backend.last_set_rx_issued_us = None
                 if hard:
                     self.backend.initialize(deadline)
                     self.backend.arm_receive(deadline, resynchronize=True)
@@ -460,9 +530,9 @@ class Radio:
 
                 self._episode.finish_level(error.failure)
                 if error.failure.hardware_missing:
-                    return self._recovery_terminal(State.HARDWARE_MISSING)
+                    return self._recovery_terminal(State.HARDWARE_MISSING, deadline=deadline)
                 if hard:
-                    return self._recovery_terminal(State.RECOVERY_EXHAUSTED)
+                    return self._recovery_terminal(State.RECOVERY_EXHAUSTED, deadline=deadline)
             else:
                 self._t6 = self.backend.last_set_rx_issued_us
                 self._episode.finish_level()
@@ -479,8 +549,11 @@ class Radio:
         """May be called from another thread: record intent, perform no hardware I/O."""
         self._stop.set()
 
+    def _stop_requested(self):
+        return self._application_stop_requested() or self._stop.is_set()
+
     def _checkpoint(self):
-        if self._stop.is_set() and not self._cleaning:
+        if not self._cleaning and self._stop_requested():
             raise _ShutdownRequested()
 
     def _invalid(self, code):
@@ -495,6 +568,7 @@ class Radio:
             else:
                 self._recovering(Operation.VALIDATE, failure, episode=episode)
                 return self.recover()
+        self.capture_failure()
         result = self.shutdown()
         return replace(result, episodes=result.episodes + (episode.finish(State.SHUTDOWN, self.clock.now_monotonic_us(), safe=False),))
 

@@ -2,6 +2,8 @@ from dataclasses import replace
 
 import pytest
 
+from cura_receiver.time_policy import TimePolicy
+from cura_receiver.elapsed_duration import exclusive_trust_distance_us
 from cura_receiver.clock_correlation import (
     AnalysisInstance,
     ClockCorrelation,
@@ -26,8 +28,14 @@ def observation(
         monotonic,
         utc,
         step,
-        Quality.UNTRUSTED if utc is None else Quality.NETWORK_SYNCED,
+        Quality.UNTRUSTED if utc is None else Quality.CHRONY_SYNCED,
         Health.PRESENT,
+        1_000_000 if utc is not None else None,
+        monotonic if utc is not None else None,
+        monotonic if utc is not None else None,
+        monotonic + exclusive_trust_distance_us(1_000_000, 40_000_000, rate_bound_ppm=3700) if utc is not None else None,
+        None,
+        None,
     )
 
 
@@ -54,9 +62,10 @@ def test_correlation_segments(event, utc, sequence):
         observation(2, 400, None),
         observation(3, 500, 2000),
     ]
-    correlation = ClockCorrelation([INSTANCE], reversed(history))
+    correlation = ClockCorrelation([INSTANCE], reversed(history), policy=TimePolicy())
     assert correlation.correlate(INSTANCE.receiver_instance_id, event) == CorrelatedUtc(
-        utc, INSTANCE.receiver_instance_id, sequence
+        utc, INSTANCE.receiver_instance_id, sequence,
+        1_000_000 + (3700 * abs(event - history[sequence].sampled_at_monotonic_us) + 996299) // 996300,
     )
 
 
@@ -82,6 +91,7 @@ def test_permanent_step_gap(event, expected):
             observation(2, 250, None),
             observation(3, 300, 2000),
         ],
+        policy=TimePolicy(),
     )
     result = correlation.correlate(INSTANCE.receiver_instance_id, event)
     assert (None if result is None else result.utc_us) == expected
@@ -90,7 +100,8 @@ def test_permanent_step_gap(event, expected):
 # A later trusted sample cannot reach backward across a step even to an event before that step.
 def test_no_backfill_across_future_step():
     correlation = ClockCorrelation(
-        [INSTANCE], [observation(0, 200, None, step=True), observation(1, 300, 2000)]
+        [INSTANCE], [observation(0, 200, None, step=True), observation(1, 300, 2000)],
+        policy=TimePolicy(),
     )
     assert correlation.correlate(INSTANCE.receiver_instance_id, 100) is None
     assert correlation.correlate(INSTANCE.receiver_instance_id, 199) is None
@@ -100,13 +111,14 @@ def test_no_backfill_across_future_step():
 def test_same_microsecond_order():
     boundary = observation(1, 200, None, step=True)
     trusted = observation(0, 200, 1000)
-    blocked = ClockCorrelation([INSTANCE], [boundary, trusted])
+    blocked = ClockCorrelation([INSTANCE], [boundary, trusted], policy=TimePolicy())
     assert blocked.correlate(INSTANCE.receiver_instance_id, 200) is None
     resumed = ClockCorrelation(
-        [INSTANCE], [trusted, boundary, observation(2, 200, 2000)]
+        [INSTANCE], [trusted, boundary, observation(2, 200, 2000)],
+        policy=TimePolicy(),
     )
     assert resumed.correlate(INSTANCE.receiver_instance_id, 200) == CorrelatedUtc(
-        2000, INSTANCE.receiver_instance_id, 2
+        2000, INSTANCE.receiver_instance_id, 2, 1_000_000
     )
 
 
@@ -118,6 +130,7 @@ def test_periodic_generation_and_latest_sequence():
             observation(2, 200, 2000, generation=0),
             observation(0, 200, 1000, generation=0),
         ],
+        policy=TimePolicy(),
     )
     assert (
         correlation.correlate(
@@ -132,11 +145,12 @@ def test_periodic_generation_and_latest_sequence():
 def test_process_start_and_boot_fences(boot, start):
     new = AnalysisInstance(2, b"j" * 16, boot, start)
     correlation = ClockCorrelation(
-        [INSTANCE, new], [observation(0, start + 100, 2000, instance=new)]
+        [INSTANCE, new], [observation(0, start + 100, 2000, instance=new)],
+        policy=TimePolicy(),
     )
     assert correlation.correlate(INSTANCE.receiver_instance_id, 150) is None
     assert correlation.correlate(new.receiver_instance_id, start) == CorrelatedUtc(
-        1900, new.receiver_instance_id, 0
+        1900, new.receiver_instance_id, 0, 1_000_001
     )
     if start:
         assert correlation.correlate(new.receiver_instance_id, start - 1) is None
@@ -144,7 +158,7 @@ def test_process_start_and_boot_fences(boot, start):
 
 # Missing observations, unresolved event instances and events before startup have no derived UTC.
 def test_unresolved_events():
-    correlation = ClockCorrelation([INSTANCE], [])
+    correlation = ClockCorrelation([INSTANCE], [], policy=TimePolicy())
     assert correlation.correlate(INSTANCE.receiver_instance_id, 100) is None
     assert correlation.correlate(b"z" * 16, 100) is None
     assert correlation.correlate(INSTANCE.receiver_instance_id, 99) is None
@@ -154,7 +168,7 @@ def test_unresolved_events():
 def test_utc_zero_and_input_immutability():
     record = observation(0, 200, 0)
     before = (INSTANCE, record)
-    correlation = ClockCorrelation([INSTANCE], [record])
+    correlation = ClockCorrelation([INSTANCE], [record], policy=TimePolicy())
     assert correlation.correlate(INSTANCE.receiver_instance_id, 200).utc_us == 0
     assert correlation.correlate(INSTANCE.receiver_instance_id, 199).utc_us == -1
     assert before == (INSTANCE, record)
@@ -163,7 +177,7 @@ def test_utc_zero_and_input_immutability():
 # Correlation cannot manufacture a representable UTC by wrapping signed arithmetic.
 @pytest.mark.parametrize("utc,event", [((1 << 63) - 1, 201), (-(1 << 63), 199)])
 def test_utc_overflow_has_no_assignment(utc, event):
-    correlation = ClockCorrelation([INSTANCE], [observation(0, 200, utc)])
+    correlation = ClockCorrelation([INSTANCE], [observation(0, 200, utc)], policy=TimePolicy())
     assert correlation.correlate(INSTANCE.receiver_instance_id, event) is None
 
 
@@ -196,7 +210,7 @@ def test_utc_overflow_has_no_assignment(utc, event):
 )
 def test_invalid_history(records):
     with pytest.raises((ValueError, TypeError, OverflowError)):
-        ClockCorrelation([INSTANCE], records)
+        ClockCorrelation([INSTANCE], records, policy=TimePolicy())
 
 
 # Duplicate instance identities or ordinal assignments cannot supply ambiguous provenance.
@@ -210,4 +224,62 @@ def test_invalid_history(records):
 )
 def test_duplicate_instances(extra):
     with pytest.raises(ValueError):
-        ClockCorrelation([INSTANCE, extra], [])
+        ClockCorrelation([INSTANCE, extra], [], policy=TimePolicy())
+
+
+@pytest.mark.parametrize("rate", [3700, 7400])
+@pytest.mark.parametrize("error", [1_000_000, 38_999_999, 39_000_000, 39_950_000])
+@pytest.mark.parametrize("direction", [-1, 1])
+def test_projection_strict_expiry_against_integer_oracle(rate, error, direction):
+    policy = replace(TimePolicy(), monotonic_elapsed_rate_bound_ppm=rate)
+    # Solve ceil(rate * dt / (1e6-rate)) < budget-error independently.
+    last_valid = ((40_000_000 - error - 1) * (1_000_000 - rate)) // rate
+    mono = 20_000_000_000
+    record = replace(observation(0, mono, 100_000_000_000), error_bound_us=error,
+                     error_budget_expires_at_monotonic_us=mono + last_valid + 1)
+    correlation = ClockCorrelation([INSTANCE], [record], policy=policy)
+    for distance in [0, 1, last_valid, last_valid + 1, last_valid + 2]:
+        event = mono + direction * distance
+        result = correlation.correlate(INSTANCE.receiver_instance_id, event)
+        expected_error = error + (rate * distance + 999_999 - rate) // (1_000_000 - rate)
+        if expected_error >= 40_000_000:
+            assert result is None
+        else:
+            assert result == CorrelatedUtc(100_000_000_000 + direction * distance,
+                                           INSTANCE.receiver_instance_id, 0, expected_error)
+
+
+@pytest.mark.parametrize("direction", [-1, 1])
+def test_shorter_recorded_horizon_is_respected(direction):
+    record = replace(observation(0, 1000, 10_000), error_budget_expires_at_monotonic_us=1100)
+    correlation = ClockCorrelation([INSTANCE], [record], policy=TimePolicy())
+    assert correlation.correlate(INSTANCE.receiver_instance_id, 1000 + direction * 99)
+    assert correlation.correlate(INSTANCE.receiver_instance_id, 1000 + direction * 100) is None
+
+
+def test_longer_recorded_horizon_cannot_extend_policy_or_select_future_anchor():
+    first = replace(observation(0, 1000, 10_000), error_bound_us=39_999_999,
+                    error_budget_expires_at_monotonic_us=10_000_000)
+    later = observation(1, 2000, 11_000)
+    correlation = ClockCorrelation([INSTANCE], [first, later], policy=TimePolicy())
+    assert correlation.correlate(INSTANCE.receiver_instance_id, 1000).error_bound_us == 39_999_999
+    assert correlation.correlate(INSTANCE.receiver_instance_id, 1001) is None
+
+
+@pytest.mark.parametrize("changes", [
+    {"error_bound_us": None}, {"error_bound_us": -1},
+    {"error_budget_expires_at_monotonic_us": None},
+    {"error_budget_expires_at_monotonic_us": 1000},
+])
+def test_missing_or_invalid_bounding_evidence_rejected(changes):
+    with pytest.raises((TypeError, ValueError, OverflowError)):
+        ClockCorrelation([INSTANCE], [replace(observation(0, 1000, 10_000), **changes)], policy=TimePolicy())
+
+
+def test_policy_is_explicit_and_zero_rate_has_no_finite_expiry():
+    record = replace(observation(0, 1000, 10_000), error_budget_expires_at_monotonic_us=None)
+    with pytest.raises(TypeError):
+        ClockCorrelation([INSTANCE], [record])
+    policy = replace(TimePolicy(), chrony_max_slew_rate_ppm=0, monotonic_elapsed_rate_bound_ppm=0)
+    result = ClockCorrelation([INSTANCE], [record], policy=policy).correlate(INSTANCE.receiver_instance_id, 1_000_000_000_000)
+    assert result.error_bound_us == 1_000_000

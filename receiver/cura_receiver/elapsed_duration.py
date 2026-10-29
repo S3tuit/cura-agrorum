@@ -1,4 +1,10 @@
-"""Checked integer clock arithmetic; policy callers decide how failures affect trust."""
+"""Checked integer clock arithmetic; policy callers decide how failures affect trust.
+
+Linux CLOCK_MONOTONIC is boot-scoped and can be frequency-corrected. Minimum
+physical waits round upward using the fast-clock bound; maximum lifetimes round
+downward using the slow-clock bound. Nominal elapsed subtraction alone is unsafe
+for airtime retention or expiry. Never compare monotonic values across boots.
+"""
 
 _UINT64_MAX = (1 << 64) - 1
 _INT64_MIN = -(1 << 63)
@@ -150,3 +156,13 @@ def exclusive_trust_distance_us(
         return None
     last = checked_duration_product(budget - error - 1, _PPM - rate) // rate
     return checked_monotonic_deadline(last, 1)
+
+
+def maximum_physical_duration_us(
+    observed_elapsed_us: int,
+    *,
+    rate_bound_ppm: int = MONOTONIC_ELAPSED_RATE_BOUND_PPM,
+) -> int:
+    """Upper bound physical duration represented by a monotonic interval."""
+    return _ceiling(checked_duration_product(observed_elapsed_us, _PPM),
+                    _PPM - _rate(rate_bound_ppm))

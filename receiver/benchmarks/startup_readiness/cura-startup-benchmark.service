@@ -1,0 +1,30 @@
+[Unit]
+Description=Cura persistence startup benchmark (one armed attempt)
+Wants=cura-rtc-bootstrap.service chrony.service
+After=local-fs.target cura-rtc-bootstrap.service chrony.service
+RequiresMountsFor=/opt/cura-startup-benchmark /var/lib/cura-startup-benchmark
+ConditionPathExists=/var/lib/cura-startup-benchmark/armed.json
+
+[Service]
+Type=oneshot
+User=cura-receiver
+Group=cura-receiver
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=SQLITE_TMPDIR=/var/lib/cura-startup-benchmark/tmp
+ExecStart=/usr/bin/python3 /opt/cura-startup-benchmark/source/receiver/benchmarks/startup_readiness/run.py --root /var/lib/cura-startup-benchmark run
+Restart=no
+TimeoutStartSec=90
+TimeoutStopSec=15
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cura-startup-benchmark
+UMask=0077
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/cura-startup-benchmark
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

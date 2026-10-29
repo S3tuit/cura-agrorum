@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 
 import copy
 from dataclasses import FrozenInstanceError, fields
@@ -23,11 +24,11 @@ from cura_receiver.persist_queue import (
 from cura_receiver.persist_queue_entities import (
     CLOCK_OBSERVATION_V1_SPEC,
     DIAGNOSTIC_V1_SPEC,
-    MEASUREMENT_PROFILE_V1_SPEC,
-    PROFILE_ONLY_V1_SPEC,
+    READING_RECEPTION_V2_SPEC,
+    RECEPTION_ONLY_V2_SPEC,
     RECEIVER_HEALTH_REQUEST_V1_SPEC,
     PersistQueueEntitySpec,
-    ProfileOnlyUnitV1,
+    ReceptionOnlyUnitV2,
 )
 from cura_receiver.quarantine_evidence import (
     QuarantineEvidenceEncodeError,
@@ -40,8 +41,8 @@ from tests.support.models.persist_queue import (
 
 
 ALL_SPECS = (
-    MEASUREMENT_PROFILE_V1_SPEC,
-    PROFILE_ONLY_V1_SPEC,
+    READING_RECEPTION_V2_SPEC,
+    RECEPTION_ONLY_V2_SPEC,
     RECEIVER_HEALTH_REQUEST_V1_SPEC,
     DIAGNOSTIC_V1_SPEC,
     CLOCK_OBSERVATION_V1_SPEC,
@@ -58,7 +59,7 @@ def _make_available(queue: PersistQueue, generation: int = 1) -> None:
     )
 
 
-def _publish(queue: PersistQueue, entity: object, *, spec=PROFILE_ONLY_V1_SPEC):
+def _publish(queue: PersistQueue, entity: object, *, spec=RECEPTION_ONLY_V2_SPEC):
     result = queue.try_reserve_one(spec)
     assert result.status is AdmissionResult.RESERVED
     assert result.reservation is not None
@@ -138,7 +139,7 @@ def test_snapshot_and_reservation_result_expose_entity_counts_only() -> None:
     ]
     assert not any("byte" in field.name for field in fields(type(snapshot)))
 
-    result = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+    result = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
     assert result.status is AdmissionResult.PERSISTENCE_UNAVAILABLE
     assert result.reservation is None
     assert result.used_entities_before == 0
@@ -150,7 +151,7 @@ def test_snapshot_and_reservation_result_expose_entity_counts_only() -> None:
 def test_admission_snapshot_and_decision_are_atomic_observations() -> None:
     queue = PersistQueue(capacity_entities=1)
 
-    unavailable = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+    unavailable = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
     assert unavailable.admission_snapshot == PersistenceAdmissionSnapshot(
         generation=0,
         state=PersistenceAdmissionState.UNAVAILABLE_STARTING,
@@ -158,7 +159,7 @@ def test_admission_snapshot_and_decision_are_atomic_observations() -> None:
     )
 
     _make_available(queue)
-    reserved = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+    reserved = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
     assert reserved.status is AdmissionResult.RESERVED
     assert reserved.used_entities_before == 0
     assert reserved.admission_snapshot.generation == 1
@@ -271,14 +272,14 @@ def test_admission_publication_rejects_time_regression() -> None:
 def test_outstanding_reservation_counts_but_is_invisible_and_cancellable() -> None:
     queue = PersistQueue(capacity_entities=2)
     _make_available(queue)
-    result = queue.try_reserve_one(MEASUREMENT_PROFILE_V1_SPEC)
+    result = queue.try_reserve_one(READING_RECEPTION_V2_SPEC)
     assert result.reservation is not None
 
     assert queue.snapshot().reserved_entities == 1
     assert queue.snapshot().published_entities == 0
     assert queue.claim_batch(max_entities=1) is None
     with pytest.raises(PersistQueueInterfaceError, match="outstanding"):
-        queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+        queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
 
     result.reservation.cancel()
     assert queue.snapshot().reserved_entities == 0
@@ -307,7 +308,7 @@ class _OpaquePayload:
 def test_publication_transfers_the_identical_opaque_reference_under_pressure() -> None:
     queue = PersistQueue(capacity_entities=1)
     _make_available(queue)
-    result = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+    result = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
     assert result.reservation is not None
     payload = _OpaquePayload()
 
@@ -316,7 +317,7 @@ def test_publication_transfers_the_identical_opaque_reference_under_pressure() -
     batch = queue.claim_batch(max_entities=1)
     assert batch is not None
     assert batch.entries[0].entity is payload
-    assert batch.entries[0].spec is PROFILE_ONLY_V1_SPEC
+    assert batch.entries[0].spec is RECEPTION_ONLY_V2_SPEC
     assert batch.entries[0].token is result.reservation.token
 
 
@@ -348,7 +349,7 @@ def test_every_kind_costs_one_slot_and_fifo_wraparound_preserves_identity() -> N
     "spec",
     (
         PersistQueueEntitySpec(PersistQueueEntityKind.PROFILE_ONLY, 0),
-        PersistQueueEntitySpec(PersistQueueEntityKind.PROFILE_ONLY, 2),
+        PersistQueueEntitySpec(PersistQueueEntityKind.PROFILE_ONLY, 1),
         PersistQueueEntitySpec(PersistQueueEntityKind.PROFILE_ONLY, True),
         PersistQueueEntitySpec(PersistQueueEntityKind.PROFILE_ONLY, []),
         PersistQueueEntitySpec([], 1),
@@ -370,7 +371,7 @@ def test_unknown_entity_spec_is_an_interface_violation(spec: object) -> None:
 def test_equivalent_supported_entity_spec_is_accepted_without_normalization() -> None:
     queue = PersistQueue(capacity_entities=1)
     _make_available(queue)
-    spec = PersistQueueEntitySpec(PersistQueueEntityKind.PROFILE_ONLY, 1)
+    spec = PersistQueueEntitySpec(PersistQueueEntityKind.PROFILE_ONLY, RECEPTION_ONLY_V2_SPEC.schema_version)
 
     result = queue.try_reserve_one(spec)
 
@@ -386,7 +387,7 @@ def test_reservation_handles_are_noncopyable_and_reject_stale_or_foreign_use() -
     second_queue = PersistQueue(capacity_entities=1)
     _make_available(first_queue)
     _make_available(second_queue)
-    result = first_queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+    result = first_queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
     assert result.reservation is not None
     reservation = result.reservation
 
@@ -582,7 +583,7 @@ def test_batch_lease_rejects_foreign_and_stale_prefix_transitions() -> None:
 def test_unencodable_poison_retains_the_claimed_head_and_following_entries() -> None:
     queue = PersistQueue(capacity_entities=2)
     _make_available(queue)
-    poisoned = ProfileOnlyUnitV1(profile=["mutable"])  # type: ignore[arg-type]
+    poisoned = ReceptionOnlyUnitV2(profile=["mutable"], received_frame=REVIEWED_RECEPTION_FRAME)  # type: ignore[arg-type]
     follower = object()
     poisoned_token = _publish(queue, poisoned)
     follower_token = _publish(queue, follower, spec=DIAGNOSTIC_V1_SPEC)
@@ -613,7 +614,7 @@ def test_incompatible_clock_head_has_no_bypass_or_arbitrary_removal_api() -> Non
     queue = PersistQueue(capacity_entities=2)
     _make_available(queue)
     clock_token = _publish(queue, object(), spec=CLOCK_OBSERVATION_V1_SPEC)
-    follower_token = _publish(queue, object(), spec=PROFILE_ONLY_V1_SPEC)
+    follower_token = _publish(queue, object(), spec=RECEPTION_ONLY_V2_SPEC)
     lease = queue.claim_batch(max_entities=2)
     assert lease is not None
 
@@ -655,7 +656,7 @@ def test_close_and_drain_cover_empty_reserved_and_published_states() -> None:
     empty.close()
     assert not empty_event.is_set()
     with pytest.raises(PersistQueueInterfaceError, match="closed"):
-        empty.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+        empty.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
 
     published_event = Event()
     published = PersistQueue(capacity_entities=1, wake_event=published_event)
@@ -675,7 +676,7 @@ def test_close_and_drain_cover_empty_reserved_and_published_states() -> None:
     reserved_event = Event()
     reserved = PersistQueue(capacity_entities=1, wake_event=reserved_event)
     _make_available(reserved)
-    result = reserved.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+    result = reserved.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
     assert result.reservation is not None
     reserved.close()
     reserved_event.clear()
@@ -690,7 +691,7 @@ def test_close_and_drain_cover_empty_reserved_and_published_states() -> None:
         wake_event=publish_after_close_event,
     )
     _make_available(publish_after_close)
-    result = publish_after_close.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+    result = publish_after_close.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
     assert result.reservation is not None
     payload = object()
     publish_after_close.close()

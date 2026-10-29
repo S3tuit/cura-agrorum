@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 
 import sqlite3
 from dataclasses import replace
@@ -22,7 +23,9 @@ from tests.support.builders.persistence import (
     _diagnostic,
     _health_request,
     _measurement,
+    _network_observation,
     _observation,
+    _rtc_observation,
     _profile,
 )
 
@@ -66,8 +69,8 @@ def test_commit_before_acknowledgement(setup):
     assert connection.execute(
         "SELECT * FROM clock_observations ORDER BY observation_sequence"
     ).fetchall() == [
-        (INSTANCE, 1, 0, 10, None, 0, 0, 1),
-        (INSTANCE, 2, 0, 10, None, 0, 0, 1),
+        (INSTANCE, 1, 0, 10, None, 0, 0, 1, *(None,) * 20),
+        (INSTANCE, 2, 0, 10, None, 0, 0, 1, *(None,) * 20),
     ]
 
 
@@ -155,48 +158,19 @@ def test_raw_connection_is_not_a_database_handoff(setup):
 def test_nonreading_rows_are_exact(setup):
     from cura_receiver.persist_queue_entities import (
         DIAGNOSTIC_V1_SPEC,
-        PROFILE_ONLY_V1_SPEC,
-        ProfileOnlyUnitV1,
+        RECEPTION_ONLY_V2_SPEC,
+        ReceptionOnlyUnitV2,
     )
 
     path, connection, queue, clock, create = setup
     persistence = create()
     persistence.enable_admission()
-    _publish(queue, ProfileOnlyUnitV1(_profile()), PROFILE_ONLY_V1_SPEC)
+    _publish(queue, ReceptionOnlyUnitV2(_profile(), received_frame=REVIEWED_RECEPTION_FRAME), RECEPTION_ONLY_V2_SPEC)
     _publish(queue, _diagnostic(), DIAGNOSTIC_V1_SPEC)
     assert persistence.attempt(max_entities=5).acknowledged_entities == 2
-    assert connection.execute("SELECT * FROM message_profiles").fetchone() == (
-        INSTANCE,
-        1,
-        10,
-        0,
-        bytes(255),
-        None,
-        None,
-        None,
-        None,
-        0,
-        None,
-        None,
-        None,
-        2,
-        0,
-        7,
-        0,
-        1,
-        None,
-        0,
-        0,
-        0,
-        0,
-        None,
-        11,
-        12,
-        None,
-        None,
-        None,
-        14,
-        0,
+    assert connection.execute("SELECT * FROM packet_receptions").fetchone() == (
+        INSTANCE, 1, 10, 3, b"n"*8, 100, None, None, None, 2, 0, 4, 1,
+        0, 0, 0, 0, None, 11, 12, 13, None, None, 14, 0,
     )
     assert connection.execute("SELECT * FROM diagnostics").fetchone() == (
         INSTANCE,
@@ -213,7 +187,8 @@ def test_nonreading_rows_are_exact(setup):
 
 
 # Health is sampled even before a failing BEGIN, then the exact row survives elapsed time and retry.
-def test_health_frozen_before_first_transaction(setup):
+@pytest.mark.parametrize("device,process", [(4096, 0), (None, 73), (4096, None)])
+def test_health_frozen_before_first_transaction(setup, device, process):
     from cura_receiver.persist_queue_entities import RECEIVER_HEALTH_REQUEST_V1_SPEC
     from cura_receiver.ports.host_observations import HostObservations
 
@@ -225,7 +200,12 @@ def test_health_frozen_before_first_transaction(setup):
         def sample(self):
             self.calls += 1
             assert not connection.in_transaction
-            return HostObservations(linux_load_1m_milli=1250, sqlite_wal_size_bytes=0)
+            return HostObservations(
+                linux_load_1m_milli=1250,
+                sqlite_wal_size_bytes=0,
+                storage_device_write_bytes=device,
+                receiver_process_write_bytes=process,
+            )
 
     class FailBeginOnce(SqliteTransactions):
         failed = False
@@ -251,18 +231,21 @@ def test_health_frozen_before_first_transaction(setup):
         INSTANCE,
         1,
         15,
-        enum.RadioState.RX_SINGLE.value,
+        1,  # referenced radio observation
+        1,  # consistent
+        *([0] * 5),
         0,
         0,
         0,
         *([0] * 8),
         0,
         1,
+        1, None, 14, 15, 1_800_000_000,
         0,
         0,
         None,
         None,
-        *([0] * 23),
+        *([0] * 26),
         100,
         1,
         1,
@@ -292,9 +275,74 @@ def test_health_frozen_before_first_transaction(setup):
         None,
         0,
         None,
+        device,
+        process,
     )
     assert actual == expected
     assert request == _health_request()
+
+
+# Nullable counters and both signed-64-bit endpoints survive generated binders and real SQLite.
+@pytest.mark.parametrize("device,process", [
+    (None, None), (0, 0), ((1 << 63) - 1, (1 << 63) - 1),
+    (None, 73), (4096, None),
+])
+def test_health_write_counter_sqlite_values(setup, device, process):
+    from cura_receiver.persist_queue_entities import RECEIVER_HEALTH_REQUEST_V1_SPEC
+    from cura_receiver.ports.host_observations import HostObservations
+
+    _, connection, queue, _, create = setup
+
+    class Host:
+        def sample(self):
+            return HostObservations(
+                storage_device_write_bytes=device, receiver_process_write_bytes=process
+            )
+
+    persistence = create(host_observations=Host())
+    persistence.enable_admission()
+    _publish(queue, _health_request(), RECEIVER_HEALTH_REQUEST_V1_SPEC)
+    assert persistence.attempt(max_entities=1).acknowledged_entities == 1
+    assert connection.execute(
+        "SELECT storage_device_write_bytes, receiver_process_write_bytes, "
+        "typeof(storage_device_write_bytes), typeof(receiver_process_write_bytes) "
+        "FROM receiver_health"
+    ).fetchone() == (
+        device, process,
+        "null" if device is None else "integer",
+        "null" if process is None else "integer",
+    )
+
+
+# A lost reply must preserve absence, even if the counter would be available on another sample.
+@pytest.mark.parametrize("missing", ["storage_device_write_bytes", "receiver_process_write_bytes"])
+def test_missing_write_counter_frozen_across_unknown_commit(setup, missing):
+    from cura_receiver.persist_queue_entities import RECEIVER_HEALTH_REQUEST_V1_SPEC
+    from cura_receiver.ports.host_observations import HostObservations
+
+    _, connection, queue, clock, create = setup
+
+    class Host:
+        calls = 0
+
+        def sample(self):
+            self.calls += 1
+            values = dict(storage_device_write_bytes=4096, receiver_process_write_bytes=73)
+            if self.calls == 1:
+                values[missing] = None
+            return HostObservations(**values)
+
+    host = Host()
+    persistence = create(_LoseOneCommitReply(), host_observations=host)
+    persistence.enable_admission()
+    _publish(queue, _health_request(), RECEIVER_HEALTH_REQUEST_V1_SPEC)
+    assert persistence.attempt(max_entities=1).outcome is Outcome.OUTCOME_UNKNOWN
+    before = connection.execute("SELECT * FROM receiver_health").fetchall()
+    clock.advance_elapsed_us(1_000_000)
+    assert persistence.attempt(max_entities=1).acknowledged_entities == 1
+    assert connection.execute("SELECT * FROM receiver_health").fetchall() == before
+    assert host.calls == 1
+    assert connection.execute(f"SELECT {missing} FROM receiver_health").fetchone() == (None,)
 
 
 # Every clock u64 remains an exact SQLite INTEGER at INT64_MAX, with overflow retaining work.
@@ -322,7 +370,7 @@ def test_component_integer_boundary(setup, field):
 # Reviewed FIFO cases cover every classification, both conflict forms and current/backlog conversion.
 @pytest.mark.parametrize("batch_size", [1, 6])
 def test_reading_classifications_and_immutable_evidence(setup, batch_size):
-    from cura_receiver.persist_queue_entities import MEASUREMENT_PROFILE_V1_SPEC
+    from cura_receiver.persist_queue_entities import READING_RECEPTION_V2_SPEC
 
     path, connection, queue, clock, create = setup
     persistence = create()
@@ -336,12 +384,12 @@ def test_reading_classifications_and_immutable_evidence(setup, batch_size):
         _measurement(sequence=6, sample=201),
     ]
     for unit in units:
-        _publish(queue, unit, MEASUREMENT_PROFILE_V1_SPEC)
+        _publish(queue, unit, READING_RECEPTION_V2_SPEC)
     while queue.snapshot().published_entities:
         assert persistence.attempt(max_entities=batch_size).outcome is Outcome.COMMITTED
     assert connection.execute(
-        "SELECT occurrence_sequence, persistence_classification_id FROM message_profiles ORDER BY occurrence_sequence"
-    ).fetchall() == [(1, 1), (2, 2), (3, 3), (4, 4), (5, 4), (6, 5)]
+        "SELECT occurrence_sequence, persistence_classification_id FROM packet_receptions ORDER BY occurrence_sequence"
+    ).fetchall() == [(1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 5)]
     expected = []
     for message, soil, canonical, first in [
         (100, 1000, 1, 1),
@@ -359,7 +407,6 @@ def test_reading_classifications_and_immutable_evidence(setup, batch_size):
                 b"n" * 8,
                 message,
                 200,
-                body,
                 canonical,
                 4660,
                 soil,
@@ -376,8 +423,6 @@ def test_reading_classifications_and_immutable_evidence(setup, batch_size):
                 7,
                 2,
                 1023,
-                INSTANCE,
-                first,
             )
         )
     assert (
@@ -387,14 +432,14 @@ def test_reading_classifications_and_immutable_evidence(setup, batch_size):
         == expected
     )
     assert connection.execute(
-        "SELECT occurrence_sequence, received_frame FROM message_profiles ORDER BY occurrence_sequence"
-    ).fetchall() == [(i, u.profile.received_frame) for i, u in enumerate(units, 1)]
+        "SELECT occurrence_sequence, received_frame FROM packet_reception_exceptions ORDER BY occurrence_sequence"
+    ).fetchall() == [(i, units[i-1].received_frame) for i in (4, 5, 6)]
     assert connection.execute("SELECT count(*) FROM diagnostics").fetchone() == (0,)
 
 
 # Transport and sample identities are node-scoped, and earlier instances retain canonical ownership.
 def test_classification_node_and_instance_scope(setup):
-    from cura_receiver.persist_queue_entities import MEASUREMENT_PROFILE_V1_SPEC
+    from cura_receiver.persist_queue_entities import READING_RECEPTION_V2_SPEC
 
     path, connection, queue, clock, create = setup
     other = bytes.fromhex("11112233445546778899aabbccddeeff")
@@ -408,27 +453,27 @@ def test_classification_node_and_instance_scope(setup):
         _measurement(instance=other),
         _measurement(sequence=2, node=b"x" * 8, instance=other),
     ]:
-        _publish(queue, unit, MEASUREMENT_PROFILE_V1_SPEC)
+        _publish(queue, unit, READING_RECEPTION_V2_SPEC)
     assert persistence.attempt(max_entities=3).acknowledged_entities == 3
     assert connection.execute(
-        "SELECT first_receiver_instance_id FROM reading_messages WHERE node_id=?",
+        "SELECT message_id,is_canonical FROM reading_messages WHERE node_id=?",
         (b"n" * 8,),
-    ).fetchone() == (INSTANCE,)
+    ).fetchone() == (100, 1)
     assert connection.execute(
-        "SELECT persistence_classification_id FROM message_profiles WHERE receiver_instance_id=? ORDER BY occurrence_sequence",
+        "SELECT persistence_classification_id FROM packet_receptions WHERE receiver_instance_id=? ORDER BY occurrence_sequence",
         (other,),
     ).fetchall() == [(2,), (1,)]
 
 
 # Real constraints at either write boundary cannot leave half of an accepted pair durable.
-@pytest.mark.parametrize("table", ["message_profiles", "reading_messages"])
+@pytest.mark.parametrize("table", ["packet_receptions", "reading_messages"])
 def test_pair_write_failure_is_atomic(setup, table):
-    from cura_receiver.persist_queue_entities import MEASUREMENT_PROFILE_V1_SPEC
+    from cura_receiver.persist_queue_entities import READING_RECEPTION_V2_SPEC
 
     path, connection, queue, clock, create = setup
     persistence = create()
     persistence.enable_admission()
-    _publish(queue, _measurement(), MEASUREMENT_PROFILE_V1_SPEC)
+    _publish(queue, _measurement(), READING_RECEPTION_V2_SPEC)
     connection.execute(
         f"CREATE TEMP TRIGGER deny_pair BEFORE INSERT ON {table} BEGIN SELECT RAISE(ABORT, 'test'); END"
     )
@@ -436,7 +481,7 @@ def test_pair_write_failure_is_atomic(setup, table):
     assert connection.execute("SELECT count(*) FROM reading_messages").fetchone() == (
         0,
     )
-    assert connection.execute("SELECT count(*) FROM message_profiles").fetchone() == (
+    assert connection.execute("SELECT count(*) FROM packet_receptions").fetchone() == (
         0,
     )
     assert queue.snapshot().published_entities == 1
@@ -455,9 +500,14 @@ class _LoseOneCommitReply(SqliteTransactions):
 def _kind_case(kind):
     from cura_receiver import persist_queue_entities as entities
 
-    if kind == "clock":
+    if kind in ("clock", "clock_network", "clock_rtc"):
+        builder = {
+            "clock": _observation,
+            "clock_network": _network_observation,
+            "clock_rtc": _rtc_observation,
+        }[kind]
         return (
-            _observation(),
+            builder(),
             entities.CLOCK_OBSERVATION_V1_SPEC,
             "clock_observations",
             row.CLOCK_OBSERVATION_V1_COLUMNS,
@@ -471,10 +521,10 @@ def _kind_case(kind):
         )
     if kind == "profile":
         return (
-            entities.ProfileOnlyUnitV1(_profile()),
-            entities.PROFILE_ONLY_V1_SPEC,
-            "message_profiles",
-            row.MESSAGE_PROFILE_ROW_V1_COLUMNS,
+            entities.ReceptionOnlyUnitV2(_profile(), received_frame=REVIEWED_RECEPTION_FRAME),
+            entities.RECEPTION_ONLY_V2_SPEC,
+            "packet_receptions",
+            row.PACKET_RECEPTION_ROW_V1_COLUMNS,
         )
     if kind == "health":
         return (
@@ -485,9 +535,9 @@ def _kind_case(kind):
         )
     return (
         _measurement(),
-        entities.MEASUREMENT_PROFILE_V1_SPEC,
-        "message_profiles",
-        row.MESSAGE_PROFILE_ROW_V1_COLUMNS,
+        entities.READING_RECEPTION_V2_SPEC,
+        "packet_receptions",
+        row.PACKET_RECEPTION_ROW_V1_COLUMNS,
     )
 
 
@@ -499,14 +549,12 @@ def _kind_case(kind):
         ("clock", "rtc_health", enum.SystemTimeQuality.RTC_HOLDOVER),
         ("diagnostic", "severity", enum.DiagnosticOperation.READ),
         ("diagnostic", "error_domain", enum.ProcessingResult.WRONG_DIRECTION),
-        ("diagnostic", "operation", enum.SystemTimeQuality.NETWORK_SYNCED),
+        ("diagnostic", "operation", enum.SystemTimeQuality.CHRONY_SYNCED),
         ("profile", "processing_result", enum.DiagnosticOperation.RECOVER),
-        ("profile", "ack_selected", enum.SystemTimeQuality.UNTRUSTED),
         ("profile", "ack_tx_result", enum.RtcHealth.PRESENT),
         ("measurement", "processing_result", enum.DiagnosticOperation.RECEIVE),
-        ("measurement", "ack_selected", enum.DiagnosticSeverity.FATAL),
-        ("measurement", "ack_tx_result", enum.SystemTimeQuality.NETWORK_SYNCED),
-        ("health", "radio_state", enum.SystemTimeQuality.NETWORK_SYNCED),
+        ("measurement", "ack_tx_result", enum.SystemTimeQuality.CHRONY_SYNCED),
+        ("health", "consistency", enum.SystemTimeQuality.CHRONY_SYNCED),
         ("health", "system_time_quality", enum.RadioState.INITIALIZING),
         ("health", "rtc_health", enum.SystemTimeQuality.RTC_HOLDOVER),
     ],
@@ -583,7 +631,11 @@ def test_exact_reconciliation_for_every_identity(setup, kind):
 
         def sample(self):
             self.calls += 1
-            return HostObservations(memory_available_bytes=self.calls)
+            return HostObservations(
+                memory_available_bytes=self.calls,
+                storage_device_write_bytes=self.calls * 512,
+                receiver_process_write_bytes=self.calls,
+            )
 
     host = Host()
     persistence = create(_LoseOneCommitReply(), host_observations=host)
@@ -602,7 +654,14 @@ def _collision_columns():
     for kind in ("clock", "diagnostic", "profile", "health", "measurement"):
         _, _, _, columns = _kind_case(kind)
         for column in columns[2:]:
+            if kind == "clock" and column.startswith(("network_", "rtc_r", "rtc_d")):
+                continue  # A lone group column cannot change; trusted cases below.
             yield pytest.param(kind, column, id=f"{kind}-{column}")
+    for kind, prefix in (("clock_network", "network_"), ("clock_rtc", "rtc_")):
+        _, _, _, columns = _kind_case(kind)
+        for column in columns:
+            if column.startswith(prefix) and column != "rtc_health_id":
+                yield pytest.param(kind, column, id=f"{kind}-{column}")
 
 
 # A differing value in any non-key column fails exact reconciliation and preserves conflicting evidence.
@@ -627,25 +686,23 @@ def test_every_replay_column_is_compared(setup, kind, column):
     if type(original) is bytes:
         replacement = bytes([original[0] ^ 1]) + original[1:]
     elif original is None:
-        replacement = {
-            "claimed_node_id": b"z" * 8,
-            "ack_frame": bytes(23),
-            "received_frame": bytes(255),
-        }.get(column, 0)
-    elif column in ("header_authenticated", "step_discontinuity_boundary"):
+        replacement = 0
+    elif column == "step_discontinuity_boundary":
         replacement = 1 - original
     elif column in ("error_domain_id", "severity_id", "context_schema_id"):
         replacement = 1 if original != 1 else 0
-    elif column == "ack_selection_id":
-        replacement = 3 if original != 3 else 0
-    elif column == "ack_selected_id":
-        replacement = 3 if original != 3 else 0
     elif column == "processing_result_id" and original == 11:
         replacement = 1
     elif column == "persistence_classification_id":
         replacement = 0 if original else 1
     else:
         replacement = original + 1
+    if kind == "health" and column == "radio_observation_sequence":
+        from tests.support.builders.persistence import _radio_observation
+        columns = row.RADIO_OBSERVATION_V1_COLUMNS
+        connection.execute("INSERT INTO radio_observations (" + ",".join(columns)
+                           + ") VALUES (" + ",".join("?" for _ in columns) + ")",
+                           row.radio_observation_v1_parameters(_radio_observation(sequence=replacement)))
     trigger_sql = connection.execute(
         "SELECT sql FROM sqlite_master WHERE name=?", (table + "_no_update",)
     ).fetchone()[0]
@@ -671,7 +728,7 @@ def test_every_replay_column_is_compared(setup, kind, column):
 
 # Stored reading classifications remain authoritative when their occurrences are re-admitted in a later batch.
 def test_measurement_replay_keeps_all_stored_classifications(setup):
-    from cura_receiver.persist_queue_entities import MEASUREMENT_PROFILE_V1_SPEC
+    from cura_receiver.persist_queue_entities import READING_RECEPTION_V2_SPEC
 
     path, connection, queue, clock, create = setup
     persistence = create()
@@ -685,15 +742,15 @@ def test_measurement_replay_keeps_all_stored_classifications(setup):
         _measurement(sequence=6, sample=201),
     ]
     for unit in units:
-        _publish(queue, unit, MEASUREMENT_PROFILE_V1_SPEC)
+        _publish(queue, unit, READING_RECEPTION_V2_SPEC)
     assert persistence.attempt(max_entities=6).acknowledged_entities == 6
-    before_profiles = connection.execute("SELECT * FROM message_profiles").fetchall()
+    before_profiles = connection.execute("SELECT * FROM packet_receptions").fetchall()
     before_readings = connection.execute("SELECT * FROM reading_messages").fetchall()
     for unit in units:
-        _publish(queue, unit, MEASUREMENT_PROFILE_V1_SPEC)
+        _publish(queue, unit, READING_RECEPTION_V2_SPEC)
     assert persistence.attempt(max_entities=6).acknowledged_entities == 6
     assert (
-        connection.execute("SELECT * FROM message_profiles").fetchall()
+        connection.execute("SELECT * FROM packet_receptions").fetchall()
         == before_profiles
     )
     assert (
@@ -717,17 +774,17 @@ def test_mixed_existing_and_absent_replay(setup):
     ).fetchall() == [(1,), (2,)]
 
 
-# Missing current reading effects are inserted from the authoritative profile; the reverse partial effect fails closed.
+# Either partial current effect fails exact reconciliation without repair.
 @pytest.mark.parametrize("missing", ["reading", "profile"])
 def test_measurement_partial_effects(setup, missing):
-    from cura_receiver.persist_queue_entities import MEASUREMENT_PROFILE_V1_SPEC
+    from cura_receiver.persist_queue_entities import READING_RECEPTION_V2_SPEC
 
     path, connection, queue, clock, create = setup
     persistence = create(_LoseOneCommitReply())
     persistence.enable_admission()
-    _publish(queue, _measurement(), MEASUREMENT_PROFILE_V1_SPEC)
+    _publish(queue, _measurement(), READING_RECEPTION_V2_SPEC)
     assert persistence.attempt(max_entities=1).outcome is Outcome.OUTCOME_UNKNOWN
-    table = "reading_messages" if missing == "reading" else "message_profiles"
+    table = "reading_messages" if missing == "reading" else "packet_receptions"
     connection.execute("PRAGMA foreign_keys=OFF")
     trigger = connection.execute(
         "SELECT sql FROM sqlite_master WHERE name=?", (table + "_no_delete",)
@@ -738,40 +795,31 @@ def test_measurement_partial_effects(setup, missing):
     connection.execute("PRAGMA foreign_keys=ON")
     clock.advance_elapsed_us(1_000_000)
     result = persistence.attempt(max_entities=1)
-    if missing == "reading":
-        assert result.acknowledged_entities == 1
-        assert connection.execute(
-            "SELECT count(*) FROM reading_messages"
-        ).fetchone() == (1,)
-    else:
-        # Recovery validation sees the broken FK before semantic replay can run.
-        assert result.acknowledged_entities == 0
-        assert (
-            result.failure.admission_state
-            is enum.PersistenceAdmissionState.UNAVAILABLE_CORRUPT
-        )
-        assert queue.snapshot().claimed_entities == 1
+    assert result.acknowledged_entities == 0
+    assert result.failure.admission_state is enum.PersistenceAdmissionState.UNAVAILABLE_INCOMPATIBLE_SCHEMA
+    assert queue.snapshot().claimed_entities == 1
+    assert connection.execute(f"SELECT count(*) FROM {table}").fetchone() == (0,)
 
 
 # Every current reading effect column participates in reconciliation, including decoded and owner evidence.
 @pytest.mark.parametrize(
-    "column", row.READING_MESSAGE_ROW_V1_COLUMNS[2:-2] + ("first_occurrence_sequence",)
+    "column", row.READING_MESSAGE_ROW_V2_COLUMNS[2:]
 )
 def test_reading_side_effect_collision(setup, column):
-    from cura_receiver.persist_queue_entities import MEASUREMENT_PROFILE_V1_SPEC
+    from cura_receiver.persist_queue_entities import READING_RECEPTION_V2_SPEC
 
     path, connection, queue, clock, create = setup
     persistence = create(_LoseOneCommitReply())
     persistence.enable_admission()
-    _publish(queue, _measurement(), MEASUREMENT_PROFILE_V1_SPEC)
-    _publish(queue, _measurement(sequence=2), MEASUREMENT_PROFILE_V1_SPEC)
+    _publish(queue, _measurement(), READING_RECEPTION_V2_SPEC)
+    _publish(queue, _measurement(sequence=2), READING_RECEPTION_V2_SPEC)
     assert persistence.attempt(max_entities=2).outcome is Outcome.OUTCOME_UNKNOWN
     original = connection.execute(f"SELECT {column} FROM reading_messages").fetchone()[
         0
     ]
     if type(original) is bytes:
         altered = bytes([original[0] ^ 1]) + original[1:]
-    elif column == "is_canonical_for_sample":
+    elif column == "is_canonical":
         altered = 0
     elif column == "flags":
         altered = 511
@@ -797,7 +845,7 @@ def test_reading_side_effect_collision(setup, column):
 
 # Even an unknown outcome in which COMMIT did not run must reconcile the original frozen classification.
 def test_unknown_commit_absent_rows_reconcile(setup):
-    from cura_receiver.persist_queue_entities import MEASUREMENT_PROFILE_V1_SPEC
+    from cura_receiver.persist_queue_entities import READING_RECEPTION_V2_SPEC
 
     path, connection, queue, clock, create = setup
 
@@ -812,16 +860,16 @@ def test_unknown_commit_absent_rows_reconcile(setup):
 
     persistence = create(NoCommitReply())
     persistence.enable_admission()
-    _publish(queue, _measurement(), MEASUREMENT_PROFILE_V1_SPEC)
-    _publish(queue, _measurement(sequence=2), MEASUREMENT_PROFILE_V1_SPEC)
+    _publish(queue, _measurement(), READING_RECEPTION_V2_SPEC)
+    _publish(queue, _measurement(sequence=2), READING_RECEPTION_V2_SPEC)
     assert persistence.attempt(max_entities=2).outcome is Outcome.OUTCOME_UNKNOWN
-    assert connection.execute("SELECT count(*) FROM message_profiles").fetchone() == (
+    assert connection.execute("SELECT count(*) FROM packet_receptions").fetchone() == (
         0,
     )
     clock.advance_elapsed_us(1_000_000)
     assert persistence.attempt(max_entities=2).acknowledged_entities == 2
     assert connection.execute(
-        "SELECT persistence_classification_id FROM message_profiles ORDER BY occurrence_sequence"
+        "SELECT persistence_classification_id FROM packet_receptions ORDER BY occurrence_sequence"
     ).fetchall() == [(1,), (2,)]
 
 
@@ -868,8 +916,8 @@ def test_real_low_space_inspection(setup):
 # SQLite page exhaustion produces a real FULL rollback while the entire mixed-size batch stays queued.
 def test_real_sqlite_full_retains_batch(setup):
     from cura_receiver.persist_queue_entities import (
-        PROFILE_ONLY_V1_SPEC,
-        ProfileOnlyUnitV1,
+        RECEPTION_ONLY_V2_SPEC,
+        ReceptionOnlyUnitV2,
     )
 
     path, connection, queue, clock, create = setup
@@ -879,7 +927,7 @@ def test_real_sqlite_full_retains_batch(setup):
     connection.execute(f"PRAGMA max_page_count={pages}")
     for sequence in range(1, 501):
         _publish(
-            queue, ProfileOnlyUnitV1(_profile(sequence=sequence)), PROFILE_ONLY_V1_SPEC
+            queue, ReceptionOnlyUnitV2(_profile(sequence=sequence), received_frame=REVIEWED_RECEPTION_FRAME), RECEPTION_ONLY_V2_SPEC
         )
     result = persistence.attempt(max_entities=500)
     assert (
@@ -888,7 +936,7 @@ def test_real_sqlite_full_retains_batch(setup):
     )
     assert result.failure.sqlite_primary_code == sqlite3.SQLITE_FULL
     assert queue.snapshot().published_entities == 500
-    assert connection.execute("SELECT count(*) FROM message_profiles").fetchone() == (
+    assert connection.execute("SELECT count(*) FROM packet_receptions").fetchone() == (
         0,
     )
     assert connection.execute(
@@ -950,29 +998,19 @@ def test_connection_revalidation(setup, change, expected):
     assert validate_receiver_connection(connection, GROUP).admission_state is expected
 
 
-# Semantic replay discovers impossible current ownership before any recovery integrity check has run.
-def test_impossible_partial_ownership_is_incompatible(setup):
-    from cura_receiver.persist_queue_entities import MEASUREMENT_PROFILE_V1_SPEC
-
-    path, connection, queue, clock, create = setup
+# Classification uses transport authority even when an unrelated historical reception is absent.
+def test_missing_historical_reception_does_not_block_classification(setup):
+    from cura_receiver.persist_queue_entities import READING_RECEPTION_V2_SPEC
+    _, connection, queue, _, create = setup
     persistence = create()
     persistence.enable_admission()
-    _publish(queue, _measurement(), MEASUREMENT_PROFILE_V1_SPEC)
+    _publish(queue, _measurement(), READING_RECEPTION_V2_SPEC)
     assert persistence.attempt(max_entities=1).acknowledged_entities == 1
-    connection.execute("PRAGMA foreign_keys=OFF")
-    connection.execute("DROP TRIGGER message_profiles_no_delete")
-    connection.execute("DELETE FROM message_profiles")
-    connection.execute("PRAGMA foreign_keys=ON")
-    _publish(queue, _measurement(), MEASUREMENT_PROFILE_V1_SPEC)
-    result = persistence.attempt(max_entities=1)
-    assert (
-        result.failure.admission_state
-        is enum.PersistenceAdmissionState.UNAVAILABLE_INCOMPATIBLE_SCHEMA
-    )
-    assert queue.snapshot().claimed_entities == 1
-    assert connection.execute("SELECT count(*) FROM reading_messages").fetchone() == (
-        1,
-    )
+    connection.execute("DROP TRIGGER packet_receptions_no_delete")
+    connection.execute("DELETE FROM packet_receptions")
+    _publish(queue, _measurement(sequence=2), READING_RECEPTION_V2_SPEC)
+    assert persistence.attempt(max_entities=1).acknowledged_entities == 1
+    assert connection.execute("SELECT persistence_classification_id FROM packet_receptions").fetchall() == [(2,)]
 
 
 # Exact virtual boundaries enforce the initial wait, exponential cap and arbitrarily many recovery attempts.
@@ -1082,14 +1120,15 @@ def test_failed_rollback_reopens_without_reconstruction(setup):
             0,
             0,
             1,
+            *(None,) * 20,
         )
 
 
 # A restored page limit still requires a due, validated commit before full-storage admission recovers.
 def test_full_recovery_commits_original_batch(setup):
     from cura_receiver.persist_queue_entities import (
-        PROFILE_ONLY_V1_SPEC,
-        ProfileOnlyUnitV1,
+        RECEPTION_ONLY_V2_SPEC,
+        ReceptionOnlyUnitV2,
     )
 
     path, connection, queue, clock, create = setup
@@ -1099,7 +1138,7 @@ def test_full_recovery_commits_original_batch(setup):
     connection.execute(f"PRAGMA max_page_count={pages}")
     for sequence in range(1, 101):
         _publish(
-            queue, ProfileOnlyUnitV1(_profile(sequence=sequence)), PROFILE_ONLY_V1_SPEC
+            queue, ReceptionOnlyUnitV2(_profile(sequence=sequence), received_frame=REVIEWED_RECEPTION_FRAME), RECEPTION_ONLY_V2_SPEC
         )
     assert (
         persistence.attempt(max_entities=100).failure.admission_state
@@ -1113,7 +1152,7 @@ def test_full_recovery_commits_original_batch(setup):
     )
     clock.advance_elapsed_us(250925)
     assert persistence.attempt(max_entities=100).acknowledged_entities == 100
-    assert connection.execute("SELECT count(*) FROM message_profiles").fetchone() == (
+    assert connection.execute("SELECT count(*) FROM packet_receptions").fetchone() == (
         100,
     )
     assert (
@@ -1124,7 +1163,7 @@ def test_full_recovery_commits_original_batch(setup):
 
 # Replay of a noncanonical transport still requires the canonical evidence behind its first classification.
 def test_retransmission_requires_prior_canonical_relation(setup):
-    from cura_receiver.persist_queue_entities import MEASUREMENT_PROFILE_V1_SPEC
+    from cura_receiver.persist_queue_entities import READING_RECEPTION_V2_SPEC
 
     path, connection, queue, clock, create = setup
     persistence = create()
@@ -1135,11 +1174,11 @@ def test_retransmission_requires_prior_canonical_relation(setup):
         _measurement(sequence=3, message=101),
     ]
     for unit in units:
-        _publish(queue, unit, MEASUREMENT_PROFILE_V1_SPEC)
+        _publish(queue, unit, READING_RECEPTION_V2_SPEC)
     assert persistence.attempt(max_entities=3).acknowledged_entities == 3
     connection.execute("DROP TRIGGER reading_messages_no_delete")
-    connection.execute("DELETE FROM reading_messages WHERE is_canonical_for_sample=1")
-    _publish(queue, units[2], MEASUREMENT_PROFILE_V1_SPEC)
+    connection.execute("DELETE FROM reading_messages WHERE is_canonical=1")
+    _publish(queue, units[2], READING_RECEPTION_V2_SPEC)
     result = persistence.attempt(max_entities=1)
     assert (
         result.failure.admission_state

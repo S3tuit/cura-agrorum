@@ -20,12 +20,13 @@ class Work:
     sample: int = 200
     body: bytes = b""
     frame: bytes = b""
+    domain: int = 1
     poison: bool = False
 
 
 class DurableModel:
     def __init__(self):
-        self.rows = {"clocks": {}, "profiles": {}, "readings": {}, "quarantine": {}}
+        self.rows = {"clocks": {}, "profiles": {}, "readings": {}, "quarantine": {}, "messages": {}, "exceptions": {}}
         self.queue = []
         self.batch = []
         self.prepared = {}
@@ -54,43 +55,27 @@ class DurableModel:
         if work.poison:
             raise ValueError("poison")
         if work.kind == "profile":
-            return [("profiles", identity, (work.frame, 0))]
-        prior = view["readings"].get((work.node, work.message))
+            return [("profiles", identity, (3, 0)), ("exceptions", identity, (work.frame, 5))]
+        key = (work.node, work.message)
+        prior = view["readings"].get(key)
+        sample = work.sample if prior is None else prior[0]
         canonical = next(
-            (
-                row
-                for (node, _), row in view["readings"].items()
-                if node == work.node and row[0] == work.sample and row[2]
-            ),
-            None,
-        )
+            (row for (node, _), row in view["readings"].items()
+             if node == work.node and row[0] == sample and row[2]), None)
         if prior is not None:
-            owner = view["profiles"][(prior[3], prior[4])]
             classification = (
-                5 if prior[0] != work.sample else 2 if owner[0] == work.frame else 4
-            )
+                5 if prior[0] != work.sample or view["messages"][key] != work.domain
+                else 4 if prior[1] != work.body or prior[1] != canonical[1] else 2)
             effects = []
         else:
-            classification = (
-                1 if canonical is None else 3 if canonical[1] == work.body else 4
-            )
-            effects = [
-                (
-                    "readings",
-                    (work.node, work.message),
-                    (
-                        work.sample,
-                        work.body,
-                        int(canonical is None),
-                        work.instance,
-                        work.sequence,
-                    ),
-                )
-            ]
-        # An already stored occurrence's classification is authoritative on replay.
+            classification = 1 if canonical is None else 3 if canonical[1] == work.body else 4
+            effects = [("messages", key, work.domain),
+                       ("readings", key, (work.sample, work.body, int(canonical is None)))]
         if identity in view["profiles"]:
             classification = view["profiles"][identity][1]
-        return [("profiles", identity, (work.frame, classification))] + effects
+        if classification in (4, 5):
+            effects.append(("exceptions", identity, (work.frame, 6 if classification == 4 else 7)))
+        return [("profiles", identity, (work.domain, classification))] + effects
 
     def attempt(self, count, fault="none"):
         if self.state == "INCOMPATIBLE" or not self.queue:

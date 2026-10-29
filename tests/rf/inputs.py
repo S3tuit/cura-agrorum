@@ -7,32 +7,34 @@ from pathlib import Path
 import subprocess
 import time
 
-from evidence import REPO, digest, write_json
-APP = REPO / "firmware/test_apps/radio"
+from capture import REPO, digest, write_json
+APP = REPO / "firmware/hardware/radio/tests/component"
 
 
 def tree_sources():
     paths = []
-    for name in ("firmware/components", "firmware/test_apps/radio/main", "receiver/cura_receiver",
+    for name in ("firmware/components", "firmware/cmake", "firmware/tests/support", "firmware/hardware/radio/tests/component/main", "receiver/cura_receiver",
                  "receiver/test_apps/radio_peer", "receiver/tests", "receiver/schemas", "receiver/db",
-                 "receiver/deploy", "receiver/native", "receiver/tools",
+                 "receiver/deploy", "receiver/native", "receiver/tools", "receiver/hardware",
                  "protocol/protocol-v2-lora/python", "tests/rf"):
+        # Exclude notes files/directories inside the repo, not a checkout's name.
         paths.extend(p for p in (REPO / name).rglob("*") if p.is_file() and
-                     not any(part in {"__pycache__", "runs", "raw", ".pytest_cache", "evidence"} for part in p.parts) and
+                     (name != "tests/rf" or p.suffix != ".md") and
+                     not any(part.endswith(".notes") or ".notes." in part
+                             for part in p.relative_to(REPO).parts) and
+                     not any(part in {"__pycache__", "runs", "raw", ".pytest_cache"} for part in p.parts) and
                      (p.name.startswith("Kconfig") or p.suffix in {".c", ".h", ".py", ".md", ".txt", ".cmake", ".yml", ".json", ".ini", ".sql", ".service", ".conf", ".rules"}) and
                      not p.name.startswith(("WORKPLAN", "REVIEW")))
     paths.extend(APP / name for name in ("CMakeLists.txt", "sdkconfig.defaults", "partitions.csv", "dependencies.lock"))
-    paths.extend(REPO / name for name in ("Makefile", "firmware/TESTING.md", "firmware/INTERFACE.md",
-        "firmware/ARCHITECTURE.md", "receiver/ARCHITECTURE.md", "receiver/INTERFACE.md", "receiver/TESTING.md",
-        "receiver/INTERFACE_DIAGNOSTIC.md", "receiver/requirements-runtime.txt", "receiver/requirements-radio.txt", "receiver/requirements-test.txt", "receiver/pytest.ini",
-        "receiver/hardware/ds3231/chrony-runtime.conf",
-        "receiver/hardware/TEST_CARRIER.md", "receiver/tests/hardware/RADIO_TESTS.md",
-        "protocol/protocol-v2-lora/README.md", "deployment_remaining.notes.md"))
+    paths.extend(REPO / name for name in ("Makefile",
+        "firmware/ARCHITECTURE.md", "receiver/ARCHITECTURE.md", "receiver/HARDWARE.md",
+        "receiver/conftest.py", "receiver/requirements-runtime.txt", "receiver/requirements-radio.txt", "receiver/requirements-test.txt", "receiver/pytest.ini",
+        "protocol/protocol-v2-lora/README.md"))
     return {str(p.relative_to(REPO)): digest(p) for p in sorted(set(paths))}
 
 
 def firmware_sources(build, app=APP):
-    """Hash the actual compiler dependencies, including IDF and fetched headers."""
+    """Hash actual compiler and CMake inputs, including IDF/fetched dependencies."""
     result = subprocess.run(["ninja", "-C", str(build), "-t", "deps"], check=True,
                             capture_output=True, text=True)
     files = set()
@@ -53,6 +55,26 @@ def firmware_sources(build, app=APP):
     main = "main/radio_app.c" if app == APP else "main/app_main.c"
     if app / main not in files or len(files) < 100:
         raise ValueError("missing actual build dependency records")
+    # Compiler depfiles omit component definitions and included CMake scripts.
+    # Query the configured regeneration edge without running/reconfiguring it.
+    result = subprocess.run(["ninja", "-C", str(build), "-t", "query", "build.ninja"],
+                            check=True, capture_output=True, text=True)
+    lines = result.stdout.splitlines()
+    if len(lines) < 3 or lines[1] != "  input: RERUN_CMAKE":
+        raise ValueError("missing actual CMake regeneration records")
+    cmake_inputs = set()
+    for line in lines[2:]:
+        if not line.startswith("    "):
+            break
+        name = line[4:].removeprefix("| ").removeprefix("|| ")
+        path = Path(name)
+        path = path if path.is_absolute() else build / path
+        if not path.is_file():
+            raise ValueError(f"missing CMake regeneration input: {path}")
+        cmake_inputs.add(path.resolve())
+    if not cmake_inputs:
+        raise ValueError("missing actual CMake regeneration records")
+    files.update(cmake_inputs)
     return {str(p): digest(p) for p in sorted(files)}
 
 
@@ -62,7 +84,7 @@ def check_flash(build, application="cura_radio_component"):
     args = json.loads((build / "flasher_args.json").read_text())
     expected = {"0x0": "bootloader/bootloader.bin", "0x8000": "partition_table/partition-table.bin",
                 "0x10000": application + ".bin"}
-    if args["flash_files"] != expected or args["extra_esptool_args"]["chip"] != "esp32c6":
+    if args["flash_files"] != expected or args["extra_esptool_args"]["chip"] != "esp32s3":
         raise ValueError("unapproved flash files or target")
     limits = {"0x0": 0x8000, "0x8000": 0x1000, "0x10000": 0x100000}
     for offset, name in expected.items():
@@ -82,11 +104,13 @@ def check_flash(build, application="cura_radio_component"):
                       (0, 0, 0x10000, 0x100000, "factory", 0), (1, 131, 0x110000, 0x2e0000, "storage", 0)]:
         raise ValueError("binary partition table differs from reviewed physical layout")
     config = json.loads((build / "config/sdkconfig.json").read_text())
-    pins = dict(SCLK=6, MOSI=7, MISO=14, CS=23, RESET=18, BUSY=19, DIO1=20)
+    pins = dict(SCLK=7, MOSI=9, MISO=8, CS=41, RESET=42, BUSY=40, DIO1=39, RF_ENABLE=38)
     if any(config.get(f"CURA_SX1262_{name}_GPIO") != pin for name, pin in pins.items()):
-        raise ValueError("resolved C6 radio pins differ")
-    if config.get("ESP_CONSOLE_UART_NUM") != 0 or config.get("ESP_CONSOLE_UART_BAUDRATE") != 115200:
-        raise ValueError("wrong resolved UART console")
+        raise ValueError("resolved S3 radio pins differ")
+    if (config.get("ESP_CONSOLE_USB_SERIAL_JTAG") is not True or
+            config.get("FREERTOS_UNICORE") is not True or
+            config.get("ESPTOOLPY_FLASHSIZE") != "8MB"):
+        raise ValueError("wrong resolved S3 USB console/core/flash configuration")
     return {name: digest(build / name) for name in (*expected.values(), application + ".elf",
               "flasher_args.json", "config/sdkconfig.json", "compile_commands.json", "project_description.json")}
 
@@ -119,7 +143,7 @@ def session_identity(manifest, seal, fixture):
     return dict(source=hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest(),
                 build=hashlib.sha256(json.dumps(seal, sort_keys=True).encode()).hexdigest(),
                 devices={key: fixture[key] for key in
-                         ("c6_dut", "pi_board_id", "c6_transmitter", "pi_transmitter")})
+                         ("node_dut", "pi_board_id", "node_transmitter", "pi_transmitter")})
 
 
 def start_session(path, identity, selected):
@@ -136,16 +160,16 @@ def start_session(path, identity, selected):
                          set(state) != {"schema", "identity", "boot", "started", "passed"} or
                          state["schema"] != 1 or type(state["started"]) not in (int, float) or
                          not isinstance(state["passed"], list) or
-                         any(name not in {"RF-001.exchange", "RF-003.silence"} for name in state["passed"])):
+                         any(name not in {"component.ack_exchange", "component.ack_timeout"} for name in state["passed"])):
         raise ValueError("not an RF session receipt; choose a new temporary file")
     valid = (state.get("identity") == identity and state.get("boot") == boot and
              0 <= now - state.get("started", -43201) <= 43200)
     passed = set(state.get("passed", [])) if valid else set()
     planned = set(passed)
     for name in selected:
-        required = set() if name in {"RF-001.exchange", "RF-009.untouched", "RF-009.initialized"} else {"RF-001.exchange"}
-        if name.startswith("RF-008."):
-            required.add("RF-003.silence")
+        required = set() if name in {"component.ack_exchange", "component.cold_sleep", "component.initialized_sleep"} else {"component.ack_exchange"}
+        if name in {"component.repeat_timeout", "component.repeat_exchange"}:
+            required.add("component.ack_timeout")
         if not required <= planned:
             raise ValueError(f"{name} requires fresh nominal prerequisites {sorted(required - planned)}")
         planned.add(name)
@@ -157,9 +181,9 @@ def start_session(path, identity, selected):
 
 def finish_session(path, state, passed, run):
     # Failed/interrupted runs and all fault runs require nominal requalification.
-    if run["status"] == "PASS" and run["fixture"]["c6_fixture"] == "nominal":
+    if run["status"] == "PASS" and run["fixture"]["node_fixture"] == "nominal":
         state["passed"] = sorted((passed | set(run["selected"])) &
-                                 {"RF-001.exchange", "RF-003.silence"})
+                                 {"component.ack_exchange", "component.ack_timeout"})
     write_json(path, state)
 
 

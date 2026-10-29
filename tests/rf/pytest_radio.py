@@ -1,10 +1,14 @@
 """Explicit laptop entry point; default pytest targets never select this file."""
 import shutil
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "firmware/tests/support"))
+from usb_console import attach_usb_console, usb_identity
 
 import pytest
 
 from control import Node, Remote, verify_uart_identity
-from evidence import admit_episode, episode_capture
+from capture import admit_episode, episode_capture
 from inputs import digest, session_identity, start_session, source_manifest, write_json
 from spec import EPISODES
 from verify import verify_case
@@ -43,7 +47,7 @@ def test_rf_component(request, joint_run, episode_name, record_property):
     episode = EPISODES[episode_name]
     root = ctx["output"] / episode_name
     root.mkdir()
-    write_json(root / "episode.json", dict(case=episode_name, c6_max_packets=episode.c6_packets,
+    write_json(root / "episode.json", dict(case=episode_name, node_max_packets=episode.node_packets,
                pi_payload_lengths=episode.pi_lengths, charges=episode.charge, peer_lease_seconds=45))
     peer = None
     with episode_capture(run, episode_name, root, ctx["output"]) as cleanups:
@@ -52,15 +56,17 @@ def test_rf_component(request, joint_run, episode_name, record_property):
                       ctx["output"] / "operator-airtime-record.txt",
                       request.config.getoption("rf_ready_run"))
         # All guards, identity/storage disclosure and source verification precede this fixture.
+        usb_identity(ctx["fixture"]["node_uart"])
         verify_uart_identity(ctx["fixture"], root)
         dut = request.getfixturevalue("dut")
+        attach_usb_console(dut)
         node = Node(dut, ctx["fixture"], run["elf"], run["run"], episode_name, root)
         node.booted()
         peer = remote.peer(episode_name, root, run["source"])
         cleanups.append(("component peer", peer.close))
         peer.arm()
         node.phase(0)
-        if episode_name == "RF-010.wake":
+        if episode_name == "component.sleep_wake":
             node.phase(1)
         result = peer.finish()
         checked = verify_case(episode_name, node.events, result, run["run"], ctx["fixture"], run["elf"])

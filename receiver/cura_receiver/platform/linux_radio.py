@@ -18,6 +18,7 @@ _EVENT_BUFFER_SIZE = 64
 class LinuxRadioIo:
     def __init__(self, clock: MonotonicClock):
         self.clock = clock
+        self._event_observer = None
         self._owner = None
         self._request = None
         self._spi = None
@@ -30,6 +31,9 @@ class LinuxRadioIo:
         self._events_need_sync = False
         self._events_untrusted = False
         self._used = False
+
+    def set_event_observer(self, observer):
+        self._event_observer = observer
 
     def _claim(self):
         current = threading.get_ident()
@@ -157,6 +161,10 @@ class LinuxRadioIo:
         self._ready()
         return self._value(self._configuration.dio1_line, Stage.READ_IRQ)
 
+    def edge_pending(self):
+        self._ready()
+        return self._os_call(Stage.WAIT_IRQ, lambda: self._request.wait_edge_events(timeout=timedelta(0)))
+
     def set_reset(self, *, asserted):
         self._ready()
         if type(asserted) is not bool:
@@ -209,6 +217,8 @@ class LinuxRadioIo:
         event = events[0]
         sequence = getattr(event, "line_seqno", None)
         timestamp = getattr(event, "timestamp_ns", None)
+        if self._event_observer is not None:
+            self._event_observer(timestamp, sequence)
         previous_sequence = self._observed_edge.sequence if self._observed_edge else self._last_sequence
         previous_time = self._observed_edge.timestamp_ns if self._observed_edge else self._last_timestamp_ns
         if (

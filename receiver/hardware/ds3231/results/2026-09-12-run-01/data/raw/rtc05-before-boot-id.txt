@@ -1,3 +1,0 @@
-a50ab682-8719-4d79-a751-27c82f1ad1e8
-
-command_exit=0

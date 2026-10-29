@@ -6,12 +6,13 @@ import hashlib
 import sqlite3
 from threading import current_thread
 
+from .airtime_commissioning import AirtimeCommissioningState as Commissioning
 from .communicator_state_persistence import (
     CommunicatorStatePolicy,
     classify_communicator_state_rows,
     validate_communicator_state,
 )
-from .generated.receiver_entities_generated import communicator_state_v1_parameters
+from .generated.receiver_entities_generated import communicator_state_v2_parameters
 from .generated.receiver_enums_generated import (
     DATABASE_SCHEMA_VERSION,
     DiagnosticOperation as Op,
@@ -36,7 +37,10 @@ from .sqlite_database import (
     StorageUnavailable,
     SQLITE_BUSY_TIMEOUT_MS,
 )
-from .sqlite_repository import SqliteRepository
+from .sqlite_repository import (
+    SqliteRepository, INSTANCE_STOP_SQL, STATE_INSERT_SQL, STATE_DELETE_SQL,
+    COMMISSIONING_DELETE_SQL, STATE_ARCHIVE_SQL,
+)
 from .sqlite_transactions import SqliteTransactions
 
 
@@ -195,8 +199,7 @@ class PersistenceControlOperations:
                 return self._reject_stop(Violation.CLEAN_STOP_PRECONDITION)
             command.check(self.database.connection)
             self.database.connection.execute(
-                "UPDATE receiver_instances SET clean_stopped_at_monotonic_us = ?, "
-                "clean_stop_state_generation = ? WHERE receiver_instance_id = ?",
+                INSTANCE_STOP_SQL,
                 (*intended, marker.receiver_instance_id),
             )
             command.before_commit(self.database.connection)
@@ -234,25 +237,20 @@ class PersistenceControlOperations:
     def _validate_recovery(self, state, condition):
         if state.generation != 1:
             return False
-        charges = tuple(bucket.charged_airtime_us for bucket in state.buckets)
+        lifetimes = tuple(entry.remaining_us for entry in state.entries)
         if condition in (Condition.UNSUPPORTED_VERSION, Condition.POLICY_MISMATCH):
             # The continuous no-TX wait is a caller invariant, independent of UTC.
-            return not any(charges)
-        q, r = divmod(state.tx_airtime_budget_us, state.bucket_charge_limit_us)
-        newest = ((r,) if r else ()) + (state.bucket_charge_limit_us,) * q
-        return charges == (0,) * (len(charges) - len(newest)) + newest
+            return not any(lifetimes)
+        # Missing/corrupt history reserves the full window. The communicator's
+        # monotonic-to-physical conversion may conservatively extend this duration.
+        return all(d >= state.rolling_window_us + 250_000 for d in lifetimes)
 
-    def _archive(self, raw, command):
+    def _archive(self, command):
         observed_at = self.clock.now_monotonic_us()
-        for row in raw:
+        for row in self._repository().iter_communicator_state_archive_rows():
             command.check(self.database.connection)
             archived = self.database.connection.execute(
-                "INSERT INTO quarantined_communicator_states "
-                "(observed_singleton_id, observed_state_format_version, observed_generation, "
-                "observed_state_blob, observed_state_sha256, calculated_blob_sha256, "
-                "preserved_by_receiver_instance_id, preserved_at_monotonic_us, database_schema_version) "
-                "SELECT singleton_id, state_format_version, generation, state_blob, state_sha256, "
-                "?, ?, ?, ? FROM communicator_state WHERE rowid = ?",
+                STATE_ARCHIVE_SQL,
                 (
                     hashlib.sha256(row.values[3]).digest()
                     if type(row.values[3]) is bytes
@@ -275,10 +273,16 @@ class PersistenceControlOperations:
         commit_may_have_run = False
         try:
             self._ready(command)
+            commissioning = command.request.commissioning
+            if type(commissioning) is not bool:
+                return self._reject_state(Violation.INVALID_ARGUMENT)
             repository = self._repository()
             try:
                 blob = validate_communicator_state(state, repository, self.policy)
             except (TypeError, ValueError, OverflowError):
+                return self._reject_state(Violation.INVALID_STATE)
+            if commissioning and (state.generation != 1 or state.rtc_provenance is not None
+                                  or any(entry.remaining_us for entry in state.entries)):
                 return self._reject_state(Violation.INVALID_STATE)
             command.check(self.database.connection)
             self.transactions.begin(self.database.connection)
@@ -291,12 +295,17 @@ class PersistenceControlOperations:
                     self.transactions.rollback(self.database.connection)
                     command.check()
                     if blob == raw[0].values[3]:
+                        if commissioning and installed.commissioning is not Commissioning.ABSENT:
+                            return self._reject_state(Violation.INVALID_STATE)
                         return StateResult(
                             StateDisposition.ALREADY_COMMITTED,
                             StateFailure.NONE,
                             Op.NONE,
                         )
                     return self._reject_state(Violation.GENERATION_CONTENT_CONFLICT)
+                if commissioning:
+                    self.transactions.rollback(self.database.connection)
+                    return self._reject_state(Violation.INVALID_STATE)
                 if state.generation != generation + 1:
                     self.transactions.rollback(self.database.connection)
                     return self._reject_state(
@@ -305,8 +314,14 @@ class PersistenceControlOperations:
                         else Violation.GENERATION_GAP
                     )
             else:
-                if not self._validate_recovery(state, installed.state_condition):
+                valid = (
+                    installed.state_condition is Condition.MISSING
+                    and installed.commissioning is Commissioning.PENDING
+                ) if commissioning else self._validate_recovery(state, installed.state_condition)
+                if not valid:
                     self.transactions.rollback(self.database.connection)
+                    if commissioning:
+                        return self._reject_state(Violation.INVALID_STATE)
                     if installed.state_condition in (
                         Condition.UNSUPPORTED_VERSION,
                         Condition.POLICY_MISMATCH,
@@ -318,14 +333,16 @@ class PersistenceControlOperations:
                             state_condition=installed.state_condition,
                         )
                     return self._reject_state(Violation.INVALID_STATE)
-                self._archive(raw, command)
+                self._archive(command)
             command.check(self.database.connection)
-            self.database.connection.execute("DELETE FROM communicator_state")
+            self.database.connection.execute(STATE_DELETE_SQL)
             command.check(self.database.connection)
             self.database.connection.execute(
-                "INSERT INTO communicator_state VALUES (?, ?, ?, ?, ?)",
-                communicator_state_v1_parameters(state),
+                STATE_INSERT_SQL,
+                communicator_state_v2_parameters(state),
             )
+            command.check(self.database.connection)
+            self.database.connection.execute(COMMISSIONING_DELETE_SQL)
             command.before_commit(self.database.connection)
             commit_may_have_run = True
             self.transactions.commit(self.database.connection)

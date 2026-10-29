@@ -1,59 +1,65 @@
 # Joint RF verification
 
-This directory is for field-pilot-v2 scenarios involving the C6 node and Pi
-receiver. The [RF catalogue](test_suite.notes.md) defines stable scenarios and
-their component or full-system scope; the [deployment inventory](../../deployment_remaining.notes.md)
-maps coverage, dependencies and proposed pilot gates. Both .notes files are
-ignored local planning documents.
+This directory verifies radio interactions between the ESP32S3 node and
+Raspberry Pi receiver. It covers component-radio behavior, production-node ACK
+handling and installed receiver-service integration, independently of any
+particular deployment.
 
-Laptop pytest coordinates pytest-embedded through the C6's actual UART
-connector and SSH control of a separate Pi process. The C6 Unity app and
-ESP-IDF configuration belong in firmware/test_apps/radio/; the Pi component
-peer belongs in receiver/test_apps/radio_peer/ and reuses production radio
-components. The component apps and guarded runner now implement
-RF-001/003/006/008/009/010/012/013. Manual-fixture results are retained in [evidence/](evidence/README.md);
-the catalogue owns remaining obligations. Nominal cases are rerun when needed.
-A push or host-suite pass does not establish that physical RF tests ran.
+[spec.py](spec.py) is the catalogue of test names, purposes, fixture states and
+whole-test node/Pi airtime reservations. Use its descriptive names directly in
+commands. Preparation-only rejection vectors are marked separately; see
+[rejection packet preparation](#rejection-packet-preparation) for their build inputs.
+
+Laptop pytest controls the S3 through its native USB Serial/JTAG console and a separate Pi process through
+SSH. The S3 component app lives in `firmware/hardware/radio/tests/component/`; the Pi peer in
+`receiver/test_apps/radio_peer/` reuses production radio components.
 
 Receiver production code and hardware operations run on Pi. Ordinary Pi-local
-tests remain in receiver/tests/hardware/; protocol verification remains in
+tests remain in receiver/tests/target/; protocol verification remains in
 protocol/protocol-v2-lora/tests/. A component peer does not establish full
 receiver acceptance.
 
-The [retained destructive firmware results](../../firmware/tests/evidence/README.md)
-and [installed Pi pre-radio qualification](../../receiver/tests/evidence/2026-09-18-production-installation/README.md#final-qualification)
-record historical execution within their stated limits. Fast firmware checks
-and builds have no permanent archive; rerun them when their results are needed.
-These records do not close RF-019/RF-020, RF-027/RF-028 or later runtime time/storage
-gates. Destructive-test identity handover must precede authenticated TX.
+Destructive-test identity handover must precede authenticated TX. These procedures
+require fresh S3/B2B physical qualification; retained ESP32-C6 captures remain
+evidence for their original assembly and are not S3 pass results.
 
 Future runs require explicit cases, fixture readiness, isolated identities and
 storage, bounded local scheduling and airtime accounting at both transmitters.
 SSH coordinates readiness; independent endpoint clocks are not synchronized.
 Keep helpers local until a second real use justifies sharing.
 
-For the first test phase, the operator owns per-transmitter airtime accounting,
+For controlled RF tests, the operator owns per-transmitter airtime accounting,
 admission and pacing using retained manual records. The harness declares
 bounded episodes, waits for operator readiness and records attempts; automated
 airtime ledgers and cross-run scheduling are not prerequisites. An additional
 receiver is a cross-check, not a fresh-allowance test based on silence.
-DEC-002 accepts the current firmware wake-budget/sleep heuristic for this pilot
-and defers DEP-007 plus RF-029's firmware-ledger assertions. The receiver's
-durable airtime policy remains unchanged.
+These controlled tests do not qualify the deferred rolling airtime firmware-ledger
+assertions. The receiver's durable airtime policy remains unchanged.
+
+## Host checks
+
+Prepare the repository [Python test environment](../../receiver/README.md#python-setup),
+then run `make test-rf-host` from the repository root. These tests exercise the
+runners, verifiers and capture analysis without device access. Offline
+LittleFS decoding also needs a host C compiler and the fetched firmware managed
+component described under [captures](#captures).
+
+Source staging excludes Markdown under `tests/rf/`, including local planning
+notes. Executable inputs, fixtures and the selected contracts elsewhere in the
+repository remain in the source manifest.
 
 ## Run a selected component case
 
-The approved production qualification assembly is the nominal C6 carrier
+The supported assembly is the nominal XIAO/Wio B2B node
 without JP_REF_ENABLE/R5/R6/R7/R8 and the nominal Pi carrier without
 JP_RTC_SCL_FAULT/JP_RTC_SDA_FAULT. These removed fault/reference branches remain
 disconnected; all other nominal schematic requirements apply. See
-[firmware sequencing and sensor scope](../../firmware/TESTING.md#pilot-production-fixture-and-configuration-sequencing)
-and [installed Pi qualification](../../receiver/TESTING.md#pilot-production-fixture-and-installed-qualification).
-Final sensor selection and placement are not new pilot gates; technical
-configuration and selected nominal assertions remain required. Independent
+[firmware build and provisioning](../../firmware/deploy/README.md)
+and [installed Pi qualification](../../receiver/tests/README.md#hardware-and-destructive-runs).
+Use the declared sensor configuration and selected nominal assertions. Independent
 same-acquisition sensor-to-packet checks belong to the existing sensor-carrier
-integration tests; applicable passing evidence is a separate RF-020 prerequisite.
-RF-020 checks authenticated frames, received sensor flags/ranges, ACK handling,
+integration tests; contributors rerun them when relevant to the selected hardware/software changes.
+service.reading_delivery checks authenticated frames, received sensor flags/ranges, ACK handling,
 SQLite persistence and the ordinary next wake, without adding production
 acquisition instrumentation. Removed test circuitry cannot supply new physical-fault proof.
 
@@ -62,18 +68,24 @@ and disposable identity inputs before the final image. Built-image, installed
 service and RF verification follow their respective prerequisites. This is not
 production identity handover or authority to erase existing live identity state.
 
-Read [EPISODES.md](EPISODES.md) for the simple packet/charge table, local timing
-and bounded cleanup. The operator handles admission and pacing. Keep the manual
-sheet across cases, resets and reruns.
+Read [spec.py](spec.py) for each case's packet limits and per-transmitter charge.
+The operator handles admission and pacing across cases, resets and reruns.
 
 1. Build in the configured ESP-IDF environment with `make test-rf-build`, then
-   run `make test-rf-host`. The seal hashes actual compiler dependencies, ELF,
-   configuration and flash files. Rebuild/reseal when those inputs change.
+   run `make test-rf-host`. The seal hashes actual compiler dependencies and
+   configured CMake regeneration inputs (including component definitions and
+   included scripts), ELF, configuration and flash files. Changed or missing
+   inputs fail before device access. Rebuild/reseal when those inputs change;
+
 2. Copy [fixture.example.json](fixture.example.json) to a run input outside the
    source tree. Confirm each actual device/fixture field; the example's false
-   fields intentionally cannot authorize hardware. Use nominal C6, nominal Pi
+   fields intentionally cannot authorize hardware. Use nominal S3, nominal Pi
    and open RTC shunts. Select fault wiring only with power removed; DIO1 open
-   needs RN5, and complete module absence needs both specified BUSY/MISO ties.
+   needs the declared B2B interposer and MCU-side pull-down; complete module
+   absence needs the exposed MCU-side BUSY/MISO ties. Fixture schema 2 requires
+   `node_fixture`, `node_dut`, `node_uart` and `node_fault_access`; the latter is
+   `b2b_direct`, `b2b_interposer_dio1_open` or `module_removed` for the matching
+   state. A direct B2B stack cannot open only DIO1.
 3. Keep a simple [operator record](operator-record.example.txt) for both physical
    transmitters. Supply its path, the exact cases/parameters, a new run ID and a
    new temporary capture directory and a session file (see below). The runner prompts before each episode. Supplying
@@ -91,7 +103,7 @@ sheet across cases, resets and reruns.
 Example first exchange (replace paths/run ID with the actual operator inputs):
 
 ```sh
-make test-rf-component-nominal RF_ARGS='--fixture /tmp/rf-fixture.json --cases RF-001.exchange --run 0123456789abcdef0123456789abcdef --output /tmp/rf-run-01 --session /tmp/rf-session.json --manual-record /tmp/rf-airtime.txt --confirm-flash'
+make test-rf-component-nominal RF_ARGS='--fixture /tmp/rf-fixture.json --cases component.ack_exchange --run 0123456789abcdef0123456789abcdef --output /tmp/rf-run-01 --session /tmp/rf-session.json --manual-record /tmp/rf-airtime.txt --confirm-flash'
 ```
 
 `--confirm-flash` acknowledges replacement of the factory app. The runner checks
@@ -99,13 +111,13 @@ the actual flash ranges and binds the factory MAC with a no-reset probe before
 requesting the DUT; the identity probe leaves the MCU in its bootloader and cannot
 start an old autonomous image. The runner rejects erase-all, NVS erase,
 forced/encrypted/alternate-port flashing and stale builds.
-See the [app's storage disclosure](../../firmware/test_apps/radio/README.md).
+See the [app's storage disclosure](../../firmware/hardware/radio/tests/component/README.md).
 
-The remaining nominal parameters are `RF-003.silence`, `RF-006.invalid`,
-`RF-008.silence`, `RF-008.exchange`, `RF-009.untouched`,
-`RF-009.initialized`, `RF-010.wake`. Comma-separated selection is explicit;
-there is no automatic retry or implicit “all.” RF-001 must precede dependent
-cases, and RF-003 must precede RF-008. They may run earlier in the same
+The remaining nominal parameters are `component.ack_timeout`, `component.invalid_downlinks`,
+`component.repeat_timeout`, `component.repeat_exchange`, `component.cold_sleep`,
+`component.initialized_sleep`, `component.sleep_wake`, `component.header_error_rearm`. Comma-separated selection is explicit;
+there is no automatic retry or implicit “all.” ACK exchange must precede dependent
+cases, and ACK timeout must precede repeated exchanges. They may run earlier in the same
 selection or in an earlier successful nominal run in the current bench session.
 
 Pass `--session /absolute/path/to/session.json` on every invocation. Choose a
@@ -118,20 +130,65 @@ no historical archive import or per-file applicability review.
 
 The session expires 12 hours after its first run or at laptop reboot. A failed
 or interrupted run clears its prerequisites. A fault run consumes them even
-when it passes: restore nominal wiring and pass fresh RF-001 before another
+when it passes: restore nominal wiring and pass fresh ACK exchange before another
 fault. This receipt is local state for one sequential owner of the two devices;
 start a new session whenever devices/configuration change or the bench is left
 unattended. It is not historical qualification or an airtime ledger.
 
-For RF-012 or RF-013: first pass nominal RF-001, power down and prepare the
+For disconnected DIO1 or absent radio: first pass nominal ACK exchange, power down and prepare the
 selected fault fixture, then use the matching
 `test-rf-component-dio1_disconnected` / `test-rf-component-radio_absent` target
 with the same session path and a new output directory/run ID. Confirm the fault
 fixture explicitly. Afterward restore nominal wiring unpowered and run fresh
-RF-001. Do not change the physical transmitter labels between fixture states.
+ACK exchange. Do not change the physical transmitter labels between fixture states.
 Delete the session file and disposable captures when the bench session ends.
 
-## Production node ACK policy (RF-019)
+### Expected HeaderErr regression
+
+`component.header_error_rearm` requires nominal wiring at both ends; attached
+sensors are not sampled. The existing component image sends a complete known
+54-byte packet, interrupts a second transmission at 18 ms from S3 SetTx HAL
+entry, and sends the next complete known packet. Starts are at least 12.2 seconds
+apart. The whole episode reserves three full S3 charges (338766 us) and no Pi TX;
+the fresh ACK-exchange prerequisite has its own reservation. The existing
+pytest flow flashes the component image before execution.
+
+The Pi uses production Radio/Sx1262/LinuxRadioIo. Independent verification
+requires actual SPI `0x52 / 0x0020 / 0` evidence, explicit `HANDLED_NO_PACKET`,
+standby -> exact IRQ clearing -> fresh complete RX profile -> confirmed SetRx,
+one observed and one handled HeaderErr counter increment, no other counter
+change, no recovery and the next exact complete packet. A missing
+HeaderErr fails even when both complete packets arrive. Raw test capture does
+not add production telemetry. Host communicator tests establish suppression of
+packet occurrences, profiles and diagnostics; this component episode does not
+qualify the installed receiver service or identify the historical error cause.
+
+## Component timing and cleanup
+
+For the initial `component.ack_exchange` session, allow at most ten attempts per
+transmitter with at least 60 seconds between its starts. Admit every other
+selected case as a whole, using its declared reservation and the
+[RF operating envelope](OPERATING_ENVELOPE.md).
+
+The S3 uses a two-second TX deadline and a three-second RX window. The invalid
+downlink burst keeps the original RX deadline. Pi replies target RX_DONE +250 ms;
+the invalid burst also uses +750 and +1250 ms. A target missed by more than
+100 ms aborts rather than sending late. Repeated uplinks wait for RX completion
+and at least 500 ms after the preceding TX_DONE.
+
+The component lease is 45 seconds plus bounded cleanup. After the host parser
+retains complete end/sleep records, a nonce receipt permits two-second timer
+deep sleep; the next boot waits for a fresh command before transmitting. Receipt
+failure parks until reset rather than disconnecting USB with unreceived evidence. UART
+commands accept LF or CRLF, at most 159 bytes before LF, and two seconds from
+first byte to LF (inclusive); idle waiting has no deadline. A malformed or late
+command stays rejected until reset.
+
+On lost control, issue no new trigger. Confirm endpoint shutdown and restoration
+or remove all power/back-power paths. Account for possible transmissions even
+when no packet was received; silence does not refund airtime.
+
+## Production node ACK policy (node)
 
 `make test-rf-node-ack` selects exactly one authenticated case. It uses the
 production node and an isolated Pi controlled peer, not the receiver service.
@@ -142,34 +199,39 @@ RF PASS covers the physical frames and reconciled node records only.
 Build with `make test-rf-production-build` in the configured ESP-IDF environment.
 This seals actual firmware dependencies, public node ID, binary partition table,
 resolved carrier pins and LittleFS settings. Keep the disposable group/key
-inputs outside evidence/source archives. Prepare the node separately under the
+inputs outside the source tree and captures. Prepare the node separately under the
 [identity reset/format procedure](../../firmware/maintenance/erase_storage/README.md),
 retaining formatter success and flashing production without overwriting storage.
 The runner never flashes, formats, erases or generates credentials. It verifies
 the actual installed binaries and an empty, readable LittleFS baseline before
-starting production. On the reviewed UART reset circuit, opening the capture
-port holds reset (DTR released, RTS asserted); only the explicit start after
-peer readiness releases the node. Opening the port must not start an earlier
-unobserved wake. Each next case needs explicitly empty logs again; preserve
+starting production. Capture opens native USB with idle control lines, proves
+the ROM is already active without reset, and clears forced-download mode while
+the ROM owns the stream. Only the explicit reset after peer readiness starts
+the autonomous image. Reopening after sleep never resets or starts another
+wake. The [shared transport](../../firmware/tests/README.md#native-usb-across-reset-and-sleep)
+binds USB identity across disappearance; production has no host boot barrier.
+The RF-observation image does require the [terminal receipt](#accelerated-rf-execution).
+Each next case needs explicitly empty logs again; preserve
 NVS counters when using the formatter within the same identity lifetime.
 
-Cases are `RF-019.current.accepted`, `.retry_later`, `.unsupported`, `.malformed`,
-`.invalid_auth`, `.wrong_message`, `.domain_status`, and
-`RF-019.backlog.accepted`, `.retry_later`, `.unsupported`, `.malformed`.
+Cases are `node.current.accepted`, `.retry_later`, `.unsupported`, `.malformed`,
+`.invalid_auth`, `.wrong_message`, `.domain_status`, `.header_error_rearm`,
+`.header_error_retry`, and
+`node.backlog.accepted`, `.retry_later`, `.unsupported`, `.malformed`.
 Use the complete prefix for each choice. Setup obtains real pending readings
 through RETRY_LATER wakes; there are no fabricated backlog files. Current cases
 use one setup wake, the target wake, then a metrics-observation wake. Backlog
 cases use two setup wakes, the target wake and a metrics-observation wake.
-RF functional runs use the production code configured for10-second deep sleep
-and the agreed UART sleep-entry marker. Setup/target/metrics wake counts remain
-unchanged; received-current intervals allow9.5..45.5s including unchanged awake
-work. Reserve50s per wake plus10s. Production900-second cadence is bench/pilot
-coverage; the completed historical long RF case is not a routine prerequisite.
+RF functional runs use the production code configured for 10-second deep sleep
+and the agreed console sleep-entry marker. Setup/target/metrics wake counts remain
+unchanged; received-current intervals allow 9.5..45.5s including unchanged awake
+work. Reserve 50s per wake plus 10s. Production 900-second cadence requires
+separate validation; a historical long RF case is not a routine prerequisite.
 The final current receives RETRY_LATER to preserve remaining records.
 
 The episode declaration reports the full lease and per-transmitter maxima.
-Reserve up to 70 attempted C6 transmissions per wake (210/280 for the whole
-case, including failed reception). Pi ceilings are case-specific: 3..5 replies
+Reserve up to 70 attempted S3 transmissions per wake (210/280 for the whole
+case, including failed reception). Pi ceilings are case-specific: 3..6 replies
 for current cases and 5..6 for backlog cases. The operator owns preceding history,
 rolling admission and unexpected-reset/uncertain-interval accounting. A lost
 control path does not bound an autonomous node; the operator must retain the
@@ -181,11 +243,61 @@ ACK at +350 ms, with the existing 100 ms late-target abort. This is an RF reply
 schedule, not proof of the node's exact internal deadline. Other selected invalid
 ACKs are sent once, followed by silence for that message's remaining retries.
 
+### Node HeaderErr ACK regressions
+
+`node.current.header_error_rearm` sends two interrupted, otherwise valid
+23-byte inverted-IQ ACKs for the target reading, then completes the identical
+ACK in the same window. Expect one accepted transmission and one core diagnostic
+(error 15, operation RECEIVE, schema 1): attempt 1, header/payload counts 2/0,
+valid ACK true. `node.current.header_error_retry` sends only the two interrupted
+ACKs in window 1, then completes the same ACK for the retransmitted reading.
+Expect two attempts, first ACK_TIMEOUT then ACK_RECEIVED, and exactly one
+rejection diagnostic: attempt 1, counts 2/0, valid ACK false. The clean second
+window produces no rejection diagnostic. Existing setup, backlog drainage and
+next-wake metrics assertions still apply.
+
+Both require `CONFIG_NODE_DEEP_SLEEP_SECONDS=10`,
+`CONFIG_NODE_RF_SLEEP_OBSERVATION=y`, and `CONFIG_NODE_RF_PHY_OBSERVATION=y` in
+the sealed production build. The last option links passive test wrappers from
+`firmware/hardware/radio/tests/component/main/node_rf_observe.c`; the runner refuses an ordinary
+build for these cases. Firmware policy, cryptography and receive deadlines are
+unchanged. At sleep entry the UART includes raw GetIrqStatus data, associated
+DIO1 timestamps and SetRx/SetTx HAL brackets, followed by a count/overflow marker.
+Every wake's complete bounded trace is required. The independent verifier joins
+the two real HeaderErr observations (`0x0020`, or `0x0022` when RX_DONE is also
+set) to the saved first timestamp and requires
+rearming and the final valid RX_DONE. Saved target TX_DONE timestamps must match
+the raw IRQ trace, with each raw SetTx bound to its saved call within 1 ms.
+RX_DONE alone does not establish packet validity. Missing HeaderErr, any payload
+CRC or unrelated IRQ bit, wrong-window events, overflow or missing capture fails
+the case.
+
+The test peer prepares the complete TX profile before each target, then starts
+at Pi-local uplink RX_DONE +100/+180 ms. The same-window control ACK starts at
++260 ms. A retry's control ACK, setup, backlog and observation ACKs use +150 ms.
+SetTx more than 10 ms late fails rather than sending a catch-up packet. The
+proposed interruption is standby at 18 ms after SetTx issue, with a 20 ms upper
+bound; the verifier separately checks actual SPI timing (17.5..20 ms) and status
+confirmation. Valid ACK completion must fit the original minimum first window
+(400 ms), or the second window (300 ms). Pi and node clocks are never directly
+subtracted. Every interrupted transmission reserves a full 23-byte ACK charge:
+six Pi transmissions total, 407196 us, plus the existing 210-attempt S3 bound.
+
+Before first physical regression, qualify this reverse-direction cutoff with
+a declared finite campaign and independent raw observations. The earlier 18 ms
+S3-to-Pi result is not a Pi-to-S3 qualification. Require 30/30 actual HeaderErr
+observations at the chosen fixed cutoff with valid-ACK controls and controlled
+S3 restart coverage; retain no-event/payload-error outcomes as failures, not
+HeaderErr successes. Record the fixture, schedule, source/build identities and
+actual timing before accepting the cutoff. No failed RF episode is automatically
+retried. Host/build validation alone cannot establish RF PASS; execute and record
+those physical steps in the active workplan.
+
 Example (all paths, identity isolation and the entire declared allowance must
 be operator-confirmed; the nominal fixture file follows the component schema):
 
 ```sh
-make test-rf-node-ack RF_ARGS='--case RF-019.current.accepted --fixture /tmp/nominal.json --run RUN_ID --output /tmp/new-ack-run --manual-record /tmp/airtime.txt --formatter-result /tmp/formatter.txt --build /tmp/accelerated-build --local-group /private/receiver-group.json --remote-group /private/receiver-group.json --peer-python /path/to/pi/venv/bin/python --confirm-isolated'
+make test-rf-node-ack RF_ARGS='--case node.current.accepted --fixture /tmp/nominal.json --run RUN_ID --output /tmp/new-ack-run --manual-record /tmp/airtime.txt --formatter-result /tmp/formatter.txt --build /tmp/accelerated-build --local-group /private/receiver-group.json --remote-group /private/receiver-group.json --peer-python /path/to/pi/venv/bin/python --confirm-isolated'
 ```
 
 `RUN_ID` must be a new 32-character lowercase hexadecimal ID. SSH staging uses
@@ -195,28 +307,27 @@ dependencies and group. Local and remote group/public node IDs must match.
 The runner verifies UART MAC and installed images with no restart, reads the
 baseline storage, arms the peer, then explicitly starts the node. UART capture
 continues across scheduled wakes; loss of UART or peer control fails the run.
-After final observation it stops the node into download mode, captures storage
+After final observation it confirms the node's acknowledged park, stops it into download mode, captures storage
 and independently checks ACK SPI bytes/counts, message/sample identities,
 delivery outcomes, pending/quarantine transitions and next-wake metrics.
-Stop/capture failures retain restoration-required evidence. No automatic
-production restart follows. These paths are host-tested; physical RF-019 remains
-NOT RUN until an operator-admitted case succeeds.
+Stop/capture failures record required restoration. No automatic production
+restart follows.
 
-## Production receiver service (RF-020)
+## Production receiver service (service.reading_delivery)
 
 `make test-rf-service` runs the ordinary two-wake exchange against an already
 installed isolated production service. Preparation/installing packages and
 credentials remains separate. Supply the selected production build, the exact
 local copy of the installed disposable group (only the selected node active),
-the nominal fixture, and a prerequisite record identifying applicable deployment
-and sensor-carrier evidence. Independent same-acquisition conversion is that
-sensor prerequisite, not an RF-020 assertion.
+and the nominal fixture. Contributors choose the necessary installation and
+sensor-carrier checks before running. Same-acquisition conversion is covered by
+the sensor-carrier suite.
 
 The runner stages the current tree, compares the installed package with the
 current runtime bundle, checks the exact isolated production unit/environment,
 Pi identity, dependencies and actual service UID, and requires the service to
 start from stopped state with no prior readings in its isolated database.
-RF-020 preserves the existing receiver database and airtime history. Before
+service.reading_delivery preserves the existing receiver database and airtime history. Before
 start, capture only the selected node's existing message IDs and complete-row
 hashes in `reading-baseline.json`, under a read-only transaction as the service
 UID. Reuse the required final consistent SQLite capture to prove those rows are
@@ -225,7 +336,8 @@ No second full before-database copy or airtime reset is needed.
 
 Node binaries and an empty readable storage baseline are verified without
 flashing. Operator admission precedes service/node start. A new service-instance
-health row reporting RX_SINGLE, a fresh same-instance NETWORK_SYNCED observation,
+health row reporting consistent software RX_SINGLE and hardware RX within the
+five-minute pilot interval plus 15 seconds, a fresh same-instance CHRONY_SYNCED observation,
 and production-validated airtime history with conservative budget headroom are
 required by the shared `InstalledService.wait_for_prerequisites()` check. It waits
 at most 45 seconds by default, preserves reason-specific observations in
@@ -238,7 +350,7 @@ Fresh test databases may be explicitly prepared with zero historical airtime;
 production missing/corrupt-history recovery remains conservative. Preparation is
 separate from the RF runner and never automatically retried:
 
-1. Stop the isolated service and all other Pi radio transmitters; keep the C6
+1. Stop the isolated service and all other Pi radio transmitters; keep the S3
    stopped. Preserve the old database and its evidence. The operator must attest
    that **all** Pi transmitters stay silent, including component peers.
 2. Record the Pi board ID, current Linux boot ID, and the Pi's monotonic timestamp
@@ -264,10 +376,16 @@ separate from the RF runner and never automatically retried:
 
    The helper checks the stopped service, board/boot binding and elapsed interval.
    The operator attestation covers other transmitters; the helper cannot infer
-   their absence. It creates only a new candidate using the production schema,
-   zero-bucket constructor, encoder, validator and classifier. State generation
-   is one, historical charge zero, RTC provenance absent and recorded time quality
-   UNTRUSTED; neither current clock trust nor a spendable grant is fabricated.
+   their absence. It creates only a new candidate through the production
+   initializer with `known_empty_airtime=True`. The production classifier must
+   report missing communicator state and a valid pending commissioning token.
+   No runtime state, RTC provenance or clock trust is fabricated. The preparation
+   receipt uses schema 2, generation zero and no charged-airtime value because
+   startup has not yet installed an airtime snapshot. On first startup the
+   receiver atomically installs an empty generation-one ledger and consumes the
+   token before TX, including with untrusted UTC. Later startups use ordinary
+   recovery. The RF runner still requires its separate fresh network-time and
+   validated-history prerequisites; a prepared token alone does not pass them.
    Retain stdout as the preparation receipt. Existing destinations are rejected.
 4. While still stopped and exclusively controlled, explicitly install the
    candidate through the existing offline database replacement procedure, retaining
@@ -277,16 +395,16 @@ separate from the RF runner and never automatically retried:
    establish a new complete silence interval before another preparation.
 
 Reserve the complete episode: two accelerated wakes, a110-second limit after
-node start and conservative maxima of140 C6 uplinks and140 Pi ACKs. Use the
+node start and conservative maxima of140 S3 uplinks and140 Pi ACKs. Use the
 10-second configuration with sleep observations enabled. On the second complete
-sleep marker and two observed samples, stop the node in download mode and stop
+finalization marker, acknowledged park and two observed samples, stop the node in download mode and stop
 the service; reconcile consistent database/node captures afterward.
 The operator retains the all-power stop capability for lost control; service or
 node continuation is never inferred safe from an SSH disconnect. There is no
 automatic failed-case rerun, restart, enable, erase or credential replacement.
 
 ```sh
-make test-rf-service RF_ARGS='--host 10.86.160.140 --host-key-alias cura-receiver --unit cura-pilot-INSTANCE.service --package /opt/cura-pilot-INSTANCE --test-root /var/lib/cura-pilot-INSTANCE --fixture /tmp/nominal.json --run RUN_ID --output /tmp/new-service-run --manual-record /tmp/airtime.txt --prerequisites /tmp/prerequisites.txt --build /tmp/accelerated-build --local-group /private/receiver-group.json --confirm-isolated'
+make test-rf-service RF_ARGS='--host 10.86.160.140 --host-key-alias cura-receiver --unit cura-pilot-INSTANCE.service --package /opt/cura-pilot-INSTANCE --test-root /var/lib/cura-pilot-INSTANCE --fixture /tmp/nominal.json --run RUN_ID --output /tmp/new-service-run --manual-record /tmp/airtime.txt --build /tmp/accelerated-build --local-group /private/receiver-group.json --confirm-isolated'
 ```
 
 Replace the temporary Pi IP, instance/path placeholders and 32-character
@@ -298,17 +416,73 @@ The production service user and sandbox are unchanged.
 
 Capture includes UART, the service invocation journal, source/configuration
 hashes, a consistent SQLite backup, and the full read-only node image. Independent
-reconciliation checks authenticated 54/23-byte frames, canonical body/projections,
-nominal sensor flags and established ranges, classification/timestamp completeness,
+reconciliation checks decoded transport/reading authority, authenticated reception
+outcomes, nominal sensor flags and established ranges, classification/timestamp completeness,
 node delivery outcomes, counters, next-wake metrics and the clean service marker.
+Normal uplink and ACK bytes are not retained in SQL, so this service check cannot
+independently decrypt or compare those wire bytes. Raw conflict/rejection bytes
+remain in the reception exception table.
 Missing evidence, changed sources/configuration, service restart, extra wakes,
-or failed cleanup cannot pass. Host tests do not establish physical RF-020 PASS.
+or failed cleanup cannot pass. Host tests do not establish physical service.reading_delivery PASS.
 
-## Capture and retention
+## Rejection packet preparation
+
+The twelve rejection cases have packet builders and host checks, but no integrated
+hardware runner. Read [spec.py](spec.py) for names and airtime reservations and
+[rejection_vectors.py](rejection_vectors.py) for frames, expected processing
+results and ACKs. `make test-rf-host` checks the vectors against production ingress
+and compares the S3 packet builder with the independent Python implementation.
+
+From the repository root, prepare fresh disposable credentials and build the
+optional S3 image in the configured ESP-IDF environment:
+
+```sh
+.venv/bin/python tests/rf/prepare_rejection_inputs.py \
+  --output /tmp/new-rejection-inputs --run RUN_ID
+CCACHE_DISABLE=1 idf.py -C firmware/hardware/radio/tests/component -B /tmp/new-rejection-build \
+  -D REJECTION_INPUT_DIR=/tmp/new-rejection-inputs build
+```
+
+Replace `RUN_ID` with a fresh 32-character lowercase hexadecimal ID and choose
+new private directories. Preparation creates a disposable group and three
+distinct identities: active, unknown and revoked. It writes private before/after
+receiver allowlists and a C header. The public `rejection-manifest.json` records
+source/header hashes, packet/ACK bytes and descriptive command names. Keep the
+header, allowlists and enabled image outside the repository and shared captures.
+The build rejects changed bound sources or headers; prepare fresh inputs after
+such changes. These commands only prepare and build the image.
+
+UART commands require the prepared run ID, the manifest's `command_case`, phase
+zero and the current boot nonce. Each command transmits one fixed frame and
+observes its expected ACK or silence for 500 ms after TX_DONE. The receiver
+allowlist phase is separate from the UART phase: the final vector uses the
+post-revocation allowlist. Revocation must preserve the baseline's database rows
+so the test distinguishes a revoked node from one that was always unknown.
+
+Use the disposable test image and identities, never ordinary production-node
+credentials or counters. Reserve the full twelve-counter range for the matrix;
+its pure builder does not allocate or persist counters. Changed authenticated
+messages require distinct counters. The bad-tag vector corrupts an already
+encrypted frame rather than encrypting another plaintext with the same nonce.
+
+Installed-service orchestration, revocation/restart, physical ACK/silence checks
+and database/journal reconciliation remain unimplemented. A matching profile
+establishes the selected ACK, not its transmission or reception. Review the
+integrated session mechanism before device execution, using
+`service.reading_delivery` as the prerequisite exchange.
+
+## Captures
+
+For before/after receiver and node snapshots, use the
+[state analysis guide](STATE_ANALYSIS.md). It describes
+capture preparation, report commands and the limits of the observed counts.
 
 Production-node cases capture the full LittleFS storage image only after the
-complete observation sequence, as specified in
-[firmware testing](../../firmware/TESTING.md#offline-production-node-evidence-capture).
+complete observation sequence. Entering the ROM bootloader ends that sequence;
+leave the node stopped afterward. Bind the unchanged image to the actual DUT,
+binary partition table, build/configuration and run. Read only storage: do not
+erase, restore counters, boot maintenance firmware, or repair/mount the device
+filesystem. Capture/stop failures require investigation before another run.
 Decode an already captured image without device access:
 
 ```sh
@@ -335,38 +509,35 @@ historical-prerequisite review bundles. Check a completed component capture with
 ```
 
 The same independent assertions run during execution: packet bytes, outcomes,
-endpoint-local timestamps, direction-profile commands, cleanup and handle
+endpoint-local timestamps, effective direction profiles, cleanup and handle
 release. A failed Python/peer/cleanup result cannot be replaced by a passing
 Unity subcase. First failure stops the batch. Missing prerequisites, zero
 selection, unexpected events/reset and missing completion cannot pass.
 
-Promote only manual-setup, destructive or long tests into [evidence/](evidence/README.md),
-with a short result report and essential supporting observations. Keep nominal
-runs temporarily for diagnosis, then discard them. Retain a failure only for a
-useful problem/cause/fix lesson, not a routine wiring or dependency mistake.
-Keep one recoverable source identity per tested tree; retain a source snapshot
-only when Git cannot recover it. Clear the remaining temporary captures after
-curation. Keep operator airtime history independently for admission/pacing.
+The Pi profile verifier independently replays the last-written command
+parameters and register bytes before every `SetRx`/`SetTx`. Later conflicting
+writes, including writes that overlap only part of a register range, fail.
+Each operation requires a fresh complete profile; reset, sleep, packet-type
+changes and unmodeled commands invalidate known configuration. Required
+parameter/workaround dependencies still apply, while independent field order,
+split register writes and corrected final values are accepted. This verifies
+recorded configuration evidence; physical output power and RF timing retain
+their separate qualification requirements.
 
-The component app enters real short deep sleep after its bounded command and
-wakes into a non-transmitting wait. RF-010's second wake requires a fresh host
+Keep captures until the run has been checked and any failure diagnosed, then
+discard them. Put useful lessons in the owning code or documentation. Operator
+airtime history remains necessary for pacing across runs.
+
+The component app enters real short deep sleep after host receipt of its bounded command's evidence and
+wakes into a non-transmitting wait. `component.sleep_wake`'s second wake requires a fresh host
 command. After an interrupted run, issue no new trigger and confirm endpoint
 termination/safety or remove all power/back-power paths; retain possible charges.
 An ordinary production image has different autonomous-wake requirements.
 
-RF-019 and full-service acceptance remain pending their production dependencies.
-No complete-service, durable-airtime-enforcement, electrical timing, output-power
-measurement or production 900-second-sleep result follows from this component suite.
-
-RF-002/004/005/007/011/014..018/031 retain their catalogue requirements,
-dispositions, consequences and revisit conditions; RF-004 requires negative-IQ
-assertions at both endpoints. RF-019 awaits production-node provisioning and
-controlled authenticated outcomes. RF-020..030 depend on the real service and
-catalogue gates; RF-029 retains its firmware-ledger and Pi physical-uncertainty
-deferrals. RF-030 bench and field remain separate. RF-010 uses a short component
-sleep; production900-second cadence belongs to the bench/pilot. The
-[operating-envelope decision](OPERATING_ENVELOPE.md) does not turn deferred
-physical RF-018 measurements into PASS.
+Component tests cover their selected interactions. Output-power and waveform
+measurements, production 900-second cadence, endurance and rolling-window
+behavior require their own procedures and suitable equipment. See the current
+[operating envelope](OPERATING_ENVELOPE.md).
 
 Installed-service stop verification binds the observed systemd invocation and
 receiver instance before stopping. It requires inactive/dead state, no remaining
@@ -375,7 +546,7 @@ durable clean-stop marker with its matching communicator-state generation.
 The verified production unit runs through `systemd-inhibit`: its normal zero
 exit or SIGTERM termination are accepted only together with these checks.
 Wrapper status alone and clean markers from earlier instances never qualify.
-The same verifier owns rehearsal and RF-020 cleanup; failed or missing evidence
+The same verifier owns rehearsal and service.reading_delivery cleanup; failed or missing evidence
 retains the original failure and prevents further episodes.
 
 ## Accelerated RF execution
@@ -383,19 +554,35 @@ retains the original failure and prevents further episodes.
 RF functional tests use an isolated build/configuration with
 `CONFIG_NODE_DEEP_SLEEP_SECONDS=10` and `CONFIG_NODE_RF_SLEEP_OBSERVATION=y`.
 Seal it with `production_node.py --seal-build` and pass its directory to the
-runner. The default production build remains900s with observation disabled.
-No900-second RF prerequisite is required; cadence is validated in the bench/pilot.
+runner. The default production build remains 900s with observation disabled.
+No 900-second RF prerequisite is required; production cadence needs separate validation.
 
 Each completed cycle emits `RF_NODE_SLEEP duration_us=10000000` after finalization
-and successful timer setup. By operator agreement tests count this as sleep entry.
-The observer requires one marker per boot and real deep-sleep resets. RF-019
-sends `SLEEP <run> <case> <wake-count>` after the final marker; its peer requires
-the final expected current before accepting the notification. RF-020 directly
-checks the final marker alongside service progress. This replaces the35-second
-wait. Frames, attempts, stored outcomes, bindings and cleanup remain required.
-The bound is50s per wake plus10s, with9.5..45.5s received-current intervals for
+and successful timer setup. This names the configured terminal boundary, not
+proof of physical sleep. A shared nonce-bound receipt follows the marker and
+all PHY records. The capture owner flushes those bytes before acknowledging an
+intermediate wake's sleep; subsequent boots must report real deep-sleep resets.
+The final planned wake instead acknowledges STOP and reports `RF_PARKED`, keeping
+USB available with no further radio work. There is no extra wake for shutdown.
+
+One `ProductionSession` owns capture, receipt, ROM stop and snapshots for both
+production runners. It retains USB identity across tty renumbering and rechecks
+it before every ROM command. Stop/capture failures cannot pass and retain the
+operator restoration requirement. The final park alone is not ROM-stop proof.
+After that park, node sends `SLEEP <run> <case> <wake-count>` to its peer; the peer
+still requires the final expected current. service.reading_delivery also requires
+its ordinary service progress. Frames, attempts, stored outcomes, bindings and cleanup remain required.
+
+The test image waits at most 30 seconds for a current receipt. Missing receipt
+or detected output failure leaves it parked without sleeping, restarting or
+opening another TX budget. Only a fresh repeated greeting permits a paced retry
+of the same receipt; action commands are never replayed. Rebuild and reseal both
+RF images after protocol/source changes. Ordinary production remains autonomous.
+Host waits occur after retained awake metrics are fixed, so those metrics omit
+this test instrumentation and cannot establish wall-clock awake time or cadence.
+The bound is 50s per wake plus 10s, with 9.5..45.5s received-current intervals for
 unchanged awake/retry work. Missing/extra evidence fails; no automatic retry.
 
 Per-case packet ceilings remain unchanged; shorter tests do not grant additional
-airtime. Retain operator admission and preceding activity. Bench/pilot endurance,
+airtime. Retain operator admission and preceding activity. Endurance,
 900-second cadence and real rolling-window observation remain separate long tasks.

@@ -5,7 +5,7 @@ directory staged by the laptop. It verifies the Pi serial, nominal fixture and
 sources before GPIO/SPI access. GPIO line requests and a process lock enforce
 exclusive ownership. The production service must be stopped.
 
-Normal cases compose `Radio -> Sx1262 -> LinuxRadioIo`. RF-006 is explicitly
+Normal cases compose `Radio -> Sx1262 -> LinuxRadioIo`. `component.invalid_downlinks` is explicitly
 labelled `Sx1262/LinuxRadioIo`: its finite burst does not claim the Radio owner's
 one-response-per-occurrence behavior. The backend retains its fixed production
 PHY and watchdog. This peer has no protocol acceptance, SQLite or durable
@@ -15,10 +15,32 @@ The process reports ready, waits for a matching GO command, and owns a finite
 45-second episode. UART/SSH never schedule a packet response: Pi-local RX_DONE
 and its own monotonic clock establish the response targets. The last possible
 SetTx is bounded before the lease end, including watchdog margin. EOF, STOP or
-signals inhibit later operations. Completion retains actual SPI/IRQ samples,
+signals inhibit later operations. The physical SetTx admission guard checks
+that session's cancellation intent before counting/submitting a transmission,
+including cancellation during raw burst buffer/profile preparation. Standby,
+IRQ cleanup and handle release remain permitted after cancellation.
+Completion retains actual SPI/IRQ samples,
 TX certainty, profiles and shutdown/handle-release results. A lost connection
 or failed cleanup requires explicit restoration; killing SSH proves no safe
 radio state by itself.
 
 Use [tests/rf/README.md](../../../tests/rf/README.md) and the fixture-specific
 launcher; ordinary receiver hardware targets remain Pi-local.
+
+`component.header_error_rearm` is receive-only and retains one explicit
+`HANDLED_NO_PACKET` result between two complete known packets. The peer requires
+unchanged radio counters, no recovery episodes and ordinary confirmed rearming;
+raw SPI evidence is independently checked by tests/rf/verify.py. The receive
+disposition remains internal and does not add a production profile or diagnostic.
+
+## Node HeaderErr ACK stimuli
+
+The production-node cases `node.current.header_error_rearm` and
+`node.current.header_error_retry` use the isolated lower-layer peer with
+`header_ack.py`. Both send two authenticated ACK frames interrupted during PHY
+reception; the first case then completes the same ACK in the first window,
+while the second completes it only after the node retransmits. The ordinary
+receiver service is not modified. The [RF procedure](../../../tests/rf/README.md#node-headererr-ack-regressions)
+owns timing bounds, reservations, build requirements and physical qualification.
+Pi SPI capture and passive node IRQ capture must independently corroborate the
+saved diagnostic; a timeout or payload CRC is not a HeaderErr test pass.

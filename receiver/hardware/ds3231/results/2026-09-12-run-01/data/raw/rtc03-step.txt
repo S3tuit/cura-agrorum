@@ -1,3 +1,0 @@
-200 OK
-
-command_exit=0

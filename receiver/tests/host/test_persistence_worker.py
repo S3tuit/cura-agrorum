@@ -1,3 +1,4 @@
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 import sqlite3
 from threading import Event, current_thread
 
@@ -12,7 +13,7 @@ from cura_receiver.persistence_control_values import (
     CommunicatorStateCondition,
 )
 from cura_receiver.generated.receiver_entities_generated import (
-    communicator_state_v1_parameters,
+    communicator_state_v2_parameters,
 )
 from cura_receiver.receiver_startup import ReceiverInstanceStart
 from tests.support.builders.persistence import INSTANCE
@@ -37,6 +38,52 @@ def stop_worker(worker):
     worker.request_stop(deadline_monotonic_us=0)
     worker.join(5)
     assert not worker.is_alive()
+
+
+# Real worker composition binds the selected card and samples both counters on its owner thread.
+def test_worker_microsd_selection_and_counter_ownership(worker_files, monkeypatch):
+    from pathlib import Path
+    from cura_receiver.persist_queue_entities import RECEIVER_HEALTH_REQUEST_V1_SPEC
+    from cura_receiver.sqlite_transactions import SqliteTransactions
+    from tests.support.builders.persistence import _health_request
+
+    committed = Event()
+    reads = []
+    real_read = Path.read_text
+    files = {
+        "/sys/block/mmcblk7/device/type": "SD\n",
+        "/sys/block/mmcblk7/stat": "1 2 3 4 5 6 7 8 9 10 11\n",
+        "/proc/self/io": "write_bytes: 73\n",
+    }
+
+    def read(path, *args, **kwargs):
+        if str(path) in files:
+            reads.append((str(path), current_thread()))
+            return files[str(path)]
+        return real_read(path, *args, **kwargs)
+
+    class ObserveCommit(SqliteTransactions):
+        def commit(self, connection):
+            super().commit(connection)
+            if connection.execute("SELECT count(*) FROM receiver_health").fetchone()[0]:
+                committed.set()
+
+    monkeypatch.setattr(Path, "read_text", read)
+    worker = create_worker(worker_files, microsd_device="mmcblk7",
+        wake_threshold_entities=1, transactions=ObserveCommit())
+    worker.start()
+    try:
+        assert worker.wait_started(deadline_monotonic_us=5_000_100).state_load is not None
+        reservation = worker.queue.try_reserve_one(RECEIVER_HEALTH_REQUEST_V1_SPEC)
+        reservation.reservation.publish(_health_request())
+        assert committed.wait(5)
+        with sqlite3.connect(worker_files[0]) as observer:
+            assert observer.execute(
+                "SELECT storage_device_write_bytes, receiver_process_write_bytes FROM receiver_health"
+            ).fetchone() == (3584, 73)
+        assert reads == [(path, worker) for path in files]
+    finally:
+        stop_worker(worker)
 
 
 # Configuration I/O, database opening, state loading and admission occur on the persistence owner.
@@ -128,7 +175,7 @@ def test_worker_recovers_invalid_text_state(worker_files, column):
     with sqlite3.connect(database) as db:
         db.execute(
             "INSERT INTO communicator_state VALUES (?, ?, ?, ?, ?)",
-            communicator_state_v1_parameters(state()),
+            communicator_state_v2_parameters(state()),
         )
         db.execute(f"UPDATE communicator_state SET {column} = CAST(X'80' AS TEXT)")
     worker = CheckedPersistenceWorker(
@@ -207,8 +254,8 @@ def test_worker_rejects_missing_control_schema(worker_files, table):
 def test_flush_deadline_and_unrelated_wake(worker_files):
     from queue import Queue
     from cura_receiver.persist_queue_entities import (
-        PROFILE_ONLY_V1_SPEC,
-        ProfileOnlyUnitV1,
+        RECEPTION_ONLY_V2_SPEC,
+        ReceptionOnlyUnitV2,
     )
     from tests.support.builders.persistence import _profile
 
@@ -232,9 +279,9 @@ def test_flush_deadline_and_unrelated_wake(worker_files):
     worker.start()
     try:
         assert worker.wait_started(deadline_monotonic_us=5_000_100)
-        assert waits.get(timeout=5) is None
-        worker.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-            ProfileOnlyUnitV1(_profile())
+        assert waits.get(timeout=5) == 5.0
+        worker.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+            ReceptionOnlyUnitV2(_profile(), received_frame=REVIEWED_RECEPTION_FRAME)
         )
         assert waits.get(timeout=5) == 5.0
         clock.advance_elapsed_us(4_999_999)
@@ -247,7 +294,7 @@ def test_flush_deadline_and_unrelated_wake(worker_files):
         assert worker.queue.snapshot().published_entities == 0
         with sqlite3.connect(database) as observer:
             assert observer.execute(
-                "SELECT count(*) FROM message_profiles"
+                "SELECT count(*) FROM packet_receptions"
             ).fetchone() == (1,)
     finally:
         stop_worker(worker)
@@ -258,8 +305,8 @@ def test_worker_reuses_retry_deadline(worker_files):
     from queue import Queue
     from cura_receiver.sqlite_transactions import SqliteTransactions
     from cura_receiver.persist_queue_entities import (
-        PROFILE_ONLY_V1_SPEC,
-        ProfileOnlyUnitV1,
+        RECEPTION_ONLY_V2_SPEC,
+        ReceptionOnlyUnitV2,
     )
     from tests.support.builders.persistence import _profile
 
@@ -292,9 +339,9 @@ def test_worker_reuses_retry_deadline(worker_files):
     worker.start()
     try:
         assert worker.wait_started(deadline_monotonic_us=5_000_100)
-        assert waits.get(timeout=5) is None
-        worker.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-            ProfileOnlyUnitV1(_profile())
+        assert waits.get(timeout=5) == 5.0
+        worker.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+            ReceptionOnlyUnitV2(_profile(), received_frame=REVIEWED_RECEPTION_FRAME)
         )
         first_wait = waits.get(timeout=5)
         assert first_wait > 0.25
@@ -304,7 +351,7 @@ def test_worker_reuses_retry_deadline(worker_files):
         assert attempts == [100]
         clock.advance_elapsed_us(deadline - clock.now_monotonic_us())
         worker._wake.set()
-        assert waits.get(timeout=5) is None
+        assert waits.get(timeout=5) == (5_000_100 - deadline) / 1_000_000
         assert attempts == [100, deadline]
         assert worker.queue.snapshot().admission_snapshot.state is State.AVAILABLE
         assert worker.queue.snapshot().published_entities == 0
@@ -317,8 +364,8 @@ def test_count_threshold_and_batch_limit(worker_files):
     from queue import Queue
     from cura_receiver.sqlite_transactions import SqliteTransactions
     from cura_receiver.persist_queue_entities import (
-        PROFILE_ONLY_V1_SPEC,
-        ProfileOnlyUnitV1,
+        RECEPTION_ONLY_V2_SPEC,
+        ReceptionOnlyUnitV2,
     )
     from tests.support.builders.persistence import _profile
 
@@ -355,18 +402,19 @@ def test_count_threshold_and_batch_limit(worker_files):
     worker.start()
     try:
         assert worker.wait_started(deadline_monotonic_us=5_000_100)
-        assert waits.get(timeout=5) is None
+        assert waits.get(timeout=5) == 5.0
         for sequence in (1, 2):
-            worker.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-                ProfileOnlyUnitV1(_profile(sequence=sequence))
+            worker.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+                ReceptionOnlyUnitV2(_profile(sequence=sequence), received_frame=REVIEWED_RECEPTION_FRAME)
             )
         assert arrived.wait(5)
-        worker.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-            ProfileOnlyUnitV1(_profile(sequence=3))
+        worker.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+            ReceptionOnlyUnitV2(_profile(sequence=3), received_frame=REVIEWED_RECEPTION_FRAME)
         )
         release.set()
-        while waits.get(timeout=5) is not None:
-            pass  # Drain any earlier named undersized-wait observation.
+        waits.get(timeout=5)
+        while worker.queue.snapshot().published_entities:
+            waits.get(timeout=5)  # Drain any earlier undersized-wait observation.
         assert batch_sizes == [1, 1, 1]
         assert worker.queue.snapshot().published_entities == 0
     finally:
@@ -404,11 +452,14 @@ def test_worker_empty_checkpoint_recovery_through_cap(worker_files):
         boot_id_path=boot,
         clock=clock,
         transactions=Checkpoints(),
-        checkpoint_threshold_bytes=1,
+        checkpoint_interval_us=1,
     )
     worker.start()
     try:
         assert worker.wait_started(deadline_monotonic_us=5_000_100)
+        assert waits.get(timeout=5) == 0.000001
+        clock.advance_elapsed_us(1)
+        worker._wake.set()
         for index in range(8):
             expected = minimum_wait_monotonic_us(min(250_000 * 2**index, 5_000_000))
             assert waits.get(timeout=5) == expected / 1_000_000
@@ -421,14 +472,14 @@ def test_worker_empty_checkpoint_recovery_through_cap(worker_files):
             assert len(attempts) == index + 1
             clock.advance_elapsed_us(expected)
             worker._wake.set()
-        assert waits.get(timeout=5) == 5.0
+        assert waits.get(timeout=5) is None
         assert len(attempts) == 9
         assert not worker._ordinary.checkpoint_pending
         assert worker.queue.snapshot().admission_snapshot.state is State.AVAILABLE
         with sqlite3.connect(database) as observer:
             for table in (
                 "clock_observations",
-                "message_profiles",
+                "packet_receptions",
                 "receiver_health",
                 "diagnostics",
                 "quarantined_entities",

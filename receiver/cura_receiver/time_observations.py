@@ -18,7 +18,12 @@ from .elapsed_duration import (
     maximum_physical_half_bracket_us,
     rate_growth_us,
 )
-from .generated.receiver_entities_generated import RtcProvenanceV1
+from .generated.receiver_entities_generated import (
+    ClockObservationV1,
+    NetworkClockEvidenceV1,
+    RtcClockEvidenceV2,
+    RtcProvenanceV1,
+)
 from .generated.receiver_enums_generated import RtcHealth, SystemTimeQuality
 from .time_policy import (
     ClockState,
@@ -29,14 +34,40 @@ from .time_policy import (
 
 
 @dataclass(frozen=True, slots=True)
+class SampleEvidence:
+    """Inputs captured with one accepted sample, published with its observation.
+
+    The bracket is the kernel or RTC read itself; exactly the source group that
+    supplied the bound is present. Nothing here is recomputed at publication.
+    """
+
+    started_at_monotonic_us: int
+    finished_at_monotonic_us: int
+    network: NetworkClockEvidenceV1 | None = None
+    rtc: RtcClockEvidenceV2 | None = None
+
+    def __post_init__(self) -> None:
+        checked_monotonic_elapsed(
+            self.started_at_monotonic_us, self.finished_at_monotonic_us
+        )
+        if (self.network is None) == (self.rtc is None):
+            raise ValueError("sample evidence requires exactly one source group")
+
+
+@dataclass(frozen=True, slots=True)
 class TrustedTimeSample:
-    """Bounded candidate data, before a caller's atomic transition/publication."""
+    """Bounded candidate data, before a caller's atomic transition/publication.
+
+    ``evidence`` is always present on samples produced from a device read; only
+    correlation-only callers (airtime fixtures) construct samples without it.
+    """
 
     monotonic_us: int
     utc_us: int
     error_bound_us: int
     quality: SystemTimeQuality
     generation: int
+    evidence: SampleEvidence | None = None
 
     def __post_init__(self) -> None:
         checked_duration_us(self.monotonic_us)
@@ -48,10 +79,14 @@ class TrustedTimeSample:
                 "sample generation exceeds the persisted observation range"
             )
         if self.quality not in (
-            SystemTimeQuality.NETWORK_SYNCED,
+            SystemTimeQuality.CHRONY_SYNCED,
             SystemTimeQuality.RTC_HOLDOVER,
         ):
             raise ValueError("a trusted sample must have a trusted quality")
+        if self.evidence is not None and (self.evidence.network is None) != (
+            self.quality is SystemTimeQuality.RTC_HOLDOVER
+        ):
+            raise ValueError("sample evidence must come from the sample's source")
 
 
 def _bracket(start_us: int, finish_us: int, policy: TimePolicy) -> tuple[int, int]:
@@ -101,7 +136,7 @@ def network_observation(
             policy=policy,
         )
         if (
-            decision.candidate_quality is not SystemTimeQuality.NETWORK_SYNCED
+            decision.candidate_quality is not SystemTimeQuality.CHRONY_SYNCED
             or decision.error_bound_us is None
         ):
             return None
@@ -114,8 +149,13 @@ def network_observation(
             midpoint,
             sampled_utc_us,
             estimate.error_at(midpoint, policy),
-            SystemTimeQuality.NETWORK_SYNCED,
+            SystemTimeQuality.CHRONY_SYNCED,
             before.generation,
+            SampleEvidence(
+                operation_started_at_monotonic_us,
+                operation_finished_at_monotonic_us,
+                network=estimate.facts,
+            ),
         )
         schedule = observation_schedule(
             sample,
@@ -149,7 +189,12 @@ def rtc_observation(
     policy: TimePolicy,
     report_calculation_failure: bool = False,
 ) -> TrustedTimeSample | None:
-    """Provenance must already be durably loaded/acknowledged and its instance resolved."""
+    """Provenance must already be durably loaded/acknowledged and its instance resolved.
+
+    Evidence retains the original verification baseline across reboots. RTC drift
+    growth needs no separate stored field: replay derives it exactly from the
+    sample UTC, saved read-back UTC and the baseline's saved drift bound.
+    """
     try:
         if before.generation != after.generation or rtc_health is not RtcHealth.PRESENT:
             return None
@@ -199,8 +244,24 @@ def rtc_observation(
         )
         if error >= policy.receiver_utc_error_budget_us:
             return None
+        rtc = RtcClockEvidenceV2(
+            provenance.verified_by_receiver_instance_id,
+            provenance.network_utc_at_verification_us,
+            provenance.rtc_readback_utc_us,
+            provenance.verification_uncertainty_us,
+            provenance.drift_bound_ppm,
+        )
         sample = TrustedTimeSample(
-            midpoint, utc, error, SystemTimeQuality.RTC_HOLDOVER, before.generation
+            midpoint,
+            utc,
+            error,
+            SystemTimeQuality.RTC_HOLDOVER,
+            before.generation,
+            SampleEvidence(
+                operation_started_at_monotonic_us,
+                operation_finished_at_monotonic_us,
+                rtc=rtc,
+            ),
         )
         schedule = observation_schedule(sample, policy)
         if (
@@ -216,6 +277,65 @@ def rtc_observation(
         return None
     except (TypeError, ValueError):
         return None
+
+
+def trusted_clock_observation(
+    receiver_instance_id: bytes,
+    sequence: int,
+    sample: TrustedTimeSample,
+    schedule: ObservationSchedule,
+    *,
+    generation: int,
+    rtc_health: RtcHealth,
+) -> ClockObservationV1:
+    """Publish a sample with the evidence and horizon computed for it."""
+    evidence = sample.evidence
+    if evidence is None:
+        raise ValueError("a published trusted sample requires its evidence")
+    return ClockObservationV1(
+        receiver_instance_id,
+        sequence,
+        generation,
+        sample.monotonic_us,
+        sample.utc_us,
+        False,
+        sample.quality,
+        rtc_health,
+        sample.error_bound_us,
+        evidence.started_at_monotonic_us,
+        evidence.finished_at_monotonic_us,
+        schedule.trust_expires_at_monotonic_us,
+        evidence.network,
+        evidence.rtc,
+    )
+
+
+def untrusted_clock_observation(
+    receiver_instance_id: bytes,
+    sequence: int,
+    *,
+    generation: int,
+    at_monotonic_us: int,
+    step_boundary: bool,
+    rtc_health: RtcHealth,
+) -> ClockObservationV1:
+    """A boundary has no sample: no UTC, bound, bracket, horizon or evidence."""
+    return ClockObservationV1(
+        receiver_instance_id,
+        sequence,
+        generation,
+        at_monotonic_us,
+        None,
+        step_boundary,
+        SystemTimeQuality.UNTRUSTED,
+        rtc_health,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
 
 
 def advanced_error_us(
@@ -261,14 +381,14 @@ def observation_schedule(
     expiry = _trust_expiry_us(sample, policy)
     cap = (
         policy.clock_observation_period_cap_us
-        if sample.quality is SystemTimeQuality.NETWORK_SYNCED
+        if sample.quality is SystemTimeQuality.CHRONY_SYNCED
         else policy.rtc_holdover_observation_period_cap_us
     )
     observation = checked_monotonic_deadline(sample.monotonic_us, cap)
     if expiry is not None:
         observation = min(observation, expiry)
     poll = None
-    if sample.quality is SystemTimeQuality.NETWORK_SYNCED:
+    if sample.quality is SystemTimeQuality.CHRONY_SYNCED:
         if tracking_started_at_monotonic_us is None:
             raise ValueError("network scheduling requires the supporting query start")
         checked_monotonic_elapsed(tracking_started_at_monotonic_us, sample.monotonic_us)
@@ -292,8 +412,8 @@ def rtc_refresh_source_error_us(
     try:
         if (
             sample.generation != current.generation
-            or current.quality is not SystemTimeQuality.NETWORK_SYNCED
-            or sample.quality is not SystemTimeQuality.NETWORK_SYNCED
+            or current.quality is not SystemTimeQuality.CHRONY_SYNCED
+            or sample.quality is not SystemTimeQuality.CHRONY_SYNCED
         ):
             return None
         checked_monotonic_elapsed(sample.monotonic_us, now_monotonic_us)
@@ -323,7 +443,7 @@ def rtc_refresh_due_us(
 ) -> int | None:
     """Initial stable qualifying samples are due now; subsequent caps use the last refresh."""
     if (
-        sample.quality is not SystemTimeQuality.NETWORK_SYNCED
+        sample.quality is not SystemTimeQuality.CHRONY_SYNCED
         or sample.error_bound_us > policy.network_rtc_write_error_threshold_us
         or sample.error_bound_us >= policy.receiver_utc_error_budget_us
     ):

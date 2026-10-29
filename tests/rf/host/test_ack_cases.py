@@ -45,6 +45,14 @@ def test_real_authenticated_case_plans(case):
         expected = {"accepted": 0, "retry_later": 1, "unsupported": 2, "malformed": 3}[action]
         ack = open_frame(KEY, replies[0])
         assert (ack.header.domain, ack.plaintext_body) == (3 + expected, bytes([expected]))
+    elif action.startswith("header_error_"):
+        assert len(replies) == (3 if action == "header_error_rearm" else 2)
+        assert len(set(replies)) == 1
+        assert open_frame(KEY, replies[0]).plaintext_body == b"\0"
+        if action == "header_error_retry":
+            assert policy.receive(target, at + 500_000)[0] == [replies[0]]
+        with pytest.raises(ValueError, match="retry after terminal ACK"):
+            policy.receive(target, at + 1_000_000)
     elif action == "invalid_auth":
         from cura_receiver.protocol_v2_lora_crypto import AuthenticationError
         with pytest.raises(AuthenticationError):
@@ -64,7 +72,7 @@ def test_real_authenticated_case_plans(case):
 
 
 def test_changed_retry_cannot_reuse_message_id():
-    policy = AckCase("RF-019.current.accepted", NODE, KEY)
+    policy = AckCase("node.current.accepted", NODE, KEY)
     policy.receive(frame(100, body(40, first=True)), 1_000_000)
     with pytest.raises(ValueError, match="changed frame"):
         policy.receive(frame(100, body(41, first=True)), 1_100_000)
@@ -76,14 +84,14 @@ def test_changed_retry_cannot_reuse_message_id():
     (902_000_000, body(41, first=True)),  # RTC/deep-sleep continuity missing.
 ])
 def test_invalid_wake_sequence_fails(when, reading):
-    policy = AckCase("RF-019.current.accepted", NODE, KEY)
+    policy = AckCase("node.current.accepted", NODE, KEY)
     seeds(policy)
     with pytest.raises(ValueError):
         policy.receive(frame(101, reading), when)
 
 
 def test_current_rejection_never_allows_backlog():
-    policy = AckCase("RF-019.current.unsupported", NODE, KEY)
+    policy = AckCase("node.current.unsupported", NODE, KEY)
     seeds(policy)
     policy.receive(frame(101, body(41)), 902_000_000)
     with pytest.raises(ValueError, match="backlog after"):
@@ -92,9 +100,9 @@ def test_current_rejection_never_allows_backlog():
 
 def test_case_selection_and_bounds_are_explicit():
     with pytest.raises(ValueError, match="unknown"):
-        episode("RF-019")
-    assert episode("RF-019.current.accepted")["wakes"] == 3
-    assert episode("RF-019.backlog.accepted")["wakes"] == 4
+        episode("node")
+    assert episode("node.current.accepted")["wakes"] == 3
+    assert episode("node.backlog.accepted")["wakes"] == 4
 
 
 @pytest.mark.parametrize("elapsed,valid", [
@@ -102,7 +110,7 @@ def test_case_selection_and_bounds_are_explicit():
     (945_000_000, True), (945_000_001, False),
 ])
 def test_operator_wake_tolerance(elapsed, valid):
-    policy = AckCase("RF-019.current.accepted", NODE, KEY)
+    policy = AckCase("node.current.accepted", NODE, KEY)
     seeds(policy)
     if valid:
         policy.receive(frame(101, body(41)), 1_000_000 + elapsed)

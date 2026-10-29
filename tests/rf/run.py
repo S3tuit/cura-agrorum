@@ -28,14 +28,14 @@ def main():
     parser.add_argument("--collect-only", action="store_true")
     args = parser.parse_args()
     fixture = validate_fixture(json.loads(args.fixture.read_text()))
-    if fixture["c6_fixture"] != args.fixture_state:
+    if fixture["node_fixture"] != args.fixture_state:
         parser.error("entry point and fixture do not match")
     select_cases(args.cases, args.fixture_state)
-    mac = ":".join(fixture["c6_dut"][i:i+2] for i in range(0, 12, 2))
+    mac = ":".join(fixture["node_dut"][i:i+2] for i in range(0, 12, 2))
     argv = [sys.executable, "-m", "pytest", "-c", str(REPO / "tests/rf/pytest.ini"),
             "-p", "pytest_embedded.plugin", str(REPO / "tests/rf/pytest_radio.py"), "-s", "-q",
-            "--embedded-services=esp,idf", "--target=esp32c6", "--app-path=" + str(APP),
-            "--build-dir=" + str(args.build.resolve()), "--port=" + fixture["c6_uart"], "--port-mac=" + mac,
+            "--embedded-services=esp,idf", "--target=esp32s3", "--app-path=" + str(APP),
+            "--build-dir=" + str(args.build.resolve()), "--port=" + fixture["node_uart"], "--port-mac=" + mac,
             "--rf-cases=" + args.cases, "--rf-fixture=" + str(args.fixture.resolve()), "--rf-run=" + args.run,
             "--rf-output=" + str(args.output.resolve()), "--rf-manual-record=" + str(args.manual_record.resolve()),
             "--rf-host=" + args.host, "--root-logdir=" + str(args.output.resolve() / "uart"),

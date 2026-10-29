@@ -178,7 +178,8 @@ static bool full_nonpending_logs_reject_without_modifying_existing_bytes(void) {
       .type = NODE_DELIVERY_EVENT_STARTED,
       .domain = CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK,
   };
-  for (size_t index = 0U; index < 16U; ++index) {
+  /* 33 started records (31 bytes) fit the 1024-byte host limit; 34 do not. */
+  for (size_t index = 0U; index < 33U; ++index) {
     TEST_ASSERT_EQ_U32(
         CURAG_OK, node_persistence_append_delivery_event(&delivery, &diag));
   }
@@ -210,6 +211,7 @@ static bool delivery_log_preserves_matched_and_unmatched_episodes(void) {
   event.type = NODE_DELIVERY_EVENT_FINISHED;
   event.detail.finished.attempt_count = 2U;
   event.detail.finished.final_result = NODE_DELIVERY_RESULT_ACCEPTED;
+  node_persistence_test_fill_tx_calls(&event);
   TEST_ASSERT_EQ_U32(CURAG_OK,
                      node_persistence_append_delivery_event(&event, &diag));
 
@@ -226,13 +228,14 @@ static bool delivery_log_preserves_matched_and_unmatched_episodes(void) {
   event.message_id = 21U;
   event.detail.finished.attempt_count = 1U;
   event.detail.finished.final_result = NODE_DELIVERY_RESULT_MALFORMED;
+  node_persistence_test_fill_tx_calls(&event);
   TEST_ASSERT_EQ_U32(CURAG_OK,
                      node_persistence_append_delivery_event(&event, &diag));
   node_persistence_test_restart();
 
   node_persistence_test_snapshot_t snapshot;
   TEST_ASSERT(node_persistence_test_snapshot(TEST_DELIVERY_PATH, &snapshot));
-  const size_t lengths[] = {31U, 29U, 31U, 29U};
+  const size_t lengths[] = {31U, 98U, 31U, 98U};
   const uint8_t types[] = {
       NODE_PERSISTENCE_RECORD_TYPE_DELIVERY_STARTED,
       NODE_PERSISTENCE_RECORD_TYPE_DELIVERY_FINISHED,

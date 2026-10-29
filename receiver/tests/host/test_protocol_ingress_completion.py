@@ -20,10 +20,10 @@ from cura_receiver.persist_queue import (
     PersistenceAdmissionSnapshot,
 )
 from cura_receiver.persist_queue_entities import (
-    MEASUREMENT_PROFILE_V1_SPEC,
-    PROFILE_ONLY_V1_SPEC,
-    MeasurementProfileUnitV1,
-    ProfileOnlyUnitV1,
+    READING_RECEPTION_V2_SPEC,
+    RECEPTION_ONLY_V2_SPEC,
+    ReadingReceptionUnitV2,
+    ReceptionOnlyUnitV2,
 )
 from cura_receiver.protocol_ingress import (
     ProtocolIngress,
@@ -90,7 +90,7 @@ def _queue(
         )
     )
     if full:
-        occupied = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+        occupied = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
         assert occupied.reservation is not None
         occupied.reservation.publish(object())
     return queue
@@ -163,7 +163,7 @@ def test_every_response_eligible_packet_uses_retry_later_on_admission_failure(
     assert queue.snapshot().reserved_entities == 0
 
     finalized = ingress.finalize(decision, _tx_done_terminal())
-    assert finalized.admission is None
+    assert finalized.admission.result is admission_result
     assert finalized.published_entity is None
     assert queue.snapshot().published_entities == published_before
 
@@ -276,8 +276,14 @@ def test_terminal_completion_preserves_pre_tx_facts_and_identical_object_referen
     assert finalized.admission is None
     assert finalized.published_entity is not None
     profile = finalized.published_entity.profile
-    for field_name, expected in pre_tx_values.items():
-        assert getattr(profile, field_name) == expected
+    for field in fields(profile):
+        if field.name in ("ack_tx_result", "t4_set_tx_attempted_monotonic_us", "t5_tx_done_monotonic_us", "t6_set_rx_issued_monotonic_us"):
+            continue
+        source = "claimed_" + field.name if field.name in ("node_id", "message_id", "domain") else field.name
+        assert getattr(profile, field.name) == pre_tx_values[source]
+    assert finalized.published_entity.received_frame is packet.frame
+    assert not hasattr(profile, "ack_selected")
+    assert not hasattr(profile, "ack_frame")
     assert profile.ack_tx_result is terminal.ack_tx_result
     assert profile.t4_set_tx_attempted_monotonic_us == (
         terminal.t4_set_tx_attempted_monotonic_us
@@ -370,7 +376,7 @@ def test_foreign_ingress_cannot_finalize_a_live_decision() -> None:
     assert second_queue.snapshot().reserved_entities == 0
 
 
-SILENT_FRAME = authenticated_frame(node_id=b"unknown!")
+SILENT_FRAME = authenticated_frame(domain=3, body=b"\x00")
 SILENT_TERMINAL = ProtocolIngressTerminalV1(
     AckTxResult.NOT_APPLICABLE, None, None, 23, radio_state=RadioState.RX_SINGLE,
 )
@@ -455,13 +461,13 @@ def test_stopped_completion_preserves_missing_or_observed_error_path_timestamps(
     finalized = ingress.finalize(occurrence, terminal)
 
     if silent:
-        assert isinstance(finalized.published_entity, ProfileOnlyUnitV1)
-        expected_spec = PROFILE_ONLY_V1_SPEC
+        assert isinstance(finalized.published_entity, ReceptionOnlyUnitV2)
+        expected_spec = RECEPTION_ONLY_V2_SPEC
     else:
-        assert isinstance(finalized.published_entity, MeasurementProfileUnitV1)
+        assert isinstance(finalized.published_entity, ReadingReceptionUnitV2)
         assert finalized.published_entity.candidate is occurrence.candidate
         assert finalized.published_entity.profile.processing_result is ProcessingResult.ACCEPTED
-        expected_spec = MEASUREMENT_PROFILE_V1_SPEC
+        expected_spec = READING_RECEPTION_V2_SPEC
     profile = finalized.published_entity.profile
     assert profile.ack_tx_result is terminal.ack_tx_result
     assert profile.t4_set_tx_attempted_monotonic_us == terminal.t4_set_tx_attempted_monotonic_us
@@ -543,7 +549,7 @@ def test_private_radio_construction_does_not_escape_before_completion() -> None:
 
     assert incomplete.radio_state is RadioState.RECOVERING
     assert incomplete.t6_set_rx_issued_monotonic_us is None
-    assert isinstance(finalized.published_entity, MeasurementProfileUnitV1)
+    assert isinstance(finalized.published_entity, ReadingReceptionUnitV2)
     assert finalized.published_entity.candidate is occurrence.candidate
     assert finalized.published_entity.profile.t6_set_rx_issued_monotonic_us == 23
     with pytest.raises(FrozenInstanceError):
@@ -573,10 +579,10 @@ def test_fatal_terminal_completion_retains_actual_ack_facts(result, t4, t5):
         ProtocolIngressTerminalV1(result, t4, t5, None, radio_state=RadioState.SHUTDOWN),
     )
     entity = finalized.published_entity
-    assert isinstance(entity, MeasurementProfileUnitV1)
+    assert isinstance(entity, ReadingReceptionUnitV2)
     assert entity.candidate is candidate
     assert entity.profile.processing_result is ProcessingResult.ACCEPTED
-    assert entity.profile.ack_selected is AckSelection.ACCEPTED
+    assert occurrence.pre_tx_profile.ack_selected is AckSelection.ACCEPTED
     assert entity.profile.ack_tx_result is result
     assert entity.profile.t4_set_tx_attempted_monotonic_us == t4
     assert entity.profile.t5_tx_done_monotonic_us == t5
@@ -608,3 +614,30 @@ def test_invalid_fatal_completion_leaves_accepted_reservation_intact(state, t4, 
         )
     assert queue.snapshot() == before
     assert queue.snapshot().published_entities == 0
+
+
+@pytest.mark.parametrize("frame", (b"short", authenticated_frame(node_id=b"unknown!"), REVIEWED_CURRENT_FRAME[:-1] + bytes([REVIEWED_CURRENT_FRAME[-1] ^ 1])))
+def test_unauthenticated_reception_never_reserves_or_publishes(frame):
+    queue = _queue(state=PersistenceAdmissionState.AVAILABLE)
+    ingress = _ingress(queue)
+    occurrence = ingress.begin(ingress_packet(frame=frame))
+    assert not occurrence.pre_tx_profile.header_authenticated
+    assert queue.snapshot().reserved_entities == 0
+    completed = ingress.finalize(occurrence, SILENT_TERMINAL)
+    assert completed.admission is None
+    assert completed.published_entity is None
+    assert queue.claim_batch(max_entities=1) is None
+    assert ingress.active_occurrence is None
+
+
+def test_retry_later_reception_is_recorded_if_capacity_returns_before_finalization():
+    queue = _queue(state=PersistenceAdmissionState.AVAILABLE, full=True)
+    ingress = _ingress(queue)
+    occurrence = ingress.begin(ingress_packet())
+    assert occurrence.pre_tx_profile.processing_result is ProcessingResult.RETRY_LATER_QUEUE_FULL
+    lease = queue.claim_batch(max_entities=1)
+    lease.acknowledge_durable(completed_entities=1)
+    completed = ingress.finalize(occurrence, _tx_done_terminal())
+    assert isinstance(completed.published_entity, ReceptionOnlyUnitV2)
+    assert completed.published_entity.profile.processing_result is ProcessingResult.RETRY_LATER_QUEUE_FULL
+    assert completed.published_entity.received_frame == REVIEWED_CURRENT_FRAME

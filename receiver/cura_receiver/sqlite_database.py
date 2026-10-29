@@ -142,7 +142,7 @@ def database_failure(error: sqlite3.Error | OSError) -> DatabaseFailure:
     return DatabaseFailure(state, primary, extended, os_errno)
 
 
-def _connect(path: Path, *, mode: str) -> sqlite3.Connection:
+def _connect(path: Path, *, mode: str, failure_observer=None) -> sqlite3.Connection:
     # URI quoting prevents '?' or '#' in a deployment path becoming URI options.
     connection = sqlite3.connect(
         path.as_uri() + f"?mode={mode}",
@@ -167,9 +167,18 @@ def _connect(path: Path, *, mode: str) -> sqlite3.Connection:
         ):
             raise _ValidationFailure(PersistenceAdmissionState.UNAVAILABLE_IO)
         return connection
-    except BaseException:
+    except BaseException as error:
+        _observe_open_failure(failure_observer, error)
         connection.close()
         raise
+
+
+def _observe_open_failure(observer, error):
+    if observer is not None:
+        failure = (DatabaseFailure(error.state) if isinstance(error, _ValidationFailure)
+                   else database_failure(error) if isinstance(error, (sqlite3.Error, OSError))
+                   else None)
+        observer(failure)
 
 
 def _validate_identity(connection: sqlite3.Connection, group_id: bytes) -> None:
@@ -203,28 +212,38 @@ def _validate_identity(connection: sqlite3.Connection, group_id: bytes) -> None:
         raise _ValidationFailure(incompatible)
 
 
-def _validate_integrity(connection: sqlite3.Connection) -> None:
-    if connection.execute("PRAGMA integrity_check").fetchmany(2) != [("ok",)]:
-        raise _ValidationFailure(PersistenceAdmissionState.UNAVAILABLE_CORRUPT)
-    if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
-        raise _ValidationFailure(PersistenceAdmissionState.UNAVAILABLE_CORRUPT)
-
-
 def _validate_required_projections(connection: sqlite3.Connection) -> None:
-    from .sqlite_repository import REQUIRED_TABLE_PROJECTIONS
+    from .sqlite_repository import REQUIRED_TABLE_PROJECTIONS, required_write_operations
+    from .generated.receiver_entities_generated import REQUIRED_FOREIGN_KEYS
 
-    for table, columns in REQUIRED_TABLE_PROJECTIONS:
-        try:
+    try:
+        for table, columns in REQUIRED_TABLE_PROJECTIONS:
             connection.execute(f"SELECT {', '.join(columns)} FROM {table} LIMIT 0")
-        except sqlite3.Error as error:
-            if getattr(error, "sqlite_errorcode", None) in (
-                sqlite3.SQLITE_ERROR,
-                sqlite3.SQLITE_SCHEMA,
-            ):
-                raise _ValidationFailure(
-                    PersistenceAdmissionState.UNAVAILABLE_INCOMPATIBLE_SCHEMA
-                ) from None
-            raise
+        # EXPLAIN prepares trigger and FK programs but performs no probe writes.
+        # Close after preparation: enumerating opcode descriptions is unnecessary
+        # and can crash SQLite when a cached trigger program is recompiled.
+        for sql, parameters in required_write_operations():
+            connection.execute("EXPLAIN " + sql, parameters).close()
+        actual = {}
+        for table, _, _, _ in REQUIRED_FOREIGN_KEYS:
+            if table not in actual:
+                groups = {}
+                for fk in connection.execute(f"PRAGMA foreign_key_list({table})"):
+                    groups.setdefault(fk[0], []).append(fk)
+                actual[table] = {
+                    (tuple(f[3] for f in sorted(group)), group[0][2],
+                     tuple(f[4] for f in sorted(group)))
+                    for group in groups.values()
+                }
+        for table, columns, parent, parent_columns in REQUIRED_FOREIGN_KEYS:
+            if (columns, parent, parent_columns) not in actual[table]:
+                raise _ValidationFailure(PersistenceAdmissionState.UNAVAILABLE_INCOMPATIBLE_SCHEMA)
+    except sqlite3.Error as error:
+        if getattr(error, "sqlite_errorcode", None) in (sqlite3.SQLITE_ERROR, sqlite3.SQLITE_SCHEMA):
+            raise _ValidationFailure(
+                PersistenceAdmissionState.UNAVAILABLE_INCOMPATIBLE_SCHEMA
+            ) from None
+        raise
 
 
 def open_receiver_database(
@@ -232,6 +251,7 @@ def open_receiver_database(
     group_id: bytes,
     *,
     minimum_free_bytes: int,
+    failure_observer=None,
 ) -> DatabaseOpenResult:
     """Validate, then open without create; all returned I/O stays on this thread.
 
@@ -267,17 +287,17 @@ def open_receiver_database(
         if filesystem.f_bavail * filesystem.f_frsize < minimum_free_bytes:
             raise _ValidationFailure(PersistenceAdmissionState.UNAVAILABLE_LOW_SPACE)
 
-        connection = _connect(destination, mode="ro")
+        connection = _connect(destination, mode="ro", **(
+            {} if failure_observer is None else {"failure_observer": failure_observer}))
         _validate_identity(connection, group_id)
-        _validate_integrity(connection)
         _validate_required_projections(connection)
         connection.close()
         connection = None
 
-        connection = _connect(destination, mode="rw")
+        connection = _connect(destination, mode="rw", **(
+            {} if failure_observer is None else {"failure_observer": failure_observer}))
         # Recheck the actual write connection; never trust a previous path open.
         _validate_identity(connection, group_id)
-        _validate_integrity(connection)
         _validate_required_projections(connection)
         if connection.execute("PRAGMA journal_mode = WAL").fetchone() != ("wal",):
             raise _ValidationFailure(PersistenceAdmissionState.UNAVAILABLE_IO)
@@ -306,8 +326,13 @@ def open_receiver_database(
         return result
     except _ValidationFailure as exc:
         failure = DatabaseFailure(exc.state)
+        _observe_open_failure(failure_observer, exc)
     except (sqlite3.Error, OSError) as exc:
         failure = database_failure(exc)
+        _observe_open_failure(failure_observer, exc)
+    except BaseException as exc:
+        _observe_open_failure(failure_observer, exc)
+        raise
     finally:
         # The successful result transfers connection ownership to the caller.
         if connection is not None:
@@ -326,7 +351,6 @@ def validate_receiver_connection(
         raise ValueError("connection validation requires a safe transaction boundary")
     try:
         _validate_identity(connection, group_id)
-        _validate_integrity(connection)
         _validate_required_projections(connection)
         if (
             connection.execute("PRAGMA journal_mode").fetchone() != ("wal",)

@@ -56,7 +56,7 @@ def shutdown_application(app, *, clean_requested, wait=None):
                 runtime._pending.extend((runtime.telemetry.radio, item) for item in result.episodes)
             runtime.flush_diagnostics()
             if remaining():
-                c.airtime.settle(deadline_monotonic_us=app._deadline(c.time.settings.control_budget_us), precharge=False)
+                c.airtime.save(deadline_monotonic_us=app._deadline(c.time.settings.control_budget_us))
                 while c.airtime.owner.pending is not None and remaining() and worker.is_alive():
                     pause()
                     if remaining():
@@ -68,6 +68,8 @@ def shutdown_application(app, *, clean_requested, wait=None):
             return ApplicationStopResult(radio_safe, False, None, False, not worker.is_alive(), 'QUEUE_UNSOUND')
         failure = 'SHUTDOWN_FINALIZATION_FAILED'
         clean_requested = False
+        if runtime is not None:
+            runtime.final_failure_health()
     worker.queue.close()
     if runtime is not None:
         runtime._pending.clear()

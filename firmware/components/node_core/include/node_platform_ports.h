@@ -10,7 +10,9 @@ extern "C" {
  * Infallible monotonic clock used throughout one wake cycle.
  *
  * monotonic_us returns a nondecreasing time in microseconds from an
- * unspecified epoch. The context is borrowed and may be NULL.
+ * unspecified epoch, including time spent blocked. The radio backend must use
+ * the same clock; epochs need not survive sleep. Context is borrowed and may
+ * be NULL. A backwards clock is a composition error, not repaired by the core.
  */
 typedef struct {
   void *context;
@@ -22,7 +24,8 @@ typedef struct {
  *
  * uniform_u32_inclusive requires minimum <= maximum and returns a uniformly
  * selected value from that inclusive interval. The context is borrowed and
- * may be NULL.
+ * may be NULL. Equal bounds and the full u32 interval are supported without
+ * bias or overflow. This source must not supply identity/key randomness.
  */
 typedef struct {
   void *context;
@@ -33,9 +36,12 @@ typedef struct {
 /*
  * Platform lifecycle operations.
  *
- * get_reset_reason returns the protocol-facing reset-reason byte.
+ * get_reset_reason returns the protocol-facing reset-reason byte, not a sleep
+ * wakeup cause. Unassigned byte values remain valid; out-of-byte values map to 0.
  * enter_deep_sleep_for receives a nonzero relative duration in microseconds
- * and is terminal in production. The context is borrowed and may be NULL.
+ * and is terminal in production. Timer-setup failure is contained by the adapter
+ * without reopening persistence after final sync. Context is borrowed and may
+ * be NULL; a returning host fake terminates the cycle just as a real sleep does.
  */
 typedef struct {
   void *context;

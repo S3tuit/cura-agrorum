@@ -65,10 +65,14 @@ firmware/maintenance/*/managed_components/
 firmware/maintenance/*/sdkconfig
 firmware/maintenance/*/sdkconfig.old
 firmware/maintenance/littlefs_storage_benchmark/results.log
-firmware/test_apps/*/build/
-firmware/test_apps/*/managed_components/
-firmware/test_apps/*/sdkconfig
-firmware/test_apps/*/sdkconfig.old
+firmware/tests/target/build/
+firmware/tests/target/managed_components/
+firmware/tests/target/sdkconfig
+firmware/tests/target/sdkconfig.old
+firmware/hardware/**/build/
+firmware/hardware/**/managed_components/
+firmware/hardware/**/sdkconfig
+firmware/hardware/**/sdkconfig.old
 .cache
 
 # Python
@@ -78,9 +82,9 @@ __pycache__/
 .env
 .venv
 
-# Temporary hardware captures; curate useful results, then delete raw runs.
-/receiver/tests/hardware/evidence/**/20??-??-??/
-/receiver/tests/hardware/evidence/**/raw/
+# Temporary hardware captures; discard after verification and diagnosis.
+/receiver/tests/target/raw/
+/receiver/hardware/**/raw/
 
 # Fuzzing
 protocol/protocol-v2-lora/.fuzz-corpus/

@@ -1,4 +1,4 @@
-"""RF-023 packet matrix and expected observations; no device or credential I/O.
+"""rejection matrix packet matrix and expected observations; no device or credential I/O.
 
 Call only for a newly provisioned dedicated test identity set and reserved counter
 range. This function is not a nonce allocator and must not reuse a production
@@ -10,14 +10,10 @@ import struct
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 from cura_receiver.generated.receiver_enums_generated import ProcessingResult, AckSelection
 
-CASES = ('implausible_reading', 'unsupported_control', 'unknown_domain',
-         'malformed_length', 'malformed_flags', 'wrong_direction',
-         'unsupported_control_wrong_direction', 'bad_tag', 'unknown_node',
-         'short_header', 'revocation_baseline', 'revoked_node')
-C6_CASES = ('RF-023.implausible', 'RF-023.control', 'RF-023.domain',
-            'RF-023.body-length', 'RF-023.flags', 'RF-023.direction',
-            'RF-023.control-direction', 'RF-023.bad-tag', 'RF-023.unknown',
-            'RF-023.short-header', 'RF-023.before-revoke', 'RF-023.revoked')
+from spec import REJECTION_CASES
+
+CASES = tuple(vector for vector, _ in REJECTION_CASES.values())
+NODE_CASES = tuple(REJECTION_CASES)
 
 
 @dataclass(frozen=True)
@@ -87,14 +83,14 @@ def matrix(*, active, unknown, revoked, first_message, first_sample):
 
 
 def verify_profile(vector, profile):
-    """Check a saved protocol profile; ACK selection is not physical TX/silence proof."""
+    """Check transient ingress facts; this is neither SQL nor physical TX/silence proof."""
     frame = vector.frame
     expected_claims = dict(claimed_control=frame[0] if len(frame) >= 1 else None,
                            claimed_domain=frame[1] if len(frame) >= 2 else None,
                            claimed_node_id=frame[2:10] if len(frame) >= 10 else None,
                            claimed_message_id=int.from_bytes(frame[10:14], 'little') if len(frame) >= 14 else None)
     ack_selected = AckSelection.NONE.value if vector.ack is None else vector.ack[1]
-    expected = dict(received_frame_length=len(frame), received_frame=frame + bytes(255 - len(frame)),
+    expected = dict(received_frame_length=len(frame), received_frame=frame,
                     processing_result_id=ProcessingResult[vector.processing_result].value,
                     ack_selected_id=ack_selected, header_authenticated=int(vector.authenticated),
                     decoded_sample_id=vector.sample_id, ack_frame=vector.ack, **expected_claims)

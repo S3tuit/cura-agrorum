@@ -9,7 +9,9 @@ from cura_receiver.communicator_scheduler import Work
 from cura_receiver.generated import receiver_enums_generated as E
 from cura_receiver.ports.ds3231 import Ds3231ReadResult, Ds3231ReadStatus
 from cura_receiver.radio import Radio
+from cura_receiver.platform.linux_signal_wait import CompletionNotification, LinuxSignalWait
 from cura_receiver.sx1262 import Sx1262
+from cura_receiver.stop_intent import StopIntent
 from cura_receiver.receiver_startup import ReceiverInstanceStart
 from cura_protocol_v2_lora.receiver_group import ReceiverGroupState
 from tests.support.builders.persistence import INSTANCE
@@ -27,28 +29,40 @@ def test_authentication_keys_match_public_protocol_vector():
     assert authentication_keys(configuration) == {node: bytes.fromhex('c0f9a1a0f386692e01028082be92330e')}
 
 
-def make_application(tmp_path, *, reuse_storage=False, instance_id=INSTANCE):
+def make_application(tmp_path, *, reuse_storage=False, instance_id=INSTANCE, clock=None, radio_wait=None,
+                     known_empty_airtime=False):
     database, config, boot = ((tmp_path / "worker.db", tmp_path / "test-group.json", tmp_path / "boot-id")
-        if reuse_storage else prepare_worker_files(tmp_path))
-    clock = FakeOsClock(monotonic_us=100)
-    settings = replace(ApplicationSettings(), database_path=database, configuration_path=config,
+        if reuse_storage else prepare_worker_files(tmp_path, known_empty_airtime=known_empty_airtime))
+    clock = clock if clock is not None else FakeOsClock(monotonic_us=100)
+    started = clock.now_monotonic_us()
+    settings = replace(ApplicationSettings(persistence_startup_budget_us=12_000_000), database_path=database, configuration_path=config,
         sqlite_temporary_directory=tmp_path / 'sqlite-temp', minimum_free_bytes=0)
-    instance = ReceiverInstanceStart(instance_id, 100)
+    instance = ReceiverInstanceStart(instance_id, started)
     worker = CheckedPersistenceWorker(instance=instance, database_path=database,
-        configuration_path=config, boot_id_path=boot, clock=clock)
+        configuration_path=config, boot_id_path=boot, clock=clock,
+        startup_notification=CompletionNotification())
     io = PhysicalPort(clock)
-    radio = Radio(Sx1262(io, clock, Wait(clock)))
+    stop = StopIntent(clock, settings.shutdown_budget_us)
+    radio = Radio(Sx1262(io, clock, radio_wait if radio_wait is not None else Wait(clock)),
+        stop_requested=stop.is_requested)
     rtc = FakeDs3231Control()
-    rtc.read_results.append(Ds3231ReadResult(Ds3231ReadStatus.MISSING, 100, 100))
+    rtc.read_results.append(Ds3231ReadResult(Ds3231ReadStatus.MISSING, started, started))
+    rtc.read_results.append(lambda: Ds3231ReadResult(Ds3231ReadStatus.MISSING,
+        clock.now_monotonic_us(), clock.now_monotonic_us()))
     app = ReceiverApplication(instance=instance, settings=settings, worker=worker, clock=clock,
-        kernel=FakeKernelClock(), rtc=rtc, chrony=FakeChronyControl(), radio=radio)
+        kernel=FakeKernelClock(), rtc=rtc, chrony=FakeChronyControl(), radio=radio, stop_intent=stop)
     return app, io, database, config
+
+
+def start_application(app):
+    with LinuxSignalWait(app.clock, app.stop_intent) as wait:
+        return app.start(wait=wait)
 
 
 def test_offline_missing_state_starts_rx_untrusted_with_initial_health(tmp_path):
     app, io, database, _ = make_application(tmp_path)
     try:
-        assert app.start().ready
+        assert start_application(app).ready
         c = app.runtime.communicator
         assert c.time.state.quality is E.SystemTimeQuality.UNTRUSTED
         assert c.airtime.available_charge_us == 0
@@ -69,11 +83,40 @@ def test_offline_missing_state_starts_rx_untrusted_with_initial_health(tmp_path)
         app.worker.finish_test()
 
 
+def test_offline_commissioning_uses_production_startup_and_no_missing_state_diagnostic(tmp_path):
+    from cura_receiver.tx_airtime import AirtimeReason
+    app, io, database, _ = make_application(tmp_path, known_empty_airtime=True)
+    try:
+        assert start_application(app).ready
+        c = app.runtime.communicator
+        assert c.time.state.quality is E.SystemTimeQuality.UNTRUSTED
+        assert c.airtime.available_charge_us == 0
+        for _ in range(10):
+            app.runtime.step()
+            if c.airtime.total_used is not None:
+                break
+        assert c.airtime.total_used == 0
+        assert c.airtime.state.generation == 1
+        assert c.airtime.state.airtime_snapshot is None
+        assert c.airtime.try_spend().reason is AirtimeReason.ALLOWED
+        app.worker.request_stop(deadline_monotonic_us=app.clock.now_monotonic_us() + 5_000_000)
+        app.worker.join(5)
+        assert app.worker.failure is None
+        with sqlite3.connect(database) as db:
+            assert db.execute('SELECT * FROM airtime_commissioning').fetchall() == []
+            assert db.execute('SELECT count(*) FROM diagnostics WHERE error_domain_id=? AND error_code_id=?',
+                (E.DiagnosticErrorDomain.PERSISTENCE_CONTROL.value,
+                 E.PersistenceControlDiagnosticErrorCode.STATE_MISSING.value)).fetchone() == (0,)
+    finally:
+        app.radio.shutdown()
+        app.worker.finish_test()
+
+
 def test_invalid_configuration_never_opens_radio(tmp_path):
     app, io, _, config = make_application(tmp_path)
     config.chmod(0o644)
     try:
-        result = app.start()
+        result = start_application(app)
         assert not result.ready
         assert result.failure == 'CONFIGURATION_REJECTED'
         assert not io.calls

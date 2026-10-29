@@ -1,3 +1,4 @@
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 from cura_receiver.generated.receiver_entities_generated import AirtimeSnapshotV1
 from dataclasses import replace
 
@@ -73,7 +74,10 @@ def test_scheduler_first_tracking_poll_with_advancing_clock(monkeypatch):
     sample(rt, kernel)
     communicator = SimpleNamespace(
         time=rt, clock=clock, occurrence_sequence=0,
+        queue=SimpleNamespace(reservation_active=False),
+        ingress=SimpleNamespace(active_occurrence=None),
         radio=SimpleNamespace(state=E.RadioState.RX_SINGLE),
+        airtime=SimpleNamespace(maintenance_required=False),
         receive_once=lambda **_: SimpleNamespace(finalization=None, radio_episodes=()),
     )
     scheduler = CommunicatorScheduler(communicator, chrony=chrony, rtc=None,
@@ -81,8 +85,8 @@ def test_scheduler_first_tracking_poll_with_advancing_clock(monkeypatch):
     turn = scheduler.run_once()
     assert turn.work is Work.TIME
     assert len(chrony.calls) == 1 and chrony.calls[0][0] == "tracking"
-    assert rt.state.quality is E.SystemTimeQuality.NETWORK_SYNCED
-    assert turn.update.observation.system_time_quality is E.SystemTimeQuality.NETWORK_SYNCED
+    assert rt.state.quality is E.SystemTimeQuality.CHRONY_SYNCED
+    assert turn.update.observation.system_time_quality is E.SystemTimeQuality.CHRONY_SYNCED
     assert rt.next_tracking_start() > clock.now_monotonic_us()
 
 
@@ -92,7 +96,7 @@ def test_network_independent_of_rtc(health):
     rt, _, kernel, _ = runtime(health=health)
     sample(rt, kernel)
     update = rt.sample_network(tracking(rt))
-    assert update.observation.system_time_quality is E.SystemTimeQuality.NETWORK_SYNCED
+    assert update.observation.system_time_quality is E.SystemTimeQuality.CHRONY_SYNCED
     assert update.failure is None and rt.state.generation == 1
     assert rt.tracking_poll_deadline == 60_001_000
 
@@ -102,11 +106,13 @@ def test_full_queue_retains_boundary():
     rt, _, kernel, queue = runtime(capacity=1)
     sample(rt, kernel)
     rt.sample_network(tracking(rt))
+    rt.state = advance_clock_state(rt.state, quality=rt.state.quality,
+                                   rtc_health=E.RtcHealth.MISSING)
     sample(rt, kernel)
     update = rt.sample_network(tracking(rt))
     assert update.admission_result is E.AdmissionResult.QUEUE_FULL
     assert (
-        rt.state.quality is E.SystemTimeQuality.UNTRUSTED and rt.state.generation == 2
+        rt.state.quality is E.SystemTimeQuality.UNTRUSTED and rt.state.generation == 3
     )
     assert rt.ordinary_admission_blocked and rt.observation_sequence == 2
 
@@ -145,7 +151,7 @@ def test_kernel_generation_aba():
     def aba():
         rt.state = advance_clock_state(
             rt.state,
-            quality=E.SystemTimeQuality.NETWORK_SYNCED,
+            quality=E.SystemTimeQuality.CHRONY_SYNCED,
             rtc_health=E.RtcHealth.PRESENT,
         )
         rt.state = advance_clock_state(
@@ -203,7 +209,7 @@ def test_step_boundary_then_wait(disposition):
     stable = rt.poll_chrony(chrony)
     assert (
         rt.step_state is SS.IDLE
-        and rt.state.quality is E.SystemTimeQuality.NETWORK_SYNCED
+        and rt.state.quality is E.SystemTimeQuality.CHRONY_SYNCED
     )
     assert (
         stable.observation.observation_sequence
@@ -262,6 +268,10 @@ def test_step_timeout_with_pending_observation(disposition):
     rt.poll_chrony(chrony)
     chrony.step_results.append(ChronyStepResult(disposition, 1000, 1000))
     rt.poll_chrony(chrony)
+    # A real health boundary, rather than a repeated unchanged failed poll,
+    # exercises the pending-observation path while stable time is awaited.
+    rt.state = advance_clock_state(rt.state, quality=rt.state.quality,
+                                   rtc_health=E.RtcHealth.MISSING)
     chrony.tracking_results.append(tracking(rt, status=Q.UNAVAILABLE))
     assert rt.poll_chrony(chrony).admission_result is E.AdmissionResult.QUEUE_FULL
     pending = rt.pending_observation
@@ -314,13 +324,14 @@ def test_step_kernel_completion_deadline(disposition, completion_offset):
     assert kernel.deadlines[-1] == deadline
     if completion_offset < 0:
         assert rt.step_state is SS.IDLE
-        assert result.observation.system_time_quality is E.SystemTimeQuality.NETWORK_SYNCED
+        assert result.observation.system_time_quality is E.SystemTimeQuality.CHRONY_SYNCED
         assert (result.failure is not None) == (disposition is SD.OUTCOME_UNKNOWN)
     else:
         assert rt.step_state is SS.RETRY_BACKOFF
         assert rt.state.quality is E.SystemTimeQuality.UNTRUSTED
-        assert result.observation.sampled_at_utc_us is None
-        assert result.observation.sampled_at_monotonic_us == deadline
+        assert result.observation is None
+        assert rt.published_observation.step_discontinuity_boundary
+        assert rt.sample is None
         assert result.failure.error_code is (
             E.TimeDiagnosticErrorCode.OUTCOME_UNKNOWN
             if disposition is SD.OUTCOME_UNKNOWN else E.TimeDiagnosticErrorCode.DEADLINE
@@ -356,18 +367,19 @@ def test_step_deadline_during_trusted_reservation(monkeypatch, completion_offset
     monkeypatch.setattr(PersistQueue, "try_reserve_one", delayed_reservation)
     before_count = rt.queue.counts[4][0]
     result = rt.poll_chrony(chrony)
-    assert rt.queue.counts[4][0] - before_count == (1 if completion_offset < 0 else 2)
+    assert rt.queue.counts[4][0] - before_count == 1
     assert queue.snapshot().reserved_entities == 0
-    assert queue.snapshot().published_entities == 2  # Boundary plus trusted recovery or timeout.
+    assert queue.snapshot().published_entities == (2 if completion_offset < 0 else 1)
     assert rt.state.generation == 2  # One step transition and one tracking completion.
     if completion_offset < 0:
         assert rt.step_state is SS.IDLE and result.failure is None
-        assert result.observation.system_time_quality is E.SystemTimeQuality.NETWORK_SYNCED
+        assert result.observation.system_time_quality is E.SystemTimeQuality.CHRONY_SYNCED
     else:
         assert rt.step_state is SS.RETRY_BACKOFF
         assert result.failure.error_code is E.TimeDiagnosticErrorCode.DEADLINE
-        assert result.observation.sampled_at_utc_us is None
-        assert result.observation.sampled_at_monotonic_us == deadline
+        assert result.observation is None
+        assert rt.published_observation.step_discontinuity_boundary
+        assert rt.sample is None
 
 
 # Definite rejection retains the gap and returns a single exceptional result before bounded backoff.
@@ -586,7 +598,7 @@ def test_offline_direct_holdover_and_unproven_startup(rtc_runtime, proven, saved
     baseline = replace(rt.durable_state, generation=2, rtc_provenance=provenance)
     assert rt.state_owner.commit(
         baseline, deadline_monotonic_us=5_001_000
-    ).disposition is CD.COMMITTED
+    ).commit_result.disposition is CD.COMMITTED
     # Reload through durable control, as a replacement process must do.
     loaded = worker.control.load_communicator_state(deadline_monotonic_us=5_001_000)
     rt.state_owner = CommunicatorStateOwner(control=worker.control, initial_state=loaded.state)
@@ -616,7 +628,7 @@ def test_online_rtc_missing_preserves_network():
     result = rt.observe_rtc(rtc)
     assert (
         result.failure.error_code is E.TimeDiagnosticErrorCode.DEADLINE
-        and rt.state.quality is E.SystemTimeQuality.NETWORK_SYNCED
+        and rt.state.quality is E.SystemTimeQuality.CHRONY_SYNCED
     )
     assert rt.state.rtc_health is E.RtcHealth.MISSING and rt.ordinary_admission_blocked
     sample(rt, kernel)
@@ -958,16 +970,16 @@ def network_oracle(previous, error, available):
     if not available or error >= 40_000_000:
         return "UNTRUSTED"
     if error <= 35_000_000:
-        return "NETWORK_SYNCED"
+        return "CHRONY_SYNCED"
     return previous
 
 
 # Reviewed primitive model examples establish entry, retention, loss and ordinary budget expiry.
 def test_network_oracle_examples():
-    assert network_oracle("UNTRUSTED", 35_000_000, True) == "NETWORK_SYNCED"
+    assert network_oracle("UNTRUSTED", 35_000_000, True) == "CHRONY_SYNCED"
     assert network_oracle("UNTRUSTED", 35_000_001, True) == "UNTRUSTED"
-    assert network_oracle("NETWORK_SYNCED", 39_999_999, True) == "NETWORK_SYNCED"
-    assert network_oracle("NETWORK_SYNCED", 40_000_000, True) == "UNTRUSTED"
+    assert network_oracle("CHRONY_SYNCED", 39_999_999, True) == "CHRONY_SYNCED"
+    assert network_oracle("CHRONY_SYNCED", 40_000_000, True) == "UNTRUSTED"
 
 
 # Generated tracking/clock schedules compare live policy with primitive expectations and prohibit accidental steps.
@@ -989,7 +1001,7 @@ def test_runtime_network_sequences(inputs):
     expected = "UNTRUSTED"
     for error, available in inputs:
         next_expected = network_oracle(expected, error, available)
-        if available and (error <= 35_000_000 or expected == "NETWORK_SYNCED"):
+        if available and (error <= 35_000_000 or expected == "CHRONY_SYNCED"):
             sample(rt, kernel)
         result = rt.sample_network(
             tracking(
@@ -1000,7 +1012,7 @@ def test_runtime_network_sequences(inputs):
         )
         assert rt.state.quality.name == next_expected
         assert (
-            not result.observation.step_discontinuity_boundary
+            (result.observation is None or not result.observation.step_discontinuity_boundary)
             and result.failure is None
         )
         expected = next_expected
@@ -1091,7 +1103,7 @@ def test_prewrite_read_failure_preserves_provenance(rtc_runtime, status, duratio
     )
     assert [call[0] for call in rtc.calls] == ['read']
     assert rt.durable_state == before and rt.rtc_provenance == before.rtc_provenance
-    assert rt.state.quality is E.SystemTimeQuality.NETWORK_SYNCED
+    assert rt.state.quality is E.SystemTimeQuality.CHRONY_SYNCED
 
 
 # Recovery advances the write's UTC derivation and still makes exactly one write after durable invalidation.
@@ -1198,7 +1210,7 @@ def step_crash_child(root, milestone, pipe):
     from threading import Event
     import sqlite3
     from cura_receiver.persist_queue_entities import (
-        PROFILE_ONLY_V1_SPEC, ProfileOnlyUnitV1,
+        RECEPTION_ONLY_V2_SPEC, ReceptionOnlyUnitV2,
     )
     from tests.support.builders.persistence import _profile
 
@@ -1249,15 +1261,15 @@ def step_crash_child(root, milestone, pipe):
         t1_handler_started_monotonic_us=1002, t2_packet_copied_monotonic_us=1003,
         t6_set_rx_issued_monotonic_us=1004,
     )
-    reservation = rt.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+    reservation = rt.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
     assert reservation.status is E.AdmissionResult.RESERVED
-    reservation.reservation.publish(ProfileOnlyUnitV1(profile))
+    reservation.reservation.publish(ReceptionOnlyUnitV2(profile, received_frame=REVIEWED_RECEPTION_FRAME))
     assert arrived.wait(5), "worker did not reach its named persistence boundary"
     with sqlite3.connect(database) as db:
         boundary_rows = db.execute(
             "SELECT count(*) FROM clock_observations"
         ).fetchone()[0]
-        profile_rows = db.execute("SELECT count(*) FROM message_profiles").fetchone()[0]
+        profile_rows = db.execute("SELECT count(*) FROM packet_receptions").fetchone()[0]
     assert boundary_rows == int(committed_count >= 1)
     assert profile_rows == int(committed_count == 2)
     pipe.send({
@@ -1281,8 +1293,14 @@ def test_step_publication_process_crash_restart(tmp_path, milestone, committed):
     import multiprocessing
     import shutil
     import sqlite3
-    from cura_receiver.clock_correlation import AnalysisInstance, ClockCorrelation
-    from cura_receiver.generated.receiver_entities_generated import ClockObservationV1
+    from cura_receiver.clock_correlation import (
+        AnalysisInstance,
+        ClockCorrelation,
+        clock_observation_from_row,
+    )
+    from cura_receiver.generated.receiver_entities_generated import (
+        CLOCK_OBSERVATION_V1_COLUMNS,
+    )
 
     ctx = multiprocessing.get_context("spawn")
     parent, child = ctx.Pipe()
@@ -1332,7 +1350,7 @@ def test_step_publication_process_crash_restart(tmp_path, milestone, committed):
                     "SELECT count(*) FROM clock_observations"
                 ).fetchone()[0] == int(committed >= 1)
                 assert db.execute(
-                    "SELECT count(*) FROM message_profiles"
+                    "SELECT count(*) FROM packet_receptions"
                 ).fetchone()[0] == int(committed == 2)
             kernel = FakeKernelClock()
             rt = RuntimeTime(
@@ -1346,7 +1364,7 @@ def test_step_publication_process_crash_restart(tmp_path, milestone, committed):
             chrony = FakeChronyControl()
             chrony.tracking_results.append(tracking(rt))
             recovery = rt.poll_chrony(chrony).observation
-            assert recovery.system_time_quality is E.SystemTimeQuality.NETWORK_SYNCED
+            assert recovery.system_time_quality is E.SystemTimeQuality.CHRONY_SYNCED
             assert [kind for kind, _ in chrony.calls] == ["tracking"]
             worker.request_stop(deadline_monotonic_us=5_002_100)
             worker.join(5)
@@ -1356,23 +1374,17 @@ def test_step_publication_process_crash_restart(tmp_path, milestone, committed):
 
         with sqlite3.connect(tmp_path / "worker.db") as db:
             rows = db.execute(
-                "SELECT receiver_instance_id, observation_sequence, clock_state_generation, "
-                "sampled_at_monotonic_us, sampled_at_utc_us, step_discontinuity_boundary, "
-                "system_time_quality_id, rtc_health_id FROM clock_observations "
+                f"SELECT {', '.join(CLOCK_OBSERVATION_V1_COLUMNS)} FROM clock_observations "
                 "ORDER BY sampled_at_monotonic_us, observation_sequence"
             ).fetchall()
-        observations = [
-            ClockObservationV1(
-                *row[:5], bool(row[5]), E.SystemTimeQuality(row[6]), E.RtcHealth(row[7])
-            )
-            for row in rows
-        ]
+        observations = [clock_observation_from_row(row) for row in rows]
         assert len(observations) == int(committed >= 1) + 1
         if committed:
             assert observations[0].step_discontinuity_boundary
             assert observations[0].sampled_at_monotonic_us == 1000
         history = ClockCorrelation(
-            [AnalysisInstance(*row) for row in lifecycle], observations
+            [AnalysisInstance(*row) for row in lifecycle], observations,
+            policy=rt.policy,
         )
         old_id = lifecycle[0][1]
         assert history.correlate(old_id, 1000) is None
@@ -1525,11 +1537,11 @@ def test_state_owner_rejects_conflicting_loaded_contents(rtc_runtime, newer):
     pending = rt.state_owner.pending
     requested = pending.requested
     different_bucket = replace(
-        requested.buckets[-1], charged_airtime_us=requested.buckets[-1].charged_airtime_us - 1
+        requested.entries[-1], remaining_us=requested.entries[-1].remaining_us - 1
     )
     conflict = replace(
         requested, generation=requested.generation + int(newer),
-        buckets=requested.buckets[:-1] + (different_bucket,),
+        entries=requested.entries[:-1] + (different_bucket,),
     )
     assert worker.control.commit_communicator_state(
         conflict, deadline_monotonic_us=5_001_000
@@ -1579,13 +1591,13 @@ def test_state_owner_tracks_complete_state_and_definite_failure(rtc_runtime):
     initial = owner.state
     requested = replace(initial, generation=2, airtime_snapshot=AirtimeSnapshotV1(UTC + 1, 1))
     rejected = owner.commit(requested, deadline_monotonic_us=0)
-    assert rejected.disposition is CD.NOT_INSTALLED
+    assert rejected.commit_result.disposition is CD.NOT_INSTALLED
     assert owner.state == initial and owner.pending is None
     for generation in (1, 3):
         with pytest.raises(ValueError, match="next acknowledged generation"):
             owner.commit(replace(requested, generation=generation), deadline_monotonic_us=5_001_000)
     committed = owner.commit(requested, deadline_monotonic_us=5_001_000)
-    assert committed.disposition is CD.COMMITTED
+    assert committed.commit_result.disposition is CD.COMMITTED
     assert rt.durable_state == requested and rt.rtc_provenance == requested.rtc_provenance
     assert owner.reconcile(deadline_monotonic_us=0) is None
     assert worker.control.load_communicator_state(deadline_monotonic_us=5_001_000).state == requested
@@ -1596,7 +1608,7 @@ def test_state_owner_tracks_complete_state_and_definite_failure(rtc_runtime):
     ).disposition is CD.COMMITTED
     assert owner.commit(
         following, deadline_monotonic_us=5_001_000
-    ).disposition is CD.ALREADY_COMMITTED
+    ).commit_result.disposition is CD.ALREADY_COMMITTED
     assert owner.state == following and owner.pending is None
 
 
@@ -1629,4 +1641,120 @@ def test_poll_computes_initial_network_bound_once(monkeypatch):
     monkeypatch.setattr(time_policy, "network_error_bound_us", counted)
     result = rt.poll_chrony(chrony)
     assert len(calls) == 1
-    assert result.observation.system_time_quality is E.SystemTimeQuality.NETWORK_SYNCED
+    assert result.observation.system_time_quality is E.SystemTimeQuality.CHRONY_SYNCED
+
+
+def fresh_poll(rt, clock, kernel, *, correction=0):
+    clock.advance_elapsed_us(rt.next_tracking_start() - clock.now_monotonic_us())
+    assert rt.expire_due().observation is None
+    sample(rt, kernel)
+    return rt.sample_network(tracking(rt, correction=correction))
+
+
+def test_sparse_publication_keeps_live_checks_generations_and_airtime():
+    rt, clock, kernel, _ = runtime()
+    sample(rt, kernel)
+    first = rt.sample_network(tracking(rt)).observation
+    published = [first]
+    for _ in range(120):
+        old_sample = rt.sample
+        result = fresh_poll(rt, clock, kernel)
+        assert rt.sample.monotonic_us > old_sample.monotonic_us
+        assert rt.sample.generation == old_sample.generation + 1
+        assert rt.airtime_correlation().sample is rt.sample
+        if result.observation is not None:
+            published.append(result.observation)
+        assert rt.published_observation is published[-1]
+    assert len(published) == 3
+    assert [o.observation_sequence for o in published] == [1, 2, 3]
+    assert all(b.sampled_at_monotonic_us - a.sampled_at_monotonic_us <= 3_600_000_000
+               for a, b in zip(published, published[1:]))
+
+
+def test_full_routine_queue_does_not_reset_anchor_or_expire_live_trust():
+    from cura_receiver.clock_correlation import AnalysisInstance, ClockCorrelation
+
+    rt, clock, kernel, queue = runtime(capacity=1)
+    sample(rt, kernel)
+    first = rt.sample_network(tracking(rt)).observation
+    failures = 0
+    while clock.now_monotonic_us() <= first.error_budget_expires_at_monotonic_us:
+        result = fresh_poll(rt, clock, kernel)
+        failures += result.admission_result is E.AdmissionResult.QUEUE_FULL
+        assert rt.state.quality is E.SystemTimeQuality.CHRONY_SYNCED
+        assert rt.published_observation is first
+        assert rt.pending_observation is None
+        assert not rt.ordinary_admission_blocked
+        assert rt.airtime_correlation() is not None
+    assert failures > 0
+    assert queue.snapshot().reserved_entities == 0
+    history = ClockCorrelation([AnalysisInstance(1, rt.instance, b"b" * 16, 1000)], [first], policy=rt.policy)
+    assert history.correlate(rt.instance, clock.now_monotonic_us()) is None
+    # Opening the queue cannot fabricate a refresh from the cached live sample.
+    assert rt.publish_pending().observation is None
+
+
+@pytest.mark.parametrize("error", [39_000_000, 39_950_000])
+def test_above_guard_publishes_once_per_fresh_sample_without_geometric_retry(error):
+    rt, clock, kernel, _ = runtime()
+    sample(rt, kernel)
+    rt.sample_network(tracking(rt))
+    rt.state = advance_clock_state(rt.state, quality=rt.state.quality, rtc_health=E.RtcHealth.MISSING)
+    first = fresh_poll(rt, clock, kernel, correction=error - 1_000_000).observation
+    assert first.error_bound_us == error
+    times = [first.sampled_at_monotonic_us]
+    for _ in range(12):
+        assert rt.publish_pending().observation is None
+        result = fresh_poll(rt, clock, kernel, correction=error - 1_000_000)
+        assert result.observation.error_bound_us == error
+        times.append(result.observation.sampled_at_monotonic_us)
+    assert len(set(b - a for a, b in zip(times, times[1:]))) == 1
+    assert times[1] - times[0] > 12_000_000
+
+
+def test_missed_live_check_publishes_one_boundary_then_recovery():
+    rt, clock, kernel, _ = runtime()
+    sample(rt, kernel)
+    first = rt.sample_network(tracking(rt)).observation
+    clock.advance_elapsed_us(rt.tracking_poll_deadline - clock.now_monotonic_us())
+    boundary = rt.expire_due().observation
+    assert boundary.sampled_at_monotonic_us < first.error_budget_expires_at_monotonic_us
+    assert boundary.system_time_quality is E.SystemTimeQuality.UNTRUSTED
+    assert rt.airtime_correlation() is None
+    for _ in range(3):
+        clock.advance_elapsed_us(60_000_000)
+        assert rt.sample_network(tracking(rt, status=Q.UNAVAILABLE)).observation is None
+        assert rt.published_observation is boundary
+    sample(rt, kernel)
+    recovery = rt.sample_network(tracking(rt)).observation
+    assert recovery.system_time_quality is E.SystemTimeQuality.CHRONY_SYNCED
+    assert recovery.observation_sequence == boundary.observation_sequence + 1
+
+
+@pytest.mark.parametrize("change", ["generation", "late"])
+def test_routine_reservation_rechecks_source_before_publication(monkeypatch, change):
+    rt, clock, kernel, queue = runtime()
+    rt.policy = replace(rt.policy, clock_observation_period_cap_us=60_000_000)
+    sample(rt, kernel)
+    first = rt.sample_network(tracking(rt)).observation
+    original = PersistQueue.try_reserve_one
+    changed = False
+
+    def interleaved(self, spec):
+        nonlocal changed
+        result = original(self, spec)
+        if not changed:
+            changed = True
+            if change == "generation":
+                rt.state = advance_clock_state(rt.state, quality=rt.state.quality,
+                                               rtc_health=rt.state.rtc_health, tracking_processed=True)
+            else:
+                clock.advance_elapsed_us(60_000_000)
+        return result
+
+    monkeypatch.setattr(PersistQueue, "try_reserve_one", interleaved)
+    result = fresh_poll(rt, clock, kernel)
+    assert result.observation.system_time_quality is E.SystemTimeQuality.UNTRUSTED
+    assert rt.published_observation is not first
+    assert rt.sample is None
+    assert queue.snapshot().reserved_entities == 0

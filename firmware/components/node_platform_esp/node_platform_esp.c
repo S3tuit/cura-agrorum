@@ -17,6 +17,14 @@
 #include "protocol_v2_lora_schema_generated.h"
 #include "node_sensors.h"
 
+#if defined(CONFIG_NODE_RF_SLEEP_OBSERVATION) || defined(CURA_RF_COMPONENT_TEST)
+#include "rf_console.h"
+#endif
+
+#ifdef CONFIG_NODE_RF_PHY_OBSERVATION
+void node_rf_observe_dump(void);
+#endif
+
 #define NODE_PLATFORM_ESP_FATAL_RESTART_DELAY_MS UINT32_C(60000)
 
 static const char *const TAG = "node_platform";
@@ -112,9 +120,14 @@ static void enter_deep_sleep_for(void *context, uint64_t duration_us) {
   (void)context;
   const esp_err_t status = esp_sleep_enable_timer_wakeup(duration_us);
   if (status == ESP_OK) {
-#ifdef CONFIG_NODE_RF_SLEEP_OBSERVATION
-    printf("RF_NODE_SLEEP duration_us=%" PRIu64 "\n", duration_us);
-    fflush(stdout);
+#ifdef CONFIG_NODE_RF_PHY_OBSERVATION
+    node_rf_observe_dump();
+#endif
+#if defined(CONFIG_NODE_RF_SLEEP_OBSERVATION) && !defined(CURA_RF_COMPONENT_TEST)
+    rf_console_printf("RF_NODE_SLEEP duration_us=%" PRIu64 "\n", duration_us);
+#endif
+#if defined(CONFIG_NODE_RF_SLEEP_OBSERVATION) || defined(CURA_RF_COMPONENT_TEST)
+    rf_console_prepare_sleep();
 #endif
     esp_deep_sleep_start();
     abort();

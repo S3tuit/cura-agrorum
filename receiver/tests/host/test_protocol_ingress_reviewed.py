@@ -71,9 +71,7 @@ def test_reviewed_reading_paths_preserve_transport_application_and_profile_facts
     assert pre_tx.decoded_sample_id == REVIEWED_SAMPLE_ID
     assert pre_tx.received_frame_length == protocol.READING_FRAME_SIZE
     assert pre_tx.received_frame[: protocol.READING_FRAME_SIZE] == frame
-    assert pre_tx.received_frame[protocol.READING_FRAME_SIZE :] == bytes(
-        255 - protocol.READING_FRAME_SIZE
-    )
+    assert pre_tx.received_frame == frame
     assert pre_tx.t3_authentication_completed_monotonic_us == 20
 
     assert decision.candidate is not None

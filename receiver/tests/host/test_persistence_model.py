@@ -50,9 +50,10 @@ def test_model_reading_examples():
                 sample=201 if index == 6 else 200,
                 frame=frame,
                 body=body,
+                domain=2 if index == 3 else 1,
             )
         )
     assert model.attempt(6) == "committed"
-    assert [value[1] for value in model.rows["profiles"].values()] == [1, 2, 4, 3, 4, 5]
-    assert model.rows["readings"][(b"n" * 8, 100)] == (200, b"body", 1, b"a" * 16, 1)
+    assert [value[1] for value in model.rows["profiles"].values()] == [1, 2, 5, 3, 4, 5]
+    assert model.rows["readings"][(b"n" * 8, 100)] == (200, b"body", 1)
     assert len(model.rows["readings"]) == 3

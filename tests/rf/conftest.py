@@ -40,7 +40,7 @@ def validate_config(config):
     if not option("rf_fixture"):
         raise ValueError("--rf-fixture is required")
     fixture = validate_fixture(json.loads(Path(option("rf_fixture")).read_text()))
-    episodes = select_cases(option("rf_cases"), fixture["c6_fixture"])
+    episodes = select_cases(option("rf_cases"), fixture["node_fixture"])
     if not re.fullmatch("[0-9a-f]{32}", option("rf_run") or ""):
         raise ValueError("--rf-run must be a new 32-character lowercase hex ID")
     output = Path(option("rf_output") or "")
@@ -58,11 +58,11 @@ def validate_config(config):
         raise ValueError("--rf-confirm-flash acknowledges factory-app replacement")
     if (any(option(name) for name in ("erase_all", "erase_nvs", "skip_autoflash", "esp_flash_force", "encrypt", "keyfile", "flash_port")) or option("count") != 1 or
             set((option("embedded_services") or "").split(",")) != {"esp", "idf"} or
-            option("target") != "esp32c6" or Path(option("app_path") or "").resolve() != APP):
-        raise ValueError("require one esp,idf ESP32-C6 radio app, normal flash; no erase-all or skipped flash")
-    if option("port") != fixture["c6_uart"]:
+            option("target") != "esp32s3" or Path(option("app_path") or "").resolve() != APP):
+        raise ValueError("require one esp,idf ESP32-S3 radio app, normal flash; no erase-all or skipped flash")
+    if option("port") != fixture["node_uart"]:
         raise ValueError("selected UART differs from fixture")
-    expected_mac = ":".join(fixture["c6_dut"][i:i+2] for i in range(0, 12, 2))
+    expected_mac = ":".join(fixture["node_dut"][i:i+2] for i in range(0, 12, 2))
     if option("port_mac") != expected_mac:
         raise ValueError("--port-mac must bind the actual factory MAC before flashing")
     build = Path(option("build_dir") or "build")

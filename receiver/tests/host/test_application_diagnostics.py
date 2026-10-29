@@ -87,7 +87,7 @@ def test_core_closed_operation_catalogue():
     with pytest.raises(ValueError):
         CoreFailureEpisode(E.CoreDiagnosticErrorCode.INVALID_ARGUMENT, E.DiagnosticOperation.RECEIVE, 0, context)
     with pytest.raises(ValueError):
-        replace(context, flags=256)
+        replace(context, flags=512)
     with pytest.raises(ValueError):
         replace(context, detail_kind=E.CoreDetailKind.PERSIST_QUEUE_VIOLATION, detail_code=99)
 
@@ -178,3 +178,13 @@ def test_chrony_implementation_escape_keeps_actual_operation(monkeypatch, operat
     assert episode.error_code is E.CoreDiagnosticErrorCode.UNEXPECTED_EXCEPTION
     record = core_diagnostic(episode, receiver_instance_id=INSTANCE, diagnostic_sequence=1)
     assert b'private' not in record.context
+
+
+def test_current_airtime_group_has_distinct_flag_from_historical_grant():
+    from cura_receiver.core_diagnostics import exception_episode
+    event = exception_episode(RuntimeError('test'), phase=E.CorePhase.AIRTIME_STATE,
+        stage=E.CoreFailureStage.COMMIT_STATE, operation=E.DiagnosticOperation.WRITE,
+        started=1, finished=2, airtime_group_outstanding=True)
+    assert event.context.flags & 256
+    assert not event.context.flags & 2
+    assert decode_core_context(encode_core_context(event.context)) == event.context

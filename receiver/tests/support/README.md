@@ -9,6 +9,11 @@ concrete repeated need. Keep a helper local to one test module until sharing it
 removes real duplication without hiding the behavior under test. Do not create
 placeholder interfaces for later receiver components.
 
+`receiver_pytest.py` owns the common pytest registration and hardware safeguards
+for installed-system and component bench suites. `receiver/conftest.py` registers
+it once. `time_components.py` supplies the shared isolated time fixtures and child
+runner used by automated time mutations and the physical DS3231 I2C fault family.
+
 ## Organization
 
 The support tree grows by responsibility when its first real consumer exists:
@@ -78,8 +83,8 @@ eight-hour real-SQLite test asserts the one-second deferral and 61-second
 ACK-gap bounds without calling that model, so shared availability mistakes do
 not pass merely through differential agreement (review F-001).
 The Pi lifetime/restart and two-phase reboot families share
-`hardware/airtime_component.py` only after both needed the same real Linux time
-adapters and SQLite worker fixture. Existing-history rows are explicit test
+[`target/airtime_component.py`](../target/airtime_component.py) only after both
+needed the same real Linux time adapters and SQLite worker fixture. Existing-history rows are explicit test
 inputs. The reboot controller lives in `tools/test_airtime_reboot.py`, outside
 the deployed package, and uses the existing hardware/destructive interlocks.
 
@@ -91,8 +96,9 @@ local, while realtime-step tests reuse the existing `FakeOsClock`. This stage
 added no shared time model or helper. The runtime extension keeps its primitive
 network oracle, RTC episode builders and SIGKILL milestones local to
 `host/test_runtime_time.py`, using the existing real queue and SQLite worker.
-The laptop reference bridge remains in `hardware/time_reference.py`; its
-independent numerical examples are host tests, not target slew evidence.
+The laptop reference bridge remains in
+[`target/time_reference.py`](../target/time_reference.py); its independent numerical
+examples are host tests, not target slew evidence.
 
 ## Builders
 
@@ -151,3 +157,20 @@ interface merely to make a test convenient.
 Normal persistence tests use real temporary SQLite files. Fake SQL behavior or
 a fake filesystem must not replace constraints and durability behavior that the
 real schema can exercise.
+
+## Airtime model runs
+
+For longer independent exploration than the host suite defaults, from the
+repository root:
+
+```sh
+PYTHONPATH=receiver .venv/bin/python -m tests.support.models.tx_airtime --trials 1000 --steps 500
+PYTHONPATH=receiver .venv/bin/python -m tests.support.models.tx_airtime_adversarial --trials 1000 --hours 48
+```
+
+These models assume one active owner, conservative charges, bounded monotonic
+rate, and the normal TX-completion envelope. Generated histories sample those
+assumptions; they do not measure physical power loss, RTC drift, late SPI execution,
+or missed RF packets. The replay fixture in
+[`data/airtime_regression_requests.json`](data/airtime_regression_requests.json)
+keeps the lost-save/restart failure lesson with the executable input.

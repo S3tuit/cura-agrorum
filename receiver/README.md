@@ -1,86 +1,41 @@
 # Receiver
 
-This directory contains the provisional Raspberry Pi receiver architecture,
-interfaces, Python package, schema sources, generators, and tests.
+The Raspberry Pi receiver authenticates LoRa readings through an SX1262, sends
+ACKs, and stores readings and operational history in SQLite.
 
-## Documentation
-
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) defines component ownership, runtime
-  behavior, persistence lifecycle, durability, and recovery policy.
-- [`INTERFACE.md`](INTERFACE.md) defines shared receiver values, typed queue
-  entities, persistence-control interfaces, and the SQLite contract.
-- [`INTERFACE_DIAGNOSTIC.md`](INTERFACE_DIAGNOSTIC.md) defines diagnostic
-  catalogues and fixed diagnostic contexts.
-- [`TESTING.md`](TESTING.md) defines the pilot host and Raspberry Pi test
-  suites, their framework, fixtures, safety boundaries, and deferred
-  end-to-end RF coverage.
-- [`hardware/ds3231/README.md`](hardware/ds3231/README.md) documents DS3231
-  wiring, kernel selection and bench time configuration; its
-  [operator procedure](hardware/ds3231/OPERATOR_TESTS.md) defines physical
-  retention, oscillator-stop and recovery checks with evidence requirements.
-  [Recorded results](hardware/ds3231/results/README.md) retain dated outcomes
-  and raw evidence alongside the procedure in Git.
-- [`tests/hardware/RADIO_TESTS.md`](tests/hardware/RADIO_TESTS.md) describes
-  explicit SX1262 component-fixture selection, source staging and evidence.
-  The [carrier schematic](hardware/TEST_CARRIER.md#proposed-sx1262-extension)
-  remains a proposal until the operator fits and checks the board.
-
-The protocol contract remains under
-[`../protocol/protocol-v2-lora/`](../protocol/protocol-v2-lora/).
+Start with the [architecture](ARCHITECTURE.md) for ownership and design tradeoffs,
+[hardware](HARDWARE.md) for the production schematic, [testing](tests/README.md)
+for test commands, or [deployment](deploy/README.md) for installation and maintenance.
+[Chrony setup](deploy/CHRONY.md) owns system time configuration.
+The [LoRa protocol](../protocol/protocol-v2-lora/README.md) owns packet formats,
+authentication, and node/receiver interoperability.
 
 ## Directory map
 
-- [`cura_receiver/`](cura_receiver/) contains handwritten receiver Python code.
-  `persist_queue.py`, `persist_queue_entities.py`, and
-  `quarantine_evidence.py` implement the fixed object-reference ring, its
-  immutable handoff values, and the poison-evidence codec respectively.
-  Its [`generated/`](cura_receiver/generated/) subdirectory contains checked-in
-  generated Python modules. `database_initializer.py` installs a fresh receiver
-  database from the exact packaged schema without overwriting an existing one.
-  `receiver_configuration.py` runs the shared protocol loader on its persistence
-  owner, while `receiver_startup.py` creates process identities and commits
-  lifecycle start rows. `sqlite_database.py` opens and validates existing
-  databases, and `sqlite_repository.py` supplies explicit row operations within
-  caller-owned transactions. `ordinary_persistence.py` adds caller-driven queue
-  transactions, immutable health enrichment, exact replay, poison quarantine,
-  and exact reconciliation; `reading_persistence.py` owns reading classification
-  and canonical evidence checks. `persistence_recovery.py` owns the shared
-  admission, retry and checkpoint policy. `persistence_worker.py` supplies the
-  sole disk-owning thread, startup, queue/control scheduling and bounded final
-  shutdown handoff. `persistence_control_channel.py` implements the four
-  synchronous operations; handwritten state validation and transactions live
-  in `communicator_state_persistence.py` and `persistence_control_operations.py`.
-  `sqlite_transactions.py` remains the concrete SQLite transaction/checkpoint
-  fault boundary. The communicator, live time policy and radio integration
-  remain later components.
-  [`ports/`](cura_receiver/ports/) defines narrow production capabilities, and
-  [`platform/`](cura_receiver/platform/) contains their deployed Linux adapters.
-- [`schemas/`](schemas/) contains machine-readable receiver sources of truth for
-  stable enums and persisted entity layouts.
-- [`db/`](db/) contains the handwritten SQLite schema input and generated
-  `schema.sql`.
-- [`tools/`](tools/) contains host-side receiver generation tools.
-- [`tests/`](tests/) contains the deterministic host suite, target-Pi hardware
-  suite, and test-only support. The generation/schema tests live under
-  [`tests/host/`](tests/host/); [`tests/support/README.md`](tests/support/README.md)
-  defines when shared fakes, builders, models and coordination helpers are added.
-- `receiver-group.json` is the development receiver-group configuration.
+| Path | Responsibility |
+| --- | --- |
+| [`cura_receiver/`](cura_receiver/) | Handwritten runtime: `application.py` composes communicator and persistence; component modules document non-obvious behavior. |
+| [`cura_receiver/ports/`](cura_receiver/ports/) and [`platform/`](cura_receiver/platform/) | Narrow device/OS capabilities and their Linux adapters. |
+| [`schemas/`](schemas/) | Editable enum assignments, entity layouts, and relational mappings. |
+| [`db/`](db/) | Handwritten `schema_source.sql` and generated `schema.sql`. |
+| [`tools/`](tools/) | Generation, database initialization, packaging, and test controllers. |
+| [`cura_receiver/generated/`](cura_receiver/generated/) | Checked-in generated Python projections; edit their sources and regenerate. |
+| [`native/`](native/) | Production capability-limited RTC write helper. |
+| [`tests/`](tests/) | Host tests, target-Pi integration tests, and shared support. |
+| [`hardware/`](hardware/) | Component-specific physical tests with preparation and restoration beside their code. |
+| [`test_apps/radio_peer/`](test_apps/radio_peer/) | Pi component peer for [joint RF tests](../tests/rf/README.md). |
+| [`benchmarks/`](benchmarks/) | Reusable performance characterization tools. |
 
-Each subdirectory README explains only the files and editing rules local to
-that directory. Follow links to the governing documents above for behavioral
-and compatibility contracts rather than repeating those contracts in local
-READMEs.
+`receiver-group.json` is the development configuration. Installed deployments use
+explicit private configuration and database paths. Schema versions and fingerprints
+come from the generated sources; runtime requires an exact match and performs no
+automatic migration. Follow [database maintenance](deploy/README.md#database-maintenance) for a fresh schema
+or restoration.
 
 ## Python setup
 
-The database opener requires Python 3.12 or newer with SQLite
-`SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE` support. The deployed Pi component tests
-verify that capability and the required connection settings on its storage.
-The shared configuration loader is a separate protocol-owned package under
-`protocol/protocol-v2-lora/python`; installed receiver deployments must include
-it, without needing the provisioning tools directory.
-
-For a fresh development/test environment, from the repository root:
+Receiver database access requires Python 3.12 or newer and SQLite support for
+`SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE`. From the repository root:
 
 ```sh
 python3 -m venv .venv
@@ -91,25 +46,7 @@ python3 -m venv .venv
 make test-receiver
 ```
 
-The protocol requirements include the cryptography dependency used by receiver
-ingress. Pytest also adds the shared protocol source directory to its import
-path so tests exercise the current checkout. Production imports the installed
-`cura_protocol_v2_lora` package directly. Deployment supplies explicit private
-configuration and database paths; the default configuration path is only the
-development `receiver/receiver-group.json`.
-
-The worker takes an already-created immutable `ReceiverInstanceStart` and
-explicit database/configuration paths. Call `start()` before using its
-`control` channel; `wait_started()` exposes immutable startup facts without a
-database handle. The caller closes `queue`, waits for closed-and-drained within
-its budget and requests the clean-stop marker after its own shutdown
-preconditions hold. `request_stop(deadline_monotonic_us=...)` is the final
-handoff: it closes submissions, drains within the remaining budget and attempts
-checkpoint/close when eligible. It cannot preempt kernel I/O or manufacture a
-clean marker.
-
-The raw communicator-state envelope advances the pilot schema to epoch 10.
-Existing epoch databases require the documented offline fresh-database
-deployment boundary; there is no automatic migration or restoration.
-Worker validation evidence is recorded under
-[`tests/hardware/evidence/persistence_worker/`](tests/hardware/evidence/persistence_worker/README.md).
+The shared configuration/protocol loader is a separate installed package;
+production does not depend on provisioning tools or test imports. Pytest uses the
+current protocol source checkout. See [tests/README.md](tests/README.md) for focused
+runs and target/component selection.

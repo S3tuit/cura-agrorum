@@ -6,9 +6,10 @@ import pytest
 
 from cura_receiver.ports.radio import Dio1Edge, Error, Outcome, RadioBackendError, RadioFailure, RadioTxAuthorization, Stage
 from cura_receiver.generated.receiver_enums_generated import AckTxResult
-from cura_receiver.radio import Radio, State
+from cura_receiver.radio import Radio, State, ReceiveDisposition
 from cura_receiver.radio_diagnostics import Reason, Severity
 from cura_receiver.sx1262 import Sx1262
+from cura_receiver.stop_intent import StopIntent
 from tests.support.fakes.os_clock import FakeOsClock
 from tests.support.fakes.radio_io import PhysicalPort, Wait
 
@@ -205,7 +206,7 @@ def test_packet_snapshot_and_rearm(owner):
 
 
 # Header/CRC combinations discard bytes, clear exact bits and rearm without diagnostics.
-@pytest.mark.parametrize("irq", [0x20, 0x40, 0x42, 0x60, 0x62, 0x22])
+@pytest.mark.parametrize("irq", [0x40, 0x42, 0x60, 0x62, 0x22])
 def test_normal_rx_error_irq(owner, irq):
     radio, io, clock = owner
     radio.initialize()
@@ -213,12 +214,69 @@ def test_normal_rx_error_irq(owner, irq):
     signal(io, clock, irq)
     result = radio.receive(deadline_monotonic_us=20000)
     assert result.state is State.RX_SINGLE and result.episodes == ()
-    assert result.receive_event is not None and not result.receive_event.usable_for_ingress
+    assert result.receive_event is not None and result.receive_event.disposition is ReceiveDisposition.FAILED
     assert result.receive_event.frame is None and result.receive_event.irq_status == irq
     assert b"\x02" + irq.to_bytes(2, "big") in io.commands
     assert not any(command[0] == 0x1E for command in io.commands)
-    assert radio.counters.header_errors == bool(irq & 0x20)
-    assert radio.counters.crc_errors == bool(irq & 0x40)
+    assert radio.counters.header_errors_observed == bool(irq & 0x20)
+    assert radio.counters.crc_errors_observed == bool(irq & 0x40)
+
+
+@pytest.mark.parametrize("status", [0x52, 0x54, 0x22, 0x24])
+def test_header_error_is_explicit_handled_no_packet(owner, status):
+    radio, io, clock = owner
+    radio.initialize()
+    counters = radio.counters
+    io.commands.clear()
+    signal(io, clock, 0x20)
+    io.status = status
+    result = radio.receive(deadline_monotonic_us=20000)
+    event = result.receive_event
+    assert result.state is State.RX_SINGLE and result.episodes == ()
+    assert event.disposition is ReceiveDisposition.HANDLED_NO_PACKET
+    assert (event.irq_status, event.device_errors, event.frame) == (0x20, 0, None)
+    assert event.t2_packet_copied_monotonic_us is None
+    assert event.edge_timestamp_ns <= event.t1_handler_started_monotonic_us * 1000
+    assert result.t6_set_rx_issued_monotonic_us is not None
+    from dataclasses import replace
+    assert radio.counters == replace(counters, header_errors_observed=1, header_errors_handled=1)
+    commands = [c.hex() for c in io.commands if c[0] != 0xc0]
+    assert commands == [
+        "12000000", "17000000", "8000", "020020",
+        "8000", "8a01", "863641999a", "8b07040100", "8c000800ff0100",
+        "8e0e02", "9320", "9f00", "a000", "080263026300000000",
+        "0d07401424", "0d08ac96", "1d08890000", "0d088904",
+        "1d07360000", "0d073604", "17000000", "12000000", "02ffff", "82000000",
+    ]
+    signal(io, clock)
+    packet = radio.receive(deadline_monotonic_us=20000).receive_event
+    assert packet.disposition is ReceiveDisposition.PACKET and packet.frame == b"packet"
+
+
+@pytest.mark.parametrize("opcode,reason", [
+    (0x80, Reason.SPI_FAILURE), (0x02, Reason.SPI_FAILURE),
+    (0x8c, Reason.RX_PROFILE_RESTORE_FAILED), (0x82, Reason.SET_RX_FAILED),
+])
+def test_header_handling_failure_retains_failed_event(owner, opcode, reason):
+    radio, io, clock = owner
+    radio.initialize()
+    signal(io, clock, 0x20)
+    io.status = 0x52
+    def fail_once(command):
+        del io.hooks[opcode]
+        fail(opcode=opcode)(command)
+    io.hooks[opcode] = fail_once
+    result = radio.receive(deadline_monotonic_us=20000)
+    assert result.state is State.RECOVERING
+    event = result.receive_event
+    assert event.disposition is ReceiveDisposition.FAILED and event.irq_status == 0x20
+    assert radio.counters.header_errors_observed == 1
+    assert radio.counters.header_errors_handled == 0
+    assert radio.counters.recovery_attempts_by_reason[reason.value - 1] == 1
+    recovered = radio.recover()
+    assert recovered.state is State.RX_SINGLE and recovered.receive_event is None
+    assert len(recovered.episodes) == 1 and recovered.episodes[0].error_code is Error.IO
+    assert event.disposition is ReceiveDisposition.FAILED
 
 
 # Impossible RX IRQ combinations produce one direct warning after confirmed RX restoration.
@@ -244,7 +302,7 @@ def test_receive_fault_enters_recovery(owner, opcode):
     io.hooks[opcode] = fail(outcome=Outcome.UNCERTAIN)
     result = radio.receive(deadline_monotonic_us=20000)
     assert result.state is State.RECOVERING and not result.episodes
-    assert result.receive_event is not None and not result.receive_event.usable_for_ingress
+    assert result.receive_event is not None and result.receive_event.disposition is ReceiveDisposition.FAILED
     copied = opcode in (0x14, 0x0D, 0x1D, 0x02)
     assert result.receive_event.frame == (b"packet" if copied else None)
     assert (result.receive_event.t2_packet_copied_monotonic_us is not None) is copied
@@ -426,7 +484,7 @@ def test_captured_timeout_observation(owner, transmit):
         assert result.tx.t5_tx_done_monotonic_us is None
         assert result.episodes == ()
     else:
-        assert result.tx is None and not result.receive_event.usable_for_ingress
+        assert result.tx is None and result.receive_event.disposition is ReceiveDisposition.FAILED
         assert result.receive_event.irq_status == 0x200
         assert len(result.episodes) == 1
         assert result.episodes[0].error_code is Error.UNEXPECTED_IRQ
@@ -551,7 +609,7 @@ def test_external_airtime_settlement(airtime_component, uncertain):
     from tests.support.builders.persistence_control import state
 
     policy, _, _, clock, _ = airtime_component(initial_state=state())
-    assert policy.acquire_grant(deadline_monotonic_us=5000100).reason is AirtimeReason.ALLOWED
+    assert policy.maintain(deadline_monotonic_us=5000100).reason is AirtimeReason.STATE_READY
     io = PhysicalPort(clock)
     radio = Radio(Sx1262(io, clock, Wait(clock)))
     radio.initialize()
@@ -570,8 +628,10 @@ def test_external_airtime_settlement(airtime_component, uncertain):
     facts = result.tx.facts
     certainty = TxCertainty.UNCERTAIN if facts.profile_uncertain or facts.set_tx_outcome is Outcome.UNCERTAIN else TxCertainty.NOT_STARTED
     policy.report_tx(spend.token, certainty)
-    assert policy.settle(precharge=False, deadline_monotonic_us=clock.now_monotonic_us() + 5000000).reason is AirtimeReason.STATE_READY
-    assert sum(bucket.charged_airtime_us for bucket in policy.state.buckets) == (67866 if uncertain else 0)
+    assert policy.save( deadline_monotonic_us=clock.now_monotonic_us() + 5000000).reason is AirtimeReason.STATE_READY
+    assert policy.used_since_save_us == 0
+    assert policy.total_used == 4_000_000  # definite non-start may retain its empty reservation
+    assert policy.group_outstanding is (not uncertain)
 
 
 def needs_recovery(owner):
@@ -789,6 +849,28 @@ def test_shutdown_during_transmit_command(owner, opcode):
     assert (result.tx.t4_set_tx_attempted_monotonic_us is None) is (opcode == 0x8C)
 
 
+@pytest.mark.parametrize('opcode', [None, 0x8C, 0x83])
+def test_application_intent_suppresses_tx_at_existing_boundaries(opcode):
+    clock = FakeOsClock(monotonic_us=10000)
+    stop = StopIntent(clock, 10_000_000)
+    io = PhysicalPort(clock)
+    radio = Radio(Sx1262(io, clock, Wait(clock)), stop_requested=stop.is_requested)
+    radio, io, _ = received((radio, io, clock))
+    radio.prepare_ack(b'ACK')
+    if opcode is None:
+        stop.request()
+    else:
+        io.after_transfer = lambda command: stop.request() if command[0] == opcode else None
+    result = radio.start_ack(RadioTxAuthorization(1000000))
+    assert result.state is State.SHUTDOWN and result.safe_shutdown
+    expected = (AckTxResult.SET_TX_FAILED if opcode is None else
+                AckTxResult.TX_UNCONFIRMED if opcode == 0x8C else AckTxResult.UNKNOWN_INTERRUPTED)
+    assert result.tx.ack_tx_result is expected
+    assert result.tx.facts.profile_uncertain is (opcode == 0x8C)
+    assert (result.tx.t4_set_tx_attempted_monotonic_us is None) is (opcode != 0x83)
+    assert sum(command[0] == 0x83 for command in io.commands) == int(opcode == 0x83)
+
+
 # Unexpected implementation exceptions propagate to CORE without fabricated RADIO status.
 def test_unexpected_exception_not_normalized(owner):
     radio, io, _ = owner
@@ -946,7 +1028,7 @@ def test_receive_status_failure_retains_copied_bytes(owner):
     io.after_transfer = after
     result = radio.receive(deadline_monotonic_us=20000)
     event = result.receive_event
-    assert not event.usable_for_ingress and event.frame == b"packet"
+    assert event.disposition is ReceiveDisposition.FAILED and event.frame == b"packet"
     assert event.t2_packet_copied_monotonic_us is not None
     assert event.rssi_dbm_x2 is None and event.snr_db_x4 is None
     assert result.state is State.RECOVERING
@@ -964,4 +1046,4 @@ def test_receive_stop_after_copy_retains_event(owner):
     result = radio.receive(deadline_monotonic_us=20000)
     assert result.state is State.SHUTDOWN
     assert result.receive_event.frame == b"packet"
-    assert not result.receive_event.usable_for_ingress
+    assert result.receive_event.disposition is ReceiveDisposition.FAILED

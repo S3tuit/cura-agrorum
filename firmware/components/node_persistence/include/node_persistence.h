@@ -6,6 +6,19 @@
 #include "node_common.h"
 #include "protocol_v2_lora_schema_generated.h"
 
+/*
+ * Single-threaded, wake-local storage owner. Inputs are borrowed for the call;
+ * outputs are valid on success only. Optional diagnostics are cleared on entry
+ * and preserve the failure site's operation/resource/status; NULL discards only
+ * that detail. NVS and LittleFS initialize independently on demand and cache
+ * initialization failure until the next boot.
+ *
+ * Every append first validates its tail. Bounded recovery may durably discard
+ * an unusable suffix, then return the corruption/unsupported error WITHOUT
+ * performing the requested operation. An unprovable boundary preserves bytes.
+ * A failed write/sync may have persisted data; failure is not a rollback.
+ */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -108,6 +121,52 @@ typedef uint8_t node_delivery_final_result_t;
 #define NODE_DELIVERY_RESULT_AIRTIME_BUDGET_END UINT8_C(5)
 #define NODE_DELIVERY_RESULT_RADIO_CYCLE_DEADLINE UINT8_C(6)
 #define NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR UINT8_C(7)
+#define NODE_DELIVERY_RESULT_NO_ACK_ATTEMPT_LIMIT UINT8_C(8)
+
+/* What ended one transmit call's part of a delivery. */
+typedef uint8_t node_delivery_tx_outcome_t;
+#define NODE_DELIVERY_TX_OUTCOME_INVALID UINT8_C(0)
+/* An authenticated, correlated ACK with a supported status, in time. */
+#define NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED UINT8_C(1)
+/* The ordinary ACK wait expired. Absence of an ACK proves no uplink loss. */
+#define NODE_DELIVERY_TX_OUTCOME_ACK_TIMEOUT UINT8_C(2)
+/* A TX, RX or ACK-processing failure local to the node. */
+#define NODE_DELIVERY_TX_OUTCOME_LOCAL_ERROR UINT8_C(3)
+/* The wake radio deadline cut the call before start or truncated its wait. */
+#define NODE_DELIVERY_TX_OUTCOME_DEADLINE_EXPIRED UINT8_C(4)
+
+/* Slots for transmit calls; node_core asserts its retry limit fits. */
+#define NODE_DELIVERY_TX_CALL_SLOTS 2U
+
+/*
+ * Timing evidence for one sx1262_radio_transmit_uplink() call, captured in
+ * RAM and persisted only inside the finished event. All times are in the
+ * wake's node-monotonic microsecond domain and are not comparable across
+ * wakes. A field is meaningful only under its condition; the encoder stores
+ * zero otherwise and decoders must treat it as absent (zero SNR is a real
+ * measurement, not a sentinel).
+ *
+ * tx_started:       Driver flag: SetTx crossed SPI, possibly with an
+ *                   uncertain effect after a later failure.
+ * tx_done:          Driver flag: TX_DONE was captured.
+ * outcome:          NODE_DELIVERY_TX_OUTCOME_*.
+ * set_tx_at_us:     Software time just before SetTx (when tx_started).
+ * tx_done_at_us:    Captured TX_DONE event time (when tx_done).
+ * ack_rx_done_at_us, ack_rssi_dbm_x2, ack_snr_db_x4:
+ *                   Captured RX_DONE time and driver signal statistics of
+ *                   the valid ACK (when outcome is ACK_RECEIVED). The ACK
+ *                   status is the event's final_result.
+ */
+typedef struct {
+  bool tx_started;
+  bool tx_done;
+  node_delivery_tx_outcome_t outcome;
+  uint64_t set_tx_at_us;
+  uint64_t tx_done_at_us;
+  uint64_t ack_rx_done_at_us;
+  int16_t ack_rssi_dbm_x2;
+  int16_t ack_snr_db_x4;
+} node_delivery_tx_call_t;
 
 /*
  * One durable delivery boundary event.
@@ -118,7 +177,10 @@ typedef uint8_t node_delivery_final_result_t;
  * message_id:      Transport-message ID of this logical uplink.
  * domain:          CURRENT_READING_UPLINK or BACKLOG_READING_UPLINK.
  * detail.started:  Application-relative start time for a STARTED event.
- * detail.finished: Wake-local attempt count and terminal result for FINISHED.
+ * detail.finished: Wake-local charged attempt count (calls with tx_started),
+ *                  terminal result, the wake's application start time and
+ *                  every transmit call in order. A budget/time preflight
+ *                  rejection makes no call and has no slot.
  */
 typedef struct {
   node_delivery_event_type_t type;
@@ -133,6 +195,9 @@ typedef struct {
     struct {
       uint8_t attempt_count;
       node_delivery_final_result_t final_result;
+      uint64_t application_start_us;
+      uint8_t tx_call_count;
+      node_delivery_tx_call_t tx_calls[NODE_DELIVERY_TX_CALL_SLOTS];
     } finished;
   } detail;
 } node_delivery_event_t;
@@ -149,7 +214,13 @@ typedef struct {
 err_curag_t node_persistence_claim_sample_id(uint32_t *out_sample_id,
                                              diagn_context_t *out_diag);
 
-/* Claims and durably advances the identity/key-lifetime message counter. */
+/*
+ * Claims and commits the independent identity/key-lifetime message counter.
+ * Both counters may skip after an ambiguous commit but must never wrap/reuse.
+ * Missing storage cannot be distinguished from a fresh identity: counter loss,
+ * rollback or exhaustion requires replacing identity/key and clearing all
+ * node-local NVS, LittleFS and retained RTC state before further transmission.
+ */
 err_curag_t node_persistence_claim_message_id(uint32_t *out_message_id,
                                               diagn_context_t *out_diag);
 
@@ -165,7 +236,11 @@ err_curag_t
 node_persistence_append_pending_reading(const cura_lora_v2_reading_t *reading,
                                         diagn_context_t *out_diag);
 
-/* Durably binds the newest unbound reading to one exact backlog frame. */
+/*
+ * Durably binds the newest unbound reading to one exact backlog frame. A caller
+ * may transmit only after success; later wakes reuse the returned bytes and ID.
+ * The reading and its optional binding form one item for removal/compaction.
+ */
 err_curag_t node_persistence_bind_newest_backlog_frame(
     uint32_t expected_sample_id, uint32_t message_id,
     const cura_lora_v2_authenticated_reading_frame_t *frame,
@@ -185,17 +260,28 @@ node_persistence_peek_most_recent_pending(node_pending_reading_t *out_pending,
 err_curag_t node_persistence_remove_newest_reading(uint32_t expected_sample_id,
                                                    diagn_context_t *out_diag);
 
-/* Durably appends a permanently rejected reading to quarantine.log. */
+/*
+ * Durably appends a rejected reading to quarantine.log without touching pending.
+ * Quarantine and pending removal are independent: reset between them can leave
+ * duplicates. node_core owns the choice to remove even after quarantine fails.
+ */
 err_curag_t
 node_persistence_quarantine_reading(const cura_lora_v2_reading_t *reading,
                                     diagn_context_t *out_diag);
 
-/* Buffers one ordinary diagnostic record for final synchronization. */
+/*
+ * Buffers an ordinary diagnostic until sync_all; success is not durability.
+ * Never include keys. Failure must not be recursively logged or alter delivery.
+ */
 err_curag_t
 node_persistence_append_diagnostic_event(const node_diagnostic_event_t *event,
                                          diagn_context_t *out_diag);
 
-/* Durably appends one DELIVERY_STARTED or DELIVERY_FINISHED event. */
+/*
+ * Durably appends one DELIVERY_STARTED or DELIVERY_FINISHED event. These bracket
+ * controller delivery, not proof of TX: a missing finish leaves the outcome
+ * unknown. Logging failure must not cancel TX or change an authenticated result.
+ */
 err_curag_t
 node_persistence_append_delivery_event(const node_delivery_event_t *event,
                                        diagn_context_t *out_diag);

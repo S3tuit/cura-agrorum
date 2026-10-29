@@ -29,6 +29,10 @@ class PhysicalPort:
         self.busy_until = 0
         self.busy_forever = False
         self.after_transfer = None
+        self.event_observer = None
+
+    def set_event_observer(self, observer):
+        self.event_observer = observer
 
     def open(self, configuration, *, deadline_monotonic_us):
         self.calls.append(("open", configuration, deadline_monotonic_us))
@@ -42,6 +46,9 @@ class PhysicalPort:
     def dio1(self):
         return bool(self.irq)
 
+    def edge_pending(self):
+        return bool(self.edges)
+
     def set_reset(self, *, asserted):
         self.calls.append(("reset", asserted, self.clock.now_monotonic_us()))
         if not asserted:
@@ -52,7 +59,10 @@ class PhysicalPort:
     def wait_edge(self, *, deadline_monotonic_us):
         self.calls.append(("edge", deadline_monotonic_us))
         if self.edges:
-            return self.edges.popleft()
+            edge = self.edges.popleft()
+            if self.event_observer is not None:
+                self.event_observer(edge.timestamp_ns, edge.sequence)
+            return edge
         return None
 
     def transfer(self, data, *, deadline_monotonic_us):
@@ -100,7 +110,10 @@ class PhysicalPort:
 
     def resynchronize_events(self, *, deadline_monotonic_us):
         self.calls.append(("resynchronize_events", deadline_monotonic_us))
-        self.edges.clear()
+        while self.edges:
+            edge = self.edges.popleft()
+            if self.event_observer is not None:
+                self.event_observer(edge.timestamp_ns, edge.sequence)
 
 
 class Wait:

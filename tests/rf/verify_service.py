@@ -1,4 +1,4 @@
-"""Independent RF-020 reconciliation of a consistent SQLite/node capture.
+"""Independent service.reading_delivery reconciliation of a consistent SQLite/node capture.
 
 Sensor acquisition correctness is a separate sensor-carrier prerequisite.
 No production peer policy or generated reading decoder supplies expected values.
@@ -7,7 +7,6 @@ from collections import Counter
 import sqlite3
 import struct
 
-from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 from reading_baseline import new_readings
 
 FIELDS = ("sample_id run_ms soil_0_mv soil_1_mv soil_temp_0_centi_c "
@@ -18,18 +17,13 @@ FIELDS = ("sample_id run_ms soil_0_mv soil_1_mv soil_temp_0_centi_c "
 BODY = struct.Struct("<IHHHhhhIHBBHHBBH")
 
 
-def opened(frame, key, node_id, domain, length):
-    if len(frame) != length:
-        raise ValueError("wrong frame length")
-    control, actual_domain, actual_node, message = struct.unpack("<BB8sI", frame[:14])
-    if (control, actual_domain, actual_node) != (32, domain, node_id):
-        raise ValueError("wrong authenticated frame identity/domain")
-    nonce = struct.pack("<8sIB", node_id, message, domain)
-    return message, AESCCM(key, tag_length=8).decrypt(nonce, frame[14:], frame[:14])
+def verify_service(database, node_id, decoded, instance_id, baseline=None):
+    """Require two complete accelerated wakes of one isolated service instance.
 
-
-def verify_service(database, node_id, key, decoded, instance_id, baseline=None):
-    """Require two complete accelerated wakes of one isolated service instance."""
+    SQL supplies decoded authority and per-reception outcomes; node delivery logs
+    confirm acceptance/attempt counts. Normal frames and ACK bytes are not stored,
+    so this check cannot independently decrypt or compare those wire bytes.
+    """
     with sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True) as db:
         db.row_factory = sqlite3.Row
         if db.execute("PRAGMA integrity_check").fetchall()[0][0] != "ok" or db.execute("PRAGMA foreign_key_check").fetchall():
@@ -38,30 +32,32 @@ def verify_service(database, node_id, key, decoded, instance_id, baseline=None):
         if len(lifecycle) != 1 or lifecycle[0]["clean_stopped_at_monotonic_us"] is None:
             raise ValueError("missing clean service completion")
         profiles = [dict(r) for r in db.execute(
-            "SELECT * FROM message_profiles WHERE receiver_instance_id=? ORDER BY occurrence_sequence", (instance_id,))]
+            "SELECT * FROM packet_receptions WHERE receiver_instance_id=? ORDER BY occurrence_sequence", (instance_id,))]
         readings = [dict(r) for r in db.execute(
             "SELECT * FROM reading_messages WHERE node_id=? ORDER BY message_id", (node_id,))]
+        transports = {r["message_id"]: dict(r) for r in db.execute(
+            "SELECT * FROM received_messages WHERE node_id=?", (node_id,))}
+        exceptions = db.execute(
+            "SELECT count(*) FROM packet_reception_exceptions WHERE receiver_instance_id=?", (instance_id,)).fetchone()[0]
+    if exceptions:
+        raise ValueError("unexpected reception exception")
     if baseline is not None:
         readings = new_readings(readings, baseline, node_id)
     if len(readings) != 2 or not profiles:
         raise ValueError("missing/extra canonical reading")
     counts, observed, order = Counter(), {}, []
+    by_message = {r["message_id"]: r for r in readings}
     for p in profiles:
-        if p["received_frame_length"] != 54 or p["received_frame"] is None or len(p["received_frame"]) != 255:
-            raise ValueError("missing exact received frame")
-        frame = p["received_frame"][:54]
-        if any(p["received_frame"][54:]):
-            raise ValueError("noncanonical frame padding")
-        message, raw = opened(frame, key, node_id, 1, 54)
-        body = dict(zip(FIELDS, BODY.unpack(raw), strict=True))
-        ack_message, status = opened(p["ack_frame"] or b"", key, node_id, 3, 23)
-        if ack_message != message or status != b"\0":
-            raise ValueError("ACK does not accept this message")
-        if (p["claimed_control"], p["claimed_domain"], p["claimed_node_id"],
-            p["claimed_message_id"], p["header_authenticated"], p["decoded_sample_id"],
-            p["processing_result_id"], p["ack_selected_id"], p["ack_tx_result_id"]) != (
-                32, 1, node_id, message, 1, body["sample_id"], 11, 3, 5):
-            raise ValueError("profile classification/identity mismatch")
+        message = p["message_id"]
+        reading = by_message.get(message)
+        transport = transports.get(message)
+        if reading is None or transport is None or transport["domain"] != 1:
+            raise ValueError("reception has no matching current reading authority")
+        body = {name: reading[name] for name in FIELDS}
+        if (p["domain"], p["node_id"], p["decoded_sample_id"],
+            p["processing_result_id"], p["ack_tx_result_id"]) != (
+                1, node_id, body["sample_id"], 11, 5):
+            raise ValueError("reception outcome/identity mismatch")
         timestamps = [p[name] for name in (
             "received_at_monotonic_us", "t1_handler_started_monotonic_us",
             "t2_packet_copied_monotonic_us", "t3_authentication_completed_monotonic_us",
@@ -71,13 +67,13 @@ def verify_service(database, node_id, key, decoded, instance_id, baseline=None):
         if p["persistence_classification_id"] != (2 if counts[message] else 1):
             raise ValueError("incorrect first-seen/retry classification")
         if message in observed:
-            if observed[message]["frame"] != frame or order[-1] != message:
+            if order[-1] != message:
                 raise ValueError("changed or cross-wake retry")
         else:
             if order and message <= order[-1]:
                 raise ValueError("message counter regression")
             order.append(message)
-            observed[message] = dict(frame=frame, raw=raw, body=body, profile=p)
+            observed[message] = dict(body=body, profile=p)
         counts[message] += 1
     if len(order) != 2 or [r["message_id"] for r in readings] != order:
         raise ValueError("missing/extra production wake")
@@ -89,11 +85,8 @@ def verify_service(database, node_id, key, decoded, instance_id, baseline=None):
         raise ValueError("sample counter discontinuity")
     for r in readings:
         e = observed[r["message_id"]]
-        if (r["reading_body"] != e["raw"] or r["is_canonical_for_sample"] != 1 or
-                any(r[name] != e["body"][name] for name in FIELDS) or
-                r["first_receiver_instance_id"] != instance_id or
-                r["first_occurrence_sequence"] != e["profile"]["occurrence_sequence"]):
-            raise ValueError("canonical persistence differs from authenticated reading")
+        if r["is_canonical"] != 1:
+            raise ValueError("reading is not canonical")
         b = e["body"]
         if b["flags"] & 0x00fe != 0x00fe or not all(2000 <= b[n] <= 2700 for n in ("soil_0_mv", "soil_1_mv")):
             raise ValueError("nominal sensor flags/ranges not satisfied")
@@ -118,6 +111,7 @@ def verify_service(database, node_id, key, decoded, instance_id, baseline=None):
                 raise ValueError("node delivery identity mismatch")
         if (finish["final_result"], finish["attempt_count"]) != (1, counts[m]):
             raise ValueError("node outcome/attempts differ from receiver evidence")
-    return dict(case="RF-020", status="PASS", scope="production_node_receiver_service", sleep_seconds=10, cadence_scope="accelerated functional RF",
+    return dict(case="service.reading_delivery", status="PASS", scope="production_node_receiver_service", sleep_seconds=10, cadence_scope="accelerated functional RF",
                 wakes=2, profiles=len(profiles), inter_wake_us=elapsed,
-                sensor_conversion="separate sensor-carrier prerequisite")
+                sensor_conversion="separate sensor-carrier prerequisite",
+                evidence_scope="decoded SQL authority and node delivery outcomes; no retained normal wire bytes")

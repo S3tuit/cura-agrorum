@@ -1,4 +1,4 @@
-"""RF-020: an already installed production service and production node.
+"""service.reading_delivery: an already installed production service and production node.
 
 No installation, provisioning, flash writes or implicit scenario selection.
 """
@@ -14,23 +14,20 @@ import sys
 import tempfile
 import time
 
-from evidence import REPO, admit_episode, digest, episode_capture, write_json
+from capture import REPO, admit_episode, digest, episode_capture, write_json
 sys.path.insert(0, str(REPO / "receiver"))
 sys.path.insert(0, str(REPO / "protocol/protocol-v2-lora/python"))
 from cura_protocol_v2_lora.receiver_group import load_receiver_group
 from cura_receiver.application import authentication_keys
 from inputs import source_manifest
 from node_capture import build_reader
-from production_node import NodeUART, capture_storage, identify, verify_build, verify_installed
+from production_node import ProductionSession, verify_build
 from service_probe import validate_config
-from spec import validate_fixture
+from spec import validate_fixture, service_episode
 from transport import RemoteTransport
 from verify_service import verify_service
-from sleep_observation import sleep_count
 
-EPISODE = dict(case="RF-020", wakes=2, lease_seconds=110, sleep_seconds=10,
-               c6_max_packets=140, pi_max_packets=140,
-               final_observation="agreed sleep-entry marker")
+EPISODE = service_episode()
 
 
 def package_files():
@@ -79,14 +76,14 @@ def service_prerequisite_reasons(observed):
     reasons = []
     now = observed['observed_monotonic_us']
     health, clock, airtime = (observed.get(k) for k in ('health', 'clock', 'airtime'))
-    if (health is None or health['radio_state_id'] != 2 or
-            not 0 <= now - health['communicator_sampled_at_monotonic_us'] <= 75_000_000):
-        reasons.append('fresh_RX_SINGLE_health_required')
+    if (health is None or health['software_state_id'] != 2 or health['chip_mode_id'] != 5 or health['consistency_id'] != 1 or
+            not 0 <= now - health['communicator_sampled_at_monotonic_us'] <= 315_000_000):
+        reasons.append('fresh_consistent_RX_health_required')
     if (clock is None or clock['system_time_quality_id'] != 2 or
             clock['clock_state_generation'] < 1 or
             not observed['started'] <= clock['sampled_at_monotonic_us'] <= now or
             now - clock['sampled_at_monotonic_us'] > 60_000_000):
-        reasons.append('fresh_NETWORK_SYNCED_observation_required')
+        reasons.append('fresh_CHRONY_SYNCED_observation_required')
     if airtime is None or airtime['status'] != 'LOADED':
         reasons.append('validated_airtime_history_required')
     elif not 0 <= airtime['total_charged_us'] < airtime['budget_us']:
@@ -127,7 +124,7 @@ class InstalledService:
         self.admin(shlex.join(["install", "-d", "-m", "700", "-o", self.config["user"], self.remote.remote + "/captures"]))
         state = self.probe("inspect")
         if (state["ActiveState"], state["SubState"], state["MainPID"]) != ("inactive", "dead", "0"):
-            raise ValueError("service must be stopped before RF-020")
+            raise ValueError("service must be stopped before service.reading_delivery")
         return state
 
     def start(self):
@@ -224,23 +221,22 @@ class InstalledService:
 
 def run(args):
     fixture = validate_fixture(json.loads(args.fixture.read_text()))
-    if fixture["c6_fixture"] != "nominal" or not args.confirm_isolated:
+    if fixture["node_fixture"] != "nominal" or not args.confirm_isolated:
         raise ValueError("nominal isolated production fixture required")
     if not re.fullmatch("[0-9a-f]{32}", args.run) or args.ready_run not in (None, args.run):
         raise ValueError("invalid run/readiness identity")
     if not args.output.is_absolute() or args.output.exists() or not args.output.parent.is_dir():
         raise ValueError("choose a new absolute capture directory")
-    for record in (args.manual_record, args.prerequisites):
-        if not record.is_file() or not record.read_bytes().strip():
-            raise ValueError("missing operator/prerequisite record")
+    if not args.manual_record.is_file() or not args.manual_record.read_bytes().strip():
+        raise ValueError("missing operator airtime record")
     seal = verify_build(args.build)
     if seal.get("sleep_seconds") != 10 or not seal.get("sleep_observation"):
-        raise ValueError("RF-020 requires observed accelerated10-second build")
+        raise ValueError("service.reading_delivery requires observed accelerated10-second build")
     node_id = bytes.fromhex(seal["node_id"])
     group = load_receiver_group(args.local_group)
     keys = authentication_keys(group)
     if set(keys) != {node_id}:
-        raise ValueError("RF-020 requires exactly the selected disposable node in its group")
+        raise ValueError("service.reading_delivery requires exactly the selected disposable node in its group")
     config = validate_config(dict(schema=1, unit=args.unit, package=args.package,
         test_root=args.test_root, user="cura-receiver", files=package_files()))
     root = args.output
@@ -251,12 +247,11 @@ def run(args):
     write_json(root / "production-build.json", seal)
     write_json(root / "episode.json", EPISODE)
     shutil.copyfile(args.manual_record, root / "operator-airtime-record.txt")
-    shutil.copyfile(args.prerequisites, root / "prerequisites.txt")
     reader = root / "node-image-reader"
     write_json(root / "decoder-sources.json", build_reader(reader))
-    record = dict(schema=1, run=args.run, selected=["RF-020"], status="INCOMPLETE", failures=[], results=[], fixture=fixture)
+    record = dict(schema=1, run=args.run, selected=["service.reading_delivery"], status="INCOMPLETE", failures=[], results=[], fixture=fixture)
     remote = RemoteTransport(args.host, fixture["pi_user"], args.run, root, args.host_key_alias)
-    with episode_capture(record, "RF-020", root, root) as cleanups:
+    with episode_capture(record, "service.reading_delivery", root, root) as cleanups:
         remote.stage(manifest, fixture)
         service = InstalledService(remote, config)
         before = service.prepare()
@@ -269,11 +264,12 @@ def run(args):
         write_json(root / "reading-baseline.json", reading_baseline)
         write_json(root / "service-before.json", dict(state=before, database=prior))
         print(json.dumps(EPISODE, indent=2), flush=True)
-        admit_episode(args.run, "RF-020", root, root / "operator-airtime-record.txt", args.ready_run)
-        verify_installed(fixture, args.build, root)
-        baseline = capture_storage(fixture, root, "before", reader, seal, args.run)
+        admit_episode(args.run, "service.reading_delivery", root, root / "operator-airtime-record.txt", args.ready_run)
+        node = ProductionSession(fixture, root, reader, seal, args.run, EPISODE["wakes"])
+        node.verify_installed(args.build)
+        baseline = node.capture_before()
         if any(baseline["logs"].values()):
-            raise ValueError("RF-020 requires separately initialized empty node logs")
+            raise ValueError("service.reading_delivery requires separately initialized empty node logs")
         # Reverse cleanup order stops the node/service before capturing database.
         cleanups.append(("consistent receiver snapshot", service.capture_database))
         cleanups.append(("service journal", service.capture_journal))
@@ -282,56 +278,35 @@ def run(args):
         ready = service.wait_for_prerequisites()
         running = service.running
         write_json(root / "service-ready.json", dict(state=running, database=ready))
-        node = NodeUART(fixture["c6_uart"], root)
-        node_closed = node_stopped = False
-        def stop_node():
-            nonlocal node_closed, node_stopped
-            if node_stopped:
-                return
-            error = None
-            if not node_closed:
-                try:
-                    node.close()
-                except BaseException as e:
-                    error = e
-                node_closed = True
-            try:
-                identify(fixture, root, "final-stop-mac")
-                node_stopped = True
-            except BaseException:
-                write_json(root / "node-restoration-required.json", dict(action="remove all node power; autonomous TX unconfirmed"))
-                raise
-            if error is not None:
-                raise error
-        cleanups.append(("autonomous node stop", stop_node))
+        node.prepare()
+        cleanups.append(("autonomous node stop", node.stop))
         node.start()
         deadline = time.monotonic() + EPISODE["lease_seconds"]
         while time.monotonic() < deadline:
-            if node.failure is not None:
-                raise RuntimeError("UART capture failed: " + str(node.failure))
+            node.check_health()
             same_service(before, service.probe("inspect"), running=running)
             observed = service.probe("observe")
             if observed["instance"] != ready["instance"] or observed["clean_stop"] is not None:
                 raise ValueError("service lifecycle changed")
             if observed["samples"] > 2 or observed["profiles"] > EPISODE["pi_max_packets"]:
                 raise ValueError("extra wake or episode ceiling exceeded")
-            markers = sleep_count((root / "c6-uart.bin").read_bytes(), 10, 2)
-            if observed["samples"] == 2 and markers == 2:
-                write_json(root / "sleep-observation.json", dict(run=args.run, case="RF-020",
-                    wakes=2, sleep_seconds=10, boundary="cycle finalized, timer configured, entering sleep"))
+            markers = node.sleep_count()
+            if observed["samples"] == 2 and markers == 2 and node.finalized:
+                write_json(root / "sleep-observation.json", dict(run=args.run, case="service.reading_delivery",
+                    wakes=2, sleep_seconds=10, boundary="cycle finalized, timer configured, final wake parked"))
                 break
             time.sleep(2)
         else:
             raise TimeoutError("complete production wake pair not observed")
-        stop_node()
-        if sleep_count((root / "c6-uart.bin").read_bytes(), 10, 2) != 2:
+        node.stop()
+        if node.sleep_count() != 2:
             raise ValueError("incomplete final UART observation")
         service.stop()
         write_json(root / "service-after.json", service.probe("inspect"))
         service.capture_journal()
         database = service.capture_database()
-        captured = capture_storage(fixture, root, "after", reader, seal, args.run)
-        record["results"].append(verify_service(database, node_id, keys[node_id], captured,
+        captured = node.capture_after()
+        record["results"].append(verify_service(database, node_id, captured,
                                                bytes.fromhex(ready["instance"]), reading_baseline))
     record["status"] = "PASS"
     write_json(root / "run.json", record)
@@ -339,7 +314,7 @@ def run(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for field in ("fixture", "output", "manual-record", "prerequisites", "local-group", "build"):
+    for field in ("fixture", "output", "manual-record", "local-group", "build"):
         parser.add_argument("--" + field, type=Path, required=True)
     for field in ("run", "unit", "package", "test-root"):
         parser.add_argument("--" + field, required=True)

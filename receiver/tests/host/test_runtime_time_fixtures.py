@@ -3,7 +3,7 @@ import sqlite3
 import pytest
 
 from cura_receiver.ports.ds3231 import Ds3231ReadResult, Ds3231ReadStatus
-from tests.hardware import test_runtime_time as fixture
+from tests.target import test_runtime_time as fixture
 from tests.support.fakes.ds3231 import FakeDs3231Control
 from tests.support.fakes.os_clock import FakeOsClock
 

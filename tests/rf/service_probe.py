@@ -1,4 +1,4 @@
-"""Pi-local read-only RF-020 service inspection and SQLite capture.
+"""Pi-local read-only service.reading_delivery service inspection and SQLite capture.
 
 Administrative inspection runs separately from database access under the actual
 service UID. This helper never installs packages, starts services or touches RF.
@@ -100,7 +100,8 @@ def inspect(config):
             if name in environment:
                 raise ValueError("duplicate deployment environment")
             environment[name] = value
-    expected = dict(CURA_RECEIVER_TEST_ROOT=str(root),
+    expected = dict(CURA_RECEIVER_STARTUP_BUDGET_US="12000000",
+                    CURA_RECEIVER_TEST_ROOT=str(root),
                     CURA_RECEIVER_CONFIGURATION=str(root / "config/receiver-group.json"),
                     CURA_RECEIVER_DATABASE=str(root / "data/receiver.sqlite3"),
                     SQLITE_TMPDIR=str(root / "data/tmp"))
@@ -142,11 +143,13 @@ def database_observation(database):
         if instance is None:
             return dict(instance=None, health=None, profiles=0, samples=0, total_readings=total_readings)
         iid = instance["receiver_instance_id"]
-        health = db.execute("SELECT radio_state_id,communicator_sampled_at_monotonic_us FROM receiver_health "
-                            "WHERE receiver_instance_id=? ORDER BY health_sequence DESC LIMIT 1", (iid,)).fetchone()
-        profiles = db.execute("SELECT count(*) FROM message_profiles WHERE receiver_instance_id=?", (iid,)).fetchone()[0]
-        samples = db.execute("SELECT count(*) FROM reading_messages WHERE first_receiver_instance_id=?", (iid,)).fetchone()[0]
-        latest = db.execute("SELECT max(received_at_monotonic_us) FROM message_profiles WHERE receiver_instance_id=?", (iid,)).fetchone()[0]
+        health = db.execute("SELECT o.software_state_id,o.chip_mode_id,h.consistency_id,h.communicator_sampled_at_monotonic_us "
+                            "FROM receiver_health h LEFT JOIN radio_observations o "
+                            "ON o.receiver_instance_id=h.receiver_instance_id AND o.observation_sequence=h.radio_observation_sequence "
+                            "WHERE h.receiver_instance_id=? ORDER BY h.health_sequence DESC LIMIT 1", (iid,)).fetchone()
+        profiles = db.execute("SELECT count(*) FROM packet_receptions WHERE receiver_instance_id=?", (iid,)).fetchone()[0]
+        samples = db.execute("SELECT count(DISTINCT decoded_sample_id) FROM packet_receptions WHERE receiver_instance_id=? AND processing_result_id=11 AND persistence_classification_id IN (1,2,3)", (iid,)).fetchone()[0]
+        latest = db.execute("SELECT max(received_at_monotonic_us) FROM packet_receptions WHERE receiver_instance_id=?", (iid,)).fetchone()[0]
         clock = db.execute("SELECT clock_state_generation,system_time_quality_id,sampled_at_monotonic_us "
                            "FROM clock_observations WHERE receiver_instance_id=? "
                            "ORDER BY observation_sequence DESC LIMIT 1", (iid,)).fetchone()
@@ -155,11 +158,11 @@ def database_observation(database):
         from cura_receiver.sqlite_repository import SqliteRepository
         repository = SqliteRepository(db)
         loaded = classify_communicator_state_rows(repository.read_communicator_state_rows(),
-                                                  repository, ApplicationSettings().airtime_policy)
+                                                  repository, ApplicationSettings(persistence_startup_budget_us=12_000_000).airtime_policy)
         airtime = dict(status=loaded.status.name, condition=loaded.state_condition.name,
                        total_charged_us=None, budget_us=None)
         if loaded.state is not None:
-            airtime.update(total_charged_us=sum(b.charged_airtime_us for b in loaded.state.buckets),
+            airtime.update(total_charged_us=sum(b.remaining_us > 0 for b in loaded.state.entries)*loaded.state.entry_charge_us,
                            budget_us=loaded.state.tx_airtime_budget_us)
         generations = db.execute("SELECT generation FROM communicator_state").fetchall()
         generation = generations[0][0] if len(generations) == 1 else (0 if not generations else None)
@@ -225,8 +228,7 @@ def main():
             group = load_receiver_group(Path(config['test_root']) / 'config/receiver-group.json')
             result = create_zero_airtime_database(args.output, group.group_id,
                 json.loads(args.silence_record.read_text()), board_id=state['board_id'],
-                boot_id=state['boot_id'], now_monotonic_us=time.monotonic_ns() // 1000,
-                utc_us=time.time_ns() // 1000)
+                boot_id=state['boot_id'], now_monotonic_us=time.monotonic_ns() // 1000)
         elif args.action == "reading-baseline":
             from reading_baseline import capture_readings
             result = capture_readings(database, bytes.fromhex(args.node_id))

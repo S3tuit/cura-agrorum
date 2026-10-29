@@ -66,6 +66,7 @@ class ReceiverPersistenceControlContextV1:
             raise ValueError('clean-stop purpose mismatch')
         if command is E.PersistenceControlCommand.COMMIT_COMMUNICATOR_STATE and self.purpose not in (
                 E.PersistenceControlPurpose.AIRTIME_BUCKET_GRANT, E.PersistenceControlPurpose.AIRTIME_BUCKET_SETTLEMENT,
+                E.PersistenceControlPurpose.AIRTIME_USAGE_SAVE,
                 E.PersistenceControlPurpose.RTC_PROVENANCE, E.PersistenceControlPurpose.AIRTIME_HISTORY_RECOVERY):
             raise ValueError('state mutation purpose mismatch')
         if self.protocol_rejection_code is not None:
@@ -152,6 +153,10 @@ def control_failure(result, *, command, purpose, started, finished, fatal=False,
         raise ValueError('caller violation requires CORE')
     failure = result.failure_kind.name if hasattr(result, 'failure_kind') else result.status.name
     if failure in ('NONE', 'LOADED'):
+        return None
+    from .airtime_commissioning import AirtimeCommissioningState
+    if (failure == 'STATE_UNAVAILABLE' and result.state_condition.name == 'MISSING'
+            and getattr(result, 'commissioning', None) is AirtimeCommissioningState.PENDING):
         return None
     normalized = 'IO_ERROR' if failure == 'OS_ERROR' else failure
     condition = getattr(result, 'state_condition', None)

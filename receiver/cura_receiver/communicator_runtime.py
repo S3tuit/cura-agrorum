@@ -31,12 +31,13 @@ class CommunicatorRuntime:
     def __init__(self, scheduler, *, control_episodes):
         self.scheduler = scheduler
         self.communicator = scheduler.communicator
-        self.telemetry = CommunicatorTelemetry(self.communicator)
+        self.telemetry = CommunicatorTelemetry(self.communicator, rtc=scheduler.rtc)
         self.control_episodes = control_episodes
         self._pending = []
         self._emitting_diagnostic = False
         self.failure = None
         self.terminal = False
+        self._final_health_attempted = False
 
     def _collect_exchange(self, exchange, *, include_radio=True):
         if exchange is None:
@@ -51,10 +52,10 @@ class CommunicatorRuntime:
         self._pending.extend((self.telemetry.control, item)
             for item in self.control_episodes.take_ready(terminal=terminal))
 
-    def flush_diagnostics(self):
+    def flush_diagnostics(self, *, observations=True):
         # Packet completion retains the sole reservation; diagnostic publication
         # runs only after that completion has released ownership.
-        if self.communicator.ingress.active_occurrence is not None:
+        if self.communicator.ingress.active_occurrence is not None or self.communicator.queue.reservation_active:
             return
         while self._pending:
             emitter, episode = self._pending[0]
@@ -64,6 +65,30 @@ class CommunicatorRuntime:
             if result is None:
                 return
             del self._pending[0]
+        if observations:
+            self.telemetry.publish_observations()
+
+    def final_failure_health(self):
+        """One bounded attempt; ownership/clock/closure gates still apply.
+
+        Earlier incident rows describe pre-cleanup hardware. This health captures
+        current availability and never reopens a radio already closed by cleanup.
+        """
+        if self._final_health_attempted:
+            return
+        self._final_health_attempted = True
+        if self.failure is not None and not self.failure.queue_sound:
+            return
+        c = self.communicator
+        try:
+            deadline = c.time.deadline(c.time.settings.rtc_read_budget_us + 50_000,
+                                      cap=self.scheduler.shutdown_deadline())
+            if c.clock.now_monotonic_us() < deadline:
+                self.telemetry.health(final=True, deadline=deadline)
+                self.telemetry.publish_observations()
+        except Exception:
+            # No recursive diagnostic or replacement of the terminal failure.
+            pass
 
     def step(self):
         if self.terminal:
@@ -81,6 +106,8 @@ class CommunicatorRuntime:
                     E.CoreFailureStage.CONSTRUCT_ENTITY, E.DiagnosticOperation.APPEND)
                 self.telemetry.health()
             self.terminal = turn.work is Work.TERMINAL
+            if self.terminal and not self.scheduler.stop_requested():
+                self.final_failure_health()
             return turn
         except Exception as error:
             self._terminate(error)
@@ -99,6 +126,7 @@ class CommunicatorRuntime:
             radio_result = exchange.radio_result
         else:
             # Packet composition already does this on its own fatal boundary.
+            c.radio.capture_failure(deadline=self.scheduler.shutdown_deadline())
             c.radio.request_shutdown()
             try:
                 radio_result = c.radio.shutdown()
@@ -115,11 +143,17 @@ class CommunicatorRuntime:
                     self._pending.extend((self.telemetry.radio, item) for item in error.completed_episodes)
                     self._collect_exchange(exchange, include_radio=False)
                 self._collect_control(terminal=True)
-                self.flush_diagnostics()
+                self.flush_diagnostics(observations=False)
                 entity = (exchange.finalization.published_entity if exchange is not None
                           and exchange.finalization is not None else None)
                 active = c.ingress.active_occurrence
                 profile = entity.profile if entity is not None else active.pre_tx_profile if active is not None else None
+                ack_selected = (
+                    entity.profile.processing_result is not E.ProcessingResult.WRONG_DIRECTION
+                    if entity is not None else
+                    active.pre_tx_profile.ack_selected is not E.AckSelection.NONE
+                    if active is not None else False
+                )
                 candidate = entity.candidate if entity is not None and hasattr(entity, 'candidate') else active.candidate if active is not None else None
                 entity_kind = (E.PersistQueueEntityKind.MEASUREMENT_PROFILE if candidate is not None
                                else E.PersistQueueEntityKind.PROFILE_ONLY if profile is not None else None)
@@ -132,18 +166,20 @@ class CommunicatorRuntime:
                     safe_radio=radio_result is not None and radio_result.safe_shutdown is True,
                     related_occurrence_sequence=(c.occurrence_sequence if exchange is not None and c.occurrence_sequence else None),
                     related_entity_kind=entity_kind, occurrence_accepted=candidate is not None,
-                    ack_selected=profile is not None and profile.ack_selected is not E.AckSelection.NONE,
+                    ack_selected=ack_selected,
                     tx_may_have_started=tx is not None and tx.t4_set_tx_attempted_monotonic_us is not None
                         and tx.facts.set_tx_outcome is not Outcome.DEFINITELY_NOT_APPLIED,
-                    airtime_grant_outstanding=c.airtime.grant_outstanding,
+                    airtime_group_outstanding=c.airtime.group_outstanding,
                     communicator_state_generation=None if state is None else state.generation,
                     profile_published=exchange is not None and exchange.finalization is not None
                         and exchange.finalization.published_entity is not None)
                 # A CORE trigger owns cleanup; no second RADIO root is created.
                 if episode is not None and active is None:
                     diagnostic_result = self.telemetry.core(episode)
+                self.telemetry.publish_observations()
         except Exception:
             # Allocation, construction or admission failure cannot recurse.
             pass
         self._pending.clear()
         self.failure = RuntimeFailure(original, radio_result, exchange, diagnostic_result, sound)
+        self.final_failure_health()

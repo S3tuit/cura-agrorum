@@ -1,0 +1,309 @@
+{
+  "format_version": 1,
+  "measurement_dates": [
+    "2026-10-05",
+    "2026-10-06"
+  ],
+  "scope": "Pilot persistence-worker startup; synthetic fixtures; descriptive sample statistics.",
+  "target": {
+    "model": "Raspberry Pi 3 Model B Rev 1.2",
+    "os": "Debian 13.6",
+    "kernel": "6.18.50+rpt-rpi-v8",
+    "python": "3.13.5",
+    "sqlite": "3.46.1",
+    "cryptography": "43.0.0",
+    "storage": "Original microSD, ext4, /dev/mmcblk0p2",
+    "rtc_bootstrap_installed": false,
+    "chrony_active": true,
+    "extension_network": "Wi-Fi and diagnostic Ethernet connected"
+  },
+  "decision": {
+    "date": "2026-10-06",
+    "scope": "pilot_only",
+    "large_fixture_main_bytes": 21315584,
+    "large_fixture_initial_wal_bytes": 0,
+    "rule": "ceil(max eligible completion_elapsed_us / 1000000) seconds",
+    "maximum_completion_us": 11109632,
+    "startup_budget_us": 12000000,
+    "rounding_headroom_us": 890368,
+    "benchmark_observation_budget_us": 60000000,
+    "application_integration": "Pending; this records the decision, not an installed runtime setting.",
+    "future_production": "Re-evaluate integrity checks, fixture envelope and timing budget."
+  },
+  "provenance": {
+    "evidence_archive": "cura-startup-benchmark-evidence-1791299560330530411.tar.gz",
+    "evidence_archive_sha256": "e748e01542bd7aef0bea76a08ddade8ff7fbdb2e6d546691e88d43c41e154319",
+    "archive_location": "External campaign evidence store; archived requests/results are addressed by attempt_id and the CSV SHA-256 columns.",
+    "inventory_files": {
+      "3eede4215f79db1b016aa1316edcab09878d9279a54d54f13a812b0639c144f2": "inventory-10s.json",
+      "44abb5d2ce4e4a843e11230e86c6aeacc243fff3a8a9f2571940919d876226fb": "inventory-60s.json"
+    },
+    "baseline_commit": "4c7ac444bc0f10bcf90742c40b19b8f58061d5e5",
+    "source_identity": "Baseline includes uncommitted implementation; use the inventories for exact file hashes, not the commit alone.",
+    "exclusion_basis": "reboot-01 and reboot-06: retained campaign operator recovery records; extended-60s-large-reboot-01: archived execution-context.json. These are excluded from orderly-reboot/cold timing statistics without relabeling the requests."
+  },
+  "accounting": {
+    "campaign_attempts": 61,
+    "eligible_successes": 57,
+    "censored": 1,
+    "mode_ineligible_successes": 3,
+    "setup_smokes_excluded": 5,
+    "original_targets": "Pilot cold 1/5; original large reboot expansion stopped at 1/10 censored. Later large extension is a separate 3-reboot and 5-cold cohort. No WAL boot cohort."
+  },
+  "groups": [
+    {
+      "fixture": "large",
+      "mode": "cold",
+      "observation_budget_us": 60000000,
+      "inventory_sha256": "44abb5d2ce4e4a843e11230e86c6aeacc243fff3a8a9f2571940919d876226fb",
+      "recorded_attempts": 5,
+      "eligible_successes": 5,
+      "statistics_us": {
+        "completion_elapsed_us": {
+          "median": 10965976,
+          "max": 11109632
+        },
+        "configuration_load_us": {
+          "median": 7051,
+          "max": 16679
+        },
+        "database_open_validation_us": {
+          "median": 7647163,
+          "max": 7817020
+        },
+        "instance_commit_us": {
+          "median": 21493,
+          "max": 35771
+        },
+        "persistence_component_setup_us": {
+          "median": 3254297,
+          "max": 3265062
+        },
+        "communicator_state_load_us": {
+          "median": 2259,
+          "max": 2314
+        }
+      }
+    },
+    {
+      "fixture": "large",
+      "mode": "reboot",
+      "observation_budget_us": 10000000,
+      "inventory_sha256": "3eede4215f79db1b016aa1316edcab09878d9279a54d54f13a812b0639c144f2",
+      "recorded_attempts": 1,
+      "eligible_successes": 0,
+      "statistics_us": {
+        "completion_elapsed_us": null,
+        "configuration_load_us": null,
+        "database_open_validation_us": null,
+        "instance_commit_us": null,
+        "persistence_component_setup_us": null,
+        "communicator_state_load_us": null
+      }
+    },
+    {
+      "fixture": "large",
+      "mode": "reboot",
+      "observation_budget_us": 60000000,
+      "inventory_sha256": "44abb5d2ce4e4a843e11230e86c6aeacc243fff3a8a9f2571940919d876226fb",
+      "recorded_attempts": 4,
+      "eligible_successes": 3,
+      "statistics_us": {
+        "completion_elapsed_us": {
+          "median": 10890700,
+          "max": 10904618
+        },
+        "configuration_load_us": {
+          "median": 6899,
+          "max": 13723
+        },
+        "database_open_validation_us": {
+          "median": 7603081,
+          "max": 7606376
+        },
+        "instance_commit_us": {
+          "median": 30779,
+          "max": 31597
+        },
+        "persistence_component_setup_us": {
+          "median": 3252558,
+          "max": 3259992
+        },
+        "communicator_state_load_us": {
+          "median": 2237,
+          "max": 2313
+        }
+      }
+    },
+    {
+      "fixture": "large",
+      "mode": "warm",
+      "observation_budget_us": 10000000,
+      "inventory_sha256": "3eede4215f79db1b016aa1316edcab09878d9279a54d54f13a812b0639c144f2",
+      "recorded_attempts": 5,
+      "eligible_successes": 5,
+      "statistics_us": {
+        "completion_elapsed_us": {
+          "median": 7888705,
+          "max": 8046258
+        },
+        "configuration_load_us": {
+          "median": 1519,
+          "max": 1617
+        },
+        "database_open_validation_us": {
+          "median": 4697835,
+          "max": 4737450
+        },
+        "instance_commit_us": {
+          "median": 15121,
+          "max": 202626
+        },
+        "persistence_component_setup_us": {
+          "median": 3163225,
+          "max": 3172361
+        },
+        "communicator_state_load_us": {
+          "median": 2075,
+          "max": 2169
+        }
+      }
+    },
+    {
+      "fixture": "pilot",
+      "mode": "cold",
+      "observation_budget_us": 10000000,
+      "inventory_sha256": "3eede4215f79db1b016aa1316edcab09878d9279a54d54f13a812b0639c144f2",
+      "recorded_attempts": 1,
+      "eligible_successes": 1,
+      "statistics_us": {
+        "completion_elapsed_us": {
+          "median": 1293443,
+          "max": 1293443
+        },
+        "configuration_load_us": {
+          "median": 6895,
+          "max": 6895
+        },
+        "database_open_validation_us": {
+          "median": 932482,
+          "max": 932482
+        },
+        "instance_commit_us": {
+          "median": 18867,
+          "max": 18867
+        },
+        "persistence_component_setup_us": {
+          "median": 331508,
+          "max": 331508
+        },
+        "communicator_state_load_us": {
+          "median": 2738,
+          "max": 2738
+        }
+      }
+    },
+    {
+      "fixture": "pilot",
+      "mode": "reboot",
+      "observation_budget_us": 10000000,
+      "inventory_sha256": "3eede4215f79db1b016aa1316edcab09878d9279a54d54f13a812b0639c144f2",
+      "recorded_attempts": 10,
+      "eligible_successes": 8,
+      "statistics_us": {
+        "completion_elapsed_us": {
+          "median": 1367832.5,
+          "max": 1471062
+        },
+        "configuration_load_us": {
+          "median": 10129.0,
+          "max": 11709
+        },
+        "database_open_validation_us": {
+          "median": 997077.5,
+          "max": 1108205
+        },
+        "instance_commit_us": {
+          "median": 24646.0,
+          "max": 35416
+        },
+        "persistence_component_setup_us": {
+          "median": 327847.5,
+          "max": 329787
+        },
+        "communicator_state_load_us": {
+          "median": 2539.5,
+          "max": 2710
+        }
+      }
+    },
+    {
+      "fixture": "pilot",
+      "mode": "warm",
+      "observation_budget_us": 10000000,
+      "inventory_sha256": "3eede4215f79db1b016aa1316edcab09878d9279a54d54f13a812b0639c144f2",
+      "recorded_attempts": 30,
+      "eligible_successes": 30,
+      "statistics_us": {
+        "completion_elapsed_us": {
+          "median": 870670.5,
+          "max": 962892
+        },
+        "configuration_load_us": {
+          "median": 1554.0,
+          "max": 2002
+        },
+        "database_open_validation_us": {
+          "median": 522132.5,
+          "max": 534320
+        },
+        "instance_commit_us": {
+          "median": 19444.5,
+          "max": 86705
+        },
+        "persistence_component_setup_us": {
+          "median": 321594.0,
+          "max": 357055
+        },
+        "communicator_state_load_us": {
+          "median": 2097.5,
+          "max": 2193
+        }
+      }
+    },
+    {
+      "fixture": "wal",
+      "mode": "warm",
+      "observation_budget_us": 10000000,
+      "inventory_sha256": "3eede4215f79db1b016aa1316edcab09878d9279a54d54f13a812b0639c144f2",
+      "recorded_attempts": 5,
+      "eligible_successes": 5,
+      "statistics_us": {
+        "completion_elapsed_us": {
+          "median": 873771,
+          "max": 875133
+        },
+        "configuration_load_us": {
+          "median": 1575,
+          "max": 1594
+        },
+        "database_open_validation_us": {
+          "median": 531455,
+          "max": 536702
+        },
+        "instance_commit_us": {
+          "median": 11763,
+          "max": 15379
+        },
+        "persistence_component_setup_us": {
+          "median": 324524,
+          "max": 325428
+        },
+        "communicator_state_load_us": {
+          "median": 2094,
+          "max": 2141
+        }
+      }
+    }
+  ]
+}

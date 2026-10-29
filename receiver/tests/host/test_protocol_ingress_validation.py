@@ -19,7 +19,7 @@ from cura_receiver.persist_queue import (
     PersistQueue,
     PersistenceAdmissionSnapshot,
 )
-from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC, ProfileOnlyUnitV1
+from cura_receiver.persist_queue_entities import RECEPTION_ONLY_V2_SPEC, ReceptionOnlyUnitV2
 from cura_receiver.protocol_ingress import (
     ProtocolIngress,
     ProtocolIngressTerminalV1,
@@ -54,7 +54,7 @@ def _queue(
         )
     )
     if full:
-        result = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+        result = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
         assert result.reservation is not None
         result.reservation.publish(object())
     return queue
@@ -399,7 +399,7 @@ def test_empty_authenticated_body_follows_validation_and_admission_order(
     assert decision.candidate is None
     if response_eligible:
         assert decision.admission is not None
-        assert decision.admission.entity_kind is PROFILE_ONLY_V1_SPEC.kind
+        assert decision.admission.entity_kind is RECEPTION_ONLY_V2_SPEC.kind
         assert decision.admission.result is admission_result
     else:
         assert decision.admission is None
@@ -420,22 +420,20 @@ def test_empty_authenticated_body_follows_validation_and_admission_order(
         ),
     )
 
-    if response_eligible:
+    if response_eligible and not retry:
         assert finalized.admission is None
     else:
         assert finalized.admission is not None
-        assert finalized.admission.entity_kind is PROFILE_ONLY_V1_SPEC.kind
+        assert finalized.admission.entity_kind is RECEPTION_ONLY_V2_SPEC.kind
         assert finalized.admission.result is admission_result
     if admission_result is AdmissionResult.RESERVED:
-        assert isinstance(finalized.published_entity, ProfileOnlyUnitV1)
+        assert isinstance(finalized.published_entity, ReceptionOnlyUnitV2)
         assert finalized.published_entity.profile.processing_result is expected_result
-        assert finalized.published_entity.profile.header_authenticated
-        assert finalized.published_entity.profile.received_frame_length == 22
-        assert finalized.published_entity.profile.received_frame[:22] == frame
-        assert finalized.published_entity.profile.ack_frame == expected_frame
+        assert finalized.published_entity.received_frame == frame
+        assert finalized.published_entity.profile.t3_authentication_completed_monotonic_us == 20
         lease = queue.claim_batch(max_entities=1)
         assert lease is not None
-        assert lease.entries[0].spec is PROFILE_ONLY_V1_SPEC
+        assert lease.entries[0].spec is RECEPTION_ONLY_V2_SPEC
         assert lease.entries[0].entity is finalized.published_entity
     else:
         assert finalized.published_entity is None
@@ -524,13 +522,12 @@ def test_unsupported_authenticated_control_selects_complete_profile(
             radio_state=RadioState.RX_SINGLE,
         ),
     )
-    assert isinstance(finalized.published_entity, ProfileOnlyUnitV1)
+    assert isinstance(finalized.published_entity, ReceptionOnlyUnitV2)
     profile = finalized.published_entity.profile
     assert profile.processing_result is ProcessingResult.REJECTED_UNSUPPORTED_CONTROL
-    assert profile.claimed_control == control
-    assert profile.header_authenticated
+    assert finalized.published_entity.received_frame[0] == control
+    assert profile.t3_authentication_completed_monotonic_us == 20
     assert profile.decoded_sample_id is None
-    assert profile.ack_frame == REVIEWED_REJECTED_UNSUPPORTED_ACK
 
 
 # Selects unsupported before reading parsing for every authenticated unknown domain.

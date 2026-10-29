@@ -636,8 +636,8 @@ static bool test_power_gate_on_is_glitch_safe_and_active_low(void) {
 
   call = fake_esp_gpio_call_at(1U);
   TEST_ASSERT_EQ_U32(FAKE_ESP_GPIO_CONFIG, call->operation);
-  TEST_ASSERT_EQ_U32(UINT64_C(1) << CONFIG_CURA_SENSOR_POWER_GATE_GPIO,
-                     call->configuration.pin_bit_mask);
+  TEST_ASSERT(call->configuration.pin_bit_mask ==
+              (UINT64_C(1) << CONFIG_CURA_SENSOR_POWER_GATE_GPIO));
   TEST_ASSERT(call->configuration.mode == GPIO_MODE_OUTPUT_OD);
   TEST_ASSERT(call->configuration.pull_up_en == GPIO_PULLUP_DISABLE);
   TEST_ASSERT(call->configuration.pull_down_en == GPIO_PULLDOWN_DISABLE);

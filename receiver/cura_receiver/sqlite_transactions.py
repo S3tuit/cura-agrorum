@@ -25,3 +25,29 @@ class SqliteTransactions:
     def checkpoint(self, connection: sqlite3.Connection) -> tuple[int, int, int]:
         """Run one explicit maintenance operation without waiting on readers."""
         return connection.execute("PRAGMA main.wal_checkpoint(PASSIVE)").fetchone()
+
+
+class ObservedSqliteTransactions(SqliteTransactions):
+    """Observe COMMIT entry even when an injected operation loses its outcome.
+
+    The worker shares this adapter between ordinary, quarantine and controls.
+    Observation sits outside the concrete operation, so overrides do not need
+    to call super() for possible work to remain tracked.
+    """
+
+    def __init__(self, transactions, maintenance):
+        self._transactions = transactions
+        self._maintenance = maintenance
+
+    def begin(self, connection):
+        return self._transactions.begin(connection)
+
+    def commit(self, connection):
+        self._maintenance.mark_possible_work()
+        return self._transactions.commit(connection)
+
+    def rollback(self, connection):
+        return self._transactions.rollback(connection)
+
+    def checkpoint(self, connection):
+        return self._transactions.checkpoint(connection)

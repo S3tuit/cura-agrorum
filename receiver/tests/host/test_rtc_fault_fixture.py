@@ -2,7 +2,7 @@
 
 import pytest
 
-from tests.hardware import test_time_mutations as fixture
+from hardware.ds3231.tests.i2c_faults import test_controller_faults as fixture
 
 
 # Released-low replies must let the real child finish instead of killing its cleanup.

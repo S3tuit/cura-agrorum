@@ -1,57 +1,106 @@
-# Nominal pilot firmware inputs
+# Fresh XIAO ESP32S3 deployment
 
-[sdkconfig.pilot](sdkconfig.pilot) selects the declared production
-[carrier wiring](../test_apps/on_device/SENSOR_CARRIER.md). The disconnected
-reference-voltage branch JP_REF_ENABLE/R5/R6/R7/R8 is absent; all other nominal
-connections remain. This input changes board routing, not production behavior,
-PHY, airtime policy or the ordinary 900-second sleep cadence.
+This sequence provisions a fresh receiver group and node identity, builds for
+the nominal [carrier wiring](../HARDWARE.md), and resets
+the S3 before installation. Ordinary firmware updates retain the existing
+identity, counters and storage; do not use this reset sequence for them.
 
-Build the real `main/app_main.c` in an isolated current-source staging tree.
-Do not copy existing secret headers or receiver groups into that tree. Provision
-a dedicated test group and node using the protocol-owned tools, placing the
-new header only in staged `firmware/main`. Preserve file mode 0600 and trusted
-parent directories; no key bytes belong in evidence or source control.
+Run the commands in one Bash session. You need Git, Python 3, ripgrep (`rg`),
+an installed ESP-IDF, and exclusive access to the XIAO native USB Serial/JTAG port. Replace the
+port and ESP-IDF path below with yours.
 
-Provide a separate local `sdkconfig.probes` with the two actually discovered,
-distinct DS ROMs assigned to logical channels. Probe selection is not a pilot
-design gate, but unprovisioned zero ROM defaults cannot qualify nominal sensing.
-From staged `firmware`, with no existing sdkconfig, use:
+## 1. Create private staging directories
 
-```sh
-idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;deploy/sdkconfig.pilot;sdkconfig.probes' build
+From the repository root:
+
+```bash
+umask 077
+cura_repo=$(git rev-parse --show-toplevel)
+cura_deploy=$(mktemp -d /tmp/cura-node-deploy.XXXXXX)
+cura_stage="$cura_deploy/source"
+cura_port=/dev/ttyACM0
+mkdir "$cura_deploy/receiver" "$cura_deploy/node"
+git -C "$cura_repo" worktree add --detach "$cura_stage" HEAD
 ```
 
-An existing sdkconfig overrides defaults; never assume adding a defaults file
-changes already resolved settings. Verify the resulting sdkconfig, compiled
-inputs, dependency locks, partition table and flash files, and retain their
-hashes alongside ELF/binary hashes. Keep images containing test credentials
-private; their hashes and public identifiers suffice in published evidence.
+The worktree contains committed source at `HEAD`, including these deployment
+files, without local secrets, resolved `sdkconfig` or build output. Uncommitted
+changes are not included. The private parent directory also protects generated
+credentials and firmware images containing them.
 
-The production layout remains 4 MiB flash, NVS at 0x9000 (24 KiB), factory app
-at 0x10000 (1 MiB), and LittleFS at 0x110000 (2944 KiB), with PHY data at
-0xf000 (4 KiB). Bare-C6 and sensor-carrier destructive tests overlap these
-storage ranges. After those tests, use a new ID/key and the complete contracted
-identity-state reset before authenticated TX; never restore an old identity or
-migrate its backlog. Ordinary rebuilds of an active identity preserve counters.
+## 2. Provision and install the node identity
 
-Identity replacement follows the
-[maintenance procedure](../maintenance/erase_storage/README.md): stop production,
-generate the new identity, erase complete flash, cold-power-cycle to clear RTC,
-then build/flash the new image. The storage-only maintenance app is insufficient
-because it preserves NVS. This physical transition must be operator-controlled;
-do not run old firmware after its counters are erased. Use the strict receiver
-group loader to verify the exact group/allowlist, trusted nonsymlink parents,
-service UID ownership and 0600 mode at installation. Restart the receiver after
-group/allowlist changes. Retire old IDs through the protocol tool when replacing
-an existing active identity; retain historical receiver data separately.
+```bash
+python3 "$cura_stage/protocol/protocol-v2-lora/tools/init_receiver_group.py" \
+  --recv-dir "$cura_deploy/receiver"
+python3 "$cura_stage/protocol/protocol-v2-lora/tools/provision_node.py" \
+  --recv-dir "$cura_deploy/receiver" --node-dir "$cura_deploy/node"
+install -m 600 "$cura_deploy/node/protocol_v2_lora_identity.h" \
+  "$cura_stage/firmware/main/protocol_v2_lora_identity.h"
+```
 
-Disposable bench credentials are separate from final production credentials.
-Final production handover remains a later agreed transition, bound to the final
-artifact and affected checks under the evidence-reuse policy. Lost, exhausted or
-erased counters never permit resuming the previous identity. No blanket re-soak
-or automatic evidence transfer to changed credentials is assumed here.
+The tools generate the node ID and key and register that ID in the group.
+Keep `$cura_deploy/receiver/receiver-group.json` for the matching
+[Pi deployment](../../receiver/deploy/README.md); securely retain both credential
+files outside temporary storage before cleanup. Never commit or publish keys.
+For an existing group or identity replacement, follow the
+[provisioning rules](../../protocol/protocol-v2-lora/README.md#revocation-and-identity-replacement).
 
-Building this image does not authorize autonomous transmission or complete
-production handover. Keep the non-transmitting test image installed until
-the selected RF case, identity/storage state and operator airtime readiness
-are established. See [testing boundaries](../TESTING.md#pilot-production-fixture-and-configuration-sequencing).
+## 3. Assign probes and build production firmware
+
+Edit `$cura_stage/firmware/deploy/sdkconfig.probes`: fill both empty strings
+with the attached probes' distinct, nonzero ROM IDs, each exactly 16 hexadecimal
+digits. The variable names assign physical probes to logical channels 0 and 1.
+An empty field leaves that channel unprovisioned.
+
+```bash
+source ~/esp/esp-idf/export.sh
+cd "$cura_stage/firmware"
+test ! -e sdkconfig && \
+  idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;deploy/sdkconfig.pilot;deploy/sdkconfig.probes' build
+rg '^CONFIG_CURA_DS18B20_[01]_ROM=' sdkconfig
+```
+
+Production selects ESP32S3 in CMake, 8 MB flash, one core and primary native
+USB Serial/JTAG. GPIO44 belongs to the sensor gate; UART0 console is rejected.
+The defaults supply the production layout,
+`sdkconfig.pilot` selects carrier wiring, and `sdkconfig.probes` supplies your
+channel identities. Check that the printed resolved values match your probes;
+an existing `sdkconfig` overrides defaults, so stop if the freshness check fails.
+
+## 4. Reset the S3 and initialize LittleFS
+
+Stop production firmware before this destructive step. It discards all previous
+node-local state. The complete rationale and storage requirements belong to the
+[maintenance procedure](../maintenance/erase_storage/README.md).
+
+```bash
+cd "$cura_stage/firmware/maintenance/erase_storage"
+idf.py set-target esp32s3
+idf.py build
+idf.py -p "$cura_port" erase-flash
+```
+
+Disconnect **all** node power, then reconnect. USB may enumerate with a
+different ttyACM number; identify the same physical board and update `cura_port`
+before continuing. This clears retained RTC state as
+well as the flash state already erased. Now initialize the empty filesystem:
+
+```bash
+idf.py -p "$cura_port" flash monitor
+```
+
+Require `LittleFS format completed successfully; NVS was preserved`, then exit
+the monitor with Ctrl+]. Production does not format an empty filesystem itself.
+
+## 5. Flash production firmware
+
+Flashing starts production.
+
+```bash
+cd "$cura_stage/firmware"
+idf.py -p "$cura_port" flash monitor
+```
+
+This final flash preserves the initialized LittleFS partition. Keep
+credential-bearing images private.

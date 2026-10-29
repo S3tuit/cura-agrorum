@@ -1,5 +1,6 @@
 #include "node_core.h"
 
+#include <assert.h>
 #include <limits.h>
 #include <stdatomic.h>
 #include <stddef.h>
@@ -28,7 +29,7 @@ void node_core_test_after_rtc_take(const node_rtc_record_t *retained,
 #define NODE_CORE_EFFECTIVE_DEEP_SLEEP_DURATION_US                             \
   NODE_CORE_TEST_DEEP_SLEEP_DURATION_US
 #elif defined(CONFIG_NODE_DEEP_SLEEP_SECONDS)
-#define NODE_CORE_EFFECTIVE_DEEP_SLEEP_DURATION_US \
+#define NODE_CORE_EFFECTIVE_DEEP_SLEEP_DURATION_US                             \
   (UINT64_C(1000000) * CONFIG_NODE_DEEP_SLEEP_SECONDS)
 #else
 #define NODE_CORE_EFFECTIVE_DEEP_SLEEP_DURATION_US                             \
@@ -73,6 +74,36 @@ typedef struct {
   node_delivery_final_result_t result;
   uint32_t attempt_count;
 } node_delivery_result_t;
+
+typedef struct {
+  uint64_t first_rejection_at_us;
+  uint16_t header_crc_count;
+  uint16_t payload_crc_count;
+  bool valid_ack_received;
+} node_ack_window_t;
+
+static uint16_t saturating_add_u16(uint16_t left, uint16_t right) {
+  const uint32_t sum = (uint32_t)left + right;
+  return sum > UINT16_MAX ? UINT16_MAX : (uint16_t)sum;
+}
+
+static void merge_rx_observations(node_ack_window_t *window,
+                                  const sx1262_radio_rx_result_t *received) {
+  if (received->header_crc_count == 0U && received->payload_crc_count == 0U) {
+    return;
+  }
+  if (window->header_crc_count == 0U && window->payload_crc_count == 0U) {
+    window->first_rejection_at_us = received->first_rejection_at_us;
+  }
+  window->header_crc_count = saturating_add_u16(window->header_crc_count,
+                                               received->header_crc_count);
+  window->payload_crc_count = saturating_add_u16(window->payload_crc_count,
+                                                received->payload_crc_count);
+}
+
+/* A call follows only a started, timed-out call, so calls never exceed it. */
+static_assert(NODE_CORE_DELIVERY_ATTEMPT_LIMIT == NODE_DELIVERY_TX_CALL_SLOTS,
+              "transmit-call evidence slots must match the retry limit");
 
 static bool cycle_metrics_are_valid(const node_cycle_metrics_t *metrics) {
   if (metrics == NULL ||
@@ -327,6 +358,34 @@ static void append_diagnostic(node_cycle_context_t *cycle, err_curag_t error,
   (void)node_persistence_append_diagnostic_event(&event, NULL);
 }
 
+static void append_ack_window(node_cycle_context_t *cycle,
+                               const node_ack_window_t *window,
+                               uint8_t attempt_index) {
+  if (window->header_crc_count == 0U && window->payload_crc_count == 0U) {
+    return;
+  }
+  /* Pilot-only evidence for investigating ACK reception. PHY rejections are
+   * nonfatal and never extend the receive deadline. These observations do not
+   * identify the sender or prove ACK corruption. Revisit detailed logging for
+   * production; normally discard and continue RX. Persist only after delivery. */
+  diagn_context_t context;
+  core_diagnostic_context(CURAG_OP_RECEIVE, &context);
+  context.context_schema = CURAG_CORE_ACK_WINDOW_CONTEXT_V1;
+  context.context_length = CURAG_CORE_ACK_WINDOW_CONTEXT_V1_LENGTH;
+  context.context[0] = attempt_index;
+  context.context[1] = window->valid_ack_received ? 1U : 0U;
+  for (unsigned byte = 0U; byte < 8U; ++byte) {
+    context.context[2U + byte] =
+        (uint8_t)(window->first_rejection_at_us >> (8U * byte));
+  }
+  context.context[10] = (uint8_t)window->header_crc_count;
+  context.context[11] = (uint8_t)(window->header_crc_count >> 8U);
+  context.context[12] = (uint8_t)window->payload_crc_count;
+  context.context[13] = (uint8_t)(window->payload_crc_count >> 8U);
+  append_diagnostic(cycle, core_error(CURAG_ECORE_EACK_WINDOW_PHY_REJECTION),
+                    &context);
+}
+
 static err_curag_t
 build_frame(const node_identity_t *identity, uint32_t message_id,
             cura_lora_v2_domain_t domain, const cura_lora_v2_reading_t *reading,
@@ -499,6 +558,10 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
 
   node_delivery_final_result_t final_result = NODE_DELIVERY_RESULT_INVALID;
   uint32_t attempt_count = 0U;
+  /* Evidence stays in RAM until the single finished append below. */
+  node_delivery_tx_call_t tx_calls[NODE_DELIVERY_TX_CALL_SLOTS];
+  uint8_t tx_call_count = 0U;
+  node_ack_window_t ack_windows[NODE_CORE_DELIVERY_ATTEMPT_LIMIT] = {0};
   uint64_t first_set_tx_us = 0U;
   bool first_set_tx_valid = false;
   uint64_t accepted_at_us = 0U;
@@ -513,10 +576,17 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
       break;
     }
 
+    node_delivery_tx_call_t *call = &tx_calls[tx_call_count++];
+    *call = (node_delivery_tx_call_t){0};
     sx1262_radio_tx_result_t tx_result;
     const err_curag_t tx_error = sx1262_radio_transmit_uplink(
         frame->bytes, sizeof(frame->bytes), cycle->radio_deadline_us,
         &tx_result, &diagnostic);
+    call->tx_started = tx_result.tx_started;
+    call->tx_done = tx_result.tx_done;
+    call->set_tx_at_us = tx_result.set_tx_at_us;
+    call->tx_done_at_us = tx_result.tx_done_at_us;
+    call->outcome = NODE_DELIVERY_TX_OUTCOME_LOCAL_ERROR;
     if (tx_result.tx_started) {
       attempt_count++;
       cycle->metrics.cycle_tx_attempts++;
@@ -530,15 +600,17 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
       }
     }
 
-    uint64_t retry_at_us = 0U;
+    uint64_t ack_deadline_us = 0U;
     if (tx_result.tx_done) {
-      const uint32_t jitter_us =
-          cycle->platform->randomness.uniform_u32_inclusive(
-              cycle->platform->randomness.context,
-              NODE_CORE_RETRY_JITTER_MIN_US, NODE_CORE_RETRY_JITTER_MAX_US);
-      retry_at_us = saturating_add_u64(
-          saturating_add_u64(tx_result.tx_done_at_us, NODE_CORE_ACK_WAIT_US),
-          jitter_us);
+      ack_deadline_us =
+          saturating_add_u64(tx_result.tx_done_at_us, NODE_CORE_ACK_WAIT_US);
+      if (attempt_count < NODE_CORE_DELIVERY_ATTEMPT_LIMIT) {
+        const uint32_t jitter_us =
+            cycle->platform->randomness.uniform_u32_inclusive(
+                cycle->platform->randomness.context,
+                NODE_CORE_RETRY_JITTER_MIN_US, NODE_CORE_RETRY_JITTER_MAX_US);
+        ack_deadline_us = saturating_add_u64(ack_deadline_us, jitter_us);
+      }
     }
     if (tx_error != CURAG_OK) {
       append_diagnostic(cycle, tx_error, &diagnostic);
@@ -547,6 +619,7 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
           curag_error_domain(tx_error) == CURAG_EDOM_RADIO &&
           curag_error_code(tx_error) == CURAG_ERADIO_EDEADLINE) {
         final_result = NODE_DELIVERY_RESULT_RADIO_CYCLE_DEADLINE;
+        call->outcome = NODE_DELIVERY_TX_OUTCOME_DEADLINE_EXPIRED;
       } else {
         final_result = NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR;
       }
@@ -556,22 +629,28 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
       final_result = NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR;
       break;
     }
-    const uint64_t receive_deadline_us = retry_at_us < cycle->radio_deadline_us
-                                             ? retry_at_us
-                                             : cycle->radio_deadline_us;
+    const uint64_t receive_deadline_us =
+        ack_deadline_us < cycle->radio_deadline_us ? ack_deadline_us
+                                                   : cycle->radio_deadline_us;
 
+    node_ack_window_t *window = &ack_windows[attempt_count - 1U];
     bool receive_complete = false;
     while (!receive_complete) {
       sx1262_radio_rx_result_t rx_result;
       const err_curag_t rx_error = sx1262_radio_receive_downlink_until(
           receive_deadline_us, &rx_result, &diagnostic);
+      merge_rx_observations(window, &rx_result);
       if (rx_error != CURAG_OK) {
         append_diagnostic(cycle, rx_error, &diagnostic);
         final_result = NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR;
         receive_complete = true;
       } else if (rx_result.outcome == SX1262_RADIO_RX_DEADLINE) {
-        if (cycle->radio_deadline_us <= retry_at_us) {
+        call->outcome = NODE_DELIVERY_TX_OUTCOME_ACK_TIMEOUT;
+        if (cycle->radio_deadline_us <= ack_deadline_us) {
           final_result = NODE_DELIVERY_RESULT_RADIO_CYCLE_DEADLINE;
+          call->outcome = NODE_DELIVERY_TX_OUTCOME_DEADLINE_EXPIRED;
+        } else if (attempt_count >= NODE_CORE_DELIVERY_ATTEMPT_LIMIT) {
+          final_result = NODE_DELIVERY_RESULT_NO_ACK_ATTEMPT_LIMIT;
         }
         receive_complete = true;
       } else if (rx_result.outcome == SX1262_RADIO_RX_PACKET) {
@@ -584,8 +663,13 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
         const ack_validation_result_t validation =
             validate_ack(cycle->identity, message_id, &rx_result);
         if (validation.kind == ACK_VALIDATION_VALID) {
+          window->valid_ack_received = true;
           final_result = validation.result;
           accepted_at_us = rx_result.rx_done_at_us;
+          call->outcome = NODE_DELIVERY_TX_OUTCOME_ACK_RECEIVED;
+          call->ack_rx_done_at_us = rx_result.rx_done_at_us;
+          call->ack_rssi_dbm_x2 = rx_result.rssi_dbm_x2;
+          call->ack_snr_db_x4 = rx_result.snr_db_x4;
           receive_complete = true;
         } else {
           core_diagnostic_context(validation.operation, &diagnostic);
@@ -624,9 +708,16 @@ deliver_frame(node_cycle_context_t *cycle, uint32_t sample_id,
           {
               .attempt_count = (uint8_t)attempt_count,
               .final_result = final_result,
+              .application_start_us = cycle->application_start_us,
+              .tx_call_count = tx_call_count,
           },
   };
+  memcpy(finished.detail.finished.tx_calls, tx_calls,
+         tx_call_count * sizeof(tx_calls[0]));
   append_delivery_boundary(cycle, &finished);
+  for (uint32_t index = 0U; index < attempt_count; ++index) {
+    append_ack_window(cycle, &ack_windows[index], (uint8_t)(index + 1U));
+  }
   return (node_delivery_result_t){
       .result = final_result,
       .attempt_count = attempt_count,
@@ -791,7 +882,10 @@ static void run_claimed_cycle(node_cycle_context_t *cycle,
     current_persisted = true;
   } else {
     append_diagnostic(cycle, append_result, &diagnostic);
-    /* Continue volatile; deep sleep may discard an unaccepted reading. */
+    /* Continue from RAM; deep sleep may discard an unaccepted reading. An
+     * ambiguous append may also have persisted this item, so suppress backlog
+     * access for this wake to avoid immediately selecting it again.
+     */
   }
   if (run_ms_overflow) {
     core_diagnostic_context(CURAG_OP_VALIDATE, &diagnostic);

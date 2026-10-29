@@ -78,6 +78,11 @@ extern const node_persistence_test_group_t
     NODE_PERSISTENCE_RETENTION_TEST_GROUP;
 
 void node_persistence_test_reset_all(void);
+/*
+ * Fills a finished event's transmit calls with the only history node_core can
+ * produce for its attempt_count (1 or 2 started calls) and final_result.
+ */
+void node_persistence_test_fill_tx_calls(node_delivery_event_t *event);
 void node_persistence_test_restart(void);
 cura_lora_v2_reading_t node_persistence_test_make_reading(uint16_t marker);
 cura_lora_v2_reading_t node_persistence_test_make_boundary_reading(void);

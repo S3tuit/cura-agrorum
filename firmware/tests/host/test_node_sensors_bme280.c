@@ -53,7 +53,7 @@ esp_err_t i2c_new_master_bus(const i2c_master_bus_config_t *cfg,
                              i2c_master_bus_handle_t *out) {
   ++calls;
   ++bus_new;
-  assert(cfg->i2c_port == 0 && cfg->sda_io_num == 21 && cfg->scl_io_num == 22);
+  assert(cfg->i2c_port == 0 && cfg->sda_io_num == 5 && cfg->scl_io_num == 6);
   if (new_error)
     return new_error;
   now += bus_elapsed;

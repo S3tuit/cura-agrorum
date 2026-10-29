@@ -37,7 +37,7 @@ BOOT = bytes.fromhex("11223344556677889900aabbccddeeff")
 
 def _connection(tmp_path: Path) -> tuple[Path, sqlite3.Connection]:
     path = tmp_path / "receiver.db"
-    initialize_database(path, GROUP)
+    initialize_database(path, GROUP, known_empty_airtime=False)
     result = open_receiver_database(path, GROUP, minimum_free_bytes=0)
     assert result.failure is None
     return path, result.database.connection
@@ -187,7 +187,7 @@ def test_start_commit_certainty(
     tmp_path: Path, boundary: str, expected: Disposition, durable_rows: int
 ) -> None:
     path = tmp_path / "receiver.db"
-    initialize_database(path, GROUP)
+    initialize_database(path, GROUP, known_empty_airtime=False)
 
     class FailingConnection(sqlite3.Connection):
         def execute(self, sql: str, *args: object, **kwargs: object):
@@ -223,7 +223,7 @@ def test_start_commit_certainty(
 # The startup composition returns a usable connection only after the start row is durable.
 def test_startup_composition(tmp_path: Path) -> None:
     path = tmp_path / "receiver.db"
-    initialize_database(path, GROUP)
+    initialize_database(path, GROUP, known_empty_airtime=False)
     result = start_receiver_instance(
         ReceiverInstanceStart(INSTANCE, 17),
         configuration_reader=_reader(tmp_path),
@@ -284,7 +284,7 @@ def test_rollback_failure_preserves_start_failure(
     rollback_os_error: bool,
 ) -> None:
     path = tmp_path / "receiver.db"
-    initialize_database(path, GROUP)
+    initialize_database(path, GROUP, known_empty_airtime=False)
     if os_errno is None:
         start_error = sqlite3.OperationalError("injected startup failure")
         start_error.sqlite_errorcode = code
@@ -345,7 +345,7 @@ def test_startup_closes_connection_after_rollback_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = tmp_path / "receiver.db"
-    initialize_database(path, GROUP)
+    initialize_database(path, GROUP, known_empty_airtime=False)
     real_connect = sqlite3.connect
     failed_connections = []
 
@@ -425,7 +425,7 @@ def test_startup_failure_order(
 # Killing after the named durable-start boundary preserves the row without cleanup hooks.
 def test_unclean_process_exit_preserves_start(tmp_path: Path) -> None:
     path = tmp_path / "receiver.db"
-    initialize_database(path, GROUP)
+    initialize_database(path, GROUP, known_empty_airtime=False)
     receiver_root = Path(__file__).resolve().parents[2]
     protocol_root = receiver_root.parent / "protocol/protocol-v2-lora/python"
     child_code = """
@@ -493,7 +493,7 @@ def test_failed_start_preserves_result_when_close_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = tmp_path / "receiver.db"
-    initialize_database(path, GROUP)
+    initialize_database(path, GROUP, known_empty_airtime=False)
     real_connect = sqlite3.connect
 
     class FailingConnection(sqlite3.Connection):

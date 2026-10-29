@@ -15,9 +15,10 @@ extern "C" {
 
 #define NODE_CORE_RADIO_CYCLE_LIMIT_US UINT64_C(30000000)
 #define NODE_CORE_TX_AIRTIME_BUDGET_US UINT64_C(8000000)
-#define NODE_CORE_ACK_WAIT_US UINT64_C(500000)
+#define NODE_CORE_DELIVERY_ATTEMPT_LIMIT UINT32_C(2)
+#define NODE_CORE_ACK_WAIT_US UINT64_C(300000)
 #define NODE_CORE_RETRY_JITTER_MIN_US UINT32_C(100000)
-#define NODE_CORE_RETRY_JITTER_MAX_US UINT32_C(500000)
+#define NODE_CORE_RETRY_JITTER_MAX_US UINT32_C(400000)
 #define NODE_CORE_DEEP_SLEEP_DURATION_US UINT64_C(900000000)
 
 /* CURAG_EDOM_CORE error-code assignments. */
@@ -35,6 +36,16 @@ extern "C" {
 #define CURAG_ECORE_EACK_BODY UINT16_C(12)
 #define CURAG_ECORE_EACK_STATUS UINT16_C(13)
 #define CURAG_ECORE_EACK_TIMESTAMP UINT16_C(14)
+#define CURAG_ECORE_EACK_WINDOW_PHY_REJECTION UINT16_C(15)
+
+#define CURAG_CORE_ACK_WINDOW_CONTEXT_V1 UINT8_C(1)
+#define CURAG_CORE_ACK_WINDOW_CONTEXT_V1_LENGTH UINT8_C(14)
+
+/* ACK-window context: attempt u8, valid-ACK u8, first IRQ time u64,
+ * header-CRC count u16, payload-CRC count u16; integers are little-endian.
+ * Counts saturate and count IRQ flags, not packets. A valid ACK may reject or
+ * defer the reading. Summaries are logged after delivery, outside the RX window.
+ */
 
 typedef struct {
   uint8_t node_id[8];
@@ -81,7 +92,12 @@ bool node_rtc_record_commit(node_rtc_record_t *record,
 bool node_core_attempt_fits(uint64_t now_us, uint64_t deadline_us,
                             uint64_t charged_airtime_us);
 
-/* Runs one complete wake. A production sleep callback does not return. */
+/*
+ * Borrows all inputs for one wake; every platform callback is required.
+ * Invalid composition returns without touching components or RTC. Valid calls
+ * always finalize sensor power, radio, persistence and RTC before terminal sleep;
+ * no further operation occurs even if a test sleep callback returns.
+ */
 void node_cycle_run(const node_platform_ports_t *platform,
                     const node_identity_t *identity,
                     node_rtc_record_t *rtc_record);

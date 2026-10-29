@@ -1,6 +1,7 @@
 """Real packet composition over SPI/GPIO fakes, real policy and real SQLite."""
 
 from types import SimpleNamespace
+from dataclasses import replace
 import sqlite3
 
 import pytest
@@ -14,7 +15,7 @@ from cura_receiver.ports.ds3231 import Ds3231ReadResult, Ds3231ReadStatus as DR
 from cura_receiver.ports.kernel_clock import KernelClockResult, KernelSampleStatus as KS
 from cura_receiver.ports.radio import Dio1Edge
 from cura_receiver.protocol_ingress import ProtocolIngress
-from cura_receiver.radio import Radio
+from cura_receiver.radio import Radio, ReceiveDisposition
 from cura_receiver.runtime_time import RuntimeTime
 from cura_receiver.sx1262 import Sx1262
 from cura_receiver.time_policy import TimePolicy
@@ -50,7 +51,7 @@ def composition(airtime_component):
         runtime.sample_network(ChronyTrackingResult(CQ.OK, now, now, True, True, 0, 0, 0))
         airtime.update_time(runtime.airtime_correlation(), rtc_health=runtime.state.rtc_health)
         if grant:
-            airtime.acquire_grant(deadline_monotonic_us=now + 5_000_000)
+            airtime.maintain(deadline_monotonic_us=now + 5_000_000)
         ingress = ProtocolIngress(queue=producer, monotonic_clock=clock, auth_node_keys={REVIEWED_NODE_ID: REVIEWED_NODE_KEY})
         communicator = Communicator(instance_id=INSTANCE, clock=clock, radio=radio, ingress=ingress, runtime_time=runtime, airtime=airtime, queue=producer)
         return SimpleNamespace(communicator=communicator, radio=radio, io=io, clock=clock, queue=queue, time=runtime, airtime=airtime, worker=worker, database=database)
@@ -79,7 +80,6 @@ def test_valid_packet_to_real_sqlite(composition):
     c = composition()
     result = deliver(c)
     entity = result.finalization.published_entity
-    assert entity.profile.ack_frame == REVIEWED_ACCEPTED_ACK
     assert entity.profile.processing_result is E.ProcessingResult.ACCEPTED
     assert entity.profile.ack_tx_result is E.AckTxResult.TX_DONE
     assert entity.profile.t5_tx_done_monotonic_us - entity.profile.t4_set_tx_attempted_monotonic_us == 61_696
@@ -89,7 +89,7 @@ def test_valid_packet_to_real_sqlite(composition):
     assert not c.worker.is_alive() and c.worker.failure is None
     with sqlite3.connect(c.database) as db:
         assert db.execute('SELECT count(*) FROM reading_messages').fetchone() == (1,)
-        assert db.execute('SELECT count(*) FROM message_profiles').fetchone() == (1,)
+        assert db.execute('SELECT count(*) FROM packet_receptions').fetchone() == (1,)
 
 
 # With no acknowledged grant acceptance survives without issuing SetTx or a state commit.
@@ -172,8 +172,51 @@ def test_fatal_after_confirmed_tx_done(composition):
 
 
 # Receive errors never authenticate/admit a reading, including valid copied bytes.
+@pytest.mark.parametrize("status", [0x52, 0x24])
+def test_handled_header_has_no_occurrence_profile_or_diagnostic(composition, monkeypatch, status):
+    c = composition()
+    runtime = runtime_dispatch(c)
+    counts, counters = c.communicator.queue.counts, c.radio.counters
+    def forbidden(*args, **kwargs):
+        pytest.fail("handled HeaderErr must not construct a profile or enter protocol ingress")
+    with monkeypatch.context() as guard:
+        guard.setattr(c.communicator.ingress, "begin", forbidden)
+        c.io.irq, c.io.status = 0x20, status
+        c.io.edges.append(Dio1Edge(c.clock.now_monotonic_us() * 1000, 1))
+        turn = runtime.step()
+    assert turn.exchange.radio_result.receive_event.disposition is ReceiveDisposition.HANDLED_NO_PACKET
+    assert turn.exchange.finalization is None and turn.exchange.radio_episodes == ()
+    assert c.communicator.occurrence_sequence == 0
+    assert all(c.communicator.queue.counts[i] == counts[i] for i in (0, 1, 3, 4))
+    assert c.radio.counters == replace(counters, header_errors_observed=1, header_errors_handled=1)
+    assert runtime.telemetry.diagnostic_sequence == 0
+    assert not any(command[0] in (0x0e, 0x83) for command in c.io.commands)
+    assert deliver(c).finalization.published_entity.profile.processing_result is E.ProcessingResult.ACCEPTED
+    assert c.communicator.occurrence_sequence == 1
+
+
+@pytest.mark.parametrize("opcode", [0x80, 0x02, 0x8c, 0x82])
+def test_failed_header_handling_still_profiles_and_diagnoses(composition, opcode):
+    from cura_receiver.ports.radio import RadioBackendError, RadioFailure, Error, Stage
+    c = composition()
+    runtime = runtime_dispatch(c)
+    c.io.irq, c.io.status = 0x20, 0x52
+    c.io.edges.append(Dio1Edge(c.clock.now_monotonic_us() * 1000, 1))
+    def fail_once(command):
+        del c.io.hooks[opcode]
+        raise RadioBackendError(RadioFailure(Error.IO, Stage.WRITE_COMMAND, opcode=opcode, os_errno=5))
+    c.io.hooks[opcode] = fail_once
+    turn = runtime.step()
+    assert turn.exchange.finalization is None
+    assert c.radio.state is E.RadioState.RX_SINGLE
+    assert runtime.telemetry.diagnostic_sequence == 1
+    assert c.radio.counters.recovery_attempts == c.radio.counters.recovery_successes == 1
+    assert c.radio.counters.header_errors_observed == 1
+    assert c.radio.counters.header_errors_handled == 0
+
+
 @pytest.mark.parametrize("fault", ["crc", "header", "read_buffer", "packet_status", "clear_irq"])
-def test_failed_receive_is_profile_only(composition, fault):
+def test_failed_receive_has_radio_evidence_without_packet_records(composition, fault):
     from cura_receiver.ports.radio import RadioBackendError, RadioFailure, Error, Stage
     c = composition()
     c.io.buffer[:] = REVIEWED_CURRENT_FRAME
@@ -188,45 +231,26 @@ def test_failed_receive_is_profile_only(composition, fault):
             raise RadioBackendError(RadioFailure(Error.IO, Stage.READ_BUFFER, os_errno=5))
         c.io.hooks[opcode] = fail_once
     result = c.communicator.receive_once(deadline_monotonic_us=t0 + 500_000)
-    entity = result.finalization.published_entity
-    profile = entity.profile
-    assert not hasattr(entity, "candidate")
-    assert profile.processing_result is E.ProcessingResult.RADIO_ERROR
-    assert profile.ack_selected is E.AckSelection.NONE
-    assert profile.ack_tx_result is E.AckTxResult.NOT_APPLICABLE
-    assert profile.ack_frame is None and not profile.header_authenticated
-    assert profile.decoded_sample_id is None
-    assert profile.received_at_monotonic_us == t0
-    assert profile.t1_handler_started_monotonic_us >= t0
-    assert profile.t3_authentication_completed_monotonic_us is None
-    assert profile.t4_set_tx_attempted_monotonic_us is None
-    assert profile.t5_tx_done_monotonic_us is None
-    assert profile.t6_set_rx_issued_monotonic_us is not None
-    copied = fault in ("packet_status", "clear_irq")
-    assert profile.received_frame_length == (len(REVIEWED_CURRENT_FRAME) if copied else None)
-    assert profile.received_frame == (REVIEWED_CURRENT_FRAME.ljust(255, b"\0") if copied else None)
-    assert (profile.t2_packet_copied_monotonic_us is not None) is copied
-    assert profile.claimed_node_id == (REVIEWED_NODE_ID if copied else None)
+    assert result.finalization is None
     assert not any(command[0] in (0x0e, 0x83) for command in c.io.commands)
     assert c.communicator.occurrence_sequence == 1
-    assert c.communicator.queue.counts[1] == (1, 0, 0)
+    assert c.communicator.queue.counts[1] == (0, 0, 0)
     assert c.communicator.queue.counts[4] == (1, 0, 0)
     c.worker.request_stop(deadline_monotonic_us=c.clock.now_monotonic_us() + 5_000_000)
     c.worker.join(5)
     assert not c.worker.is_alive() and c.worker.failure is None
     with sqlite3.connect(c.database) as db:
         assert db.execute('SELECT count(*) FROM reading_messages').fetchone() == (0,)
-        assert db.execute('SELECT count(*) FROM message_profiles').fetchone() == (1,)
+        assert db.execute('SELECT count(*) FROM packet_receptions').fetchone() == (0,)
 
 
-# Best-effort failed-event profiles do not reserve over the initial clock boundary.
-def test_failed_receive_profile_queue_full(composition):
+# Failed pre-authentication events leave packet admission untouched.
+def test_failed_receive_does_not_need_packet_queue_capacity(composition):
     c = composition(isolated_queue=True)
     c.io.irq, c.io.status = 0x42, 0x24
     c.io.edges.append(Dio1Edge(c.clock.now_monotonic_us() * 1000, 1))
     result = c.communicator.receive_once(deadline_monotonic_us=c.clock.now_monotonic_us() + 500_000)
-    assert result.finalization.admission.result is E.AdmissionResult.QUEUE_FULL
-    assert result.finalization.published_entity is None
+    assert result.finalization is None
     assert c.queue.snapshot().reserved_entities == 0
     assert not any(command[0] == 0x83 for command in c.io.commands)
 
@@ -243,7 +267,7 @@ def test_scheduler_radio_precedes_health(composition):
     c.io.edges.append(Dio1Edge(c.clock.now_monotonic_us() * 1000, 1))
     turn = scheduler.run_once()
     assert turn.work is Work.RADIO
-    assert turn.exchange.finalization.published_entity.profile.processing_result is E.ProcessingResult.REJECTED_MALFORMED_LENGTH
+    assert turn.exchange.finalization.published_entity is None
     assert scheduler.run_once().work is Work.HEALTH
 
 
@@ -275,14 +299,14 @@ def test_scheduler_boundary_retry_is_paced(composition):
     assert c.communicator.queue.counts == counts
 
 
-# The real health request includes its own admission and persists through worker enrichment.
+# The health request samples admission before its own reservation and persists through worker enrichment.
 def test_health_uses_shared_admission_matrix(composition):
     from cura_receiver.communicator_telemetry import CommunicatorTelemetry
     c = composition()
     deliver(c)
-    telemetry = CommunicatorTelemetry(c.communicator)
+    telemetry = CommunicatorTelemetry(c.communicator, rtc=None)
     assert telemetry.health() is E.AdmissionResult.RESERVED
-    assert c.communicator.queue.counts == ((1, 0, 0), (0, 0, 0), (1, 0, 0), (0, 0, 0), (1, 0, 0))
+    assert c.communicator.queue.counts == ((1, 0, 0), (0, 0, 0), (1, 0, 0), (0, 0, 0), (1, 0, 0), (0, 0, 0))
     c.worker.request_stop(deadline_monotonic_us=c.clock.now_monotonic_us() + 5_000_000)
     c.worker.join(5)
     assert c.worker.failure is None
@@ -294,7 +318,7 @@ def test_health_uses_shared_admission_matrix(composition):
 def test_health_gate_and_failed_attempt_sequence(composition):
     from cura_receiver.communicator_telemetry import CommunicatorTelemetry
     c = composition(isolated_queue=True)
-    telemetry = CommunicatorTelemetry(c.communicator)
+    telemetry = CommunicatorTelemetry(c.communicator, rtc=None)
     assert telemetry.health() is E.AdmissionResult.QUEUE_FULL
     assert telemetry.health_sequence == 1
     assert c.communicator.queue.counts[2] == (0, 0, 1)
@@ -332,7 +356,7 @@ def test_idle_recovery_continues_at_next_turn(composition):
 def test_queue_closure_ends_diagnostics(composition, pending_clock):
     from cura_receiver.communicator_telemetry import CommunicatorTelemetry, EmissionSkipped
     c = composition(isolated_queue=True)
-    telemetry = CommunicatorTelemetry(c.communicator)
+    telemetry = CommunicatorTelemetry(c.communicator, rtc=None)
     if pending_clock:
         c.clock.advance_elapsed_us(60_000_000)
         c.time.expire_due()
@@ -437,7 +461,7 @@ def test_health_construction_failure_releases_reservation(composition, monkeypat
     assert runtime.step() is None
     assert runtime.terminal
     assert c.queue.snapshot().reserved_entities == 0
-    assert runtime.telemetry.health_sequence == 1
+    assert runtime.telemetry.health_sequence == 2  # Periodic construction plus the final best-effort attempt.
     assert runtime.failure.diagnostic_result is E.AdmissionResult.RESERVED
     assert runtime.telemetry.diagnostic_sequence == 1
 
@@ -455,7 +479,7 @@ def test_runtime_radio_failure_emits_one_operational_diagnostic(composition):
     c.io.hooks[0x14] = fail_once
     turn = runtime.step()
     assert not runtime.terminal
-    assert turn.exchange.finalization.published_entity.profile.processing_result is E.ProcessingResult.RADIO_ERROR
+    assert turn.exchange.finalization is None
     assert runtime.telemetry.diagnostic_sequence == 1
     c.worker.request_stop(deadline_monotonic_us=c.clock.now_monotonic_us() + 5_000_000)
     c.worker.join(5)
@@ -609,7 +633,7 @@ def test_incremental_rtc_yields_to_packet_before_next_action(composition):
 @pytest.mark.parametrize('tick_us', [0, 1, 100])
 def test_scheduler_rtc_refresh_reaches_durable_verification(composition, monkeypatch, tick_us):
     from cura_receiver.communicator_scheduler import CommunicatorScheduler, Work
-    from cura_receiver.generated.receiver_entities_generated import decode_communicator_state_v1
+    from cura_receiver.generated.receiver_entities_generated import decode_communicator_state_v2
     from cura_receiver.ports.ds3231 import Ds3231WriteResult, Ds3231WriteDisposition, Ds3231Failure
     from cura_receiver.runtime_time import RtcRefreshStatus
     from tests.support.fakes.ds3231 import FakeDs3231Control
@@ -639,7 +663,7 @@ def test_scheduler_rtc_refresh_reaches_durable_verification(composition, monkeyp
                                       health_interval_us=60_000_000)
     scheduler.next_airtime = c.clock.now_monotonic_us() + 10_000_000
     initial_generation = c.airtime.owner.state.generation
-    assert c.time.state.quality is E.SystemTimeQuality.NETWORK_SYNCED
+    assert c.time.state.quality is E.SystemTimeQuality.CHRONY_SYNCED
     assert c.time.sample.error_bound_us == 1_000_000
     assert c.airtime.owner.state.rtc_provenance is None
 
@@ -660,10 +684,79 @@ def test_scheduler_rtc_refresh_reaches_durable_verification(composition, monkeyp
     assert c.airtime.owner.state.generation == initial_generation + 1
     with sqlite3.connect(c.database) as db:
         blob = db.execute('SELECT state_blob FROM communicator_state').fetchone()[0]
-    persisted = decode_communicator_state_v1(blob)
+    persisted = decode_communicator_state_v2(blob)
     assert persisted == c.airtime.owner.state
     assert persisted.rtc_provenance.verified_by_receiver_instance_id == INSTANCE
     assert persisted.rtc_provenance.drift_bound_ppm == 10
+
+
+# F-001: airtime may reconcile an RTC save and advance state before RTC consumes its acknowledgement.
+def test_scheduler_rtc_acknowledgement_survives_airtime_settlement(composition):
+    from cura_receiver.communicator_scheduler import CommunicatorScheduler, Work
+    from cura_receiver.generated.receiver_entities_generated import decode_communicator_state_v2
+    from cura_receiver.persistence_control_values import CommunicatorStateCommitDisposition as CD
+    from cura_receiver.ports.ds3231 import Ds3231WriteResult, Ds3231WriteDisposition, Ds3231Failure
+    from cura_receiver.runtime_time import RtcRefreshStatus
+    from cura_receiver.tx_airtime import TxCertainty
+    from tests.support.coordination.state_commit import LostStateReply
+    from tests.support.fakes.ds3231 import FakeDs3231Control
+
+    c = composition()
+    c.airtime.report_tx(c.airtime.try_spend().token, TxCertainty.STARTED)
+    now = c.clock.now_monotonic_us()
+    c.time.kernel.results.append(KernelClockResult(KS.OK, now, now, UTC + now - 100, 5, 0x2040))
+    c.time.sample_network(ChronyTrackingResult(CQ.OK, now, now, True, True, 0, 0, 0))
+    owner = c.airtime.owner
+    owner._control = LostStateReply(owner._control, installed=True)
+    rtc = FakeDs3231Control()
+
+    def read_rtc():
+        now = c.clock.now_monotonic_us()
+        return Ds3231ReadResult(DR.OK, now, now, (UTC + now - 100) // 1_000_000)
+
+    def write_rtc():
+        now = c.clock.now_monotonic_us()
+        return Ds3231WriteResult(Ds3231WriteDisposition.COMPLETED, Ds3231Failure.NONE, now, now)
+
+    rtc.read_results.extend([read_rtc, read_rtc])
+    rtc.write_results.append(write_rtc)
+    scheduler = CommunicatorScheduler(c.communicator, chrony=None, rtc=rtc,
+                                      health_interval_us=60_000_000)
+    assert scheduler.run_once().work is Work.AIRTIME
+    for _ in range(4):
+        turn = scheduler.run_once()
+        assert turn.work is Work.RTC and turn.update is None
+    requested = owner.pending.requested
+    assert requested.generation == 3 and requested.rtc_provenance is not None
+
+    c.clock.advance_elapsed_us(1_010_000)
+    assert scheduler.run_once().work is Work.AIRTIME
+    assert owner.pending is None and owner.state == requested
+    for _ in range(29):
+        c.airtime.report_tx(c.airtime.try_spend().token, TxCertainty.STARTED)
+    assert scheduler.run_once().work is Work.AIRTIME
+    assert owner.state.generation == requested.generation + 1
+    assert owner.state.rtc_provenance == requested.rtc_provenance
+
+    turn = scheduler.run_once()
+    assert turn.work is Work.RTC
+    assert turn.update.status is RtcRefreshStatus.VERIFIED
+    assert turn.update.commit_result.disposition is CD.OUTCOME_UNKNOWN
+    assert turn.update.reconciliation_result.state == requested
+    assert c.time.last_refresh_monotonic_us is not None
+    assert c.time.rtc_refresh_episode is None
+
+    c.clock.advance_elapsed_us(1_010_000)
+    assert scheduler.run_once().work is Work.AIRTIME
+    assert scheduler.run_once().work is not Work.RTC
+    assert [call[0] for call in rtc.calls] == ['read', 'write', 'read']
+    scheduler.stop_requested = lambda: True
+    assert scheduler.run_once().work is Work.TERMINAL
+    with sqlite3.connect(c.database) as db:
+        persisted = decode_communicator_state_v2(db.execute(
+            'SELECT state_blob FROM communicator_state').fetchone()[0])
+    assert persisted == owner.state
+    assert persisted.rtc_provenance == requested.rtc_provenance
 
 
 @pytest.mark.parametrize('invalidation', ['generation', 'source_error'])
@@ -723,14 +816,13 @@ def test_duplicate_after_lost_ack_and_backlog_keep_all_occurrences(composition):
     # Peer receipt is not visible here: repeat after a confirmed physical TxDone.
     for frame in (REVIEWED_CURRENT_FRAME, REVIEWED_CURRENT_FRAME, REVIEWED_BACKLOG_FRAME):
         result = deliver(c, frame)
-        assert result.finalization.published_entity.profile.ack_frame == REVIEWED_ACCEPTED_ACK
         assert result.finalization.published_entity.candidate is not None
     c.worker.request_stop(deadline_monotonic_us=c.clock.now_monotonic_us()+5_000_000)
     c.worker.join(5)
     assert not c.worker.is_alive() and c.worker.failure is None
     with sqlite3.connect(c.database) as db:
         assert db.execute('SELECT count(*) FROM reading_messages').fetchone() == (1,)
-        assert db.execute('SELECT count(*) FROM message_profiles').fetchone() == (3,)
+        assert db.execute('SELECT count(*) FROM packet_receptions').fetchone() == (3,)
 
 
 @pytest.mark.parametrize('frame,expected_ack', [
@@ -740,8 +832,7 @@ def test_duplicate_after_lost_ack_and_backlog_keep_all_occurrences(composition):
 def test_unauthenticated_packets_remain_silent(composition, frame, expected_ack):
     c = composition()
     result = deliver(c, frame)
-    profile = result.finalization.published_entity.profile
-    assert profile.ack_frame is expected_ack
+    assert result.finalization.published_entity is None
     assert not any(command[0] == 0x83 for command in c.io.commands)
     assert c.communicator.ingress.active_occurrence is None
 
@@ -757,7 +848,6 @@ def test_queue_pressure_retry_then_recovery_accepts_same_packet(composition):
     lease.acknowledge_durable(completed_entities=1)
     second = deliver(c)
     assert second.finalization.published_entity.candidate is not None
-    assert second.finalization.published_entity.profile.ack_frame == REVIEWED_ACCEPTED_ACK
     assert c.communicator.occurrence_sequence == 2
 
 
@@ -773,7 +863,6 @@ def test_authenticated_rejection_transmits_exact_reviewed_ack(composition, malfo
     result = deliver(c, frame)
     entity = result.finalization.published_entity
     assert not hasattr(entity, 'candidate')
-    assert entity.profile.ack_frame == expected
     assert b'\x0e\x00' + expected in c.io.commands
 
 
@@ -793,3 +882,42 @@ def test_unpublishable_accepted_occurrence_does_not_start_diagnostic_reservation
     assert c.queue.snapshot().reserved_entities == 1
     assert sum(c.communicator.queue.counts[E.PersistQueueEntityKind.DIAGNOSTIC.value-1]) == 0
     assert c.radio.state is E.RadioState.SHUTDOWN
+
+
+@pytest.mark.parametrize('initial_health_pending', [False, True])
+@pytest.mark.parametrize('first_save_fails', [False, True])
+def test_required_save_runs_after_rx_rearm_under_continuous_packets(composition, monkeypatch, first_save_fails, initial_health_pending):
+    from cura_receiver.communicator_scheduler import CommunicatorScheduler, Work
+    c = composition()
+    for _ in range(28):
+        assert deliver(c).finalization.published_entity.profile.ack_tx_result is E.AckTxResult.TX_DONE
+    scheduler = CommunicatorScheduler(c.communicator, chrony=None, rtc=None,
+                                      health_interval_us=60_000_000)
+    scheduler.next_airtime = scheduler.next_health = c.clock.now_monotonic_us()+10_000_000
+    scheduler.initial_health_pending = initial_health_pending
+    # There is a complete packet on every receive call: the old early return
+    # would starve maintenance indefinitely.
+    monkeypatch.setattr(scheduler, '_receive', lambda deadline: deliver(c))
+    commit = c.airtime.owner._control.commit_communicator_state
+    calls = []
+    def save(value, **kwargs):
+        assert c.radio.state is E.RadioState.RX_SINGLE
+        assert c.communicator.ingress.active_occurrence is None
+        calls.append(value)
+        if first_save_fails and len(calls) == 1:
+            kwargs['deadline_monotonic_us'] = 0
+        return commit(value, **kwargs)
+    monkeypatch.setattr(c.airtime.owner._control, 'commit_communicator_state', save)
+    turn = scheduler.run_once()  # 29th ACK, then the required save
+    assert turn.work is Work.AIRTIME and len(calls) == 1
+    assert turn.exchange.finalization.published_entity.profile.ack_tx_result is E.AckTxResult.TX_DONE
+    if first_save_fails:
+        turn = scheduler.run_once()
+        assert len(calls) == 1  # paced retry; RX and packet admission still run
+        assert turn.exchange.finalization.published_entity.candidate is not None
+        assert turn.exchange.finalization.published_entity.profile.ack_tx_result is E.AckTxResult.SUPPRESSED_AIRTIME_BUDGET
+        c.clock.advance_elapsed_us(1_100_000)
+        assert scheduler.run_once().work is Work.AIRTIME
+        assert len(calls) == 2
+    assert c.airtime.used_since_save_us == 0
+    assert scheduler.run_once().exchange.finalization.published_entity.profile.ack_tx_result is E.AckTxResult.TX_DONE

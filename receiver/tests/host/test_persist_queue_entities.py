@@ -1,10 +1,11 @@
 from __future__ import annotations
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 
 from dataclasses import FrozenInstanceError, fields
 
 import pytest
 
-from cura_receiver.generated.receiver_entities_generated import MessageProfilingV1
+from cura_receiver.generated.receiver_entities_generated import PacketReceptionV1
 from cura_receiver.generated.receiver_enums_generated import (
     AckSelection,
     AckTxResult,
@@ -16,41 +17,36 @@ from cura_receiver.generated.receiver_enums_generated import (
 )
 from cura_receiver.persist_queue_entities import (
     CLOCK_OBSERVATION_V1_SPEC,
+    RADIO_OBSERVATION_V1_SPEC,
     DIAGNOSTIC_V1_SPEC,
-    MEASUREMENT_PROFILE_V1_SPEC,
+    READING_RECEPTION_V2_SPEC,
     PERSIST_QUEUE_ENTITY_SCHEMA_VERSION,
-    PROFILE_ONLY_V1_SPEC,
+    RECEPTION_ONLY_V2_SPEC,
     RECEIVER_HEALTH_REQUEST_V1_SPEC,
     SUPPORTED_PERSIST_QUEUE_ENTITY_SPECS,
     AuthenticatedReadingCandidateV1,
-    MeasurementProfileUnitV1,
+    ReadingReceptionUnitV2,
     PersistQueueEntitySpec,
-    ProfileOnlyUnitV1,
+    ReceptionOnlyUnitV2,
     ReceiverHealthRequestV1,
 )
 
 
-def _profile() -> MessageProfilingV1:
-    return MessageProfilingV1(
+def _profile() -> PacketReceptionV1:
+    return PacketReceptionV1(
         receiver_instance_id=b"r" * 16,
         occurrence_sequence=1,
         received_at_monotonic_us=2,
-        received_frame_length=3,
-        received_frame=b"abc" + bytes(252),
-        claimed_control=32,
-        claimed_domain=1,
-        claimed_node_id=b"n" * 8,
-        claimed_message_id=5,
-        header_authenticated=True,
+        domain=1,
+        node_id=b"n" * 8,
+        message_id=5,
         decoded_sample_id=6,
         rssi_dbm_x2=-140,
         snr_db_x4=12,
         irq_status=7,
         device_errors=0,
         processing_result=ProcessingResult.ACCEPTED,
-        ack_selected=AckSelection.ACCEPTED,
         ack_tx_result=AckTxResult.TX_DONE,
-        ack_frame=b"a" * 23,
         busy_wait_total_us=8,
         busy_wait_max_us=9,
         busy_wait_count=10,
@@ -66,37 +62,20 @@ def _profile() -> MessageProfilingV1:
 
 
 def _health_request() -> ReceiverHealthRequestV1:
-    return ReceiverHealthRequestV1(
-        receiver_instance_id=b"r" * 16,
-        health_sequence=1,
-        communicator_sampled_at_monotonic_us=2,
-        radio_state=RadioState.RX_SINGLE,
-        radio_recovery_attempts=3,
-        radio_recovery_successes=2,
-        radio_recovery_failures=1,
-        radio_recovery_attempts_by_reason=(0,) * 8,
-        system_time_quality=SystemTimeQuality.NETWORK_SYNCED,
-        rtc_health=RtcHealth.PRESENT,
-        time_quality_transition_count=4,
-        rtc_health_transition_count=5,
-        last_time_quality_transition_monotonic_us=6,
-        last_rtc_health_transition_monotonic_us=None,
-        chrony_step_command_results=(1, 2, 3),
-        rtc_write_results=(4, 5, 6),
-        rtc_write_readback_verified_count=7,
-        rtc_write_trust_invalidated_count=8,
-        persist_queue_admission_counts=((0, 0, 0),) * 5,
-    )
+    from tests.support.builders.persistence import _health_request as build
+    return build()
+
 
 
 # The closed V1 descriptor set carries identity metadata but no size policy.
 def test_supported_specs_are_closed_v1_descriptors_without_sizes() -> None:
     expected = {
-        MEASUREMENT_PROFILE_V1_SPEC,
-        PROFILE_ONLY_V1_SPEC,
+        READING_RECEPTION_V2_SPEC,
+        RECEPTION_ONLY_V2_SPEC,
         RECEIVER_HEALTH_REQUEST_V1_SPEC,
         DIAGNOSTIC_V1_SPEC,
         CLOCK_OBSERVATION_V1_SPEC,
+    RADIO_OBSERVATION_V1_SPEC,
     }
 
     assert SUPPORTED_PERSIST_QUEUE_ENTITY_SPECS == expected
@@ -113,9 +92,9 @@ def test_supported_specs_are_closed_v1_descriptors_without_sizes() -> None:
         "size_bytes",
         "charge_bytes",
     }.intersection(dir(PersistQueueEntitySpec))
-    assert not hasattr(PROFILE_ONLY_V1_SPEC, "__dict__")
+    assert not hasattr(RECEPTION_ONLY_V2_SPEC, "__dict__")
     with pytest.raises(FrozenInstanceError):
-        PROFILE_ONLY_V1_SPEC.schema_version = 2  # type: ignore[misc]
+        RECEPTION_ONLY_V2_SPEC.schema_version = 2  # type: ignore[misc]
 
 
 # Composed queue units retain exact leaf references and expose no mutable instance state.
@@ -129,8 +108,8 @@ def test_measurement_and_profile_only_units_preserve_leaf_identity() -> None:
         reading_body=b"b" * 32,
     )
 
-    measurement = MeasurementProfileUnitV1(candidate=candidate, profile=profile)
-    profile_only = ProfileOnlyUnitV1(profile=profile)
+    measurement = ReadingReceptionUnitV2(candidate=candidate, profile=profile, received_frame=REVIEWED_RECEPTION_FRAME)
+    profile_only = ReceptionOnlyUnitV2(profile=profile, received_frame=REVIEWED_RECEPTION_FRAME)
 
     assert measurement.candidate is candidate
     assert measurement.profile is profile

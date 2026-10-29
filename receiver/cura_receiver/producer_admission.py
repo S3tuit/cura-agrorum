@@ -22,6 +22,10 @@ class ProducerAdmission:
         return self._queue.snapshot().closed
 
     @property
+    def reservation_active(self):
+        return self._queue.snapshot().reserved_entities != 0
+
+    @property
     def counts(self):
         return tuple(tuple(row) for row in self._counts)
 

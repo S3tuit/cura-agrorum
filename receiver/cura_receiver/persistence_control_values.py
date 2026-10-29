@@ -5,10 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 from enum import Enum, auto
 
+from .airtime_commissioning import AirtimeCommissioningState
 from .generated.receiver_entities_generated import (
-    CommunicatorStateV1,
+    CommunicatorStateV2,
     RtcProvenanceV1,
-    TxAirtimeBucketV1,
+    AirtimeEntryV2,
     AirtimeSnapshotV1,
 )
 from .generated.receiver_enums_generated import DiagnosticOperation as Operation
@@ -69,9 +70,9 @@ def _enum(value, expected):
         raise TypeError(f"expected {expected.__name__}")
 
 
-def require_immutable_state(state: CommunicatorStateV1) -> None:
+def require_immutable_state(state: CommunicatorStateV2) -> None:
     """Reject mutable/foreign logical values before publishing their references."""
-    _enum(state, CommunicatorStateV1)
+    _enum(state, CommunicatorStateV2)
     for field in fields(state):
         expected = {
             "last_observed_system_time_quality": SystemTimeQuality,
@@ -80,7 +81,7 @@ def require_immutable_state(state: CommunicatorStateV1) -> None:
             if state.rtc_provenance is None
             else RtcProvenanceV1,
             "airtime_snapshot": type(None) if state.airtime_snapshot is None else AirtimeSnapshotV1,
-            "buckets": tuple,
+            "entries": tuple,
         }.get(field.name, int)
         _enum(getattr(state, field.name), expected)
     if state.rtc_provenance is not None:
@@ -92,9 +93,9 @@ def require_immutable_state(state: CommunicatorStateV1) -> None:
     if state.airtime_snapshot is not None:
         _enum(state.airtime_snapshot.utc_us, int)
         _enum(state.airtime_snapshot.error_bound_us, int)
-    for bucket in state.buckets:
-        _enum(bucket, TxAirtimeBucketV1)
-        _enum(bucket.charged_airtime_us, int)
+    for bucket in state.entries:
+        _enum(bucket, AirtimeEntryV2)
+        _enum(bucket.remaining_us, int)
 
 
 def _evidence(result, *, failure: str, operation: Operation) -> None:
@@ -129,11 +130,17 @@ class CommunicatorStateLoadResult:
     sqlite_primary_code: int | None = None
     sqlite_extended_code: int | None = None
     os_errno: int | None = None
-    state: CommunicatorStateV1 | None = None
+    state: CommunicatorStateV2 | None = None
+    commissioning: AirtimeCommissioningState = AirtimeCommissioningState.ABSENT
 
     def __post_init__(self) -> None:
         _enum(self.status, CommunicatorStateLoadStatus)
         _enum(self.state_condition, CommunicatorStateCondition)
+        _enum(self.commissioning, AirtimeCommissioningState)
+        if self.status not in (CommunicatorStateLoadStatus.LOADED,
+                               CommunicatorStateLoadStatus.STATE_UNAVAILABLE):
+            if self.commissioning is not AirtimeCommissioningState.ABSENT:
+                raise ValueError("failed load cannot carry commissioning evidence")
         loaded = self.status is CommunicatorStateLoadStatus.LOADED
         if loaded != (self.state is not None):
             raise ValueError("state is present exactly for LOADED")

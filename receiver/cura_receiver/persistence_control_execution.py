@@ -28,6 +28,7 @@ class ControlRequest:
     kind: ControlCommandKind
     deadline_monotonic_us: int
     payload: object = None
+    commissioning: bool = False
 
 
 class ControlDeadlineExceeded(Exception):

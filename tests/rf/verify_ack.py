@@ -1,4 +1,4 @@
-"""RF-019 packet/storage reconciliation, separate from peer reply selection."""
+"""node packet/storage reconciliation, separate from peer reply selection."""
 from collections import Counter
 import struct
 
@@ -13,10 +13,10 @@ def verify_ack_case(case, node_id, key, packets, decoded):
     seed_count = 2 if scope == "backlog" else 1
     target_cycle = seed_count
     statuses = {"accepted": 1, "retry_later": 2, "unsupported": 3,
-                "malformed": 4, "invalid_auth": 1, "wrong_message": 6, "domain_status": 6}
-    if (not case.startswith("RF-019.") or scope not in ("current", "backlog") or action not in statuses or
+                "malformed": 4, "invalid_auth": 1, "wrong_message": 8, "domain_status": 8, "header_error_rearm": 1, "header_error_retry": 1}
+    if (not case.startswith("node.") or scope not in ("current", "backlog") or action not in statuses or
             (scope == "backlog" and action not in ("accepted", "retry_later", "unsupported", "malformed"))):
-        raise ValueError("unknown RF-019 assertion set")
+        raise ValueError("unknown node assertion set")
     currents, messages, order = [], {}, []
     counts = Counter()
     for packet in packets:
@@ -73,9 +73,12 @@ def verify_ack_case(case, node_id, key, packets, decoded):
             outcome = statuses[action]
         else:
             outcome = 1
-        if outcome == 6:
-            if counts[m] < 2:
-                raise ValueError("missing retry after invalid ACK and silence")
+        if outcome == 8:  # NO_ACK_ATTEMPT_LIMIT
+            if counts[m] != 2:
+                raise ValueError("invalid ACK and silence did not end after exactly two attempts")
+        elif action == "header_error_retry" and m == target["message"]:
+            if counts[m] != 2:
+                raise ValueError("HeaderErr retry did not use exactly two attempts")
         elif counts[m] != 1:
             raise ValueError("terminal ACK did not complete first attempt")
         expected[m] = outcome
@@ -128,7 +131,10 @@ def verify_ack_case(case, node_id, key, packets, decoded):
         raise ValueError("quarantine mismatch")
     diagnostics = logs["diagnostic.log"] or []
     wanted_error = {"invalid_auth": 7, "wrong_message": 10, "domain_status": 13}.get(action)
-    if wanted_error is None:
+    if action.startswith("header_error_"):
+        from verify_header_ack import verify_summary
+        verify_summary(action, diagnostics, target["reading"].sample_id, target["message"])
+    elif wanted_error is None:
         if diagnostics:
             raise ValueError("unexpected node diagnostic")
     elif len(diagnostics) != 1 or any(
@@ -175,6 +181,8 @@ def verify_ack_transmissions(case, node_id, key, outcome, trace, attempts):
         header = struct.pack("<BB8sI", 32, domain, node_id, message)
         nonce = struct.pack("<8sIB", node_id, message, domain)
         frame = header + AESCCM(key, tag_length=8).encrypt(nonce, bytes([status]), header)
+        if selected_action in ("header_error_rearm", "header_error_retry"):
+            expected.extend([frame.hex()] * 2)
         if selected_action == "invalid_auth":
             expected.append((frame[:-1] + bytes([frame[-1] ^ 1])).hex())
         expected.append(frame.hex())

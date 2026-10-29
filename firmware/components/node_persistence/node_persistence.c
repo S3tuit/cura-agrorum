@@ -17,6 +17,10 @@
 #define DELIVERY_LOG_PATH NODE_PERSISTENCE_MOUNT_PATH "/delivery.log"
 #define PERSISTENCE_RECORD_TYPE_OFFSET 5U
 
+/* Logical quotas leave LittleFS room for copy-on-write and pending compaction.
+ * Only pending reclaims space, retaining whole newest reading/binding items.
+ * Other full logs reject new records; they never evict historical records.
+ */
 #ifndef NODE_PERSISTENCE_PENDING_LOG_LIMIT
 #define NODE_PERSISTENCE_PENDING_LOG_LIMIT (UINT64_C(512) * UINT64_C(1024))
 #endif
@@ -356,6 +360,9 @@ pending_binding_matches_preceding_reading(const tail_record_t *binding,
   return CURAG_OK;
 }
 
+/* Repair at most one record-sized suffix and report its loss before a caller
+ * retries. Never guess a boundary, format storage, or bury torn bytes by append.
+ */
 static err_curag_t recover_tail(node_persistence_log_kind_t log_kind,
                                 tail_record_t *out_tail,
                                 diagn_context_t *out_diag) {
@@ -575,6 +582,9 @@ static err_curag_t validate_file_forward(node_persistence_log_kind_t log_kind,
   return CURAG_OK;
 }
 
+/* pending.log stays authoritative until rename. A temporary copy has no
+ * generation/manifest proving it newer, so it must never be promoted as recovery.
+ */
 static err_curag_t cleanup_stale_pending_compact(diagn_context_t *out_diag) {
   bool compact_exists = false;
   uint64_t compact_size = 0U;
@@ -1302,7 +1312,8 @@ static bool validate_delivery_event(const node_delivery_event_t *event) {
   }
   return event->detail.finished.final_result >= NODE_DELIVERY_RESULT_ACCEPTED &&
          event->detail.finished.final_result <=
-             NODE_DELIVERY_RESULT_LOCAL_RADIO_ERROR;
+             NODE_DELIVERY_RESULT_NO_ACK_ATTEMPT_LIMIT &&
+         event->detail.finished.tx_call_count <= NODE_DELIVERY_TX_CALL_SLOTS;
 }
 
 err_curag_t
@@ -1316,28 +1327,10 @@ node_persistence_append_delivery_event(const node_delivery_event_t *event,
                 0);
   }
 
-  uint8_t payload[NODE_PERSISTENCE_DELIVERY_STARTED_PAYLOAD_SIZE] = {0};
-  node_persistence_store_le32(payload, event->cycle_sample_id);
-  node_persistence_store_le32(payload + 4U, event->sample_id);
-  node_persistence_store_le32(payload + 8U, event->message_id);
-  payload[12U] = event->domain;
-  uint8_t record_type = NODE_PERSISTENCE_RECORD_TYPE_DELIVERY_STARTED;
-  size_t payload_length = NODE_PERSISTENCE_DELIVERY_STARTED_PAYLOAD_SIZE;
-  if (event->type == NODE_DELIVERY_EVENT_STARTED) {
-    node_persistence_store_le32(payload + 13U,
-                                event->detail.started.start_offset_ms);
-  } else {
-    record_type = NODE_PERSISTENCE_RECORD_TYPE_DELIVERY_FINISHED;
-    payload_length = NODE_PERSISTENCE_DELIVERY_FINISHED_PAYLOAD_SIZE;
-    payload[13U] = event->detail.finished.attempt_count;
-    payload[14U] = event->detail.finished.final_result;
-  }
-
   uint8_t record[NODE_PERSISTENCE_RECORD_MAX_SIZE];
   size_t record_length = 0U;
-  if (!node_persistence_record_encode(node_persistence_backend(), record_type,
-                                      payload, payload_length, record,
-                                      &record_length) ||
+  if (!node_persistence_record_encode_delivery(node_persistence_backend(),
+                                               event, record, &record_length) ||
       node_persistence_record_validate(
           node_persistence_backend(), NODE_PERSISTENCE_LOG_DELIVERY, record,
           record_length) != NODE_PERSISTENCE_RECORD_VALID) {

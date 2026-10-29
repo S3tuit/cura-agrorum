@@ -19,9 +19,9 @@ from cura_receiver.persist_queue import (
     PersistenceAdmissionSnapshot,
 )
 from cura_receiver.persist_queue_entities import (
-    MEASUREMENT_PROFILE_V1_SPEC,
-    PROFILE_ONLY_V1_SPEC,
-    MeasurementProfileUnitV1,
+    READING_RECEPTION_V2_SPEC,
+    RECEPTION_ONLY_V2_SPEC,
+    ReadingReceptionUnitV2,
 )
 from cura_receiver.protocol_ingress import (
     ProtocolIngress,
@@ -46,7 +46,7 @@ def _context(
     queue = PersistQueue(capacity_entities=1)
     queue.publish_admission_state(PersistenceAdmissionSnapshot(1, state, 1))
     if full:
-        reserved = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+        reserved = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
         assert reserved.reservation is not None
         reserved.reservation.publish(object())
     ingress = ProtocolIngress(
@@ -94,12 +94,12 @@ def test_occurrence_cannot_be_constructed_replaced_copied_or_serialized(
 
     assert queue.snapshot() == before
     finalized = ingress.finalize(occurrence, _terminal(occurrence))
-    assert isinstance(finalized.published_entity, MeasurementProfileUnitV1)
+    assert isinstance(finalized.published_entity, ReadingReceptionUnitV2)
     assert finalized.published_entity.candidate is occurrence.candidate
     assert finalized.published_entity.profile.processing_result is ProcessingResult.ACCEPTED
     lease = queue.claim_batch(max_entities=1)
     assert lease is not None
-    assert lease.entries[0].spec is MEASUREMENT_PROFILE_V1_SPEC
+    assert lease.entries[0].spec is READING_RECEPTION_V2_SPEC
     assert lease.entries[0].entity is finalized.published_entity
 
 
@@ -127,7 +127,7 @@ def test_occurrence_facts_cannot_be_replaced_through_the_public_boundary() -> No
     assert occurrence.pre_tx_profile is original
     assert queue.snapshot().reserved_entities == 1
     finalized = ingress.finalize(occurrence, _terminal(occurrence))
-    assert isinstance(finalized.published_entity, MeasurementProfileUnitV1)
+    assert isinstance(finalized.published_entity, ReadingReceptionUnitV2)
     assert finalized.published_entity.candidate is occurrence.candidate
     assert finalized.published_entity.profile.occurrence_sequence == original.occurrence_sequence
 

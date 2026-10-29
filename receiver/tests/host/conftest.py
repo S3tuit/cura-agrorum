@@ -18,7 +18,7 @@ from tests.support.coordination.persistence_worker import prepare_worker_files
 @pytest.fixture
 def setup(tmp_path):
     path = tmp_path / "receiver.db"
-    initialize_database(path, GROUP)
+    initialize_database(path, GROUP, known_empty_airtime=False)
     database = open_receiver_database(path, GROUP, minimum_free_bytes=0).database
     connection = database.connection
     instance = ReceiverInstanceStart(INSTANCE, 0)
@@ -62,7 +62,7 @@ def airtime_component(tmp_path):
     from cura_receiver.airtime_ledger import AirtimeCorrelation
     from cura_receiver.communicator_state_owner import CommunicatorStateOwner
     from cura_receiver.generated.receiver_entities_generated import (
-        communicator_state_v1_parameters,
+        communicator_state_v2_parameters,
     )
     from cura_receiver.generated.receiver_enums_generated import (
         RtcHealth as RH,
@@ -76,16 +76,17 @@ def airtime_component(tmp_path):
 
     workers = []
 
-    def create(condition=C.MISSING, *, utc=0, initial_state=None, rate_bound_ppm=3700):
+    def create(condition=C.MISSING, *, utc=0, initial_state=None, rate_bound_ppm=3700,
+               known_empty_airtime=False):
         root = tmp_path / str(len(workers))
         root.mkdir()
-        database, config, boot = prepare_worker_files(root)
+        database, config, boot = prepare_worker_files(root, known_empty_airtime=known_empty_airtime)
         with sqlite3.connect(database) as connection:
             if initial_state is not None:
                 condition = C.NONE
                 connection.execute(
                     "INSERT INTO communicator_state VALUES (?,?,?,?,?)",
-                    communicator_state_v1_parameters(initial_state),
+                    communicator_state_v2_parameters(initial_state),
                 )
             elif condition is C.CORRUPT:
                 connection.executemany(
@@ -95,13 +96,13 @@ def airtime_component(tmp_path):
             elif condition is C.UNSUPPORTED_VERSION:
                 connection.execute(
                     "INSERT INTO communicator_state VALUES (?,?,?,?,?)",
-                    (1, 2, 1, b"\x02\x00", hashlib.sha256(b"\x02\x00").digest()),
+                    (1, 1, 1, b"\x01\x00", hashlib.sha256(b"\x01\x00").digest()),
                 )
             elif condition is C.POLICY_MISMATCH:
                 connection.execute(
                     "INSERT INTO communicator_state VALUES (?,?,?,?,?)",
-                    communicator_state_v1_parameters(
-                        state(tx_airtime_budget_us=35_000_000)
+                    communicator_state_v2_parameters(
+                        state(rolling_window_us=3_500_000_000)
                     ),
                 )
         clock = FakeOsClock(monotonic_us=100)
@@ -122,7 +123,7 @@ def airtime_component(tmp_path):
         )
         policy.update_time(
             AirtimeCorrelation(
-                TrustedTimeSample(100, utc, 1, Q.NETWORK_SYNCED, 1), 1, 10_000_000_100
+                TrustedTimeSample(100, utc, 1, Q.CHRONY_SYNCED, 1), 1, 10_000_000_100
             ),
             rtc_health=RH.PRESENT,
         )

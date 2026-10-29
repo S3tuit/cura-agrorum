@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 
 import sqlite3
 from dataclasses import replace
@@ -10,8 +11,8 @@ from cura_receiver.generated.receiver_enums_generated import (
 )
 from cura_receiver.persist_queue_entities import (
     CLOCK_OBSERVATION_V1_SPEC,
-    PROFILE_ONLY_V1_SPEC,
-    ProfileOnlyUnitV1,
+    RECEPTION_ONLY_V2_SPEC,
+    ReceptionOnlyUnitV2,
 )
 from cura_receiver.sqlite_transactions import SqliteTransactions
 from tests.support.builders.persistence import _observation, _profile
@@ -193,8 +194,8 @@ def test_pending_checkpoint_survives_batch_success(setup, poison):
     if poison:
         _publish(
             queue,
-            ProfileOnlyUnitV1(replace(_profile(), busy_wait_count=-1)),
-            PROFILE_ONLY_V1_SPEC,
+            ReceptionOnlyUnitV2(replace(_profile(), busy_wait_count=-1), received_frame=REVIEWED_RECEPTION_FRAME),
+            RECEPTION_ONLY_V2_SPEC,
         )
     else:
         _publish(queue, _observation())
@@ -256,7 +257,7 @@ def test_checkpoint_low_space(setup):
 def test_all_ordinary_history_retained(setup):
     from cura_receiver.persist_queue_entities import (
         DIAGNOSTIC_V1_SPEC,
-        MEASUREMENT_PROFILE_V1_SPEC,
+        READING_RECEPTION_V2_SPEC,
         RECEIVER_HEALTH_REQUEST_V1_SPEC,
     )
     from tests.support.builders.persistence import (
@@ -270,13 +271,13 @@ def test_all_ordinary_history_retained(setup):
     persistence.enable_admission()
     units = (
         (_observation(), CLOCK_OBSERVATION_V1_SPEC),
-        (_measurement(), MEASUREMENT_PROFILE_V1_SPEC),
-        (ProfileOnlyUnitV1(_profile(sequence=2)), PROFILE_ONLY_V1_SPEC),
+        (_measurement(), READING_RECEPTION_V2_SPEC),
+        (ReceptionOnlyUnitV2(_profile(sequence=2), received_frame=REVIEWED_RECEPTION_FRAME), RECEPTION_ONLY_V2_SPEC),
         (_diagnostic(), DIAGNOSTIC_V1_SPEC),
         (_health_request(), RECEIVER_HEALTH_REQUEST_V1_SPEC),
         (
-            ProfileOnlyUnitV1(replace(_profile(sequence=3), busy_wait_count=-1)),
-            PROFILE_ONLY_V1_SPEC,
+            ReceptionOnlyUnitV2(replace(_profile(sequence=3), busy_wait_count=-1), received_frame=REVIEWED_RECEPTION_FRAME),
+            RECEPTION_ONLY_V2_SPEC,
         ),
     )
     for entity, spec in units:
@@ -290,7 +291,7 @@ def test_all_ordinary_history_retained(setup):
         "receiver_instances",
         "clock_observations",
         "reading_messages",
-        "message_profiles",
+        "packet_receptions",
         "diagnostics",
         "receiver_health",
         "quarantined_entities",

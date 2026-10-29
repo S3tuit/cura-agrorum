@@ -17,8 +17,11 @@ add_executable(
   test_node_core_delivery.c
   test_node_core_transitions.c
   test_node_core_finalization.c
+  test_node_core_evidence.c
+  test_node_core_phy.c
   ${FIRMWARE_ROOT}/components/node_common/node_common.c
   ${FIRMWARE_ROOT}/components/node_core/node_core.c
+  ${FIRMWARE_ROOT}/components/node_persistence/node_persistence_record.c
   ${FIRMWARE_ROOT}/components/protocol_v2_lora/protocol_v2_lora_crypto.c
   ${FIRMWARE_ROOT}/components/protocol_v2_lora/protocol_v2_lora_schema_generated.c
   ${FIRMWARE_ROOT}/components/sx1262_radio/sx1262_radio_timing.c
@@ -30,6 +33,7 @@ target_include_directories(
     ${FIRMWARE_ROOT}/components/node_common/include
     ${FIRMWARE_ROOT}/components/node_core/include
     ${FIRMWARE_ROOT}/components/node_persistence/include
+    ${FIRMWARE_ROOT}/components/node_persistence/private_include
     ${FIRMWARE_ROOT}/components/node_sensors/include
     ${FIRMWARE_ROOT}/components/protocol_v2_lora/include
     ${FIRMWARE_ROOT}/components/sx1262_radio/include
@@ -76,6 +80,11 @@ set(
   message_claim_failure_retains_reading_without_construction
   invalid_composition_returns_without_side_effects
   retries_reuse_identical_frame
+  ack_windows_accept_across_checkpoint
+  two_silent_attempts_stop_and_retain
+  final_ack_deadline_is_inclusive
+  radio_deadline_caps_ack_windows
+  attempt_limit_precedes_third_wall_clock_admission
   invalid_acks_share_one_receive_interval
   unknown_ack_status_reports_status_diagnostic
   radio_progress_and_rx_errors_are_accounted
@@ -93,6 +102,8 @@ set(
   airtime_budget_is_shared_across_backlog
   wall_clock_deadline_is_shared_across_backlog
   backlog_silence_retries_the_same_frame
+  two_attempt_limit_resets_for_each_backlog
+  backlog_two_silent_attempts_stop_drainage
   bound_backlog_reuses_persisted_frame_without_new_id
   backlog_binding_failure_prevents_first_transmission
   delivery_events_bracket_retries_and_failures_are_best_effort
@@ -105,6 +116,16 @@ set(
   sync_induced_metric_overflow_has_no_late_diagnostic
   component_diagnostics_are_copied_opaquely
   cleanup_failures_do_not_prevent_sync_or_sleep
+  tx_calls_record_timeout_then_ack
+  tx_calls_record_every_ack_status
+  tx_calls_record_complete_silence
+  tx_calls_ignore_invalid_acks
+  tx_calls_classify_failures
+  tx_calls_identify_backlog_wake
+  phy_valid_statuses_and_logging_failure
+  phy_merge_calls_and_saturate
+  phy_retry_and_exhaustion
+  phy_local_failure_preserves_summary
 )
 
 foreach(SCENARIO IN LISTS NODE_CORE_TEST_SCENARIOS)
@@ -151,7 +172,7 @@ target_compile_definitions(
     NODE_PERSISTENCE_PENDING_COMPACT_RETAIN_LIMIT=128
     NODE_PERSISTENCE_QUARANTINE_LOG_LIMIT=512
     NODE_PERSISTENCE_DIAGNOSTIC_LOG_LIMIT=512
-    NODE_PERSISTENCE_DELIVERY_LOG_LIMIT=512
+    NODE_PERSISTENCE_DELIVERY_LOG_LIMIT=1024
 )
 target_compile_options(
   test_node_persistence
@@ -210,7 +231,7 @@ target_compile_definitions(
   PRIVATE
     NODE_SENSORS_TESTING=1
     CONFIG_CURA_SENSOR_POWER_STABILIZATION_MS=200
-    CONFIG_CURA_DS18B20_GPIO=3
+    CONFIG_CURA_DS18B20_GPIO=4
 )
 target_compile_options(
   test_node_sensors
@@ -400,6 +421,14 @@ set(
   receive_snapshots_before_clear_and_rearms
   receive_deadline_keeps_rx_armed
   receive_discards_phy_errors
+  receive_discards_phy_errors_with_rx_done
+  phy_observations_deadline_and_saturation
+  phy_clear_failure
+  phy_rearm_failure
+  phy_then_buffer_failure
+  phy_then_status_failure
+  phy_then_packet_clear_failure
+  phy_then_packet_rearm_failure
   oversized_receive_is_bounded
   late_packet_is_discarded
   same_absolute_deadline_is_not_extended
@@ -408,6 +437,8 @@ set(
   sleep_lifecycle
   sleep_standby_failure_blocks_sleep_and_retries
   sleep_command_failure_retries
+  sleep_rf_failure
+  sleep_rf_first_error
 )
 
 foreach(SCENARIO IN LISTS SX1262_RADIO_TEST_SCENARIOS)
@@ -434,7 +465,7 @@ foreach(target test_bme280_driver test_node_sensors_bme280)
         "${FIRMWARE_ROOT}/components/node_sensors/include"
         "${FIRMWARE_ROOT}/components/node_common/include")
     target_compile_definitions(${target} PRIVATE BME280_DOUBLE_ENABLE
-        CONFIG_CURA_I2C_SDA_GPIO=21 CONFIG_CURA_I2C_SCL_GPIO=22)
+        CONFIG_CURA_I2C_SDA_GPIO=5 CONFIG_CURA_I2C_SCL_GPIO=6)
     target_compile_features(${target} PRIVATE c_std_11)
     target_compile_options(${target} PRIVATE -Wall -Wextra -Werror -Wformat=2 -Wshadow
         -fsanitize=address,undefined -fno-omit-frame-pointer)
@@ -478,4 +509,17 @@ foreach(test IN LISTS BME_ADAPTER_CASES)
     add_test(NAME "node_sensors_bme280.${test}" COMMAND test_node_sensors_bme280 "${test}")
     set_tests_properties("node_sensors_bme280.${test}" PROPERTIES ENVIRONMENT
         "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:halt_on_error=1:fast_unwind_on_malloc=0")
+endforeach()
+
+add_executable(test_sx1262_rf_path test_sx1262_rf_path.c fake_esp_gpio.c
+    "${FIRMWARE_ROOT}/components/sx1262_radio/sx1262_radio_rf_path_esp.c")
+target_include_directories(test_sx1262_rf_path PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/fakes"
+    "${FIRMWARE_ROOT}/components/sx1262_radio/private_include")
+target_compile_features(test_sx1262_rf_path PRIVATE c_std_11)
+target_compile_options(test_sx1262_rf_path PRIVATE -Wall -Wextra -Werror
+    -Wconversion -Wsign-conversion -fsanitize=address,undefined -fno-omit-frame-pointer)
+target_link_options(test_sx1262_rf_path PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+foreach(scenario initial_off initial_level_failure initial_config_failure
+    initial_hold_failure on on_release_failure on_level_failure configured_off_failures)
+    add_test(NAME "sx1262_rf_path.${scenario}" COMMAND test_sx1262_rf_path "${scenario}")
 endforeach()

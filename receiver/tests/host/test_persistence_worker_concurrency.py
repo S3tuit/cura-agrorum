@@ -1,3 +1,4 @@
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 import sqlite3
 from threading import Event, current_thread
 
@@ -11,9 +12,9 @@ from cura_receiver.generated.receiver_enums_generated import (
     RadioState,
 )
 from cura_receiver.persist_queue_entities import (
-    PROFILE_ONLY_V1_SPEC,
+    RECEPTION_ONLY_V2_SPEC,
     RECEIVER_HEALTH_REQUEST_V1_SPEC,
-    ProfileOnlyUnitV1,
+    ReceptionOnlyUnitV2,
 )
 from cura_receiver.persistence_control_values import (
     CommunicatorStateCondition as Condition,
@@ -60,8 +61,8 @@ def create(worker_files):
 
 
 def publish(owner, sequence=1):
-    owner.queue.try_reserve_one(PROFILE_ONLY_V1_SPEC).reservation.publish(
-        ProfileOnlyUnitV1(_profile(sequence=sequence))
+    owner.queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC).reservation.publish(
+        ReceptionOnlyUnitV2(_profile(sequence=sequence), received_frame=REVIEWED_RECEPTION_FRAME)
     )
 
 

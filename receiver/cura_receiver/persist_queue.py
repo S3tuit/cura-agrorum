@@ -1,4 +1,11 @@
-"""Bounded SPSC ownership handoff between receiver owner threads."""
+"""Bounded SPSC ownership handoff between receiver owner threads.
+
+Reservation counts against capacity but is invisible to the consumer. Publication
+transfers the same deeply immutable object, without copying or encoding; it remains
+valid after admission closes. Neither step promises disk durability. Only the
+persistence owner acknowledges a FIFO prefix after commit or exact reconciliation.
+Compound transitions use the queue lock rather than relying on the Python GIL.
+"""
 
 from __future__ import annotations
 
@@ -76,7 +83,12 @@ class PersistQueueReservationToken:
 
 
 class PersistQueueReservation:
-    """Single-use producer handle bound to one unpublished tail slot."""
+    """Single-use producer handle bound to one unpublished tail slot.
+
+    Deliberately not an auto-cancelling context manager: after acceptance or an
+    ACK attempt, exception cleanup must publish the terminal occurrence rather
+    than silently discard it. The producer owns that decision.
+    """
 
     __slots__ = ("_active", "_queue", "_slot_index", "_spec", "_token")
 

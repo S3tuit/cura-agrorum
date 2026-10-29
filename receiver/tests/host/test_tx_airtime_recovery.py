@@ -9,7 +9,7 @@ import pytest
 from cura_receiver.airtime_ledger import AirtimeCorrelation
 from cura_receiver.communicator_state_owner import CommunicatorStateOwner
 from cura_receiver.generated.receiver_entities_generated import (
-    communicator_state_v1_parameters,
+    communicator_state_v2_parameters,
     AirtimeSnapshotV1,
 )
 from cura_receiver.generated.receiver_enums_generated import (
@@ -47,7 +47,7 @@ def test_synthetic_recovery_exact_durable_history(airtime_component, condition):
     with sqlite3.connect(database) as connection:
         assert connection.execute(
             "SELECT * FROM communicator_state"
-        ).fetchone() == communicator_state_v1_parameters(replace(synthetic(), airtime_snapshot=AirtimeSnapshotV1(0, 1)))
+        ).fetchone() == communicator_state_v2_parameters(replace(synthetic(), airtime_snapshot=AirtimeSnapshotV1(0, 1)))
         archived = connection.execute(
             "SELECT observed_singleton_id, observed_state_format_version, observed_generation, observed_state_blob, observed_state_sha256 FROM quarantined_communicator_states ORDER BY quarantined_state_id"
         ).fetchall()
@@ -74,7 +74,7 @@ def test_incompatible_wait_start_boundary_and_atomic_archive(
     clock.advance_elapsed_us(1)
     assert recover(policy, clock).reason is R.STATE_READY
     assert policy.state.generation == 1 and policy.total_used == 0
-    assert all(b.charged_airtime_us == 0 for b in policy.state.buckets)
+    assert all(b.remaining_us == 0 for b in policy.state.entries)
     with sqlite3.connect(database) as connection:
         assert connection.execute(
             "SELECT count(*) FROM quarantined_communicator_states"
@@ -150,7 +150,7 @@ def test_unknown_recovery_reconciles_exact_request(airtime_component, installed)
         ).fetchone() == (2,)
         assert connection.execute(
             "SELECT * FROM communicator_state"
-        ).fetchone() == communicator_state_v1_parameters(requested)
+        ).fetchone() == communicator_state_v2_parameters(requested)
 
 
 # Airtime no longer adds retention durations to UTC, even at the signed UTC limit.
@@ -159,3 +159,44 @@ def test_recovery_at_utc_limit(airtime_component):
     assert recover(policy, clock).reason is R.STATE_READY
     assert policy.total_used == 36_000_000
     assert policy.state.airtime_snapshot.utc_us == (1 << 63) - 1
+
+
+@pytest.mark.parametrize('occupied', range(19))
+def test_loaded_recovery_adds_historical_entry_or_extends_earliest(airtime_component, occupied):
+    from cura_receiver.generated.receiver_entities_generated import AirtimeEntryV2
+    initial = state(entries=(AirtimeEntryV2(1_000_000),)*occupied +
+                    (AirtimeEntryV2(0),)*(18-occupied))
+    policy, _, _, clock, _ = airtime_component(initial_state=initial)
+    assert recover(policy, clock).reason is R.STATE_READY
+    assert policy.state.generation == 2
+    assert policy.total_used == min(occupied+1, 18)*2_000_000
+    assert policy._ledger.current_entry is None
+    assert policy._ledger.used_since_save_us == 0
+    assert max(policy._ledger.deadlines) == 100 + 3_613_570_925
+    if occupied == 18:
+        assert policy._ledger.deadlines.count(1_003_800) == 17
+
+
+@pytest.mark.parametrize('untrusted,utc', [(True, 0), (False, -100)])
+def test_ineligible_time_exhausts_even_valid_empty_history(airtime_component, untrusted, utc):
+    policy, _, _, clock, _ = airtime_component(initial_state=state(), utc=utc)
+    if untrusted:
+        policy.update_time(None, rtc_health=RH.MISSING)
+    assert recover(policy, clock).reason is R.STATE_READY
+    assert policy.total_used == 36_000_000
+    assert set(policy._ledger.deadlines) == {100 + 3_613_570_925}
+
+
+def test_lost_reply_delay_does_not_rebase_recovery_or_resample_utc(airtime_component):
+    policy, worker, _, clock, loaded = airtime_component(initial_state=state())
+    channel = LostStateReply(worker.control, installed=True)
+    policy.owner = CommunicatorStateOwner.from_load(control=channel, loaded=loaded)
+    assert recover(policy, clock).reason is R.PERSISTENCE_PENDING
+    requested = policy.owner.pending.requested
+    deadlines = policy._prepared.recovery_ledger.deadlines.copy()
+    clock.advance_elapsed_us(30_000_000)
+    policy.update_time(None, rtc_health=RH.MISSING)
+    assert recover(policy, clock).reason is R.STATE_READY
+    assert policy.state is requested
+    assert policy._ledger.deadlines == deadlines
+    assert policy.state.airtime_snapshot.utc_us == 0

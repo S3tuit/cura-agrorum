@@ -147,7 +147,7 @@ class RadioTxAuthorization:
     """Caller-owned allowance has been consumed before TX-profile installation.
 
     This is a submission deadline and diagnostic correlation, not a grant or
-    proof of durable admission. The caller owns grant validation/settlement.
+    proof of durable admission. The caller owns airtime reservation and saving.
     """
 
     submission_deadline_monotonic_us: int
@@ -193,10 +193,17 @@ class RadioIo(Protocol):
     Resource close attempts all acquired resources once and is idempotent.
     """
 
+    def set_event_observer(self, observer) -> None:
+        """Notify the existing GPIO consumer's observations; never add a reader."""
+        ...
+
     def open(self, configuration: RadioConfiguration, *, deadline_monotonic_us: int) -> None: ...
     def transfer(self, data: bytes, *, deadline_monotonic_us: int) -> bytes: ...
     def busy(self) -> bool: ...
     def dio1(self) -> bool: ...
+    def edge_pending(self) -> bool:
+        """Readiness only: do not consume events or change stream state."""
+        ...
     def set_reset(self, *, asserted: bool) -> None: ...
     def wait_edge(self, *, deadline_monotonic_us: int) -> Dio1Edge | None: ...
     def resynchronize_events(self, *, deadline_monotonic_us: int) -> None:

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tests.support.builders.persistence import REVIEWED_RECEPTION_FRAME
 
 import copy
 import hashlib
@@ -20,6 +21,7 @@ MANIFEST = RECEIVER_ROOT / "schemas" / "receiver_enums.json"
 ENTITY_MANIFEST = RECEIVER_ROOT / "schemas" / "receiver_entities.json"
 SCHEMA = RECEIVER_ROOT / "db" / "schema.sql"
 HANDWRITTEN_TABLES = {
+    "airtime_commissioning",
     "database_metadata",
     "receiver_instances",
     "quarantined_communicator_states",
@@ -32,8 +34,8 @@ from cura_receiver.generated import (
     receiver_enums_generated as generated,
 )
 from cura_receiver.persist_queue_entities import (
-    PROFILE_ONLY_V1_SPEC,
-    ProfileOnlyUnitV1,
+    RECEPTION_ONLY_V2_SPEC,
+    ReceptionOnlyUnitV2,
 )
 from cura_receiver.quarantine_evidence import (
     QUARANTINE_EVIDENCE_MAX_BYTES,
@@ -111,21 +113,20 @@ def open_schema() -> sqlite3.Connection:
 def communicator_state(
     *,
     rtc_provenance: generated_entities.RtcProvenanceV1 | None = None,
-) -> generated_entities.CommunicatorStateV1:
-    empty_bucket = generated_entities.TxAirtimeBucketV1(
-        charged_airtime_us=0,
+) -> generated_entities.CommunicatorStateV2:
+    empty_bucket = generated_entities.AirtimeEntryV2(
+        remaining_us=0,
     )
-    return generated_entities.CommunicatorStateV1(
+    return generated_entities.CommunicatorStateV2(
         generation=1,
         last_observed_system_time_quality=generated.SystemTimeQuality.UNTRUSTED,
         last_observed_rtc_health=generated.RtcHealth.PRESENT,
         rtc_provenance=rtc_provenance,
         rolling_window_us=3_600_000_000,
         tx_airtime_budget_us=36_000_000,
-        bucket_width_us=60_000_000,
-        bucket_charge_limit_us=8_000_000,
+        entry_charge_us=2_000_000,
         airtime_snapshot=None,
-        buckets=(empty_bucket,) * 62,
+        entries=(empty_bucket,) * 18,
     )
 
 
@@ -165,6 +166,15 @@ def test_generated_enums_match_manifest_and_are_not_int_subclasses() -> None:
         }
 
     assert generated.SystemTimeQuality.UNTRUSTED != generated.AdmissionResult.RESERVED
+    # The rename preserves persisted numeric identities without a live alias.
+    assert {
+        name: member.value
+        for name, member in generated.SystemTimeQuality.__members__.items()
+    } == {
+        "UNTRUSTED": 0,
+        "RTC_HOLDOVER": 1,
+        "CHRONY_SYNCED": 2,
+    }
 
 
 # Pins every generated time-diagnostic status assignment.
@@ -221,7 +231,7 @@ def test_schema_fingerprint_is_exact_schema_sql_sha256() -> None:
         hashlib.sha256(schema_bytes).digest() == generated.DATABASE_SCHEMA_FINGERPRINT
     )
     assert generated.SQLITE_APPLICATION_ID == 0x43555252
-    assert generated.DATABASE_SCHEMA_VERSION == 12
+    assert generated.DATABASE_SCHEMA_VERSION == load_manifest()["database_schema_version"]
 
 
 # Requires every declared catalogue, entity table, and trigger in assembled SQL.
@@ -299,12 +309,14 @@ def test_generated_entity_binding_is_projection_only() -> None:
         step_discontinuity_boundary=True,
         system_time_quality=generated.SystemTimeQuality.UNTRUSTED,
         rtc_health=generated.RtcHealth.PRESENT,
+        error_bound_us=None, sample_started_at_monotonic_us=None, sample_finished_at_monotonic_us=None, error_budget_expires_at_monotonic_us=None, network_evidence=None, rtc_evidence=None,
     )
     values = generated_entities.clock_observation_v1_parameters(observation)
     assert values[1] == -1
     assert values[4] is None
     assert values[5] is True
-    assert values[6:] == (0, 1)
+    assert values[6:8] == (0, 1)
+    assert values[8:] == (None,) * 20
 
     connection = open_schema()
     connection.execute("PRAGMA foreign_keys = OFF")
@@ -318,30 +330,24 @@ def test_generated_entity_binding_is_projection_only() -> None:
 
 
 # Flattens a logical message-profile record into its exact SQL parameters.
-def test_message_profile_logical_record_is_flattened_for_sql() -> None:
-    assert not hasattr(generated_entities, "MESSAGE_PROFILING_V1_TABLE")
-    assert not hasattr(generated_entities, "MESSAGE_PROFILING_V1_COLUMNS")
-    assert not hasattr(generated_entities, "message_profiling_v1_parameters")
-    profile = generated_entities.MessageProfilingV1(
+def test_packet_reception_logical_record_is_flattened_for_sql() -> None:
+    assert not hasattr(generated_entities, "PACKET_RECEPTION_V1_TABLE")
+    assert not hasattr(generated_entities, "PACKET_RECEPTION_V1_COLUMNS")
+    assert not hasattr(generated_entities, "packet_reception_v1_parameters")
+    profile = generated_entities.PacketReceptionV1(
         receiver_instance_id=bytes(range(16)),
         occurrence_sequence=7,
         received_at_monotonic_us=11,
-        received_frame_length=None,
-        received_frame=None,
-        claimed_control=None,
-        claimed_domain=None,
-        claimed_node_id=None,
-        claimed_message_id=None,
-        header_authenticated=False,
+        domain=3,
+        node_id=bytes(8),
+        message_id=1,
         decoded_sample_id=None,
         rssi_dbm_x2=None,
         snr_db_x4=None,
         irq_status=None,
         device_errors=None,
-        processing_result=generated.ProcessingResult.RADIO_ERROR,
-        ack_selected=generated.AckSelection.NONE,
+        processing_result=generated.ProcessingResult.WRONG_DIRECTION,
         ack_tx_result=generated.AckTxResult.NOT_APPLICABLE,
-        ack_frame=None,
         busy_wait_total_us=19,
         busy_wait_max_us=23,
         busy_wait_count=29,
@@ -354,14 +360,14 @@ def test_message_profile_logical_record_is_flattened_for_sql() -> None:
         t5_tx_done_monotonic_us=None,
         t6_set_rx_issued_monotonic_us=None,
     )
-    row = generated_entities.MessageProfileRowV1(
+    row = generated_entities.PacketReceptionRowV1(
         profile=profile,
         persistence_classification=generated.PersistenceClassification.NOT_APPLICABLE,
     )
 
-    parameters = generated_entities.message_profile_row_v1_parameters(row)
-    columns = generated_entities.MESSAGE_PROFILE_ROW_V1_COLUMNS
-    assert len(parameters) == len(columns) == 31
+    parameters = generated_entities.packet_reception_row_v1_parameters(row)
+    columns = generated_entities.PACKET_RECEPTION_ROW_V1_COLUMNS
+    assert len(parameters) == len(columns) == 25
     assert columns[:3] == (
         "receiver_instance_id",
         "occurrence_sequence",
@@ -370,6 +376,67 @@ def test_message_profile_logical_record_is_flattened_for_sql() -> None:
     assert parameters[:3] == (bytes(range(16)), 7, 11)
     assert columns[-1] == "persistence_classification_id"
     assert parameters[-1] == generated.PersistenceClassification.NOT_APPLICABLE.value
+
+
+# A nullable flattened record projects to all-NULL columns, and SQL rejects partial groups.
+def test_nullable_logical_record_is_all_or_none() -> None:
+    from tests.support.builders.persistence import _network_observation
+
+    trusted = _network_observation()
+    columns = generated_entities.CLOCK_OBSERVATION_V1_COLUMNS
+    values = generated_entities.clock_observation_v1_parameters(trusted)
+    by_column = dict(zip(columns, values, strict=True))
+    assert by_column["network_reference_id"] == 0xB99DE5FE
+    assert by_column["network_stratum"] == 3
+    rtc_columns = [c for c in columns if c.startswith(("rtc_r", "rtc_d"))]
+    assert len(rtc_columns) == 5 and all(by_column[c] is None for c in rtc_columns)
+
+    connection = open_schema()
+    connection.execute("PRAGMA foreign_keys = OFF")
+    insert = (
+        f"INSERT INTO clock_observations ({', '.join(columns)}) VALUES "
+        f"({', '.join('?' for _ in columns)})"
+    )
+    connection.execute(insert, values)
+    partial = dict(by_column, observation_sequence=2, network_stratum=None)
+    with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
+        connection.execute(insert, tuple(partial[c] for c in columns))
+    stray = dict(by_column, observation_sequence=3, rtc_reference_drift_bound_ppm=10)
+    with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
+        connection.execute(insert, tuple(stray[c] for c in columns))
+
+
+# Rejects nullable logical-record declarations that cannot express presence.
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        ("not_boolean", "nullable must be Boolean"),
+        ("all_nullable", "need a non-nullable member"),
+    ),
+)
+def test_nullable_logical_record_validation(
+    tmp_path: Path, mutation: str, message: str
+) -> None:
+    manifest = copy.deepcopy(load_entity_manifest())
+    clock = next(
+        entity
+        for entity in manifest["entities"]  # type: ignore[index]
+        if entity["name"] == "CLOCK_OBSERVATION_V1"
+    )
+    group = next(f for f in clock["fields"] if f["name"] == "rtc_evidence")
+    if mutation == "not_boolean":
+        group["nullable"] = 1
+    else:
+        record = next(
+            r
+            for r in manifest["logical_records"]  # type: ignore[index]
+            if r["name"] == "RTC_CLOCK_EVIDENCE_V2"
+        )
+        for member in record["fields"]:
+            member["nullable"] = True
+    result = validate_entity_manifest_fixture(tmp_path, manifest)
+    assert result.returncode == 2
+    assert message in result.stderr
 
 
 # Keeps queue-capacity policy out of persisted profiling and health entities.
@@ -381,16 +448,16 @@ def test_generated_entities_have_no_queue_byte_accounting_fields() -> None:
     }
 
     assert removed_fields.isdisjoint(
-        field.name for field in fields(generated_entities.MessageProfilingV1)
+        field.name for field in fields(generated_entities.PacketReceptionV1)
     )
     assert removed_fields.isdisjoint(
         field.name for field in fields(generated_entities.ReceiverHealthV1)
     )
-    assert removed_fields.isdisjoint(generated_entities.MESSAGE_PROFILE_ROW_V1_COLUMNS)
+    assert removed_fields.isdisjoint(generated_entities.PACKET_RECEPTION_ROW_V1_COLUMNS)
     assert removed_fields.isdisjoint(generated_entities.RECEIVER_HEALTH_V1_COLUMNS)
 
     connection = open_schema()
-    for table in ("message_profiles", "receiver_health"):
+    for table in ("packet_receptions", "receiver_health"):
         columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
         assert removed_fields.isdisjoint(columns)
 
@@ -414,9 +481,9 @@ def test_logical_record_manifest_validation(
     transaction = next(
         entity
         for entity in manifest["entities"]  # type: ignore[index]
-        if entity["name"] == "MESSAGE_PERSISTENCE_TRANSACTION_V1"
+        if entity["name"] == "MESSAGE_PERSISTENCE_TRANSACTION_V2"
     )
-    profile_target = transaction["persistence"]["targets"][0]
+    profile_target = next(t for t in transaction["persistence"]["targets"] if t["table"] == "packet_receptions")
     profile_field = profile_target["fields"][0]
     if mutation == "unknown_record":
         profile_field["type"] = "logical_record:UNKNOWN_RECORD_V1"
@@ -425,7 +492,7 @@ def test_logical_record_manifest_validation(
     elif mutation == "nested_record":
         manifest["logical_records"][0]["fields"][0][
             "type"
-        ] = "logical_record:MESSAGE_PROFILING_V1"
+        ] = "logical_record:PACKET_RECEPTION_V1"
     elif mutation == "duplicate_column":
         profile_target["fields"].append({"name": "receiver_instance_id", "type": "u64"})
     else:  # pragma: no cover - parametrization is closed above.
@@ -465,11 +532,11 @@ def test_generated_python_names_are_globally_valid(
         transaction = next(
             entity
             for entity in manifest["entities"]  # type: ignore[index]
-            if entity["name"] == "MESSAGE_PERSISTENCE_TRANSACTION_V1"
+            if entity["name"] == "MESSAGE_PERSISTENCE_TRANSACTION_V2"
         )
         repeated_target = copy.deepcopy(transaction["persistence"]["targets"][0])
-        repeated_target["python_name"] = "OtherMessageProfileRowV1"
-        repeated_target["table"] = "other_message_profiles"
+        repeated_target["python_name"] = "OtherPacketReceptionRowV1"
+        repeated_target["table"] = "other_packet_receptions"
         manifest["entities"].append(  # type: ignore[union-attr]
             {
                 "name": "OTHER_TRANSACTION_V1",
@@ -602,8 +669,8 @@ def test_quarantined_entity_bytes_must_match_declared_length() -> None:
     ).fetchone() == (1, b"\x02\x01")
     empty_values = ("",) * 4
     empty_evidence = encode_quarantine_evidence_v1(
-        ProfileOnlyUnitV1(profile=empty_values),  # type: ignore[arg-type]
-        spec=PROFILE_ONLY_V1_SPEC,
+        ReceptionOnlyUnitV2(profile=empty_values, received_frame=REVIEWED_RECEPTION_FRAME),  # type: ignore[arg-type]
+        spec=RECEPTION_ONLY_V2_SPEC,
     )
     payload_bytes = QUARANTINE_EVIDENCE_MAX_BYTES - len(empty_evidence)
     assert 0 <= payload_bytes <= 4 * QUARANTINE_EVIDENCE_MAX_SCALAR_BYTES
@@ -619,12 +686,12 @@ def test_quarantined_entity_bytes_must_match_declared_length() -> None:
         )
     )
     maximum_evidence = encode_quarantine_evidence_v1(
-        ProfileOnlyUnitV1(
+        ReceptionOnlyUnitV2(
             profile=tuple(  # type: ignore[arg-type]
                 "x" * length for length in scalar_lengths
             ),
-        ),
-        spec=PROFILE_ONLY_V1_SPEC,
+         received_frame=REVIEWED_RECEPTION_FRAME),
+        spec=RECEPTION_ONLY_V2_SPEC,
     )
     assert len(maximum_evidence) == QUARANTINE_EVIDENCE_MAX_BYTES
     maximum_evidence_row = replace(
@@ -683,7 +750,7 @@ def test_receiver_instance_lifecycle_is_append_only_with_one_clean_stop() -> Non
             "INSERT INTO receiver_instances "
             "(instance_ordinal, receiver_instance_id, linux_boot_id, "
             "started_at_monotonic_us) VALUES (?, ?, ?, ?)",
-            (100, bytes([3]) * 16, boot_id, 50),
+            (0, bytes([3]) * 16, boot_id, 50),
         )
     assert connection.execute("SELECT count(*) FROM receiver_instances").fetchone() == (
         0,
@@ -700,7 +767,7 @@ def test_receiver_instance_lifecycle_is_append_only_with_one_clean_stop() -> Non
             "INSERT INTO receiver_instances "
             "(instance_ordinal, receiver_instance_id, linux_boot_id, "
             "started_at_monotonic_us) VALUES (?, ?, ?, ?)",
-            (100, bytes([5]) * 16, boot_id, 400),
+            (0, bytes([5]) * 16, boot_id, 400),
         )
     with pytest.raises(sqlite3.IntegrityError, match="append-only"):
         connection.execute(
@@ -865,26 +932,20 @@ def test_assembled_schema_foreign_key_targets_must_be_valid(
 # Requires lifecycle parents for all generated receiver-scoped rows.
 def test_receiver_scoped_generated_rows_require_lifecycle_parent() -> None:
     receiver_instance_id = bytes.fromhex("00112233445566778899aabbccddeeff")
-    profile = generated_entities.MessageProfilingV1(
+    profile = generated_entities.PacketReceptionV1(
         receiver_instance_id=receiver_instance_id,
         occurrence_sequence=1,
         received_at_monotonic_us=1,
-        received_frame_length=None,
-        received_frame=None,
-        claimed_control=None,
-        claimed_domain=None,
-        claimed_node_id=None,
-        claimed_message_id=None,
-        header_authenticated=False,
+        domain=3,
+        node_id=bytes(8),
+        message_id=1,
         decoded_sample_id=None,
         rssi_dbm_x2=None,
         snr_db_x4=None,
         irq_status=None,
         device_errors=None,
-        processing_result=generated.ProcessingResult.RADIO_ERROR,
-        ack_selected=generated.AckSelection.NONE,
+        processing_result=generated.ProcessingResult.WRONG_DIRECTION,
         ack_tx_result=generated.AckTxResult.NOT_APPLICABLE,
-        ack_frame=None,
         busy_wait_total_us=0,
         busy_wait_max_us=0,
         busy_wait_count=0,
@@ -897,7 +958,7 @@ def test_receiver_scoped_generated_rows_require_lifecycle_parent() -> None:
         t5_tx_done_monotonic_us=None,
         t6_set_rx_issued_monotonic_us=None,
     )
-    profile_row = generated_entities.MessageProfileRowV1(
+    profile_row = generated_entities.PacketReceptionRowV1(
         profile=profile,
         persistence_classification=generated.PersistenceClassification.NOT_APPLICABLE,
     )
@@ -906,19 +967,25 @@ def test_receiver_scoped_generated_rows_require_lifecycle_parent() -> None:
     }
     health_values.update(
         receiver_instance_id=receiver_instance_id,
-        radio_state=generated.RadioState.INITIALIZING,
+        consistency=generated.HealthConsistency.INDETERMINATE,
+        rtc_read_status=generated.RtcReadStatus.NOT_ATTEMPTED,
         radio_recovery_attempts_by_reason=(0,) * 8,
         system_time_quality=generated.SystemTimeQuality.UNTRUSTED,
         rtc_health=generated.RtcHealth.PRESENT,
         chrony_step_command_results=(0,) * 3,
         rtc_write_results=(0,) * 3,
-        persist_queue_admission_counts=((0,) * 3,) * 5,
+        persist_queue_admission_counts=((0,) * 3,) * 6,
         persistence_admission_state=(
             generated.PersistenceAdmissionState.UNAVAILABLE_STARTING
         ),
         persistence_admission_transition_counts=(0,) * 7,
     )
+    from tests.support.builders.persistence import _radio_observation
+    observation = replace(_radio_observation(sequence=0), receiver_instance_id=receiver_instance_id)
     rows = (
+        (generated_entities.RADIO_OBSERVATION_V1_TABLE,
+         generated_entities.RADIO_OBSERVATION_V1_COLUMNS,
+         generated_entities.radio_observation_v1_parameters(observation)),
         (
             generated_entities.CLOCK_OBSERVATION_V1_TABLE,
             generated_entities.CLOCK_OBSERVATION_V1_COLUMNS,
@@ -932,6 +999,7 @@ def test_receiver_scoped_generated_rows_require_lifecycle_parent() -> None:
                     step_discontinuity_boundary=False,
                     system_time_quality=generated.SystemTimeQuality.UNTRUSTED,
                     rtc_health=generated.RtcHealth.PRESENT,
+                    error_bound_us=None, sample_started_at_monotonic_us=None, sample_finished_at_monotonic_us=None, error_budget_expires_at_monotonic_us=None, network_evidence=None, rtc_evidence=None,
                 )
             ),
         ),
@@ -985,9 +1053,9 @@ def test_receiver_scoped_generated_rows_require_lifecycle_parent() -> None:
             ),
         ),
         (
-            generated_entities.MESSAGE_PROFILE_ROW_V1_TABLE,
-            generated_entities.MESSAGE_PROFILE_ROW_V1_COLUMNS,
-            generated_entities.message_profile_row_v1_parameters(profile_row),
+            generated_entities.PACKET_RECEPTION_ROW_V1_TABLE,
+            generated_entities.PACKET_RECEPTION_ROW_V1_COLUMNS,
+            generated_entities.packet_reception_row_v1_parameters(profile_row),
         ),
     )
     connection = open_schema()
@@ -1012,12 +1080,11 @@ def test_receiver_scoped_generated_rows_require_lifecycle_parent() -> None:
             parameters,
         )
 
-    reading = generated_entities.ReadingMessageRowV1(
+    reading = generated_entities.ReadingMessageRowV2(
         node_id=bytes(8),
         message_id=1,
         sample_id=1,
-        reading_body=bytes(32),
-        is_canonical_for_sample=True,
+        is_canonical=True,
         run_ms=0,
         soil_0_mv=0,
         soil_1_mv=0,
@@ -1033,14 +1100,13 @@ def test_receiver_scoped_generated_rows_require_lifecycle_parent() -> None:
         previous_cycle_tx_attempts=0,
         previous_cycle_accepted_readings=0,
         flags=0,
-        first_receiver_instance_id=receiver_instance_id,
-        first_occurrence_sequence=1,
     )
-    reading_columns = generated_entities.READING_MESSAGE_ROW_V1_COLUMNS
+    connection.execute("INSERT INTO received_messages VALUES (?, ?, ?)", (reading.node_id, reading.message_id, 1))
+    reading_columns = generated_entities.READING_MESSAGE_ROW_V2_COLUMNS
     connection.execute(
         f"INSERT INTO reading_messages ({', '.join(reading_columns)}) VALUES "
         f"({', '.join('?' for _ in reading_columns)})",
-        generated_entities.reading_message_row_v1_parameters(reading),
+        generated_entities.reading_message_row_v2_parameters(reading),
     )
     assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
@@ -1050,13 +1116,14 @@ def test_receiver_health_binding_expands_only_exact_array_shapes() -> None:
     values = {field.name: 0 for field in fields(generated_entities.ReceiverHealthV1)}
     values.update(
         receiver_instance_id=bytes(16),
-        radio_state=generated.RadioState.INITIALIZING,
+        consistency=generated.HealthConsistency.INDETERMINATE,
+        rtc_read_status=generated.RtcReadStatus.NOT_ATTEMPTED,
         radio_recovery_attempts_by_reason=(0,) * 8,
         system_time_quality=generated.SystemTimeQuality.UNTRUSTED,
         rtc_health=generated.RtcHealth.PRESENT,
         chrony_step_command_results=(0,) * 3,
         rtc_write_results=(0,) * 3,
-        persist_queue_admission_counts=((0,) * 3,) * 5,
+        persist_queue_admission_counts=((0,) * 3,) * 6,
         persistence_admission_state=(
             generated.PersistenceAdmissionState.UNAVAILABLE_STARTING
         ),
@@ -1064,8 +1131,8 @@ def test_receiver_health_binding_expands_only_exact_array_shapes() -> None:
     )
     health = generated_entities.ReceiverHealthV1(**values)
     parameters = generated_entities.receiver_health_v1_parameters(health)
-    assert len(parameters) == 73
-    assert len(generated_entities.RECEIVER_HEALTH_V1_COLUMNS) == 73
+    assert len(parameters) == 89
+    assert len(generated_entities.RECEIVER_HEALTH_V1_COLUMNS) == 89
 
     wrong_shape = replace(health, chrony_step_command_results=(0,) * 2)
     with pytest.raises(ValueError, match="chrony_step_command_results"):
@@ -1082,17 +1149,17 @@ def test_communicator_state_canonical_blob_round_trip_and_binding() -> None:
         drift_bound_ppm=20,
     )
     state = communicator_state(rtc_provenance=provenance)
-    blob = generated_entities.encode_communicator_state_v1(state)
-    assert len(blob) == 624
-    assert generated_entities.decode_communicator_state_v1(blob) == state
+    blob = generated_entities.encode_communicator_state_v2(state)
+    assert len(blob) == 264
+    assert generated_entities.decode_communicator_state_v2(blob) == state
 
-    parameters = generated_entities.communicator_state_v1_parameters(state)
-    assert parameters[:3] == (1, 1, 1)
+    parameters = generated_entities.communicator_state_v2_parameters(state)
+    assert parameters[:3] == (1, 2, 1)
     assert parameters[3] == blob
     assert parameters[4] == hashlib.sha256(blob).digest()
 
     connection = open_schema()
-    columns = generated_entities.COMMUNICATOR_STATE_V1_COLUMNS
+    columns = generated_entities.COMMUNICATOR_STATE_V2_COLUMNS
     connection.execute(
         f"INSERT INTO communicator_state ({', '.join(columns)}) VALUES "
         f"({', '.join('?' for _ in columns)})",
@@ -1106,27 +1173,27 @@ def test_communicator_state_canonical_blob_round_trip_and_binding() -> None:
 # Rejects noncanonical communicator-state structure at the binary boundary.
 def test_communicator_state_codec_enforces_only_canonical_structure() -> None:
     state = communicator_state()
-    blob = generated_entities.encode_communicator_state_v1(state)
+    blob = generated_entities.encode_communicator_state_v2(state)
 
-    with pytest.raises(ValueError, match="buckets.*length 62"):
-        generated_entities.encode_communicator_state_v1(
-            replace(state, buckets=state.buckets[:-1])
+    with pytest.raises(ValueError, match="entries.*length 18"):
+        generated_entities.encode_communicator_state_v2(
+            replace(state, entries=state.entries[:-1])
         )
 
     wrong_bucket_count = bytearray(blob)
-    struct.pack_into("<H", wrong_bucket_count, 116, 61)
+    struct.pack_into("<H", wrong_bucket_count, 108, 17)
     with pytest.raises(ValueError, match="invalid fixed length"):
-        generated_entities.decode_communicator_state_v1(bytes(wrong_bucket_count))
+        generated_entities.decode_communicator_state_v2(bytes(wrong_bucket_count))
 
     noncanonical_absence = bytearray(blob)
     noncanonical_absence[20] = 1
     with pytest.raises(ValueError, match="absent representation is not zero"):
-        generated_entities.decode_communicator_state_v1(bytes(noncanonical_absence))
+        generated_entities.decode_communicator_state_v2(bytes(noncanonical_absence))
 
     reserved_presence_bit = bytearray(blob)
     struct.pack_into("<H", reserved_presence_bit, 14, 4)
     with pytest.raises(ValueError, match="reserved bits set"):
-        generated_entities.decode_communicator_state_v1(bytes(reserved_presence_bit))
+        generated_entities.decode_communicator_state_v2(bytes(reserved_presence_bit))
 
 
 # Raw application-state defects survive actual startup integrity without SQL coercion.
@@ -1146,7 +1213,7 @@ def test_raw_state_envelope_passes_database_integrity(tmp_path, raw_rows):
 
     path = tmp_path / "raw-state.db"
     group = b"test0001"
-    initialize_database(path, group)
+    initialize_database(path, group, known_empty_airtime=False)
     with sqlite3.connect(path) as connection:
         connection.executemany(
             "INSERT INTO communicator_state VALUES (?, ?, ?, ?, ?)", raw_rows
@@ -1182,7 +1249,7 @@ def test_raw_envelope_manifest_rejects_incompatible_storage(tmp_path, change):
     state = next(
         entity
         for entity in manifest["entities"]
-        if entity["name"] == "COMMUNICATOR_STATE_V1"
+        if entity["name"] == "COMMUNICATOR_STATE_V2"
     )
     if change == "false":
         state["persistence"]["raw_envelope"] = False
@@ -1202,7 +1269,7 @@ def test_raw_envelope_manifest_rejects_incompatible_storage(tmp_path, change):
 # Keeps representation-only validity masks out of relational tables.
 def test_relational_tables_do_not_persist_validity_masks() -> None:
     connection = open_schema()
-    for table in ("clock_observations", "receiver_health", "message_profiles"):
+    for table in ("clock_observations", "receiver_health", "packet_receptions"):
         columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
         assert "validity_mask" not in columns
 
@@ -1229,12 +1296,11 @@ def test_reading_messages_allow_one_canonical_row_per_sample() -> None:
     connection.execute("PRAGMA foreign_keys = OFF")
     assert connection.execute("PRAGMA foreign_keys").fetchone() == (0,)
 
-    canonical = generated_entities.ReadingMessageRowV1(
+    canonical = generated_entities.ReadingMessageRowV2(
         node_id=bytes.fromhex("0102030405060708"),
         message_id=10,
         sample_id=50,
-        reading_body=bytes(32),
-        is_canonical_for_sample=True,
+        is_canonical=True,
         run_ms=0,
         soil_0_mv=0,
         soil_1_mv=0,
@@ -1250,43 +1316,39 @@ def test_reading_messages_allow_one_canonical_row_per_sample() -> None:
         previous_cycle_tx_attempts=0,
         previous_cycle_accepted_readings=0,
         flags=0,
-        first_receiver_instance_id=bytes(16),
-        first_occurrence_sequence=1,
     )
-    columns = generated_entities.READING_MESSAGE_ROW_V1_COLUMNS
+    columns = generated_entities.READING_MESSAGE_ROW_V2_COLUMNS
     insert = (
         f"INSERT INTO reading_messages ({', '.join(columns)}) VALUES "
         f"({', '.join('?' for _ in columns)})"
     )
     connection.execute(
         insert,
-        generated_entities.reading_message_row_v1_parameters(canonical),
+        generated_entities.reading_message_row_v2_parameters(canonical),
     )
 
     noncanonical = replace(
         canonical,
         message_id=11,
-        is_canonical_for_sample=False,
-        first_occurrence_sequence=2,
+        is_canonical=False,
     )
     connection.execute(
         insert,
-        generated_entities.reading_message_row_v1_parameters(noncanonical),
+        generated_entities.reading_message_row_v2_parameters(noncanonical),
     )
 
     second_canonical = replace(
         canonical,
         message_id=12,
-        first_occurrence_sequence=3,
     )
     with pytest.raises(sqlite3.IntegrityError):
         connection.execute(
             insert.replace("INSERT", "INSERT OR REPLACE", 1),
-            generated_entities.reading_message_row_v1_parameters(second_canonical),
+            generated_entities.reading_message_row_v2_parameters(second_canonical),
         )
 
     assert connection.execute(
-        "SELECT message_id, is_canonical_for_sample FROM reading_messages "
+        "SELECT message_id, is_canonical FROM reading_messages "
         "ORDER BY message_id"
     ).fetchall() == [(10, 1), (11, 0)]
 
@@ -1327,3 +1389,42 @@ def test_catalogues_and_installed_metadata_are_immutable() -> None:
         generated.DATABASE_SCHEMA_VERSION,
         generated.DATABASE_SCHEMA_FINGERPRINT,
     )
+
+
+def test_reading_subtype_requires_transport_and_cannot_replace_first_payload():
+    connection = open_schema()
+    columns = generated_entities.READING_MESSAGE_ROW_V2_COLUMNS
+    values = dict.fromkeys(columns, 0)
+    values.update(node_id=b"n" * 8, message_id=7, sample_id=9, is_canonical=1)
+    sql = f"INSERT INTO reading_messages ({', '.join(columns)}) VALUES ({','.join('?' for _ in columns)})"
+    with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
+        connection.execute(sql, tuple(values.values()))
+    connection.execute("INSERT INTO received_messages VALUES (?, ?, ?)", (b"n" * 8, 7, 1))
+    connection.execute(sql, tuple(values.values()))
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        connection.execute("UPDATE received_messages SET domain = 2")
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        connection.execute("UPDATE reading_messages SET is_canonical = 0")
+    assert connection.execute("SELECT sample_id FROM reading_messages").fetchall() == [(9,)]
+
+
+def test_exception_requires_reception_and_exact_unpadded_length():
+    connection = open_schema()
+    exception = (b"r" * 16, 1, 22, bytes(22), 5)
+    with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
+        connection.execute("INSERT INTO packet_reception_exceptions VALUES (?, ?, ?, ?, ?)", exception)
+    connection.execute("INSERT INTO receiver_instances (receiver_instance_id, linux_boot_id, started_at_monotonic_us) VALUES (?, ?, 0)", (b"r" * 16, b"b" * 16))
+    columns = generated_entities.PACKET_RECEPTION_ROW_V1_COLUMNS
+    values = dict.fromkeys(columns, 0)
+    values.update(receiver_instance_id=b"r" * 16, occurrence_sequence=1,
+                  node_id=b"n" * 8, message_id=7, domain=3,
+                  processing_result_id=generated.ProcessingResult.WRONG_DIRECTION.value,
+                  ack_tx_result_id=generated.AckTxResult.NOT_APPLICABLE.value,
+                  persistence_classification_id=generated.PersistenceClassification.NOT_APPLICABLE.value)
+    connection.execute(f"INSERT INTO packet_receptions ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})", tuple(values.values()))
+    with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
+        connection.execute("INSERT INTO packet_reception_exceptions VALUES (?, ?, ?, ?, ?)", (*exception[:2], 23, *exception[3:]))
+    connection.execute("INSERT INTO packet_reception_exceptions VALUES (?, ?, ?, ?, ?)", exception)
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        connection.execute("DELETE FROM packet_reception_exceptions")
+    assert connection.execute("SELECT length(received_frame) FROM packet_reception_exceptions").fetchall() == [(22,)]

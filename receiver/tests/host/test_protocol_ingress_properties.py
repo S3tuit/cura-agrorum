@@ -10,7 +10,7 @@ from cura_receiver.generated.receiver_enums_generated import (
     PersistenceAdmissionState,
 )
 from cura_receiver.persist_queue import PersistQueue, PersistenceAdmissionSnapshot
-from cura_receiver.persist_queue_entities import PROFILE_ONLY_V1_SPEC
+from cura_receiver.persist_queue_entities import RECEPTION_ONLY_V2_SPEC
 from cura_receiver.protocol_ingress import ProtocolIngress
 from tests.support.builders.protocol_ingress import (
     REVIEWED_CURRENT_FRAME,
@@ -175,7 +175,7 @@ def _queue_for(admission_result: str) -> PersistQueue:
         )
     )
     if admission_result == "QUEUE_FULL":
-        occupied = queue.try_reserve_one(PROFILE_ONLY_V1_SPEC)
+        occupied = queue.try_reserve_one(RECEPTION_ONLY_V2_SPEC)
         assert occupied.reservation is not None
         occupied.reservation.publish(object())
     return queue

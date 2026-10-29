@@ -4,6 +4,7 @@ idf_component_register(
         "sx1262_radio_timing.c"
         "sx1262_radio_backend_common.c"
         "sx1262_radio_backend_esp.c"
+        "sx1262_radio_rf_path_esp.c"
         "vendor/semtech_sx126x_driver/sx126x.c"
     INCLUDE_DIRS
         "include"

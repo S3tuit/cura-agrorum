@@ -1,13 +1,13 @@
 """Finite raw RF peer. Production components, no service or durable allowance.
 
 Run from an isolated, hash-verified tree as the configured service UID.
-stdout contains only bounded JSON records. RF-006 uses the existing backend
+stdout contains only bounded JSON records. The invalid-downlink case uses the existing backend
 directly, with its layer named in every run; all other cases use Radio.
 """
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, is_dataclass, replace
 from enum import Enum
 import fcntl
 import hashlib
@@ -27,7 +27,7 @@ sys.path.insert(0, str(REPO / "receiver"))
 from cura_receiver.platform.linux_clocks import LinuxOsClock
 from cura_receiver.platform.linux_radio import LinuxRadioIo
 from cura_receiver.ports.radio import RadioConfiguration, RadioTxAuthorization
-from cura_receiver.radio import Radio, State
+from cura_receiver.radio import Radio, State, ReceiveDisposition
 from cura_receiver.sx1262 import Sx1262, IRQ_RX_DONE, IRQ_TX_DONE
 
 A = bytes.fromhex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435")
@@ -37,11 +37,12 @@ D2 = bytes.fromhex("c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6")
 X = bytes.fromhex("e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6")
 # Expected RX count, maximum TX count. Kept independent of laptop declarations.
 CASES = {
-    "RF-001.exchange": (1, 1), "RF-003.silence": (1, 0),
-    "RF-006.invalid": (1, 3), "RF-008.silence": (2, 0),
-    "RF-008.exchange": (2, 2), "RF-009.untouched": (1, 0),
-    "RF-009.initialized": (1, 0), "RF-010.wake": (2, 2),
-    "RF-012.disconnected": (1, 0), "RF-013.absent": (0, 0),
+    "component.ack_exchange": (1, 1), "component.ack_timeout": (1, 0),
+    "component.invalid_downlinks": (1, 3), "component.repeat_timeout": (2, 0),
+    "component.repeat_exchange": (2, 2), "component.cold_sleep": (1, 0),
+    "component.initialized_sleep": (1, 0), "component.sleep_wake": (2, 2),
+    "component.dio1_disconnected": (1, 0), "component.radio_absent": (0, 0),
+    "component.header_error_rearm": (2, 0),
 }
 
 
@@ -93,6 +94,7 @@ class TraceIo(LinuxRadioIo):
         self.clock, self.maximum_tx = clock, maximum_tx
         self.attempts = 0
         self.transmit_deadline = None
+        self.stop_requested = lambda: False
         self.trace = []
 
     def capture(self, operation, call, **fields):
@@ -112,6 +114,7 @@ class TraceIo(LinuxRadioIo):
 
     def transfer(self, data, *, deadline_monotonic_us):
         if data[0] == 0x83:
+            require(not self.stop_requested(), "peer cancelled before SetTx")
             require(self.transmit_deadline is not None and self.clock.now_monotonic_us() <= self.transmit_deadline,
                     "peer is not armed or its emission deadline has expired")
             require(self.attempts < self.maximum_tx, "episode TX ceiling exceeded before SetTx")
@@ -200,7 +203,8 @@ def lower_burst(backend, packet, stop):
 def execute(case, backend, radio, stop, started):
     expected_count, maximum_tx = CASES[case]
     expected = (A, U2)[:expected_count]
-    packets, transmissions = [], []
+    packets, transmissions, handled = [], [], []
+    counters_before = radio.counters if radio else None
     deadline = started + 45_000_000
     quiet_end = started + 5_000_000 if not expected_count else deadline
     while backend.clock.now_monotonic_us() < min(deadline, quiet_end):
@@ -209,7 +213,15 @@ def execute(case, backend, radio, stop, started):
             result = healthy(radio.receive(deadline_monotonic_us=min(deadline, quiet_end)),
                              State.RX_SINGLE, State.RX_EVENT_PENDING)
             packet = result.receive_event
-            if packet is None or not packet.usable_for_ingress:
+            if packet is not None and packet.disposition is ReceiveDisposition.HANDLED_NO_PACKET:
+                if case == "component.header_error_rearm":
+                    require(len(packets) == 1 and not handled, "unexpected HeaderErr ordering/count")
+                    require(packet.irq_status == 0x20 and packet.device_errors == 0 and packet.frame is None and
+                            result.state is State.RX_SINGLE and result.t6_set_rx_issued_monotonic_us is not None,
+                            "incomplete HeaderErr handling")
+                    handled.append(result)
+                continue
+            if packet is None or packet.disposition is not ReceiveDisposition.PACKET:
                 continue
             frame = packet.frame
         else:
@@ -220,7 +232,7 @@ def execute(case, backend, radio, stop, started):
         require(len(packets) < expected_count, "extra uplink")
         require(frame == expected[len(packets)], "unexpected uplink bytes")
         packets.append(packet)
-        if case == "RF-006.invalid":
+        if case == "component.invalid_downlinks":
             transmissions.extend(lower_burst(backend, packet, stop))
         elif maximum_tx:
             transmissions.append(response(radio, packet, B if len(packets) == 1 else D2, len(packets)))
@@ -230,7 +242,15 @@ def execute(case, backend, radio, stop, started):
             quiet_end = backend.clock.now_monotonic_us() + 4_000_000
     require(len(packets) == expected_count, "missing expected uplink")
     require(len(transmissions) == maximum_tx, "incomplete downlink sequence")
-    return dict(packets=packets, transmissions=transmissions, observation_end=backend.clock.now_monotonic_us())
+    if case == "component.header_error_rearm":
+        require(len(handled) == 1, "missing real HeaderErr stimulus")
+        expected_counters = replace(counters_before,
+            header_errors_observed=counters_before.header_errors_observed + 1,
+            header_errors_handled=counters_before.header_errors_handled + 1)
+        require(radio.counters == expected_counters, "HeaderErr counter delta differs or recovered")
+    return dict(packets=packets, transmissions=transmissions, handled=handled,
+                counters_before=counters_before, counters_after=radio.counters if radio else None,
+                observation_end=backend.clock.now_monotonic_us())
 
 
 def main():
@@ -267,8 +287,9 @@ def run_session(args, fixture, seal, maximum_tx, executor, *, lease_seconds=45, 
         clock = LinuxOsClock()
         io = io_class(clock, maximum_tx)
         backend = Sx1262(io, clock, clock, RadioConfiguration())
-        radio = None if (args.case == "RF-006.invalid" if raw is None else raw) else Radio(backend)
+        radio = None if (args.case == "component.invalid_downlinks" if raw is None else raw) else Radio(backend)
         stop = threading.Event()
+        io.stop_requested = stop.is_set
         identity = dict(run=args.run, case=args.case, pid=os.getpid(),
                         boot=Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
                         source=seal, layer="Sx1262/LinuxRadioIo" if radio is None else "Radio/Sx1262/LinuxRadioIo")

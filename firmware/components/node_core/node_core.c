@@ -234,6 +234,7 @@ static bool build_reading(const node_sensor_sample_t *sample,
 
   cura_lora_v2_reading_t reading = {
       .run_ms = run_ms,
+      .sensor_selection = sample->sensor_selection,
       .reset_reason = reset_reason,
   };
   if ((sample->validity & NODE_SENSOR_SOIL_0_VALID) != 0U) {
@@ -243,6 +244,14 @@ static bool build_reading(const node_sensor_sample_t *sample,
   if ((sample->validity & NODE_SENSOR_SOIL_1_VALID) != 0U) {
     reading.soil_1_mv = sample->soil_1_mv;
     reading.flags |= CURA_LORA_V2_FLAG_SOIL_1_VALID;
+  }
+  if ((sample->validity & NODE_SENSOR_SOIL_MOISTURE_0_VALID) != 0U) {
+    reading.soil_0_moisture_deci_pct = sample->soil_0_moisture_deci_pct;
+    reading.flags |= CURA_LORA_V2_FLAG_SOIL_MOISTURE_0_VALID;
+  }
+  if ((sample->validity & NODE_SENSOR_SOIL_MOISTURE_1_VALID) != 0U) {
+    reading.soil_1_moisture_deci_pct = sample->soil_1_moisture_deci_pct;
+    reading.flags |= CURA_LORA_V2_FLAG_SOIL_MOISTURE_1_VALID;
   }
   if ((sample->validity & NODE_SENSOR_SOIL_TEMP_0_VALID) != 0U) {
     reading.soil_temp_0_centi_c = sample->soil_temp_0_centi_c;

@@ -36,6 +36,7 @@ def headers(draw: st.DrawFn) -> dict[str, Any]:
 @st.composite
 def valid_readings(draw: st.DrawFn) -> dict[str, int]:
     flags = 0
+    selection = draw(st.integers(min_value=0, max_value=15))
 
     deep_sleep_boot = draw(st.booleans())
     if deep_sleep_boot:
@@ -44,22 +45,22 @@ def valid_readings(draw: st.DrawFn) -> dict[str, int]:
     else:
         reset_reason = draw(U8.filter(lambda value: value != 8))
 
-    soil_0_valid = draw(st.booleans())
+    soil_0_valid = bool(selection & 1) and draw(st.booleans())
     soil_0_mv = draw(U16) if soil_0_valid else 0
     if soil_0_valid:
         flags |= SOIL_0_VALID
 
-    soil_1_valid = draw(st.booleans())
+    soil_1_valid = bool(selection & 2) and draw(st.booleans())
     soil_1_mv = draw(U16) if soil_1_valid else 0
     if soil_1_valid:
         flags |= SOIL_1_VALID
 
-    soil_temp_0_valid = draw(st.booleans())
+    soil_temp_0_valid = bool(selection & 5) and draw(st.booleans())
     soil_temp_0_centi_c = draw(I16) if soil_temp_0_valid else 0
     if soil_temp_0_valid:
         flags |= SOIL_TEMP_0_VALID
 
-    soil_temp_1_valid = draw(st.booleans())
+    soil_temp_1_valid = bool(selection & 10) and draw(st.booleans())
     soil_temp_1_centi_c = draw(I16) if soil_temp_1_valid else 0
     if soil_temp_1_valid:
         flags |= SOIL_TEMP_1_VALID
@@ -102,7 +103,16 @@ def valid_readings(draw: st.DrawFn) -> dict[str, int]:
         previous_cycle_tx_attempts = 0
         previous_cycle_accepted_readings = 0
 
+    moisture = [0, 0]
+    for slot in range(2):
+        if selection & (4 << slot) and draw(st.booleans()):
+            moisture[slot] = draw(U16)
+            flags |= 1 << (10 + slot)
     return {
+        "soil_0_moisture_deci_pct": moisture[0],
+        "soil_1_moisture_deci_pct": moisture[1],
+        "sensor_selection": selection,
+        "reserved": 0,
         "sample_id": draw(U32),
         "run_ms": draw(U16),
         "soil_0_mv": soil_0_mv,
@@ -159,13 +169,13 @@ def test_valid_reading_implementations_agree_and_round_trip(
     c_encoded = c_codec.encode_reading(reading)
 
     assert python_encoded == c_encoded
-    assert len(python_encoded) == 32
+    assert len(python_encoded) == 38
     assert python_codec.decode_reading(python_encoded) == reading
     assert c_codec.decode_reading(c_encoded) == reading
 
 
 @settings(max_examples=1000, deadline=None)
-@given(body=st.binary(min_size=32, max_size=32))
+@given(body=st.binary(min_size=38, max_size=38))
 def test_arbitrary_reading_body_acceptance_agrees(
     codec_pair: tuple[Any, Any],
     body: bytes,
@@ -202,7 +212,7 @@ def test_arbitrary_reading_body_acceptance_agrees(
 @given(
     node_key=st.binary(min_size=16, max_size=16),
     header=headers(),
-    plaintext_body=st.binary(min_size=1, max_size=32),
+    plaintext_body=st.binary(min_size=1, max_size=38),
 )
 def test_frame_crypto_implementations_agree_and_round_trip(
     frame_crypto_pair: tuple[Any, Any],

@@ -1,0 +1,20 @@
+dependencies:
+  espressif/onewire_bus:
+    component_hash: a85dc1ceb71fb87af77c57d5fd4e6f48a504de1fc2b83fc302ec0cea331d05ce
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.1.1
+  idf:
+    source:
+      type: idf
+    version: 6.1.0
+direct_dependencies:
+- espressif/onewire_bus
+manifest_hash: 669dbf7f8a1c4bdd0a8ceeedd9c8cd08256047140b1624f1cf75f2325e5fa830
+target: esp32s3
+version: 3.0.0

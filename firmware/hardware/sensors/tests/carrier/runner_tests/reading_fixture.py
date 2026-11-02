@@ -7,7 +7,7 @@ import struct
 # POWERON=1, no previous metrics, seven sensor flags. These bytes are local
 # parser test input; target expectations never come from this fixture builder.
 BODY = bytes.fromhex('00000000 4105 fd08 6209 2efb 2909 c409 1b870100 d711 '
-                     '01 00 0000 0000 00 00 fe00')
+                     '01 00 0000 0000 00 00 fe00 0000 0000 03 00')
 
 
 def serial_reading(fixture='nominal', *, position='A'):

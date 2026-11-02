@@ -18,9 +18,7 @@ from tests.support.builders.protocol_ingress import (
 # Locks the literal current vector to the governing protocol's checked-in golden frame.
 def test_reviewed_current_frame_is_the_protocol_golden_vector() -> None:
     assert REVIEWED_CURRENT_FRAME.hex() == (
-        "2001010203040506070844332211"
-        "adae77b2af564eea61861744eef32731637d1d12ac8b186fe36388c2eded90d5"
-        "41bb930f548308b9"
+        "2001010203040506070844332211adae77b2af564eea61861744eef32731637d1d12ac8b186fe36388c2eded90d5a2c6b63856bbb6f031d1dceecd95"
     )
     authenticated = open_frame(REVIEWED_NODE_KEY, REVIEWED_CURRENT_FRAME)
     assert authenticated.header == protocol.ClearHeader(
@@ -38,9 +36,7 @@ def test_reviewed_current_frame_is_the_protocol_golden_vector() -> None:
 # Locks a reviewed backlog counterpart with unchanged transport/application fields.
 def test_reviewed_backlog_frame_has_only_the_protocol_defined_domain_change() -> None:
     assert REVIEWED_BACKLOG_FRAME.hex() == (
-        "2002010203040506070844332211"
-        "0badc99335db74910f378aeac41892874b4259d599b55914dd43ecc75026b743"
-        "e36bb78761644e77"
+        "20020102030405060708443322110badc99335db74910f378aeac41892874b4259d599b55914dd43ecc75026b743df05499201208122f0e65e3973a3"
     )
     authenticated = open_frame(REVIEWED_NODE_KEY, REVIEWED_BACKLOG_FRAME)
     assert authenticated.header == protocol.ClearHeader(

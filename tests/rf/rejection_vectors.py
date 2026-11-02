@@ -46,10 +46,10 @@ def matrix(*, active, unknown, revoked, first_message, first_sample):
     for index, name in enumerate(CASES):
         node, key = unknown if name == 'unknown_node' else revoked if name.startswith('revoc') or name == 'revoked_node' else active
         message, sample = first_message + index, first_sample + index
-        # Literal reviewed 32-byte layout. Values intentionally exceed physical
+        # Literal reviewed 38-byte layout. Values intentionally exceed physical
         # plausibility while remaining representable and correctly flagged.
-        body = struct.pack('<IHHHhhhIHBBHHBBH', sample, 1000, 65000, 64000,
-                           20000, -20000, 25000, 4000000000, 60000, 1, 0, 0, 0, 0, 0, 0xfe)
+        body = struct.pack('<IHHHhhhIHBBHHBBHHHBB', sample, 1000, 65000, 64000,
+                           20000, -20000, 25000, 4000000000, 60000, 1, 0, 0, 0, 0, 0, 0xfe, 0, 0, 3, 0)
         control, domain, status = 0x20, 1, 0
         result, authenticated = 'ACCEPTED', True
         if name in ('unsupported_control', 'unsupported_control_wrong_direction'):
@@ -59,7 +59,7 @@ def matrix(*, active, unknown, revoked, first_message, first_sample):
         if name == 'malformed_length':
             body, status, result = body[:-1], 3, 'REJECTED_MALFORMED_LENGTH'
         if name == 'malformed_flags':
-            body = body[:30] + struct.pack('<H', 0xfc)  # Nonzero soil0 with its validity bit cleared.
+            body = body[:30] + struct.pack('<H', 0xfc) + body[32:]  # Nonzero soil0 with its validity bit cleared.
             status, result = 3, 'REJECTED_MALFORMED_BODY'
         if name in ('wrong_direction', 'unsupported_control_wrong_direction'):
             domain, body = 3, b'\0'

@@ -168,9 +168,9 @@ target_compile_definitions(
   PRIVATE
     _POSIX_C_SOURCE=200809L
     NODE_PERSISTENCE_TESTING=1
-    NODE_PERSISTENCE_PENDING_LOG_LIMIT=256
-    NODE_PERSISTENCE_PENDING_COMPACT_RETAIN_LIMIT=128
-    NODE_PERSISTENCE_QUARANTINE_LOG_LIMIT=512
+    NODE_PERSISTENCE_PENDING_LOG_LIMIT=300
+    NODE_PERSISTENCE_PENDING_COMPACT_RETAIN_LIMIT=144
+    NODE_PERSISTENCE_QUARANTINE_LOG_LIMIT=576
     NODE_PERSISTENCE_DIAGNOSTIC_LOG_LIMIT=512
     NODE_PERSISTENCE_DELIVERY_LOG_LIMIT=1024
 )
@@ -209,6 +209,7 @@ add_executable(
   test_node_sensors
   fake_esp_gpio.c
   fake_node_sensors_backend.c
+  ${FIRMWARE_ROOT}/components/node_sensors/node_sensors_soil_analog.c
   test_node_sensors.c
   ${FIRMWARE_ROOT}/components/node_common/node_common.c
   ${FIRMWARE_ROOT}/components/node_sensors/node_sensors.c
@@ -522,4 +523,46 @@ target_link_options(test_sx1262_rf_path PRIVATE -fsanitize=address,undefined -fn
 foreach(scenario initial_off initial_level_failure initial_config_failure
     initial_hold_failure on on_release_failure on_level_failure configured_off_failures)
     add_test(NAME "sx1262_rf_path.${scenario}" COMMAND test_sx1262_rf_path "${scenario}")
+endforeach()
+
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_test(NAME sensor_configuration COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_sensor_configuration.py)
+foreach(sen_test modbus stream)
+add_executable(test_sen0600_${sen_test} test_sen0600_${sen_test}.c ${FIRMWARE_ROOT}/components/node_sensors/sen0600_modbus.c)
+target_include_directories(test_sen0600_${sen_test} PRIVATE ${FIRMWARE_ROOT}/components/node_sensors/private_include)
+target_compile_options(test_sen0600_${sen_test} PRIVATE -Wall -Wextra -Werror -Wconversion -Wsign-conversion)
+add_test(NAME sen0600_${sen_test} COMMAND test_sen0600_${sen_test})
+endforeach()
+
+foreach(sen_second 0 2)
+set(sen_backend_target test_sen0600_backend_${sen_second})
+add_executable(${sen_backend_target} test_sen0600_backend.c
+    ${FIRMWARE_ROOT}/components/node_sensors/node_sensors.c
+    ${FIRMWARE_ROOT}/components/node_sensors/node_sensors_backend_esp.c
+    ${FIRMWARE_ROOT}/components/node_sensors/node_sensors_power_gate_esp.c
+    ${FIRMWARE_ROOT}/components/node_sensors/node_sensors_sen0600_esp.c
+    ${FIRMWARE_ROOT}/components/node_sensors/sen0600_modbus.c
+    ${FIRMWARE_ROOT}/components/node_common/node_common.c)
+target_include_directories(${sen_backend_target} PRIVATE sen0600_fakes fakes
+    ${FIRMWARE_ROOT}/components/node_sensors/include
+    ${FIRMWARE_ROOT}/components/node_sensors/private_include
+    ${FIRMWARE_ROOT}/components/node_common/include)
+target_compile_definitions(${sen_backend_target} PRIVATE
+    CONFIG_CURA_SEN0193_0=0 CONFIG_CURA_SEN0193_1=0
+    CONFIG_CURA_SEN0600_0=1 CONFIG_CURA_SEN0600_1=${sen_second}
+    CONFIG_CURA_SENSOR_POWER_STABILIZATION_MS=450)
+target_compile_options(${sen_backend_target} PRIVATE -Wall -Wextra -Werror -Wconversion -Wsign-conversion)
+add_test(NAME sen0600_backend_${sen_second} COMMAND ${sen_backend_target})
+endforeach()
+
+foreach(scenario late_split late_combined late_fragmented late_exception deadline_equal deadline_late
+                 foreign_flood incomplete current_exception current_bad_crc read_error)
+    add_test(NAME sen0600_backend.${scenario} COMMAND test_sen0600_backend_2 ${scenario})
+endforeach()
+
+foreach(sen_target test_sen0600_modbus test_sen0600_stream test_sen0600_backend_0 test_sen0600_backend_2)
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(${sen_target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_link_options(${sen_target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+endif()
 endforeach()

@@ -76,6 +76,10 @@ static const cura_lora_v2_reading_t TEST_GOLDEN_READING = {{
   .previous_cycle_accepted_readings =
       {_u(reading["previous_cycle_accepted_readings"], 8)},
   .flags = {_u(reading["flags"], 16)},
+  .soil_0_moisture_deci_pct = {_u(reading["soil_0_moisture_deci_pct"], 16)},
+  .soil_1_moisture_deci_pct = {_u(reading["soil_1_moisture_deci_pct"], 16)},
+  .sensor_selection = {_u(reading["sensor_selection"], 8)},
+  .reserved = {_u(reading["reserved"], 8)},
 }};
 
 static const uint8_t

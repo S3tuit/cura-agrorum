@@ -1100,6 +1100,10 @@ def test_receiver_scoped_generated_rows_require_lifecycle_parent() -> None:
         previous_cycle_tx_attempts=0,
         previous_cycle_accepted_readings=0,
         flags=0,
+        soil_0_moisture_deci_pct=0,
+        soil_1_moisture_deci_pct=0,
+        sensor_selection=0,
+        reserved=0,
     )
     connection.execute("INSERT INTO received_messages VALUES (?, ?, ?)", (reading.node_id, reading.message_id, 1))
     reading_columns = generated_entities.READING_MESSAGE_ROW_V2_COLUMNS
@@ -1316,6 +1320,10 @@ def test_reading_messages_allow_one_canonical_row_per_sample() -> None:
         previous_cycle_tx_attempts=0,
         previous_cycle_accepted_readings=0,
         flags=0,
+        soil_0_moisture_deci_pct=0,
+        soil_1_moisture_deci_pct=0,
+        sensor_selection=0,
+        reserved=0,
     )
     columns = generated_entities.READING_MESSAGE_ROW_V2_COLUMNS
     insert = (

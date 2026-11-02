@@ -76,6 +76,7 @@ SUPPORTED_CONSTRAINTS = {
     "all_zero_unless_flag",
     "flag_iff_field_equals",
     "flag_requires_flag",
+    "flag_requires_any_bits",
     "reserved_bits_zero",
     "zero_unless_flag",
 }
@@ -84,7 +85,7 @@ C_PREFIX = "CURA_LORA_V2"
 C_TYPE_PREFIX = "cura_lora_v2"
 V2_CCM_NONCE_SIZE_BYTES = 13
 V2_CCM_TAG_SIZE_BYTES = 8
-V2_READING_FRAME_SIZE_BYTES = 54
+V2_READING_FRAME_SIZE_BYTES = 60
 V2_ACK_FRAME_SIZE_BYTES = 23
 
 
@@ -253,6 +254,10 @@ def validate_schema(schema: dict[str, Any]) -> None:
             ("previous_cycle_tx_attempts", "u8"),
             ("previous_cycle_accepted_readings", "u8"),
             ("flags", "u16"),
+            ("soil_0_moisture_deci_pct", "u16"),
+            ("soil_1_moisture_deci_pct", "u16"),
+            ("sensor_selection", "u8"),
+            ("reserved", "u8"),
         ),
         "reading_body",
     )
@@ -563,6 +568,13 @@ def validate_constraints(
         elif kind == "flag_requires_flag":
             validate_flag_ref(raw_constraint, "flag", flags, context)
             validate_flag_ref(raw_constraint, "required_flag", flags, context)
+        elif kind == "flag_requires_any_bits":
+            field = validate_field_ref(raw_constraint, "field", fields_by_name, context)
+            validate_flag_ref(raw_constraint, "flag", flags, context)
+            if field["type"] not in {"u8", "u16", "u32"}:
+                raise SchemaError(f"{context}.field must be unsigned")
+            require_int(raw_constraint, "mask", context, 1,
+                        (1 << (type_info(field["type"])["size"] * 8)) - 1)
         elif kind == "reserved_bits_zero":
             field = validate_field_ref(
                 raw_constraint, "field", fields_by_name, context
@@ -1335,11 +1347,18 @@ def c_validation_lines(reading_body: dict[str, Any]) -> list[str]:
                     "  }",
                 ]
             )
+        elif kind == "flag_requires_any_bits":
+            lines.extend([
+                f"  if ((reading->flags & {C_PREFIX}_FLAG_{constraint['flag']}) != 0u &&",
+                f"      (reading->{constraint['field']} & {constraint['mask']}u) == 0u) {{",
+                f"    return {C_PREFIX}_CODEC_MALFORMED;",
+                "  }",
+            ])
         elif kind == "reserved_bits_zero":
             lines.extend(
                 [
                     f"  if ((reading->{constraint['field']} &",
-                    f"       {C_PREFIX}_READING_RESERVED_FLAGS_MASK) != 0u) {{",
+                    f"       {constraint['mask']}u) != 0u) {{",
                     f"    return {C_PREFIX}_CODEC_MALFORMED;",
                     "  }",
                 ]
@@ -1587,11 +1606,17 @@ def python_validation_lines(reading_body: dict[str, Any]) -> list[str]:
                     f'{constraint["required_flag"]}")',
                 ]
             )
+        elif kind == "flag_requires_any_bits":
+            lines.extend([
+                f"  if (reading.flags & ReadingFlag.{constraint['flag']}) and not "
+                f"(reading.{constraint['field']} & {constraint['mask']}):",
+                f'    raise CodecError("{constraint["flag"]} requires a selected sensor")',
+            ])
         elif kind == "reserved_bits_zero":
             lines.extend(
                 [
-                    f"  if reading.{constraint['field']} & READING_RESERVED_FLAGS_MASK:",
-                    '    raise CodecError("reserved reading flag bits must be zero")',
+                    f"  if reading.{constraint['field']} & {constraint['mask']}:",
+                    f'    raise CodecError("reserved bits in {constraint["field"]} must be zero")',
                 ]
             )
         else:

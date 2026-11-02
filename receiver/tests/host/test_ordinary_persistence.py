@@ -423,6 +423,7 @@ def test_reading_classifications_and_immutable_evidence(setup, batch_size):
                 7,
                 2,
                 1023,
+                0, 0, 3, 0,
             )
         )
     assert (
@@ -829,7 +830,12 @@ def test_reading_side_effect_collision(setup, column):
         "SELECT sql FROM sqlite_master WHERE name='reading_messages_no_update'"
     ).fetchone()[0]
     connection.execute("DROP TRIGGER reading_messages_no_update")
+    # Model corrupt stored bytes even when SQL normally forbids the value.
+    if column == "reserved":
+        connection.execute("PRAGMA ignore_check_constraints=ON")
     connection.execute(f"UPDATE reading_messages SET {column}=?", (altered,))
+    if column == "reserved":
+        connection.execute("PRAGMA ignore_check_constraints=OFF")
     connection.execute(trigger)
     before = connection.execute("SELECT * FROM reading_messages").fetchall()
     clock.advance_elapsed_us(1_000_000)

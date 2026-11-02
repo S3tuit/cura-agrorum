@@ -90,7 +90,11 @@ static bool readings_equal(const cura_lora_v2_reading_t *left,
              right->previous_cycle_tx_attempts &&
          left->previous_cycle_accepted_readings ==
              right->previous_cycle_accepted_readings &&
-         left->flags == right->flags;
+         left->flags == right->flags &&
+         left->soil_0_moisture_deci_pct == right->soil_0_moisture_deci_pct &&
+         left->soil_1_moisture_deci_pct == right->soil_1_moisture_deci_pct &&
+         left->sensor_selection == right->sensor_selection &&
+         left->reserved == right->reserved;
 }
 
 static uint8_t reader_take_u8(fuzz_reader_t *reader) {
@@ -154,9 +158,23 @@ static cura_lora_v2_reading_t reader_take_valid_reading(fuzz_reader_t *reader) {
       .previous_cycle_tx_attempts = reader_take_u8(reader),
       .previous_cycle_accepted_readings = reader_take_u8(reader),
       .flags = reader_take_u16(reader),
+      .soil_0_moisture_deci_pct = reader_take_u16(reader),
+      .soil_1_moisture_deci_pct = reader_take_u16(reader),
+      .sensor_selection = reader_take_u8(reader) & 15u,
+
   };
 
   reading.flags &= (uint16_t)~CURA_LORA_V2_READING_RESERVED_FLAGS_MASK;
+  const uint16_t flag_masks[6] = {2u, 4u, 8u, 16u, 1024u, 2048u};
+  const uint8_t selection_masks[6] = {1u, 2u, 5u, 10u, 4u, 8u};
+  for (size_t i = 0; i < 6; ++i) {
+    if ((reading.sensor_selection & selection_masks[i]) == 0u) {
+      reading.flags &= (uint16_t)~flag_masks[i];
+    }
+  }
+  if ((reading.flags & 1024u) == 0u) reading.soil_0_moisture_deci_pct = 0;
+  if ((reading.flags & 2048u) == 0u) reading.soil_1_moisture_deci_pct = 0;
+
 
   if ((reading.flags & CURA_LORA_V2_FLAG_SOIL_0_VALID) == 0u) {
     reading.soil_0_mv = 0;

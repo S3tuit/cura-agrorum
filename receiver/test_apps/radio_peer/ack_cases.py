@@ -44,7 +44,7 @@ class AckCase:
             raise ValueError("uplink episode ceiling exceeded")
         opened = open_frame(self.key, frame)
         h = opened.header
-        if len(frame) != 54 or h.control != 0x20 or h.node_id != self.node_id or h.domain not in (1, 2):
+        if len(frame) != 60 or h.control != 0x20 or h.node_id != self.node_id or h.domain not in (1, 2):
             raise ValueError("unexpected authenticated uplink")
         body = wire.decode_reading(opened.plaintext_body)
         previous = self.frames.get(h.message_id)

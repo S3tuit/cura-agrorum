@@ -23,9 +23,9 @@ def complete_trace():
 def record():
     identity = dict(run="a"*32, case="component.ack_exchange", boot=11, phase=0)
     boot = dict(kind="boot", dut="cc8da2fc0224", elf="image", boot=11)
-    tx = dict(kind="result", tx=True, payload=A, before=100, after=102900, deadline=2000100,
-              error=0, operation=0, diagnostic="", started=True, done=True, set_tx=200, tx_done=102856)
-    rx = dict(kind="result", tx=False, payload=B, before=103000, after=400100, deadline=3103000,
+    tx = dict(kind="result", tx=True, payload=A, before=100, after=113200, deadline=2000100,
+              error=0, operation=0, diagnostic="", started=True, done=True, set_tx=200, tx_done=113096)
+    rx = dict(kind="result", tx=False, payload=B, before=113300, after=400100, deadline=3113300,
               error=0, operation=0, diagnostic="", rx_outcome=1, rx_done=400000, rssi=-100, snr=20)
     events = [boot, dict(kind="begin", **identity),
               dict(kind="command", boot=11, bytes=58, elapsed_us=8000), tx, rx,
@@ -38,7 +38,7 @@ def record():
     peer = dict(kind="complete", run=identity["run"], case=identity["case"], failure=None,
                 cleanup=dict(safe_shutdown=True), attempts=1, layer="Radio/Sx1262/LinuxRadioIo",
                 outcome=dict(packets=[dict(frame=A, irq_status=2, device_errors=0,
-                             edge_timestamp_ns=102856000, t2_packet_copied_monotonic_us=103000)],
+                             edge_timestamp_ns=113096000, t2_packet_copied_monotonic_us=113300)],
                              transmissions=[dict(tx=dict(ack_tx_result="TX_DONE", t5_tx_done_monotonic_us=461696),
                                                  t6_set_rx_issued_monotonic_us=470000)]),
                 trace=complete_trace())

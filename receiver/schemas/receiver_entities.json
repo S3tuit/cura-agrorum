@@ -1406,6 +1406,24 @@
               {
                 "name": "flags",
                 "type": "u16"
+              },
+              {
+                "name": "soil_0_moisture_deci_pct",
+                "type": "u16"
+              },
+              {
+                "name": "soil_1_moisture_deci_pct",
+                "type": "u16"
+              },
+              {
+                "name": "sensor_selection",
+                "type": "u8",
+                "maximum": 15
+              },
+              {
+                "name": "reserved",
+                "type": "u8",
+                "maximum": 0
               }
             ],
             "indexes": [

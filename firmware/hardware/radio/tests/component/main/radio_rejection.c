@@ -39,9 +39,9 @@ bool rejection_build(const rejection_config_t *config, unsigned index, rejection
     .soil_0_mv = 65000, .soil_1_mv = 64000,
     .soil_temp_0_centi_c = 20000, .soil_temp_1_centi_c = -20000,
     .enclosure_centi_c = 25000, .enclosure_pressure_pa = UINT32_C(4000000000),
-    .enclosure_humidity_centi_pct = 60000, .reset_reason = 1, .flags = 0xfe
+    .enclosure_humidity_centi_pct = 60000, .reset_reason = 1, .flags = 0xfe, .sensor_selection = 3
   };
-  uint8_t body[32];
+  uint8_t body[38];
   if (cura_lora_v2_encode_reading(body, sizeof(body), &reading) != CURA_LORA_V2_CODEC_OK) return false;
   size_t body_length = sizeof(body);
   int status = 0;

@@ -60,7 +60,7 @@ def test_generated_files_are_current(repo_root: Path) -> None:
         ("short_tag", "ccm.tag_size_bytes must be 8, got 4"),
         (
             "short_reading_frame",
-            "frames.reading.sx1262_payload_size_bytes must be 54, got 50",
+            "frames.reading.sx1262_payload_size_bytes must be 60, got 50",
         ),
         (
             "short_ack_frame",

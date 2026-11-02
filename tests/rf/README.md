@@ -147,9 +147,9 @@ Delete the session file and disposable captures when the bench session ends.
 
 `component.header_error_rearm` requires nominal wiring at both ends; attached
 sensors are not sampled. The existing component image sends a complete known
-54-byte packet, interrupts a second transmission at 18 ms from S3 SetTx HAL
-entry, and sends the next complete known packet. Starts are at least 12.2 seconds
-apart. The whole episode reserves three full S3 charges (338766 us) and no Pi TX;
+60-byte packet, interrupts a second transmission at 18 ms from S3 SetTx HAL
+entry, and sends the next complete known packet. Starts are at least 13 seconds
+apart. The whole episode reserves three full S3 charges (372558 us) and no Pi TX;
 the fresh ACK-exchange prerequisite has its own reservation. The existing
 pytest flow flashes the component image before execution.
 
@@ -206,8 +206,10 @@ The runner never flashes, formats, erases or generates credentials. It verifies
 the actual installed binaries and an empty, readable LittleFS baseline before
 starting production. Capture opens native USB with idle control lines, proves
 the ROM is already active without reset, and clears forced-download mode while
-the ROM owns the stream. Only the explicit reset after peer readiness starts
-the autonomous image. Reopening after sleep never resets or starts another
+the ROM owns the stream. Only the explicit watchdog chip reset after peer readiness starts
+the autonomous image. On S3 this resamples boot straps after manual download
+entry; a USB line reset can leave the chip in the bootloader. ROM commands
+finish before the passive reader starts, preserving exclusive serial ownership. Reopening after sleep never resets or starts another
 wake. The [shared transport](../../firmware/tests/README.md#native-usb-across-reset-and-sleep)
 binds USB identity across disappearance; production has no host boot barrier.
 The RF-observation image does require the [terminal receipt](#accelerated-rf-execution).
@@ -230,7 +232,7 @@ separate validation; a historical long RF case is not a routine prerequisite.
 The final current receives RETRY_LATER to preserve remaining records.
 
 The episode declaration reports the full lease and per-transmitter maxima.
-Reserve up to 70 attempted S3 transmissions per wake (210/280 for the whole
+Reserve up to 64 attempted S3 transmissions per wake (192/256 for the whole
 case, including failed reception). Pi ceilings are case-specific: 3..6 replies
 for current cases and 5..6 for backlog cases. The operator owns preceding history,
 rolling admission and unexpected-reset/uncertain-interval accounting. A lost
@@ -281,7 +283,7 @@ bound; the verifier separately checks actual SPI timing (17.5..20 ms) and status
 confirmation. Valid ACK completion must fit the original minimum first window
 (400 ms), or the second window (300 ms). Pi and node clocks are never directly
 subtracted. Every interrupted transmission reserves a full 23-byte ACK charge:
-six Pi transmissions total, 407196 us, plus the existing 210-attempt S3 bound.
+six Pi transmissions total, 407196 us, plus the 192-attempt S3 bound.
 
 Before first physical regression, qualify this reverse-direction cutoff with
 a declared finite campaign and independent raw observations. The earlier 18 ms
@@ -394,8 +396,8 @@ separate from the RF runner and never automatically retried:
    a prepared zero-state image after transmissions; preserve actual history or
    establish a new complete silence interval before another preparation.
 
-Reserve the complete episode: two accelerated wakes, a110-second limit after
-node start and conservative maxima of140 S3 uplinks and140 Pi ACKs. Use the
+Reserve the complete episode: two accelerated wakes, a 110-second limit after
+node start and conservative maxima of 128 S3 uplinks and 128 Pi ACKs. Use the
 10-second configuration with sleep observations enabled. On the second complete
 finalization marker, acknowledged park and two observed samples, stop the node in download mode and stop
 the service; reconcile consistent database/node captures afterward.
@@ -557,11 +559,19 @@ Seal it with `production_node.py --seal-build` and pass its directory to the
 runner. The default production build remains 900s with observation disabled.
 No 900-second RF prerequisite is required; production cadence needs separate validation.
 
-Each completed cycle emits `RF_NODE_SLEEP duration_us=10000000` after finalization
-and successful timer setup. This names the configured terminal boundary, not
-proof of physical sleep. A shared nonce-bound receipt follows the marker and
-all PHY records. The capture owner flushes those bytes before acknowledging an
-intermediate wake's sleep; subsequent boots must report real deep-sleep resets.
+Each completed cycle emits an `RF_NODE_SLEEP` record after finalization and
+successful timer setup. It binds a RAM-only boot identifier, mapped reset reason
+and requested duration to the terminal receipt nonce. The record repeats with
+the receipt greeting so USB reconnection can recover it even when the ROM boot
+banner was lost. Identical repeats count once; changed metadata, reused boot
+identifiers or nonces, and missing/extra wakes fail verification. The capture
+retains the raw stream; ASCII RS/US delimit each complete observation/greeting
+or terminal-status frame. A fresh RS discards an incomplete USB fragment, while
+every complete frame is validated before it can drive a receipt. The capture
+owner flushes the record and all PHY output before acknowledging an intermediate
+wake's sleep. Later boots must report deep-sleep resets; final verification
+cross-checks every reset reason against the authenticated current reading and
+its durable storage evidence. The marker alone does not prove physical sleep.
 The final planned wake instead acknowledges STOP and reports `RF_PARKED`, keeping
 USB available with no further radio work. There is no extra wake for shutdown.
 

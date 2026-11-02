@@ -7,6 +7,10 @@ import pytest
 import production_node as production
 
 
+def framed(payload):
+    return b'\x1e' + payload + b'\x1f\n'
+
+
 @pytest.fixture
 def session_rig(tmp_path, monkeypatch):
     def info(path="/dev/ttyACM0", serial="bound-board"):
@@ -67,12 +71,12 @@ def session_rig(tmp_path, monkeypatch):
 
 
 def first_wake(session):
-    session.node.emit(b"rst:0x1 (POWERON)\nRF_NODE_SLEEP duration_us=10000000\nRF_FINALIZE 11111111\n")
+    session.node.emit(framed(b"RF_NODE_SLEEP boot=0000000000000001 reset_reason=1 duration_us=10000000 finalize=11111111\nRF_FINALIZE 11111111\n"))
 
 
 def last_wake(session):
     first_wake(session)
-    session.node.emit(b"rst:0x5 (SLEEP_WAKEUP)\nRF_NODE_SLEEP duration_us=10000000\nRF_FINALIZE 22222222\n")
+    session.node.emit(framed(b"RF_NODE_SLEEP boot=0000000000000002 reset_reason=8 duration_us=10000000 finalize=22222222\nRF_FINALIZE 22222222\n"))
 
 
 def test_final_wake_parks_before_rom_handoff_and_resolves_port_for_every_capture_command(session_rig):
@@ -82,7 +86,7 @@ def test_final_wake_parks_before_rom_handoff_and_resolves_port_for_every_capture
     assert not session.finalized
     with pytest.raises(RuntimeError, match="final capture"):
         session.capture_after()
-    session.node.emit(b"RF_PARKED 22222222\n")
+    session.node.emit(framed(b"RF_PARKED 22222222\n"))
     assert session.finalized
     ports[:] = [info("/dev/ttyACM1")]
     session.stop()
@@ -103,12 +107,13 @@ def test_failed_stop_cannot_capture_or_replay_rom_commands(session_rig, fault):
     last_wake(session)
     if fault == "wrong_park":
         with pytest.raises(ValueError, match="unbound"):
-            session.node.emit(b"RF_PARKED deadbeef\n")
+            session.node.emit(framed(b"RF_PARKED deadbeef\n"))
     elif fault == "extra_wake":
-        session.node.emit(b"RF_PARKED 22222222\n")
-        session.node.emit(b"rst:0x5 (SLEEP_WAKEUP)\n")
+        session.node.emit(framed(b"RF_PARKED 22222222\n"))
+        with pytest.raises(ValueError, match="terminal park"):
+            session.node.emit(framed(b"RF_NODE_SLEEP boot=0000000000000003 reset_reason=8 duration_us=10000000 finalize=33333333\nRF_FINALIZE 33333333\n"))
     elif fault != "no_park":
-        session.node.emit(b"RF_PARKED 22222222\n")
+        session.node.emit(framed(b"RF_PARKED 22222222\n"))
     if fault == "absent": ports.clear()
     if fault == "substitution": ports[:] = [info(serial="another-board")]
     if fault == "ambiguous": ports.append(info("/dev/ttyACM1"))
@@ -128,19 +133,27 @@ def test_stop_request_freezes_uncertain_sleep_receipt_and_stops_next_admitted_bo
     first_wake(session)
     session.abort_requested = True
     session.receipt.clock = lambda: 1e12
-    session.node.emit(b"RF_FINALIZE 11111111\n")
+    first_wake(session)
     assert receipts[-1] == b"RF_FINALIZE_ACK 11111111 SLEEP\n"
-    session.node.emit(b"rst:0x5 (SLEEP_WAKEUP)\nRF_NODE_SLEEP duration_us=10000000\nRF_FINALIZE 22222222\nRF_PARKED 22222222\n")
+    session.node.emit(framed(b"RF_NODE_SLEEP boot=0000000000000002 reset_reason=8 duration_us=10000000 finalize=22222222\nRF_FINALIZE 22222222\n") + framed(b"RF_PARKED 22222222\n"))
     session.stop()
     assert receipts[-1] == b"RF_FINALIZE_ACK 22222222 STOP\n"
 
 
 @pytest.mark.parametrize("raw", [b"RF_FINALIZE 11111111\n",
-    b"rst:0x1 (POWERON)\nRF_NODE_SLEEP duration_us=10000000\nRF_NODE_SLEEP duration_us=10000000\nRF_FINALIZE 11111111\n"])
+    b"RF_NODE_SLEEP boot=0000000000000001 reset_reason=1 duration_us=10000000 finalize=11111111\nRF_NODE_SLEEP boot=0000000000000001 reset_reason=1 duration_us=10000000 finalize=22222222\nRF_FINALIZE 11111111\n"])
 def test_unbound_finalization_does_not_send_a_receipt(session_rig, raw):
     session, _, _, _, receipts, _ = session_rig
     with pytest.raises(ValueError):
-        session.node.emit(raw)
+        session.node.emit(framed(raw))
     assert receipts == []
     with pytest.raises(RuntimeError):
         session.stop()
+
+
+def test_partial_transport_frame_never_drives_a_receipt(session_rig):
+    session, _, _, _, receipts, _ = session_rig
+    session.node.emit(b'\x1eRF_NODE_SLEEP boot=0000000000000001 reset_reason=1 duration_us=1')
+    assert not receipts and session.sleep_count() == 0
+    first_wake(session)
+    assert receipts == [b'RF_FINALIZE_ACK 11111111 SLEEP\n']

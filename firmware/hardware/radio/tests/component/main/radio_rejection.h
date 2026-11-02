@@ -17,7 +17,7 @@ typedef struct {
 } rejection_config_t;
 
 typedef struct {
-  uint8_t frame[54], ack[23];
+  uint8_t frame[60], ack[23];
   size_t frame_length, ack_length; /* ack_length==0 requires observed silence */
 } rejection_packet_t;
 

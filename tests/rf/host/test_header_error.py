@@ -16,12 +16,12 @@ CASE = "component.header_error_rearm"
 def test_peer_requires_header_between_complete_packets(stimulus):
     clock, io, backend, radio = rig(CASE)
     start = clock.now_monotonic_us()
-    io.incoming.extend([(start + 100000, peer.A), (start + 24500000, peer.U2)])
+    io.incoming.extend([(start + 100000, peer.A), (start + 26150000, peer.U2)])
     original = io.wait_edge
     injected = False
     def wait_edge(*, deadline_monotonic_us):
         nonlocal injected
-        at = start + 12300000
+        at = start + 13100000
         if stimulus and not injected and clock.now_monotonic_us() <= at <= deadline_monotonic_us:
             clock.wait_until_monotonic_us(at)
             io.status, io.irq = 0x52, 0x20
@@ -50,10 +50,10 @@ def header_record():
         if "case" in v: v["case"] = CASE
         if "previous_case" in v: v["previous_case"] = CASE
     first = deepcopy(events[3])
-    cut = dict(first, before=12200190, after=12220000, deadline=14200190,
-               set_tx=12200200, tx_done=0, done=False)
-    final = dict(first, payload=U, before=24400100, after=24502900,
-                 deadline=26400100, set_tx=24400200, tx_done=24502856)
+    cut = dict(first, before=13000190, after=13020000, deadline=15000190,
+               set_tx=13000200, tx_done=0, done=False)
+    final = dict(first, payload=U, before=26000100, after=26113200,
+                 deadline=28000100, set_tx=26000200, tx_done=26113096)
     events[3:5] = [first, cut, final]
     trace_index = next(i for i, v in enumerate(events) if v.get("operation") == "start_tx")
     events[trace_index+1:trace_index+1] = [

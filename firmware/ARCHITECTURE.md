@@ -31,7 +31,9 @@ no public singleton reset API is needed for production or tests.
    sensors or radio. Failure skips acquisition/transmission and proceeds to cleanup.
 2. Acquire sensor groups independently. Validity bits distinguish a valid zero
    from failure; the enclosure temperature/pressure/humidity group is atomic.
-   The switched soil/DS rail is released before independent BME acquisition.
+   The configured soil backend releases its switched rail before independent
+   BME acquisition. Selection survives acquisition failures; validity marks
+   only acquired, representable measurements.
 3. Construct the reading with available sensor values and valid previous-cycle
    metrics. Persist its canonical body. If append fails, attempt current delivery
    from RAM and suppress backlog access for this wake: an ambiguous append could

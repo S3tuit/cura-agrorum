@@ -5,8 +5,8 @@ import json
 from pathlib import Path
 
 # Literal catalogue oracles, independent of either endpoint's construction.
-A = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435"
-U = "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5"
+A = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b"
+U = "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babb"
 B = "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6"
 D = "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6"
 X = "e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6"
@@ -161,7 +161,7 @@ def verify_header_error(events, peer, tx):
             cut["before"] <= cut["tx_hal_after"] <= cut["abort_hal_before"] <= cut["after"] and
             18000 <= cut["abort_hal_before"] - cut["before"] <= 18500 and
             cut["irq"] == cut["device_errors"] == 0, "wrong S3 abort stimulus")
-    require(all(b["set_tx"] - a["set_tx"] >= 12200000 for a, b in zip(tx, tx[1:])), "S3 pacing")
+    require(all(b["set_tx"] - a["set_tx"] >= 13000000 for a, b in zip(tx, tx[1:])), "S3 pacing")
     outcome = peer["outcome"]
     expected = dict(outcome["counters_before"])
     for field in ("header_errors_observed", "header_errors_handled"):
@@ -252,7 +252,7 @@ def verify_case(case, events, peer, run, fixture, elf):
             require(value["error"] == 0 and value["operation"] == 0 and not value["diagnostic"] and
                     value["started"] is True and value["done"] is True, "S3 TX outcome")
             require(value["before"] <= value["set_tx"] < value["tx_done"] <= value["after"], "S3 shared TX clock")
-            require(102656 <= value["tx_done"] - value["set_tx"] <= 112922, "S3 TX airtime")
+            require(112896 <= value["tx_done"] - value["set_tx"] <= 124186, "S3 TX airtime")
         else:
             require(value["error"] != 0 and value["done"] is False, "missing expected TX fault")
             if case == "component.dio1_disconnected":

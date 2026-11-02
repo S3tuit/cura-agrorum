@@ -1,5 +1,5 @@
 /* Generated from protocol/protocol-v2-lora/schemas/protocol_v2_lora.json by protocol/protocol-v2-lora/tools/generate.py.
- * Schema SHA-256: ece4ec58bad29ddad03be41ccb257ffef960fa11a2df1d9f8650f4eb499de009. Do not edit by hand. */
+ * Schema SHA-256: 3c68e7cb4a3f803b8ee8c85e69a01623e2e7031297acc00432d0202be92b8fb1. Do not edit by hand. */
 #include "protocol_v2_lora_schema_generated.h"
 
 #include <limits.h>
@@ -148,7 +148,47 @@ cura_lora_v2_codec_result_t cura_lora_v2_validate_reading(
     return CURA_LORA_V2_CODEC_MALFORMED;
   }
   if ((reading->flags &
-       CURA_LORA_V2_READING_RESERVED_FLAGS_MASK) != 0u) {
+       61440u) != 0u) {
+    return CURA_LORA_V2_CODEC_MALFORMED;
+  }
+  if ((reading->flags & CURA_LORA_V2_FLAG_SOIL_MOISTURE_0_VALID) == 0u &&
+      reading->soil_0_moisture_deci_pct != 0) {
+    return CURA_LORA_V2_CODEC_MALFORMED;
+  }
+  if ((reading->flags & CURA_LORA_V2_FLAG_SOIL_MOISTURE_1_VALID) == 0u &&
+      reading->soil_1_moisture_deci_pct != 0) {
+    return CURA_LORA_V2_CODEC_MALFORMED;
+  }
+  if ((reading->sensor_selection &
+       240u) != 0u) {
+    return CURA_LORA_V2_CODEC_MALFORMED;
+  }
+  if ((reading->reserved &
+       255u) != 0u) {
+    return CURA_LORA_V2_CODEC_MALFORMED;
+  }
+  if ((reading->flags & CURA_LORA_V2_FLAG_SOIL_0_VALID) != 0u &&
+      (reading->sensor_selection & 1u) == 0u) {
+    return CURA_LORA_V2_CODEC_MALFORMED;
+  }
+  if ((reading->flags & CURA_LORA_V2_FLAG_SOIL_1_VALID) != 0u &&
+      (reading->sensor_selection & 2u) == 0u) {
+    return CURA_LORA_V2_CODEC_MALFORMED;
+  }
+  if ((reading->flags & CURA_LORA_V2_FLAG_SOIL_TEMP_0_VALID) != 0u &&
+      (reading->sensor_selection & 5u) == 0u) {
+    return CURA_LORA_V2_CODEC_MALFORMED;
+  }
+  if ((reading->flags & CURA_LORA_V2_FLAG_SOIL_TEMP_1_VALID) != 0u &&
+      (reading->sensor_selection & 10u) == 0u) {
+    return CURA_LORA_V2_CODEC_MALFORMED;
+  }
+  if ((reading->flags & CURA_LORA_V2_FLAG_SOIL_MOISTURE_0_VALID) != 0u &&
+      (reading->sensor_selection & 4u) == 0u) {
+    return CURA_LORA_V2_CODEC_MALFORMED;
+  }
+  if ((reading->flags & CURA_LORA_V2_FLAG_SOIL_MOISTURE_1_VALID) != 0u &&
+      (reading->sensor_selection & 8u) == 0u) {
     return CURA_LORA_V2_CODEC_MALFORMED;
   }
   return CURA_LORA_V2_CODEC_OK;
@@ -230,6 +270,10 @@ cura_lora_v2_codec_result_t cura_lora_v2_encode_reading(
   output[CURA_LORA_V2_READING_PREVIOUS_CYCLE_TX_ATTEMPTS_OFFSET] = value->previous_cycle_tx_attempts;
   output[CURA_LORA_V2_READING_PREVIOUS_CYCLE_ACCEPTED_READINGS_OFFSET] = value->previous_cycle_accepted_readings;
   write_u16_le(&output[CURA_LORA_V2_READING_FLAGS_OFFSET], value->flags);
+  write_u16_le(&output[CURA_LORA_V2_READING_SOIL_0_MOISTURE_DECI_PCT_OFFSET], value->soil_0_moisture_deci_pct);
+  write_u16_le(&output[CURA_LORA_V2_READING_SOIL_1_MOISTURE_DECI_PCT_OFFSET], value->soil_1_moisture_deci_pct);
+  output[CURA_LORA_V2_READING_SENSOR_SELECTION_OFFSET] = value->sensor_selection;
+  output[CURA_LORA_V2_READING_RESERVED_OFFSET] = value->reserved;
   return CURA_LORA_V2_CODEC_OK;
 }
 
@@ -258,6 +302,10 @@ cura_lora_v2_codec_result_t cura_lora_v2_decode_reading(
   value->previous_cycle_tx_attempts = input[CURA_LORA_V2_READING_PREVIOUS_CYCLE_TX_ATTEMPTS_OFFSET];
   value->previous_cycle_accepted_readings = input[CURA_LORA_V2_READING_PREVIOUS_CYCLE_ACCEPTED_READINGS_OFFSET];
   value->flags = read_u16_le(&input[CURA_LORA_V2_READING_FLAGS_OFFSET]);
+  value->soil_0_moisture_deci_pct = read_u16_le(&input[CURA_LORA_V2_READING_SOIL_0_MOISTURE_DECI_PCT_OFFSET]);
+  value->soil_1_moisture_deci_pct = read_u16_le(&input[CURA_LORA_V2_READING_SOIL_1_MOISTURE_DECI_PCT_OFFSET]);
+  value->sensor_selection = input[CURA_LORA_V2_READING_SENSOR_SELECTION_OFFSET];
+  value->reserved = input[CURA_LORA_V2_READING_RESERVED_OFFSET];
   return cura_lora_v2_validate_reading(value);
 }
 

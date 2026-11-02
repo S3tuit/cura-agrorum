@@ -12,7 +12,7 @@ import pytest
 from node_capture import LFS, build_reader, decode_image
 
 
-def record(kind, payload, version=2):
+def record(kind, payload, version=3):
     raw = struct.pack("<IBBH", 0x756FEC23, version, kind, len(payload)) + payload
     raw += struct.pack("<H", len(payload) + 14)
     return raw + struct.pack("<I", zlib.crc32(raw))
@@ -62,8 +62,8 @@ def image_from(tmp_path, binaries, logs):
 
 def test_real_image_all_required_families_and_no_mutation(tmp_path, binaries):
     # Concrete LE field values, independent of production record encoding.
-    body = struct.pack("<I", 42) + bytes(28)
-    frame = bytes([0x20, 2]) + bytes(8) + struct.pack("<I", 73) + bytes(40)
+    body = struct.pack("<I", 42) + bytes(34)
+    frame = bytes([0x20, 2]) + bytes(8) + struct.pack("<I", 73) + bytes(46)
     logs = {
         "pending.log": record(1, body) + record(6, struct.pack("<II", 42, 73) + frame),
         "quarantine.log": record(2, body),
@@ -189,12 +189,12 @@ def test_missing_is_distinct_from_empty(tmp_path, binaries):
 
 @pytest.mark.parametrize("bad", [
     b"truncated",
-    record(1, bytes(32))[:-1],
-    record(1, bytes(32))[:-1] + b"\xff",
-    record(1, bytes(32), version=99),
+    record(1, bytes(38))[:-1],
+    record(1, bytes(38))[:-1] + b"\xff",
+    record(1, bytes(38), version=99),
     record(5, finished_payload(1, 1, 1, 2, 1, 0)),
     record(5, finished_payload(1, 1, 1, 2, 1, 1)[:-1]),  # old/short layout
-    record(2, bytes(32)),  # Valid framing, wrong physical file.
+    record(2, bytes(38)),  # Valid framing, wrong physical file.
 ])
 def test_invalid_records_never_repaired(tmp_path, binaries, bad):
     image = image_from(tmp_path, binaries, {"pending.log": bad})
@@ -204,9 +204,9 @@ def test_invalid_records_never_repaired(tmp_path, binaries, bad):
     assert image.read_bytes() == before
 
 
-@pytest.mark.parametrize("prefix", [b"", record(1, struct.pack("<I", 41) + bytes(28))])
+@pytest.mark.parametrize("prefix", [b"", record(1, struct.pack("<I", 41) + bytes(34))])
 def test_orphan_or_mismatched_binding(tmp_path, binaries, prefix):
-    frame = bytes([0x20, 2]) + bytes(8) + struct.pack("<I", 73) + bytes(40)
+    frame = bytes([0x20, 2]) + bytes(8) + struct.pack("<I", 73) + bytes(46)
     image = image_from(tmp_path, binaries, {
         "pending.log": prefix + record(6, struct.pack("<II", 42, 73) + frame)})
     with pytest.raises(ValueError, match="binding"):

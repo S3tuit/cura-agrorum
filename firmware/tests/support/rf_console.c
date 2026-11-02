@@ -56,19 +56,30 @@ int rf_console_printf(const char *format, ...) {
 
 int rf_console_puts(const char *text) { return rf_console_printf("%s\n", text); }
 
-static void park(uint32_t nonce, bool acknowledged) {
+static void park(uint32_t nonce, bool acknowledged, bool observe_node) {
   /* No restart/sleep fallback: either would reopen an autonomous TX budget.
    * Repeating this status is safe; only the host's current STOP can park with
    * acknowledged=true. A timeout must never resemble confirmed completion. */
   for (;;) {
-    rf_console_printf("RF_%s %08" PRIx32 "\n",
-                      acknowledged ? "PARKED" : "FINALIZE_FAILED", nonce);
+    rf_console_printf("%sRF_%s %08" PRIx32 "\n%s",
+                      observe_node ? "\x1e" : "",
+                      acknowledged ? "PARKED" : "FINALIZE_FAILED", nonce,
+                      observe_node ? "\x1f\n" : "");
     const TickType_t ticks = pdMS_TO_TICKS(250);
     vTaskDelay(ticks == 0 ? 1 : ticks);
   }
 }
 
-void rf_console_prepare_sleep(void) {
+static void prepare_sleep(bool observe_node, uint64_t duration_us, uint8_t reset_reason) {
+  /* Ordinary RAM is recreated on wake; a second finalization within one boot
+   * retains this identity and cannot masquerade as another wake. Repeat the
+   * record with greetings because native USB can reconnect after ROM output. */
+  static bool boot_identified;
+  static uint64_t boot_id;
+  if (observe_node && !boot_identified) {
+    boot_id = ((uint64_t)esp_random() << 32) | esp_random();
+    boot_identified = true;
+  }
   const uint32_t nonce = esp_random();
   char sleep[48], stop[48], received[48];
   snprintf(sleep, sizeof(sleep), "RF_FINALIZE_ACK %08" PRIx32 " SLEEP", nonce);
@@ -80,7 +91,15 @@ void rf_console_prepare_sleep(void) {
   while (!output_failed && esp_timer_get_time() < deadline) {
     const int64_t now = esp_timer_get_time();
     if (now >= next_greeting) {
-      rf_console_printf("RF_FINALIZE %08" PRIx32 "\n", nonce);
+      if (observe_node) {
+        /* RS/US bound the whole greeting. USB may discard a suffix while no
+         * host is attached; the next RS then replaces an incomplete frame. */
+        rf_console_printf("\x1eRF_NODE_SLEEP boot=%016" PRIx64 " reset_reason=%u duration_us=%" PRIu64
+                          " finalize=%08" PRIx32 "\nRF_FINALIZE %08" PRIx32 "\n\x1f\n",
+                          boot_id, (unsigned)reset_reason, duration_us, nonce, nonce);
+      } else {
+        rf_console_printf("RF_FINALIZE %08" PRIx32 "\n", nonce);
+      }
       next_greeting = now + INT64_C(250000);
     }
     uint8_t byte;
@@ -93,7 +112,7 @@ void rf_console_prepare_sleep(void) {
       received[used] = '\0';
       if (!oversized && !output_failed) {
         if (strcmp(received, sleep) == 0) return;
-        if (strcmp(received, stop) == 0) park(nonce, true);
+        if (strcmp(received, stop) == 0) park(nonce, true, observe_node);
       }
       used = 0;
       oversized = false;
@@ -105,5 +124,11 @@ void rf_console_prepare_sleep(void) {
       oversized = true;
     }
   }
-  park(nonce, false);
+  park(nonce, false, observe_node);
+}
+
+void rf_console_prepare_sleep(void) { prepare_sleep(false, 0, 0); }
+
+void rf_console_prepare_node_sleep(uint64_t duration_us, uint8_t reset_reason) {
+  prepare_sleep(true, duration_us, reset_reason);
 }

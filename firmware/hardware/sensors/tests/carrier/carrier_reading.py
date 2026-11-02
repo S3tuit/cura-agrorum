@@ -31,7 +31,9 @@ WIRE_FIELDS = ('sample_id', 'run_ms', 'soil0_mv', 'soil1_mv', 'temp0_centi_c',
                'temp1_centi_c', 'enclosure_centi_c', 'pressure_pa', 'humidity_centi_pct',
                'reset_reason', 'previous_current_tx_attempts', 'previous_awake_ms',
                'previous_current_delivery_ms', 'previous_cycle_tx_attempts',
-               'previous_cycle_accepted_readings', 'flags')
+               'previous_cycle_accepted_readings', 'flags',
+               'soil0_moisture_deci_pct', 'soil1_moisture_deci_pct',
+               'sensor_selection', 'reserved')
 SENSOR_FIELDS = WIRE_FIELDS[2:9]
 
 
@@ -52,13 +54,16 @@ def validate_reading(serial, fixture):
     if any(int(fields[key]) != value for key, value in counts.items()):
         raise AssertionError('core wake did not execute exactly one acquisition/capture/terminal call')
     for key in ('body', 'pending_body'):
-        if not re.fullmatch('[0-9a-f]{64}', fields[key]):
-            raise ValueError('expected a canonical 32-byte body')
+        if not re.fullmatch('[0-9a-f]{76}', fields[key]):
+            raise ValueError('expected a canonical 38-byte body')
     if fields['body'] != fields['pending_body']:
         raise AssertionError('captured frame and persisted canonical bodies differ')
     body = bytes.fromhex(fields['body'])
     # Independent decoding of the README's offsets/types, not a test builder.
-    reading = dict(zip(WIRE_FIELDS, struct.unpack('<IHHHhhhIHBBHHBBH', body)))
+    reading = dict(zip(WIRE_FIELDS, struct.unpack('<IHHHhhhIHBBHHBBHHHBB', body)))
+    if (reading['sensor_selection'] != 3 or reading['reserved'] != 0 or
+            reading['soil0_moisture_deci_pct'] or reading['soil1_moisture_deci_pct']):
+        raise AssertionError('carrier requires the configured analog probe pair')
     if (reading['sample_id'] != 0 or reading['flags'] & 0xfffe != flags or
             bool(reading['flags'] & 1) != (reading['reset_reason'] == 8) or
             any(reading[name] for name in WIRE_FIELDS[10:15])):

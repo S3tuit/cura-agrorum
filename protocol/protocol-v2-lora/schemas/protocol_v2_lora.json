@@ -129,7 +129,7 @@
     ]
   },
   "reading_body": {
-    "wire_size_bytes": 32,
+    "wire_size_bytes": 38,
     "fields": [
       {
         "name": "sample_id",
@@ -235,6 +235,32 @@
         "type": "u16",
         "offset": 30,
         "description": "Validity and diagnostic bitmap."
+      },
+      {
+        "name": "soil_0_moisture_deci_pct",
+        "type": "u16",
+        "offset": 32,
+        "description": "Soil channel 0 sensor-reported moisture in 0.1 percentage points.",
+        "valid_flag": "SOIL_MOISTURE_0_VALID"
+      },
+      {
+        "name": "soil_1_moisture_deci_pct",
+        "type": "u16",
+        "offset": 34,
+        "description": "Soil channel 1 sensor-reported moisture in 0.1 percentage points.",
+        "valid_flag": "SOIL_MOISTURE_1_VALID"
+      },
+      {
+        "name": "sensor_selection",
+        "type": "u8",
+        "offset": 36,
+        "description": "Configured sensors: bits 0/1 SEN0193 plus DS18B20 slots 0/1; bits 2/3 SEN0600 slots 0/1. Independent of acquisition validity."
+      },
+      {
+        "name": "reserved",
+        "type": "u8",
+        "offset": 37,
+        "description": "Reserved; must be zero."
       }
     ],
     "flags": {
@@ -290,18 +316,26 @@
           "name": "PREVIOUS_CURRENT_ACCEPTED",
           "bit": 9,
           "description": "The previous cycle's current reading received authenticated ACCEPTED."
+        },
+        {
+          "name": "SOIL_MOISTURE_0_VALID",
+          "bit": 10,
+          "description": "soil_0_moisture_deci_pct is valid."
+        },
+        {
+          "name": "SOIL_MOISTURE_1_VALID",
+          "bit": 11,
+          "description": "soil_1_moisture_deci_pct is valid."
         }
       ],
       "reserved_bits": [
-        10,
-        11,
         12,
         13,
         14,
         15
       ],
-      "reserved_mask": 64512,
-      "reserved_mask_hex": "0xfc00"
+      "reserved_mask": 61440,
+      "reserved_mask_hex": "0xf000"
     },
     "structural_constraints": [
       {
@@ -369,8 +403,66 @@
       {
         "kind": "reserved_bits_zero",
         "field": "flags",
-        "mask": 64512,
-        "mask_hex": "0xfc00"
+        "mask": 61440,
+        "mask_hex": "0xf000"
+      },
+      {
+        "kind": "zero_unless_flag",
+        "field": "soil_0_moisture_deci_pct",
+        "flag": "SOIL_MOISTURE_0_VALID"
+      },
+      {
+        "kind": "zero_unless_flag",
+        "field": "soil_1_moisture_deci_pct",
+        "flag": "SOIL_MOISTURE_1_VALID"
+      },
+      {
+        "kind": "reserved_bits_zero",
+        "field": "sensor_selection",
+        "mask": 240,
+        "mask_hex": "0xf0"
+      },
+      {
+        "kind": "reserved_bits_zero",
+        "field": "reserved",
+        "mask": 255,
+        "mask_hex": "0xff"
+      },
+      {
+        "kind": "flag_requires_any_bits",
+        "flag": "SOIL_0_VALID",
+        "field": "sensor_selection",
+        "mask": 1
+      },
+      {
+        "kind": "flag_requires_any_bits",
+        "flag": "SOIL_1_VALID",
+        "field": "sensor_selection",
+        "mask": 2
+      },
+      {
+        "kind": "flag_requires_any_bits",
+        "flag": "SOIL_TEMP_0_VALID",
+        "field": "sensor_selection",
+        "mask": 5
+      },
+      {
+        "kind": "flag_requires_any_bits",
+        "flag": "SOIL_TEMP_1_VALID",
+        "field": "sensor_selection",
+        "mask": 10
+      },
+      {
+        "kind": "flag_requires_any_bits",
+        "flag": "SOIL_MOISTURE_0_VALID",
+        "field": "sensor_selection",
+        "mask": 4
+      },
+      {
+        "kind": "flag_requires_any_bits",
+        "flag": "SOIL_MOISTURE_1_VALID",
+        "field": "sensor_selection",
+        "mask": 8
       }
     ]
   },
@@ -504,10 +596,10 @@
         "BACKLOG_READING_UPLINK"
       ],
       "clear_header_size_bytes": 14,
-      "plaintext_body_size_bytes": 32,
-      "ciphertext_body_size_bytes": 32,
+      "plaintext_body_size_bytes": 38,
+      "ciphertext_body_size_bytes": 38,
       "ccm_tag_size_bytes": 8,
-      "sx1262_payload_size_bytes": 54
+      "sx1262_payload_size_bytes": 60
     },
     "ack": {
       "domains": [

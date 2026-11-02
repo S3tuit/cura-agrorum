@@ -45,14 +45,15 @@ void fake_node_core_reset(void) {
   fake_node_core.now_us = UINT64_C(1000000);
   fake_node_core.reset_reason = CURA_LORA_V2_RESET_REASON_ESP_RST_POWERON;
   fake_node_core.sensor_sample = (node_sensor_sample_t){
-      .soil_0_mv = UINT16_C(101),
+      .sensor_selection = 3U,
+          .soil_0_mv = UINT16_C(101),
       .soil_1_mv = UINT16_C(202),
       .soil_temp_0_centi_c = INT16_C(303),
       .soil_temp_1_centi_c = INT16_C(404),
       .enclosure_centi_c = INT16_C(505),
       .enclosure_pressure_pa = UINT32_C(100600),
       .enclosure_humidity_centi_pct = UINT16_C(707),
-      .validity = NODE_SENSOR_VALIDITY_ALL,
+      .validity = UINT8_C(0x1f),
   };
   make_context(&fake_node_core.claim_diagnostic, CURAG_OP_READ,
                CURAG_PERSISTENCE_CONTEXT_V1, CURAG_PERSISTENCE_CONTEXT_V1_SIZE);

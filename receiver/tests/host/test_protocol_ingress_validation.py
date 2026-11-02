@@ -107,7 +107,7 @@ def _raw_body(*, offset: int, encoded_value: bytes, flags: int = 0) -> bytes:
     ("make_frame", "expected_result", "expected_ack"),
     (
         (
-            lambda: _direct_authenticated_frame(control=0x30, body=bytes(33)),
+            lambda: _direct_authenticated_frame(control=0x30, body=bytes(39)),
             ProcessingResult.REJECTED_MALFORMED_LENGTH,
             AckSelection.NONE,
         ),
@@ -205,7 +205,7 @@ def test_tampered_authenticated_data_never_reaches_ack_or_queue_admission(
     ("frame", "expected_result"),
     tuple(
         (frame, ProcessingResult.REJECTED_MALFORMED_LENGTH)
-        for frame in (b"", bytes(1), bytes(9), bytes(13), bytes(21), bytes(55), bytes(255))
+        for frame in (b"", bytes(1), bytes(9), bytes(13), bytes(21), bytes(61), bytes(255))
     )
     + ((bytes(22), ProcessingResult.UNKNOWN_NODE),),
 )

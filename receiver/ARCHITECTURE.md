@@ -82,6 +82,10 @@ that candidate conflicts with an existing sample. Its `is_canonical` partial
 unique index selects at most one message per `(node_id, sample_id)`. This keeps
 a later reuse of a conflicting message ID detectable without copying payloads
 into a separate canonical table. Other message types can have other subtypes.
+Sensor selection, validity and both raw moisture fields are part of that
+immutable payload. The receiver accepts structurally valid readings from both
+sensor families concurrently; electrical combinations and Modbus addresses
+belong to firmware configuration, not receiver admission.
 
 `packet_receptions` owns reception identity, monotonic provenance, radio/timing
 facts and processing outcomes. Its one-to-one exception extension retains raw

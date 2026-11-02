@@ -81,6 +81,10 @@ def _reading() -> row.ReadingMessageRowV2:
         previous_cycle_tx_attempts=7,
         previous_cycle_accepted_readings=2,
         flags=1023,
+        soil_0_moisture_deci_pct=0,
+        soil_1_moisture_deci_pct=0,
+        sensor_selection=3,
+        reserved=0,
     )
 
 
@@ -232,7 +236,7 @@ def _examples():
         (
             "reading_message", _reading(),
             (NODE,0x11223344,0x55667788,1,4660,1000,2000,-123,456,-789,
-             100000,5432,8,3,30000,2500,7,2,1023),
+             100000,5432,8,3,30000,2500,7,2,1023,0,0,3,0),
             (NODE,0x11223344),
         ),
         (

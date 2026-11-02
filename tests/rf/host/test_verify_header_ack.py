@@ -16,10 +16,20 @@ KEY, NODE = base["KEY"], base["NODE"]
 
 def uart_bytes(groups):
     lines = []
-    for group in groups:
+    for index, group in enumerate(groups, 1):
         lines.extend("RF_NODE_PHY " + json.dumps(e) for e in group)
-        lines.extend([f"RF_NODE_PHY_END count={len(group)} overflow=0", "RF_NODE_SLEEP duration_us=10000000"])
+        lines.extend([f"RF_NODE_PHY_END count={len(group)} overflow=0",
+                      f"\x1eRF_NODE_SLEEP boot={index:016x} reset_reason={1 if index == 1 else 8} "
+                      f"duration_us=10000000 finalize={index:08x}", f"RF_FINALIZE {index:08x}", "\x1f"])
+    lines.append(f"\x1eRF_PARKED {len(groups):08x}\n\x1f")
     return ("\n".join(lines) + "\n").encode()
+
+
+def test_repeated_sleep_greetings_do_not_duplicate_phy_groups():
+    _, _, _, groups = transcript(False)
+    import re
+    repeated = re.sub(rb'\x1eRF_NODE_SLEEP[^\x1f]*\x1f\n', lambda m: m[0] * 3, uart_bytes(groups))
+    assert node_observations(repeated) == groups
 
 
 def transcript(retry):
@@ -35,9 +45,9 @@ def transcript(retry):
                           tx_done_at_us=done + 502_656, outcome="ACK_RECEIVED",
                           ack_rx_done_at_us=done + 714_352))
         # Observation wake reports two current attempts plus one backlog attempt.
-        body = list(struct.unpack("<IHHHhhhIHBBHHBBH", bytes.fromhex(dump["logs"]["pending.log"][0]["reading_body"])))
+        body = list(struct.unpack("<IHHHhhhIHBBHHBBHHHBB", bytes.fromhex(dump["logs"]["pending.log"][0]["reading_body"])))
         body[10], body[13] = 2, 3
-        raw = struct.pack("<IHHHhhhIHBBHHBBH", *body)
+        raw = struct.pack("<IHHHhhhIHBBHHBBHHHBB", *body)
         header = bytes.fromhex(packets[-1]["frame"])[:14]
         nonce = struct.pack("<8sIB", NODE, 103, 1)
         packets[-1]["frame"] = (header + AESCCM(KEY, tag_length=8).encrypt(nonce, raw, header)).hex()

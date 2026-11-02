@@ -28,7 +28,7 @@ from .receiver_enums_generated import (
     SystemTimeQuality,
 )
 
-RECEIVER_ENTITY_MANIFEST_SHA256 = '68dbca63f31af3f30b38ce74f58b8e998bfb404f7d3fc339f6dbc69c75f738a4'
+RECEIVER_ENTITY_MANIFEST_SHA256 = 'fcf2b9aabd8b001b7440449525c0a1772edd156bce029c7006749ba1c5192433'
 
 __all__ = [
     "RECEIVER_ENTITY_MANIFEST_SHA256",
@@ -339,6 +339,10 @@ READING_MESSAGE_ROW_V2_COLUMNS = (
     'previous_cycle_tx_attempts',
     'previous_cycle_accepted_readings',
     'flags',
+    'soil_0_moisture_deci_pct',
+    'soil_1_moisture_deci_pct',
+    'sensor_selection',
+    'reserved',
 )
 
 PACKET_RECEPTION_ROW_V1_TABLE = 'packet_receptions'
@@ -846,6 +850,10 @@ class ReadingMessageRowV2:
     previous_cycle_tx_attempts: int
     previous_cycle_accepted_readings: int
     flags: int
+    soil_0_moisture_deci_pct: int
+    soil_1_moisture_deci_pct: int
+    sensor_selection: int
+    reserved: int
 
 def reading_message_row_v2_parameters(entity: ReadingMessageRowV2) -> tuple[object, ...]:
     return (
@@ -868,6 +876,10 @@ def reading_message_row_v2_parameters(entity: ReadingMessageRowV2) -> tuple[obje
         entity.previous_cycle_tx_attempts,
         entity.previous_cycle_accepted_readings,
         entity.flags,
+        entity.soil_0_moisture_deci_pct,
+        entity.soil_1_moisture_deci_pct,
+        entity.sensor_selection,
+        entity.reserved,
     )
 
 @dataclass(frozen=True, slots=True)

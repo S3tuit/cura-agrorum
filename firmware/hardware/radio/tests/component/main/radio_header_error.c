@@ -35,12 +35,12 @@ sx126x_hal_status_t __wrap_sx126x_hal_write(const void *context, const uint8_t *
 }
 
 void radio_header_wait_since(uint64_t previous_start) {
-  while ((uint64_t)esp_timer_get_time() < previous_start + UINT64_C(12200000)) vTaskDelay(1);
+  while ((uint64_t)esp_timer_get_time() < previous_start + UINT64_C(13000000)) vTaskDelay(1);
 }
 
 uint64_t radio_header_abort(const uint8_t *payload, size_t length) {
   sx1262_radio_backend_error_t error;
-  TEST_ASSERT_EQUAL_UINT(54, length);
+  TEST_ASSERT_EQUAL_UINT(60, length);
   TEST_ASSERT_EQUAL(SX1262_COMMAND_CONFIRMED, sx1262_radio_backend_set_standby(&error));
   TEST_ASSERT_EQUAL(SX1262_COMMAND_CONFIRMED, sx1262_radio_backend_set_packet_params(length, false, &error));
   TEST_ASSERT_EQUAL(SX1262_COMMAND_CONFIRMED, sx1262_radio_backend_configure_irq(

@@ -35,12 +35,16 @@
         "previous_cycle_tx_attempts": 7,
         "previous_cycle_accepted_readings": 2,
         "flags": 1023,
-        "encoded_hex": "887766553412e803d00785ffc801ebfca0860100381508033075c4090702ff03"
+        "encoded_hex": "887766553412e803d00785ffc801ebfca0860100381508033075c4090702ff03000000000300",
+        "soil_0_moisture_deci_pct": 0,
+        "soil_1_moisture_deci_pct": 0,
+        "sensor_selection": 3,
+        "reserved": 0
       },
       "encrypted": {
-        "ciphertext_hex": "adae77b2af564eea61861744eef32731637d1d12ac8b186fe36388c2eded90d5",
-        "tag_hex": "41bb930f548308b9",
-        "frame_hex": "2001010203040506070844332211adae77b2af564eea61861744eef32731637d1d12ac8b186fe36388c2eded90d541bb930f548308b9"
+        "ciphertext_hex": "adae77b2af564eea61861744eef32731637d1d12ac8b186fe36388c2eded90d5a2c6b63856bb",
+        "tag_hex": "b6f031d1dceecd95",
+        "frame_hex": "2001010203040506070844332211adae77b2af564eea61861744eef32731637d1d12ac8b186fe36388c2eded90d5a2c6b63856bbb6f031d1dceecd95"
       }
     }
   ],

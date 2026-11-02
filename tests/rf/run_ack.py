@@ -25,6 +25,7 @@ from spec import NODE_CASES as CASES, node_episode as episode, validate_fixture
 from transport import RemoteTransport
 from verify_ack import verify_ack_case, verify_ack_transmissions
 from verify_header_ack import verify_header_ack_rf
+from sleep_observation import verify_wake_readings
 
 
 
@@ -133,6 +134,9 @@ def run(args):
                                   result["outcome"], result["trace"], result["attempts"])
         verified = verify_ack_case(args.case, bytes.fromhex(seal["node_id"]), key,
                                    result["outcome"]["packets"], captured)
+        verified["wake_observations"] = verify_wake_readings(
+            (root / "node-uart.bin").read_bytes(), plan["sleep_seconds"],
+            plan["wakes"], verified["reset_reasons"])
         if ".header_error_" in args.case:
             verify_header_ack_rf(args.case, result["outcome"], result["trace"], captured,
                                  (root / "node-uart.bin").read_bytes())

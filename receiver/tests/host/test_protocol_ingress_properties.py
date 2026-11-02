@@ -25,7 +25,7 @@ from tests.support.models.protocol_ingress import classify_protocol_ingress
 
 UNKNOWN_NODE_ID = bytes.fromhex("1112131415161718")
 HEADER_STRUCT = struct.Struct("<BB8sI")
-READING_STRUCT = struct.Struct("<IHHHhhhIHBBHHBBH")
+READING_STRUCT = struct.Struct("<IHHHhhhIHBBHHBBHHHBB")
 
 
 def _boundary_unsigned(bits: int) -> st.SearchStrategy[int]:
@@ -52,6 +52,7 @@ I16 = _boundary_i16()
 @st.composite
 def valid_reading_bodies(draw: st.DrawFn) -> bytes:
     flags = 0
+    selection = draw(st.integers(0, 15))
 
     deep_sleep = draw(st.booleans())
     if deep_sleep:
@@ -70,7 +71,8 @@ def valid_reading_bodies(draw: st.DrawFn) -> bytes:
         (1 << 6, U32),
         (1 << 7, U16),
     ):
-        valid = draw(st.booleans())
+        selection_masks = {2: 1, 4: 2, 8: 5, 16: 10}
+        valid = bool(selection & selection_masks.get(flag, 15)) and draw(st.booleans())
         sensor_fields.append(draw(strategy) if valid else 0)
         if valid:
             flags |= flag
@@ -95,6 +97,12 @@ def valid_reading_bodies(draw: st.DrawFn) -> bytes:
         previous_cycle_tx_attempts = 0
         previous_cycle_accepted_readings = 0
 
+    moisture = []
+    for bit in (2, 3):
+        valid = bool(selection & (1 << bit)) and draw(st.booleans())
+        moisture.append(draw(U16) if valid else 0)
+        if valid:
+            flags |= 1 << (bit + 8)
     return READING_STRUCT.pack(
         draw(U32),
         draw(U16),
@@ -106,6 +114,7 @@ def valid_reading_bodies(draw: st.DrawFn) -> bytes:
         previous_cycle_tx_attempts,
         previous_cycle_accepted_readings,
         flags,
+        *moisture, selection, 0,
     )
 
 

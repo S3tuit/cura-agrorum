@@ -33,9 +33,9 @@ static const char *input;
 static size_t input_size, read_at, used;
 static char output[16384];
 static unsigned timer_calls, sleep_calls;
-static bool sink_failure;
+static bool sink_failure, sequential_random;
 int64_t esp_timer_get_time(void) { return now; }
-uint32_t esp_random(void) { return 0x12345678; }
+uint32_t esp_random(void) { static uint32_t next; return sequential_random ? ++next : 0x12345678; }
 esp_reset_reason_t esp_reset_reason(void) { return ESP_RST_POWERON; }
 const char *esp_err_to_name(esp_err_t status) { (void)status; return "fake"; }
 void fake_esp_log_error(const char *tag, const char *format, ...) {
@@ -65,6 +65,15 @@ void vTaskDelay(unsigned ticks) {
 int main(int argc, char **argv) {
     assert(argc == 2);
     input = argv[1]; input_size = strlen(input);
+    if (strcmp(input, "same_boot_twice") == 0) {
+        sequential_random = true;
+        input = "RF_FINALIZE_ACK 00000003 SLEEP\nRF_FINALIZE_ACK 00000004 SLEEP\n";
+        input_size = strlen(input);
+        rf_console_prepare_node_sleep(10000000, 1);
+        rf_console_prepare_node_sleep(10000000, 1);
+        fwrite(output, 1, used, stdout);
+        return 0;
+    }
     if (strcmp(input, "NUL") == 0) {
         input = "RF_FINALIZE_ACK 12345678 SLEEP\0wrong\n";
         input_size = sizeof("RF_FINALIZE_ACK 12345678 SLEEP\0wrong\n") - 1;
@@ -120,8 +129,10 @@ def test_receipt_is_required_for_actual_platform_sleep(boundary, message, termin
     result = subprocess.run([str(binary), message], check=True, capture_output=True, text=True)
     output = result.stdout
     assert f"terminal={terminal}" in output
-    if message != "sink_failure":
-        marker = "RF_SLEEP" if image == "component" else "RF_NODE_SLEEP duration_us=10000000"
+    if image == "production" and message == "oversized_output":
+        assert "RF_NODE_SLEEP" not in output
+    elif message != "sink_failure":
+        marker = "RF_SLEEP" if image == "component" else "RF_NODE_SLEEP boot=1234567812345678 reset_reason=1 duration_us=10000000 finalize=12345678"
         assert marker in output
         if message != "oversized_output":
             assert output.index(marker) < output.index("RF_FINALIZE 12345678")
@@ -131,3 +142,16 @@ def test_receipt_is_required_for_actual_platform_sleep(boundary, message, termin
         assert "RF_FINALIZE_FAILED 12345678" in output
     if not message or "deadbeef" in message:
         assert "elapsed=30000000" in output
+        if image == "production":
+            records = [line for line in output.splitlines() if line.startswith("RF_NODE_SLEEP ")]
+            assert len(records) > 100 and len(set(records)) == 1
+
+
+def test_second_finalization_in_same_boot_keeps_boot_identity(boundary):
+    binary, _ = boundary
+    output = subprocess.run([str(binary), "same_boot_twice"], check=True,
+                            capture_output=True, text=True).stdout
+    records = [dict(field.split("=") for field in line.split()[1:])
+               for line in output.splitlines() if line.startswith("RF_NODE_SLEEP ")]
+    assert len(records) == 2 and records[0]["boot"] == records[1]["boot"]
+    assert [r["finalize"] for r in records] == ["00000003", "00000004"]

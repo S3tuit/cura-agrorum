@@ -12,9 +12,9 @@ NODE = bytes.fromhex("0102030405060708")
 
 
 def reading(sample, previous_attempts, previous_accepted, flags, reset):
-    return struct.pack("<IHHHhhhIHBBHHBBH", sample, 10, 0, 0, 0, 0, 0, 0, 0,
+    return struct.pack("<IHHHhhhIHBBHHBBHHHBB", sample, 10, 0, 0, 0, 0, 0, 0, 0,
                        reset, 1 if previous_attempts else 0, 100 if previous_attempts else 0,
-                       200 if flags & 512 else 0, previous_attempts, previous_accepted, flags)
+                       200 if flags & 512 else 0, previous_attempts, previous_accepted, flags, 0, 0, 4, 0)
 
 
 def accepted_transcript():
@@ -49,10 +49,10 @@ def invalid_ack_transcript(action, *, attempts=2, result=8):
     # Setup RETRY_LATER; invalid ACK then silence; observation RETRY_LATER.
     for index, previous_attempts in enumerate((0, 1, attempts)):
         sample, message = 40 + index, 100 + index
-        body = struct.pack("<IHHHhhhIHBBHHBBH", sample, 10, 0, 0, 0, 0, 0, 0, 0,
+        body = struct.pack("<IHHHhhhIHBBHHBBHHHBB", sample, 10, 0, 0, 0, 0, 0, 0, 0,
                            1 if index == 0 else 8, previous_attempts,
                            1000 if index else 0, 0, previous_attempts, 0,
-                           257 if index else 0)
+                           257 if index else 0, 0, 0, 4, 0)
         header = struct.pack("<BB8sI", 32, 1, NODE, message)
         nonce = struct.pack("<8sIB", NODE, message, 1)
         frame = header + AESCCM(KEY, tag_length=8).encrypt(nonce, body, header)
@@ -158,7 +158,7 @@ def test_incomplete_or_conflicting_evidence_cannot_pass(damage):
     elif damage == "diagnostic":
         logs["diagnostic.log"] = [{"error_domain": 4, "error_code": 7}]
     elif damage == "quarantine":
-        logs["quarantine.log"] = [dict(sample_id=41, reading_body="00" * 32)]
+        logs["quarantine.log"] = [dict(sample_id=41, reading_body="00" * 38)]
     elif damage == "missing_wake":
         packets.pop()
     else:

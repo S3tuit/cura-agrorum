@@ -32,8 +32,8 @@ file freshness, C memory safety, and broader input spaces.
   and destructive receiver master-key rotation.
 - `test_golden.py`: checks the reviewed header, nonce, reading, and ACK vectors
   against both codecs. The vectors deliberately use different `message_id` and
-  `sample_id` values and assert the 14-byte header, 13-byte nonce, 32-byte
-  reading body, 54-byte reading frame and unchanged 23-byte ACK frame.
+  `sample_id` values and assert the 14-byte header, 13-byte nonce, 38-byte
+  reading body, 60-byte reading frame and unchanged 23-byte ACK frame.
 - `test_validation.py`: applies shared negative and classification tests to
   both codecs.
 - `test_crypto.py`: checks exact encrypted frames, authenticated round trips,

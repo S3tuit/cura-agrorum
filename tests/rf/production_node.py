@@ -12,9 +12,9 @@ from capture import REPO, digest, write_json
 from inputs import check_flash, firmware_sources
 from node_capture import decode_image
 from finalization import Finalization
-from sleep_observation import sleep_count
+from sleep_observation import sleep_count, observation_frames
 sys.path.insert(0, str(REPO / "firmware/tests/support"))
-from usb_console import USBSerial, hard_reset_native_usb, usb_identity
+from usb_console import USBSerial, usb_identity
 from usb_console import fingerprint, list_ports
 
 class NodeUART:
@@ -25,7 +25,9 @@ class NodeUART:
         if usb_binding is not None and usb_identity(port) != usb_binding:
             raise ValueError("node USB identity changed before opening capture")
         raw = serial.Serial(port=None, baudrate=115200, timeout=0.2, exclusive=True)
-        raw.dtr = raw.rts = False
+        # CDC-ACM opens with both lines asserted. Deasserting them separately
+        # can reset the autonomous image before the peer has been armed.
+        raw.dtr = raw.rts = True
         raw.port = port
         try:
             raw.open()
@@ -35,10 +37,12 @@ class NodeUART:
             # Native USB control lines do not implement the old UART EN hold.
             rom = ESP32S3ROM(port=raw)
             rom.connect(mode="no-reset", attempts=1)
-            # Clear forced download while the ROM owns the stream, before the
-            # passive reader starts. The later reset then boots the application.
+            # USB line resets do not resample S3 boot straps after manual
+            # download entry. The admitted start uses esptool's chip watchdog
+            # reset; ROM replies must remain exclusive until it completes.
             rom.write_reg(rom.RTC_CNTL_OPTION1_REG, 0,
                           rom.RTC_CNTL_FORCE_DOWNLOAD_BOOT_MASK)
+            self.rom = rom
             self.port = USBSerial(raw, reconnect_timeout=reconnect_timeout)
             self.raw = (Path(root) / "node-uart.bin").open("xb")
         except BaseException:
@@ -47,8 +51,8 @@ class NodeUART:
         self.stop = threading.Event()
         self.on_data = on_data
         self.failure = None
+        self.started = False
         self.thread = threading.Thread(target=self.read, daemon=True)
-        self.thread.start()
 
     def read(self):
         try:
@@ -65,11 +69,20 @@ class NodeUART:
             self.failure = error
 
     def start(self):
-        hard_reset_native_usb(self.port)
+        if self.started or self.stop.is_set():
+            raise RuntimeError("node UART cannot start twice or after close")
+        self.started = True
+        try:
+            self.rom.watchdog_reset()
+        finally:
+            # A failed reset may still have started the image. Preserve its
+            # output for the existing stop/restoration procedure in either case.
+            self.thread.start()
 
     def close(self):
         self.stop.set()
-        self.thread.join(timeout=2)
+        if self.thread.ident is not None:
+            self.thread.join(timeout=2)
         if self.thread.is_alive():
             raise RuntimeError("UART reader did not stop; preserve capture handle")
         self.port.close()
@@ -102,6 +115,9 @@ def build_identity(build):
     from provisioning_common import parse_node_identity_id
     node_id = parse_node_identity_id(identity)
     return dict(schema=1, node_id=node_id.hex(), files=files,
+                sensor_selection=sum(1 << bit for bit, name in enumerate(
+                    ("CURA_SEN0193_0", "CURA_SEN0193_1", "CURA_SEN0600_0", "CURA_SEN0600_1"))
+                    if config[name]),
                 sleep_seconds=config.get("NODE_DEEP_SLEEP_SECONDS", 900),
                 sleep_observation=config.get("NODE_RF_SLEEP_OBSERVATION", False),
                 phy_observation=config.get("NODE_RF_PHY_OBSERVATION", False),
@@ -188,6 +204,7 @@ class ProductionSession:
         self.node = None
         self.started = self.stopped = self.abort_requested = False
         self.stop_error = None
+        self.frames_fed = 0
         self.receipt = Finalization(self._select_action, self._send)
 
     def verify_installed(self, build):
@@ -208,7 +225,7 @@ class ProductionSession:
         matches = [p.device for p in list_ports.comports() if fingerprint(p) == self.binding]
         if len(matches) != 1:
             raise ValueError("bound node USB device absent or ambiguous")
-        self.node = NodeUART(matches[0], self.root, on_data=self.receipt.feed, usb_binding=self.binding)
+        self.node = NodeUART(matches[0], self.root, on_data=self._observe, usb_binding=self.binding)
         if self.node.port.identity != self.binding:
             self.node.close()
             raise ValueError("node USB identity changed before observation")
@@ -222,6 +239,14 @@ class ProductionSession:
 
     def _send(self, command):
         self.node.port.write(command)
+
+    def _observe(self, _data):
+        # NodeUART flushes raw capture first. Partial USB frames cannot drive a
+        # receipt; pass only the exact retained, complete greeting/park payload.
+        frames = list(observation_frames((self.root / "node-uart.bin").read_bytes()))
+        for _, payload in frames[self.frames_fed:]:
+            self.receipt.feed(payload)
+            self.frames_fed += 1
 
     def _select_action(self):
         count = self.sleep_count()

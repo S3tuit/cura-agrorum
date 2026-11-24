@@ -5,6 +5,12 @@ Unity and pytest-embedded. `acquire` and `adc-reference` also check production
 core, codec/crypto and real test-partition persistence against their core acquisition.
 The [bare-S3 tests](../../../../tests/target/README.md) use fake external I/O.
 
+<!-- When the second SEN0600 arrives, extend this suite for the dual-SEN0600
+carrier: distinct Modbus addresses, channel mapping, one-probe failure isolation,
+startup/discharge under the added load, and rail/pad cleanup across reset and
+deep sleep. Recheck the final supply; the current single-probe bench run does not
+qualify the dual-probe carrier. -->
+
 Read the [fixture and measurement procedure](FIXTURE.md) before running hardware
 cases. [firmware/HARDWARE.md](../../../../HARDWARE.md) owns nominal wiring. Use
 the XIAO native USB-C connector, identify the actual board/port, and confirm fixture
@@ -46,7 +52,8 @@ Run from the repository root in one Bash shell:
 If this app was previously configured for another target, move its ignored
 `build/`, `sdkconfig` and `sdkconfig.old` to a backup outside the app first.
 ESP-IDF rejects a C6 CMake cache even with S3 sources; defaults cannot replace
-the resolved target or probe IDs. Build discovery from the empty ROM defaults.
+the resolved target or probe IDs. Discover ROMs with the [maintenance app](../../../../maintenance/ds18b20_discovery/README.md),
+then configure the acquisition app with the actual identities before building.
 
 ```sh
 source ~/esp/esp-idf/export.sh
@@ -65,10 +72,9 @@ changes; never seal a stale image to bypass a mismatch.
 Inspect the resolved configuration against the nominal schematic. The app requires
 its fixed sensor pins, 200 ms stabilization, native USB console, one core and
 8 MB flash. Use a fresh configuration when changing target; save only reviewed
-probe ROM settings from any previous configuration. Build defaults
-leave both DS ROMs unprovisioned; discovery works, acquisition requires two distinct
-attached ROMs. Set them in the app's ignored sdkconfig through `menuconfig`, then
-rebuild and seal. Only `acquire` and `adc-reference` access persistent storage;
+probe ROM settings from any previous configuration. Build defaults select two SEN0193/DS18B20 slots but leave ROMs empty;
+strict build validation requires two distinct attached ROMs. Set them in the
+app's ignored sdkconfig before building and sealing. Only `acquire` and `adc-reference` access persistent storage;
 no operation loads a production identity or requires whole-flash erasure.
 
 ## Session setup
@@ -102,7 +108,7 @@ restart from ROM with the supported watchdog reset (no erase or flash):
 ```
 
 Wait for USB to reappear and reselect the same USB serial number/location;
-its ttyACM number may change. Then rerun discovery with the current port.
+its ttyACM number may change. Then rerun the selected operation with the current port.
 
 
 ```sh
@@ -131,21 +137,12 @@ Each invocation flashes the built image. Commands below are separate operator
 steps: select and confirm their fixture before running them. Keep the same
 session for paired tests; repeat setup to begin another session.
 
-## Discovery and configuration
+## Probe configuration
 
-```sh
-sensor_carrier --sensor-operation discover
-```
-
-Discovery reports each CRC-checked DS ROM as the numeric `uint64_t` format used
-by configuration: copy its 16 hexadecimal digits exactly, without reversing bus
-bytes. Label physical probes, using one connected probe at a time if necessary
-and removing power before exchanges. Keep BME connected; discovery also requires
-its chip ID `0x60` at I2C address `0x76`. Zero DS devices, overflow beyond eight,
-driver failures or incomplete cleanup fail discovery. Unknown ROMs are allowed
-here because this is setup.
-
-Enter both labeled identities under **Cura Agrorum sensor board configuration**:
+Use the [maintenance discovery app](../../../../maintenance/ds18b20_discovery/README.md)
+to obtain the DS ROMs. Its numeric 16-hex-digit output is copied without reversing
+bytes. Logical slots follow these configured identities, not discovery order.
+Set both ROMs and select the analog family in this app's sdkconfig before building:
 
 ```sh
 idf.py -C "$SENSOR_APP" menuconfig

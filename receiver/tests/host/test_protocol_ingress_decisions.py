@@ -76,7 +76,7 @@ def _malformed_body() -> bytes:
             False,
         ),
         (
-            lambda: bytes(55),
+            lambda: bytes(61),
             ProcessingResult.REJECTED_MALFORMED_LENGTH,
             AckSelection.NONE,
             False,

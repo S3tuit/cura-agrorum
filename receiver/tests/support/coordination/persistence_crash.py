@@ -203,8 +203,8 @@ def exercise_pair_crash(tmp_path, boundary):
             "SELECT persistence_classification_id FROM packet_receptions"
         ).fetchone() == (1,)
         assert connection.execute(
-            "SELECT node_id,message_id,sample_id,is_canonical,run_ms,soil_0_mv,soil_1_mv,soil_temp_0_centi_c,soil_temp_1_centi_c,enclosure_centi_c,enclosure_pressure_pa,enclosure_humidity_centi_pct,reset_reason,previous_current_tx_attempts,previous_awake_ms,previous_current_delivery_ms,previous_cycle_tx_attempts,previous_cycle_accepted_readings,flags FROM reading_messages"
-        ).fetchone() == (b"n" * 8, 100, 200, 1, *struct.unpack("<IHHHhhhIHBBHHBBH", intended.candidate.reading_body)[1:])
+            "SELECT node_id,message_id,sample_id,is_canonical,run_ms,soil_0_mv,soil_1_mv,soil_temp_0_centi_c,soil_temp_1_centi_c,enclosure_centi_c,enclosure_pressure_pa,enclosure_humidity_centi_pct,reset_reason,previous_current_tx_attempts,previous_awake_ms,previous_current_delivery_ms,previous_cycle_tx_attempts,previous_cycle_accepted_readings,flags,soil_0_moisture_deci_pct,soil_1_moisture_deci_pct,sensor_selection,reserved FROM reading_messages"
+        ).fetchone() == (b"n" * 8, 100, 200, 1, *struct.unpack("<IHHHhhhIHBBHHBBHHHBB", intended.candidate.reading_body)[1:])
         assert connection.execute("PRAGMA integrity_check").fetchall() == [("ok",)]
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     finally:

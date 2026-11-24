@@ -15,12 +15,14 @@
 #include "unity.h"
 
 #define CORE_HWTEST_CURRENT_START_MS UINT32_C(5)
-#define CORE_HWTEST_ACCEPTED_DELIVERY_MS UINT16_C(104)
-#define CORE_HWTEST_ACCEPTED_AWAKE_MS UINT16_C(110)
-#define CORE_HWTEST_TWO_ATTEMPT_DELIVERY_MS UINT16_C(608)
-#define CORE_HWTEST_TWO_ATTEMPT_AWAKE_MS UINT16_C(614)
-#define CORE_HWTEST_SILENT_AWAKE_MS UINT16_C(912)
-#define CORE_HWTEST_CURRENT_AND_BACKLOG_AWAKE_MS UINT16_C(216)
+/* 60-byte airtime is 112896 us; adapters add 1 ms TX setup and 2 ms ACK.
+ * Delivery starts at SetTx, while awake time includes the 5 ms acquisition. */
+#define CORE_HWTEST_ACCEPTED_DELIVERY_MS UINT16_C(114)
+#define CORE_HWTEST_ACCEPTED_AWAKE_MS UINT16_C(120)
+#define CORE_HWTEST_TWO_ATTEMPT_DELIVERY_MS UINT16_C(628)
+#define CORE_HWTEST_TWO_ATTEMPT_AWAKE_MS UINT16_C(634)
+#define CORE_HWTEST_SILENT_AWAKE_MS UINT16_C(932)
+#define CORE_HWTEST_CURRENT_AND_BACKLOG_AWAKE_MS UINT16_C(236)
 
 static void assert_deep_sleep_boot(void) {
   const node_platform_ports_t *const platform = node_platform_esp_ports();
@@ -76,6 +78,9 @@ assert_transmission(size_t index, uint32_t sample_id, uint32_t message_id,
 
 static void assert_sensor_values(const cura_lora_v2_reading_t *reading,
                                  uint16_t marker) {
+  TEST_ASSERT_EQUAL_UINT8(3U, reading->sensor_selection);
+  TEST_ASSERT_EQUAL_UINT16(0U, reading->soil_0_moisture_deci_pct);
+  TEST_ASSERT_EQUAL_UINT16(0U, reading->soil_1_moisture_deci_pct);
   TEST_ASSERT_EQUAL_UINT16((uint16_t)(1000U + marker), reading->soil_0_mv);
   TEST_ASSERT_EQUAL_UINT16((uint16_t)(1100U + marker), reading->soil_1_mv);
   TEST_ASSERT_EQUAL_INT16((int16_t)(2000 + marker),
@@ -332,7 +337,7 @@ static void backlog_stage_3(void) {
       finished_event(1U, 1U, 1U, CURA_LORA_V2_DOMAIN_CURRENT_READING_UPLINK, 1U,
                      NODE_DELIVERY_RESULT_ACCEPTED),
       started_event(1U, 0U, 2U, CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK,
-                    UINT32_C(110)),
+                    UINT32_C(120)),
       finished_event(1U, 0U, 2U, CURA_LORA_V2_DOMAIN_BACKLOG_READING_UPLINK, 1U,
                      NODE_DELIVERY_RESULT_ACCEPTED),
   };

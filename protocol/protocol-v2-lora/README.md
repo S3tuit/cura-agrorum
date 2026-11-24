@@ -189,8 +189,8 @@ CCM tag       8 bytes
 ```
 
 The fixed clear-header offsets are `control` 0, `domain` 1, `node_id` 2-9 and
-little-endian `message_id` 10-13. In a reading frame the 32-byte ciphertext is
-at offsets 14-45 and the tag is at 46-53. In an ACK frame the encrypted
+little-endian `message_id` 10-13. In a reading frame the 38-byte ciphertext is
+at offsets 14-51 and the tag is at 52-59. In an ACK frame the encrypted
 one-byte status is at offset 14 and the tag is at 15-22.
 
 - AES-CCM-128 provides encryption and authentication.
@@ -226,7 +226,7 @@ bits 3–0   protocol flags
 
 ## Reading payload
 
-The encrypted application body for a reading is 32 bytes:
+The encrypted application body for a reading is 38 bytes:
 
 | Offset | Field | Type | Meaning |
 |---:|---|---|---|
@@ -246,6 +246,20 @@ The encrypted application body for a reading is 32 bytes:
 | 28 | `previous_cycle_tx_attempts` | `u8` | All current and backlog reading transmissions in the previous wake. |
 | 29 | `previous_cycle_accepted_readings` | `u8` | Distinct readings for which the node received authenticated `ACCEPTED` in the previous wake. |
 | 30 | `flags` | `u16` | Validity and diagnostic bitmap. |
+| 32 | `soil_0_moisture_deci_pct` | `u16` | Sensor-reported soil moisture, slot 0, in 0.1 percentage points. |
+| 34 | `soil_1_moisture_deci_pct` | `u16` | Sensor-reported soil moisture, slot 1, in 0.1 percentage points. |
+| 36 | `sensor_selection` | `u8` | Configured sensors, independently of read success. |
+| 37 | `reserved` | `u8` | Must be zero; explicit serialized data, not compiler padding. |
+
+Selection bits 0/1 name SEN0193 plus DS18B20 slots 0/1; bits 2/3 name
+SEN0600 slots 0/1. Higher bits are zero. A selected sensor may fail a read;
+its selection remains set while the affected validity bits and values are zero.
+Millivolt validity requires the corresponding SEN0193 selection, moisture
+validity requires SEN0600 selection, and temperature validity requires either
+family for that slot. Electrical combination restrictions belong to firmware
+configuration, not protocol validation. The same receiver accepts both families.
+Modbus addresses remain local configuration. Reported moisture is not an
+independent calibration of soil water content.
 
 Channel numbers identify stable node connectors or configured sensor identities;
 they do not encode depth. The receiver stores each channel's depth, calibration,
@@ -266,7 +280,9 @@ The `flags` bitmap is:
 | 7 | `ENCLOSURE_HUMIDITY_VALID` | `enclosure_humidity_centi_pct` is valid. |
 | 8 | `PREVIOUS_CYCLE_METRICS_VALID` | All previous-cycle metrics refer to the immediately preceding wake. |
 | 9 | `PREVIOUS_CURRENT_ACCEPTED` | The previous cycle's current reading received authenticated `ACCEPTED`. |
-| 10–15 | Reserved | Must be zero. |
+| 10 | `SOIL_MOISTURE_0_VALID` | `soil_0_moisture_deci_pct` is valid. |
+| 11 | `SOIL_MOISTURE_1_VALID` | `soil_1_moisture_deci_pct` is valid. |
+| 12–15 | Reserved | Must be zero. |
 
 For the pilot, `reset_reason` uses the numeric values of ESP-IDF's
 `esp_reset_reason_t`, frozen into this protocol as follows:
@@ -307,7 +323,7 @@ representable by `u16`.
 The wire encoding has no alignment requirement and contains no implicit C
 padding.
 
-This reading makes the SX1262 payload `14 + 32 + 8 = 54` bytes, excluding the
+This reading makes the SX1262 payload `14 + 38 + 8 = 60` bytes, excluding the
 modem-generated payload CRC.
 
 ## LoRa PHY framing
@@ -381,7 +397,7 @@ budget are:
 
 | Packet | SX1262 payload | On-air symbols | Airtime | Charged airtime |
 |---|---:|---:|---:|---:|
-| Reading | 54 bytes | 100.25 | 102.656 ms | 112.922 ms |
+| Reading | 60 bytes | 110.25 | 112.896 ms | 124.186 ms |
 | ACK | 23 bytes | 60.25 | 61.696 ms | 67.866 ms |
 
 Charged airtime is `ceil(actual_airtime_us * 1.10)` and is maintained in integer
@@ -545,7 +561,7 @@ The receiver processes a packet in this order:
 5. Accept the two uplink reading domains for parsing. An authenticated unknown
    domain selects `REJECTED_UNSUPPORTED`. A downlink ACK domain received by the
    receiver is logged as reflected or replayed traffic and receives no response.
-6. Require the exact 32-byte reading body, decode authenticated `sample_id`, and
+6. Require the exact 38-byte reading body, decode authenticated `sample_id`, and
    enforce the structural encoding rules above; otherwise select
    `REJECTED_MALFORMED`.
 7. Construct and validate the stable application/reception inputs and

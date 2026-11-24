@@ -84,7 +84,7 @@ static bool assert_pair(const diagn_context_t *diagnostic,
 }
 
 static bool sample_is_default(const node_sensor_sample_t *sample) {
-  TEST_ASSERT_EQ_U32(NODE_SENSOR_VALIDITY_ALL, sample->validity);
+  TEST_ASSERT_EQ_U32(UINT8_C(0x1f), sample->validity);
   TEST_ASSERT_EQ_U32(1234U, sample->soil_0_mv);
   TEST_ASSERT_EQ_U32(2345U, sample->soil_1_mv);
   TEST_ASSERT(sample->soil_temp_0_centi_c == 2150);
@@ -162,7 +162,7 @@ static bool test_each_group_failure_is_isolated(void) {
     TEST_ASSERT(assert_error(result, CURAG_ESENSORS_EPARTIAL_SAMPLE));
     TEST_ASSERT(assert_diagnostic_header(&diagnostic, CURAG_OP_READ));
     const uint8_t failed_bit = (uint8_t)(UINT8_C(1) << failing);
-    TEST_ASSERT_EQ_U32((uint8_t)(NODE_SENSOR_VALIDITY_ALL & ~failed_bit),
+    TEST_ASSERT_EQ_U32((uint8_t)(UINT8_C(0x1f) & ~failed_bit),
                        sample.validity);
     TEST_ASSERT(assert_pair(&diagnostic,
                             (node_sensor_context_pair_t)(failing + 1U),
@@ -435,7 +435,7 @@ static bool test_ds_channel_and_cleanup_failures_preserve_other_channel(void) {
   TEST_ASSERT(assert_error(result, CURAG_ESENSORS_ECLEANUP));
   TEST_ASSERT(assert_diagnostic_header(&diagnostic, CURAG_OP_CLEANUP));
   TEST_ASSERT_EQ_U32(
-      (uint8_t)(NODE_SENSOR_VALIDITY_ALL & ~NODE_SENSOR_SOIL_TEMP_0_VALID),
+      (uint8_t)(UINT8_C(0x1f) & ~NODE_SENSOR_SOIL_TEMP_0_VALID),
       sample.validity);
   TEST_ASSERT(sample.soil_temp_0_centi_c == 0);
   TEST_ASSERT(sample.soil_temp_1_centi_c == 1875);
@@ -613,7 +613,7 @@ static bool test_zero_values_can_be_valid(void) {
   node_sensor_sample_t sample;
   diagn_context_t diagnostic;
   TEST_ASSERT_EQ_U32(CURAG_OK, node_sensors_sample_all(&sample, &diagnostic));
-  TEST_ASSERT_EQ_U32(NODE_SENSOR_VALIDITY_ALL, sample.validity);
+  TEST_ASSERT_EQ_U32(UINT8_C(0x1f), sample.validity);
   TEST_ASSERT_EQ_U32(0U, sample.soil_0_mv);
   TEST_ASSERT_EQ_U32(0U, sample.soil_1_mv);
   TEST_ASSERT(sample.soil_temp_0_centi_c == 0);

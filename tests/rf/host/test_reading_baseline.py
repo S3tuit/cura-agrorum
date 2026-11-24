@@ -47,6 +47,6 @@ def test_existing_history_does_not_count_as_new_wakes(tmp_path):
         db.execute('insert into reading_messages('+','.join(cols)+') values('+','.join('?' for _ in cols)+')',list(old.values()))
     all_rows=capture_readings(p,NODE)
     before=dict(all_rows,rows={'1':all_rows['rows']['1']})
-    assert verify_service(p,NODE,decoded,INSTANCE,before)['wakes']==2
+    assert verify_service(p,NODE,decoded,INSTANCE,before,sensor_selection=3)['wakes']==2
     with pytest.raises(ValueError,match='missing/extra canonical'):
-        verify_service(p,NODE,decoded,INSTANCE,all_rows)
+        verify_service(p,NODE,decoded,INSTANCE,all_rows,sensor_selection=3)

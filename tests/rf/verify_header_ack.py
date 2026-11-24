@@ -7,6 +7,7 @@ import re
 import struct
 
 from verify import _verify_pi_command_confirmation
+from sleep_observation import sleep_observations, observation_frames
 
 
 def require(condition, message):
@@ -29,8 +30,15 @@ def verify_summary(action, diagnostics, cycle, message):
 
 
 def node_observations(uart, wakes=3):
+    observations = sleep_observations(uart, 10, wakes, require_parked=True)
+    require(len(observations) == wakes, "incomplete sleep observations")
     groups, pending, sealed = [], [], False
-    for raw in uart.splitlines():
+    previous_sleep = None
+    events = [(m.start(), m[0].rstrip(b'\r'))
+              for m in re.finditer(rb'(?m)^RF_NODE_PHY[^\n]*', uart)]
+    events.extend((offset, frame.split(b'\n')[0]) for offset, frame in observation_frames(uart)
+                  if frame.startswith(b'RF_NODE_SLEEP '))
+    for _, raw in sorted(events):
         if raw.startswith(b"RF_NODE_PHY "):
             require(not sealed, "PHY observation after end marker")
             item = json.loads(raw[len(b"RF_NODE_PHY "):])
@@ -49,10 +57,13 @@ def node_observations(uart, wakes=3):
             require(match is not None and int(match[1]) == len(pending), "missing/overflowed PHY trace")
             sealed = True
         elif raw.startswith(b"RF_NODE_SLEEP"):
-            require(raw == b"RF_NODE_SLEEP duration_us=10000000" and sealed and pending,
-                    "sleep without complete PHY observation")
+            if raw == previous_sleep:
+                require(not pending and not sealed, "PHY observation after sleep boundary")
+                continue
+            require(sealed and pending, "sleep without complete PHY observation")
             groups.append(pending)
             pending, sealed = [], False
+            previous_sleep = raw
     require(len(groups) == wakes and not pending and not sealed, "incomplete PHY wake observations")
     return groups
 

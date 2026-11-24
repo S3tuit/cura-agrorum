@@ -14,11 +14,11 @@ _CONTROL = 0x20
 _CLEAR_HEADER_SIZE = 14
 _TAG_SIZE = 8
 _MIN_FRAME_SIZE = _CLEAR_HEADER_SIZE + _TAG_SIZE
-_MAX_FRAME_SIZE = 54
-_READING_BODY_SIZE = 32
+_MAX_FRAME_SIZE = 60
+_READING_BODY_SIZE = 38
 _READING_DOMAINS = frozenset({1, 2})
 _ACK_DOMAINS = frozenset({3, 4, 5, 6})
-_READING_STRUCT = struct.Struct("<IHHHhhhIHBBHHBBH")
+_READING_STRUCT = struct.Struct("<IHHHhhhIHBBHHBBHHHBB")
 _ACK_STATUS_BY_SELECTION = {
     "ACCEPTED": (3, 0),
     "RETRY_LATER": (4, 1),
@@ -61,6 +61,7 @@ def _reading_is_valid(body: bytes) -> bool:
         previous_cycle_tx_attempts,
         previous_cycle_accepted_readings,
         flags,
+        moisture0, moisture1, selection, reserved,
     ) = _READING_STRUCT.unpack(body)
 
     validity_pairs = (
@@ -71,6 +72,8 @@ def _reading_is_valid(body: bytes) -> bool:
         (1 << 5, enclosure_centi_c),
         (1 << 6, enclosure_pressure_pa),
         (1 << 7, enclosure_humidity_centi_pct),
+        (1 << 10, moisture0),
+        (1 << 11, moisture1),
     )
     if any(not flags & flag and value != 0 for flag, value in validity_pairs):
         return False
@@ -90,7 +93,10 @@ def _reading_is_valid(body: bytes) -> bool:
         return False
     if not flags & (1 << 9) and previous_current_delivery_ms != 0:
         return False
-    return not flags & 0xFC00
+    if flags & 0xF000 or selection & 0xF0 or reserved:
+        return False
+    return all(not flags & flag or selection & mask for flag, mask in
+               ((2, 1), (4, 2), (8, 5), (16, 10), (1024, 4), (2048, 8)))
 
 
 def _build_ack(

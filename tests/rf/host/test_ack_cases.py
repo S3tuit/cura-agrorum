@@ -11,9 +11,9 @@ NODE = bytes.fromhex("0102030405060708")
 
 
 def body(sample, *, first=False):
-    return struct.pack("<IHHHhhhIHBBHHBBH", sample, 10, 0, 0, 0, 0, 0, 0, 0,
+    return struct.pack("<IHHHhhhIHBBHHBBHHHBB", sample, 10, 0, 0, 0, 0, 0, 0, 0,
                        1 if first else 8, 0 if first else 1, 0 if first else 100,
-                       0, 0 if first else 1, 0, 0 if first else 257)
+                       0, 0 if first else 1, 0, 0 if first else 257, 0, 0, 4, 0)
 
 
 def frame(message, payload, domain=1):

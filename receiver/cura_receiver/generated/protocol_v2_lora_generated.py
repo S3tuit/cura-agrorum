@@ -1,25 +1,25 @@
 # Generated from protocol/protocol-v2-lora/schemas/protocol_v2_lora.json by protocol/protocol-v2-lora/tools/generate.py.
-# Schema SHA-256: ece4ec58bad29ddad03be41ccb257ffef960fa11a2df1d9f8650f4eb499de009. Do not edit by hand.
+# Schema SHA-256: 3c68e7cb4a3f803b8ee8c85e69a01623e2e7031297acc00432d0202be92b8fb1. Do not edit by hand.
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import IntEnum, IntFlag
 import struct
 
-SCHEMA_SHA256 = "ece4ec58bad29ddad03be41ccb257ffef960fa11a2df1d9f8650f4eb499de009"
+SCHEMA_SHA256 = "3c68e7cb4a3f803b8ee8c85e69a01623e2e7031297acc00432d0202be92b8fb1"
 PROTOCOL_VERSION = 2
 CONTROL = 32
 KEY_SIZE = 16
 NONCE_SIZE = 13
 TAG_SIZE = 8
 CLEAR_HEADER_SIZE = 14
-READING_BODY_SIZE = 32
+READING_BODY_SIZE = 38
 ACK_BODY_SIZE = 1
-READING_FRAME_SIZE = 54
+READING_FRAME_SIZE = 60
 ACK_FRAME_SIZE = 23
 
 CLEAR_HEADER_STRUCT = struct.Struct("<BB8sI")
-READING_BODY_STRUCT = struct.Struct("<IHHHhhhIHBBHHBBH")
+READING_BODY_STRUCT = struct.Struct("<IHHHhhhIHBBHHBBHHHBB")
 ACK_BODY_STRUCT = struct.Struct("<B")
 NONCE_STRUCT = struct.Struct("<8sIB")
 
@@ -79,9 +79,11 @@ class ReadingFlag(IntFlag):
   ENCLOSURE_HUMIDITY_VALID = 1 << 7
   PREVIOUS_CYCLE_METRICS_VALID = 1 << 8
   PREVIOUS_CURRENT_ACCEPTED = 1 << 9
+  SOIL_MOISTURE_0_VALID = 1 << 10
+  SOIL_MOISTURE_1_VALID = 1 << 11
 
 
-READING_RESERVED_FLAGS_MASK = 64512
+READING_RESERVED_FLAGS_MASK = 61440
 
 ACK_STATUS_BY_DOMAIN: dict[Domain, AckStatus] = {
     Domain.ACK_ACCEPTED_DOWNLINK: AckStatus.ACCEPTED,
@@ -117,6 +119,10 @@ class Reading:
   previous_cycle_tx_attempts: int
   previous_cycle_accepted_readings: int
   flags: int
+  soil_0_moisture_deci_pct: int
+  soil_1_moisture_deci_pct: int
+  sensor_selection: int
+  reserved: int
 
 
 @dataclass(frozen=True)
@@ -174,8 +180,28 @@ def validate_reading(reading: Reading) -> None:
     raise CodecError("PREVIOUS_CURRENT_ACCEPTED requires PREVIOUS_CYCLE_METRICS_VALID")
   if not (reading.flags & ReadingFlag.PREVIOUS_CURRENT_ACCEPTED) and reading.previous_current_delivery_ms != 0:
     raise CodecError("previous_current_delivery_ms must be zero when PREVIOUS_CURRENT_ACCEPTED is clear")
-  if reading.flags & READING_RESERVED_FLAGS_MASK:
-    raise CodecError("reserved reading flag bits must be zero")
+  if reading.flags & 61440:
+    raise CodecError("reserved bits in flags must be zero")
+  if not (reading.flags & ReadingFlag.SOIL_MOISTURE_0_VALID) and reading.soil_0_moisture_deci_pct != 0:
+    raise CodecError("soil_0_moisture_deci_pct must be zero when SOIL_MOISTURE_0_VALID is clear")
+  if not (reading.flags & ReadingFlag.SOIL_MOISTURE_1_VALID) and reading.soil_1_moisture_deci_pct != 0:
+    raise CodecError("soil_1_moisture_deci_pct must be zero when SOIL_MOISTURE_1_VALID is clear")
+  if reading.sensor_selection & 240:
+    raise CodecError("reserved bits in sensor_selection must be zero")
+  if reading.reserved & 255:
+    raise CodecError("reserved bits in reserved must be zero")
+  if (reading.flags & ReadingFlag.SOIL_0_VALID) and not (reading.sensor_selection & 1):
+    raise CodecError("SOIL_0_VALID requires a selected sensor")
+  if (reading.flags & ReadingFlag.SOIL_1_VALID) and not (reading.sensor_selection & 2):
+    raise CodecError("SOIL_1_VALID requires a selected sensor")
+  if (reading.flags & ReadingFlag.SOIL_TEMP_0_VALID) and not (reading.sensor_selection & 5):
+    raise CodecError("SOIL_TEMP_0_VALID requires a selected sensor")
+  if (reading.flags & ReadingFlag.SOIL_TEMP_1_VALID) and not (reading.sensor_selection & 10):
+    raise CodecError("SOIL_TEMP_1_VALID requires a selected sensor")
+  if (reading.flags & ReadingFlag.SOIL_MOISTURE_0_VALID) and not (reading.sensor_selection & 4):
+    raise CodecError("SOIL_MOISTURE_0_VALID requires a selected sensor")
+  if (reading.flags & ReadingFlag.SOIL_MOISTURE_1_VALID) and not (reading.sensor_selection & 8):
+    raise CodecError("SOIL_MOISTURE_1_VALID requires a selected sensor")
 
 
 def encode_clear_header(value: ClearHeader) -> bytes:
@@ -235,6 +261,10 @@ def encode_reading(value: Reading) -> bytes:
         value.previous_cycle_tx_attempts,
         value.previous_cycle_accepted_readings,
         value.flags,
+        value.soil_0_moisture_deci_pct,
+        value.soil_1_moisture_deci_pct,
+        value.sensor_selection,
+        value.reserved,
     )
   except (struct.error, TypeError) as exc:
     raise CodecError(f"invalid reading: {exc}") from exc
@@ -262,6 +292,10 @@ def decode_reading(data: bytes) -> Reading:
       previous_cycle_tx_attempts=values[13],
       previous_cycle_accepted_readings=values[14],
       flags=values[15],
+      soil_0_moisture_deci_pct=values[16],
+      soil_1_moisture_deci_pct=values[17],
+      sensor_selection=values[18],
+      reserved=values[19],
   )
   validate_reading(result)
   return result

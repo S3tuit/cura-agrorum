@@ -155,3 +155,6 @@ node_sensors_backend_result_t node_sensors_backend_sample_bme280(
   *out_enclosure = s_fake.bme_value;
   return s_fake.bme_result;
 }
+
+uint8_t node_sensors_backend_selection(void) { return 3U; }
+uint32_t node_sensors_backend_stabilization_ms(void) { return 200U; }

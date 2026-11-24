@@ -1,0 +1,8 @@
+# SEN0193 selects a probe plus its DS18B20; SEN0600 holds a Modbus address.
+# Slot 0 is required. Zero disables a slot; active SEN0600 addresses differ.
+CONFIG_CURA_SEN0193_0=0
+CONFIG_CURA_SEN0193_1=0
+CONFIG_CURA_SEN0600_0=1
+CONFIG_CURA_SEN0600_1=0
+CONFIG_CURA_DS18B20_0_ROM=""
+CONFIG_CURA_DS18B20_1_ROM=""

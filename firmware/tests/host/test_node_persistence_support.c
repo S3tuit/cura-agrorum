@@ -46,6 +46,7 @@ void node_persistence_test_fill_tx_calls(node_delivery_event_t *event) {
 
 cura_lora_v2_reading_t node_persistence_test_make_reading(uint16_t marker) {
   cura_lora_v2_reading_t reading = {0};
+  reading.sensor_selection = 3;
   reading.sample_id = marker;
   reading.run_ms = marker;
   reading.soil_0_mv = (uint16_t)(1000U + marker);
@@ -58,6 +59,9 @@ cura_lora_v2_reading_t node_persistence_test_make_reading(uint16_t marker) {
 cura_lora_v2_reading_t node_persistence_test_make_boundary_reading(void) {
   cura_lora_v2_reading_t reading = {
       .sample_id = UINT32_MAX,
+      .sensor_selection = 15,
+      .soil_0_moisture_deci_pct = UINT16_MAX,
+      .soil_1_moisture_deci_pct = 0,
       .run_ms = UINT16_MAX,
       .soil_0_mv = UINT16_MAX,
       .soil_1_mv = 0U,
@@ -72,7 +76,9 @@ cura_lora_v2_reading_t node_persistence_test_make_boundary_reading(void) {
       .previous_current_delivery_ms = UINT16_MAX,
       .previous_cycle_tx_attempts = UINT8_MAX,
       .previous_cycle_accepted_readings = UINT8_MAX,
-      .flags = CURA_LORA_V2_FLAG_DEEP_SLEEP_BOOT |
+      .flags = CURA_LORA_V2_FLAG_SOIL_MOISTURE_0_VALID |
+               CURA_LORA_V2_FLAG_SOIL_MOISTURE_1_VALID |
+               CURA_LORA_V2_FLAG_DEEP_SLEEP_BOOT |
                CURA_LORA_V2_FLAG_SOIL_0_VALID | CURA_LORA_V2_FLAG_SOIL_1_VALID |
                CURA_LORA_V2_FLAG_SOIL_TEMP_0_VALID |
                CURA_LORA_V2_FLAG_SOIL_TEMP_1_VALID |

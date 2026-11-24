@@ -72,6 +72,7 @@ def reading(
         0,
         0,
         flags,
+        0, 0, 0, 0,
     )
     return ReadingMessageRowV2(
         node_id=node,

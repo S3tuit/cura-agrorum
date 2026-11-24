@@ -163,12 +163,18 @@ static bool sensor_validity_maps_independently(void) {
       NODE_SENSOR_SOIL_0_VALID,        NODE_SENSOR_SOIL_1_VALID,
       NODE_SENSOR_SOIL_TEMP_0_VALID,   NODE_SENSOR_SOIL_TEMP_1_VALID,
       NODE_SENSOR_ENCLOSURE_ENV_VALID, 0U,
+      NODE_SENSOR_SOIL_MOISTURE_0_VALID, NODE_SENSOR_SOIL_MOISTURE_1_VALID,
   };
   for (size_t index = 0U; index < sizeof(validities); index++) {
     node_rtc_record_t rtc;
     node_platform_ports_t platform;
     core_test_setup(&rtc, &platform);
     fake_node_core.sensor_sample.validity = validities[index];
+    const bool moisture_0 = (validities[index] & NODE_SENSOR_SOIL_MOISTURE_0_VALID) != 0;
+    const bool moisture_1 = (validities[index] & NODE_SENSOR_SOIL_MOISTURE_1_VALID) != 0;
+    fake_node_core.sensor_sample.sensor_selection = moisture_0 || moisture_1 ? 12 : 3;
+    fake_node_core.sensor_sample.soil_0_moisture_deci_pct = 0; /* valid zero */
+    fake_node_core.sensor_sample.soil_1_moisture_deci_pct = 65535;
     fake_node_core.sensor_error = curag_error_make(
         CURAG_EDOM_SENSORS, validities[index] == 0U
                                 ? CURAG_ESENSORS_ECOMPLETE_SAMPLE
@@ -177,6 +183,11 @@ static bool sensor_validity_maps_independently(void) {
     core_test_run(&rtc, &platform);
     const cura_lora_v2_reading_t *reading =
         &fake_node_core.appended[0].value.reading;
+    CORE_TEST_ASSERT_EQ_U32(moisture_0 || moisture_1 ? 12U : 3U, reading->sensor_selection);
+    CORE_TEST_ASSERT_EQ_U32(0U, reading->soil_0_moisture_deci_pct);
+    CORE_TEST_ASSERT_EQ_U32(moisture_1 ? 65535U : 0U, reading->soil_1_moisture_deci_pct);
+    CORE_TEST_ASSERT(((reading->flags & CURA_LORA_V2_FLAG_SOIL_MOISTURE_0_VALID) != 0) == moisture_0);
+    CORE_TEST_ASSERT(((reading->flags & CURA_LORA_V2_FLAG_SOIL_MOISTURE_1_VALID) != 0) == moisture_1);
     const bool soil_0 = (validities[index] & NODE_SENSOR_SOIL_0_VALID) != 0U;
     const bool soil_1 = (validities[index] & NODE_SENSOR_SOIL_1_VALID) != 0U;
     const bool soil_temp_0 =

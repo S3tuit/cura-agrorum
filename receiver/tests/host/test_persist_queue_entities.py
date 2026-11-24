@@ -105,7 +105,7 @@ def test_measurement_and_profile_only_units_preserve_leaf_identity() -> None:
         message_id=1,
         domain=1,
         sample_id=2,
-        reading_body=b"b" * 32,
+        reading_body=b"b" * 38,
     )
 
     measurement = ReadingReceptionUnitV2(candidate=candidate, profile=profile, received_frame=REVIEWED_RECEPTION_FRAME)

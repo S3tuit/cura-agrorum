@@ -39,9 +39,9 @@ def test_production_radio_peer_completes_real_scheduled_sequence(action, downlin
                 policy.observe_sleep(f"SLEEP {'a'*32} {policy.plan['case']} 3\n", 'a'*32, policy.plan['case'])
             return original_complete(now)
         policy.complete = observed_complete
-    bodies = [struct.pack("<IHHHhhhIHBBHHBBH", 40 + i, 10, 0, 0, 0, 0, 0, 0, 0,
+    bodies = [struct.pack("<IHHHhhhIHBBHHBBHHHBB", 40 + i, 10, 0, 0, 0, 0, 0, 0, 0,
                          1 if i == 0 else 8, 0 if i == 0 else 1, 0 if i == 0 else 100,
-                         0, 0 if i == 0 else 1, 0, 0 if i == 0 else 257)
+                         0, 0 if i == 0 else 1, 0, 0 if i == 0 else 257, 0, 0, 4, 0)
               for i in range(3)]
     for message, domain, payload, at in (
         (100, 1, bodies[0], 1_000_000), (101, 1, bodies[1], 1_000_000 + interval),
@@ -51,7 +51,7 @@ def test_production_radio_peer_completes_real_scheduled_sequence(action, downlin
         frame = header + AESCCM(key, tag_length=8).encrypt(nonce, payload, header)
         io.incoming.append((at, frame))
         if message == 101 and action == "header_error_retry":
-            io.incoming.append((at + 502_656, frame))
+            io.incoming.append((at + 512_896, frame))
     outcome = execute(policy, backend, radio, threading.Event(), clock.now_monotonic_us())
     assert len(outcome["packets"]) == (5 if action == "header_error_retry" else 4)
     assert len(outcome["transmissions"]) == downlinks

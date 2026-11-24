@@ -74,7 +74,7 @@ ACK/silence observations still require their own procedure.
 `component.header_error_rearm` is a nominal-only, sensor-free episode in this
 same image. It sends a complete known packet, interrupts a second transmission
 at a node-local 18 ms offset from SetTx HAL entry, then sends the next complete
-packet, with at least 12.2 seconds between starts. The small app-local
+packet, with at least 13 seconds between starts. The small app-local
 `radio_header_error.c` module uses the private production backend and passively
 forwards/timestamps HAL writes; no fault-injection API enters production code.
 It retains software timing brackets and requires the abort within 18.0-18.5 ms,

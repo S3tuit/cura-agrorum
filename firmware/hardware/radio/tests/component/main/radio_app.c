@@ -58,7 +58,7 @@ typedef struct {
   diagn_context_t diagnostic;
   sx1262_radio_tx_result_t tx;
   sx1262_radio_rx_result_t rx;
-  uint8_t payload[54];
+  uint8_t payload[60];
   size_t payload_length;
   bool transmit;
 } result_t;
@@ -106,7 +106,7 @@ static result_t *transmit_payload(const uint8_t *payload, size_t length, bool su
   return r;
 }
 static result_t *transmit(uint8_t start, bool success) {
-  uint8_t payload[54];
+  uint8_t payload[60];
   for (unsigned i = 0; i < sizeof(payload); ++i) payload[i] = start + i;
   return transmit_payload(payload, sizeof(payload), success);
 }

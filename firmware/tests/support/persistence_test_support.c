@@ -54,6 +54,7 @@ void hwtest_mount_inspector(void) {
 cura_lora_v2_reading_t hwtest_make_reading(uint16_t marker) {
   const cura_lora_v2_reading_t reading = {
       .sample_id = marker,
+      .sensor_selection = 3U,
       .run_ms = (uint16_t)(100U + marker),
       .soil_0_mv = (uint16_t)(1000U + marker),
       .soil_1_mv = (uint16_t)(1100U + marker),

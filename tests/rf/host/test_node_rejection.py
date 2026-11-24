@@ -23,7 +23,7 @@ class Config(C.Structure):
 
 
 class Packet(C.Structure):
-    _fields_ = [('frame', C.c_uint8 * 54), ('ack', C.c_uint8 * 23),
+    _fields_ = [('frame', C.c_uint8 * 60), ('ack', C.c_uint8 * 23),
                 ('frame_length', C.c_size_t), ('ack_length', C.c_size_t)]
 
 

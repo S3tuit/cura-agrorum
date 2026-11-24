@@ -32,6 +32,7 @@ cura_lora_v2_reading_t core_test_reading(uint16_t marker) {
   return (cura_lora_v2_reading_t){
       .sample_id = marker,
       .run_ms = marker,
+      .sensor_selection = 3,
       .soil_0_mv = (uint16_t)(marker + 1U),
       .flags = CURA_LORA_V2_FLAG_SOIL_0_VALID,
   };

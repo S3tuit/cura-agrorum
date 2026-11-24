@@ -23,7 +23,7 @@ static bool pending_compaction_retains_newest_half_across_restart(void) {
     TEST_ASSERT_EQ_U32(
         CURAG_OK, node_persistence_append_pending_reading(&reading, &diag));
   }
-  TEST_ASSERT_EQ_SIZE(138U, fake_backend_file_size(TEST_PENDING_PATH));
+  TEST_ASSERT_EQ_SIZE(156U, fake_backend_file_size(TEST_PENDING_PATH));
   TEST_ASSERT(!fake_backend_file_exists(TEST_COMPACT_PATH));
   node_persistence_test_restart();
 

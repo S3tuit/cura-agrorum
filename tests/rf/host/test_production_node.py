@@ -48,8 +48,10 @@ def test_changed_source_rejects_before_uart(tmp_path, monkeypatch):
         verify_installed({}, tmp_path, tmp_path)
 
 
-def test_usb_rom_admission_precedes_capture_and_explicit_native_reset(tmp_path, monkeypatch):
+@pytest.mark.parametrize("transition", ("start", "reset_failure", "close"))
+def test_usb_start_preserves_rom_ownership_and_never_resets_on_open(tmp_path, monkeypatch, transition):
     import sys
+    import time
     import serial
     from esptool.targets.esp32s3 import ESP32S3ROM
     from production_node import NodeUART
@@ -60,16 +62,40 @@ def test_usb_rom_admission_precedes_capture_and_explicit_native_reset(tmp_path, 
     monkeypatch.setattr('usb_console.list_ports.comports', lambda: [info()])
     monkeypatch.setattr(ESP32S3ROM, 'connect', lambda self, **kw: probes.append(kw))
     monkeypatch.setattr(ESP32S3ROM, 'write_reg', lambda self, *args: probes.append(args))
-    monkeypatch.setattr(ESP32S3ROM, 'uses_hardware_flow_control', lambda self: False)
-    monkeypatch.setattr('esptool.reset.time.sleep', lambda _: None)
+
+    def reset(rom):
+        assert not node.thread.is_alive(), 'UART reader could consume ROM replies'
+        probes.append('watchdog')
+        rom._port.data = b'first application output\n'
+        if transition == 'reset_failure':
+            raise OSError('uncertain reset')
+
+    monkeypatch.setattr(ESP32S3ROM, 'watchdog_reset', reset)
     node = NodeUART('/dev/ttyACM0', tmp_path)
     try:
+        assert node.port.open_resets == 0
         assert probes == [dict(mode='no-reset', attempts=1),
                           (ESP32S3ROM.RTC_CNTL_OPTION1_REG, 0,
                            ESP32S3ROM.RTC_CNTL_FORCE_DOWNLOAD_BOOT_MASK)]
-        assert node.port.lines == []
-        node.start()  # The real esptool native USB reset sequence on fake lines.
-        assert [line for line in node.port.lines if line[0] == 'RTS'] == [('RTS', True), ('RTS', False)]
-        assert all(value is False for name, value in node.port.lines if name == 'DTR')
+        assert not node.thread.is_alive()
+        if transition == 'close':
+            node.close()
+            with pytest.raises(RuntimeError, match='cannot start'):
+                node.start()
+            assert 'watchdog' not in probes
+            return
+        if transition == 'reset_failure':
+            with pytest.raises(OSError, match='uncertain reset'):
+                node.start()
+        else:
+            node.start()
+        deadline = time.monotonic() + 2
+        while not (tmp_path / 'node-uart.bin').read_bytes() and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert (tmp_path / 'node-uart.bin').read_bytes() == b'first application output\n'
+        with pytest.raises(RuntimeError, match='cannot start'):
+            node.start()
+        assert probes.count('watchdog') == 1
+        assert node.port.lines == []  # No USB line reset at either boundary.
     finally:
         node.close()

@@ -48,24 +48,27 @@ For an existing group or identity replacement, follow the
 
 ## 3. Assign probes and build production firmware
 
-Edit `$cura_stage/firmware/deploy/sdkconfig.probes`: fill both empty strings
-with the attached probes' distinct, nonzero ROM IDs, each exactly 16 hexadecimal
-digits. The variable names assign physical probes to logical channels 0 and 1.
-An empty field leaves that channel unprovisioned.
+Edit `$cura_stage/firmware/deploy/sdkconfig.sensors` for the assembled sensors.
+SEN0193 settings are 0/1; SEN0600 settings are Modbus addresses (0 disables,
+1..254 enables, nonzero addresses must differ). Slot 0 is required and both
+families cannot share one board. An enabled SEN0193 slot requires its own
+nonzero 16-hex-digit DS18B20 ROM; disabled slots require an empty string.
+Use the [DS discovery maintenance app](../maintenance/ds18b20_discovery/README.md)
+to obtain ROMs before building an analog node. BME is common to both families.
 
 ```bash
 source ~/esp/esp-idf/export.sh
 cd "$cura_stage/firmware"
 test ! -e sdkconfig && \
-  idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;deploy/sdkconfig.pilot;deploy/sdkconfig.probes' build
-rg '^CONFIG_CURA_DS18B20_[01]_ROM=' sdkconfig
+  idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;deploy/sdkconfig.pilot;deploy/sdkconfig.sensors' build
+rg '^CONFIG_CURA_(SEN0193_[01]|SEN0600_[01]|DS18B20_[01]_ROM)=' sdkconfig
 ```
 
 Production selects ESP32S3 in CMake, 8 MB flash, one core and primary native
 USB Serial/JTAG. GPIO44 belongs to the sensor gate; UART0 console is rejected.
 The defaults supply the production layout,
-`sdkconfig.pilot` selects carrier wiring, and `sdkconfig.probes` supplies your
-channel identities. Check that the printed resolved values match your probes;
+`sdkconfig.pilot` selects carrier wiring, and `sdkconfig.sensors` supplies your
+sensor selection and channel identities. Check that the printed resolved values match your probes;
 an existing `sdkconfig` overrides defaults, so stop if the freshness check fails.
 
 ## 4. Reset the S3 and initialize LittleFS

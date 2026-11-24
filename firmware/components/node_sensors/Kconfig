@@ -1,5 +1,25 @@
 menu "Cura Agrorum sensor board configuration"
 
+    config CURA_SEN0193_0
+        int "SEN0193 plus DS18B20 slot 0 (0/1)"
+        range 0 1
+        default 0
+
+    config CURA_SEN0193_1
+        int "SEN0193 plus DS18B20 slot 1 (0/1)"
+        range 0 1
+        default 0
+
+    config CURA_SEN0600_0
+        int "SEN0600 slot 0 Modbus address (0 disables)"
+        range 0 254
+        default 1
+
+    config CURA_SEN0600_1
+        int "SEN0600 slot 1 Modbus address (0 disables)"
+        range 0 254
+        default 0
+
     config CURA_SOIL_0_GPIO
         int "Soil sensor channel 0 ADC GPIO"
         range 1 1
@@ -24,20 +44,21 @@ menu "Cura Agrorum sensor board configuration"
             uses CURA_SOIL_0_GPIO and CURA_SOIL_1_GPIO instead.
 
     config CURA_SENSOR_POWER_GATE_GPIO
-        int "Active-low open-drain switched sensor rail GPIO"
+        int "Switched sensor rail GPIO"
         range 44 44
         default 44
         help
-            Pulling the P-MOSFET gate low enables the shared
-            soil/DS18B20 rail. Releasing it lets the external 47 kOhm
-            source-to-gate resistor default the rail to off.
+            SEN0193 uses active-low open drain. SEN0600 uses active-high
+            push-pull through the NPN stage. Selection determines the mode.
 
     config CURA_SENSOR_POWER_STABILIZATION_MS
         int "Switched sensor rail stabilization time (ms)"
         range 1 5000
+        default 450 if CURA_SEN0600_0 > 0
         default 200
         help
-            Initial pilot value. Validate it against the selected probes.
+            Delay from rail enable to acquisition. The SEN0600 fixture
+            supports 450 ms; changes require sensor startup evidence.
 
     config CURA_DS18B20_GPIO
         int "DS18B20 1-Wire GPIO"
@@ -46,15 +67,17 @@ menu "Cura Agrorum sensor board configuration"
 
     config CURA_DS18B20_0_ROM
         string "DS18B20 channel 0 ROM identity"
-        default "0000000000000000"
+        default ""
         help
-            Exactly 16 hexadecimal digits. All zeroes means not provisioned.
+            Nonzero 16-hex-digit ROM when SEN0193 slot 0 is enabled;
+            empty otherwise. Discover ROMs with the maintenance app.
 
     config CURA_DS18B20_1_ROM
         string "DS18B20 channel 1 ROM identity"
-        default "0000000000000000"
+        default ""
         help
-            Exactly 16 hexadecimal digits. All zeroes means not provisioned.
+            Nonzero 16-hex-digit ROM when SEN0193 slot 1 is enabled;
+            empty otherwise. Enabled identities must differ.
 
     config CURA_I2C_SDA_GPIO
         int "BME280 I2C SDA GPIO"

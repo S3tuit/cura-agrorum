@@ -124,9 +124,8 @@ static void enter_deep_sleep_for(void *context, uint64_t duration_us) {
     node_rf_observe_dump();
 #endif
 #if defined(CONFIG_NODE_RF_SLEEP_OBSERVATION) && !defined(CURA_RF_COMPONENT_TEST)
-    rf_console_printf("RF_NODE_SLEEP duration_us=%" PRIu64 "\n", duration_us);
-#endif
-#if defined(CONFIG_NODE_RF_SLEEP_OBSERVATION) || defined(CURA_RF_COMPONENT_TEST)
+    rf_console_prepare_node_sleep(duration_us, get_reset_reason(NULL));
+#elif defined(CURA_RF_COMPONENT_TEST)
     rf_console_prepare_sleep();
 #endif
     esp_deep_sleep_start();

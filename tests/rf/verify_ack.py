@@ -23,7 +23,7 @@ def verify_ack_case(case, node_id, key, packets, decoded):
         frame = bytes.fromhex(packet["frame"])
         opened = open_frame(key, frame)
         h, raw = opened.header, opened.plaintext_body
-        if len(frame) != 54 or h.control != 32 or h.node_id != node_id or h.domain not in (1, 2):
+        if len(frame) != 60 or h.control != 32 or h.node_id != node_id or h.domain not in (1, 2):
             raise ValueError("wrong authenticated uplink identity/shape")
         reading = decode_reading(raw)
         if h.message_id in messages:
@@ -152,6 +152,7 @@ def verify_ack_case(case, node_id, key, packets, decoded):
                 sum(expected[m] == 1 for m in wake_messages), accepted):
             raise ValueError("next-wake metrics mismatch")
     return dict(case=case, status="PASS", scope="production_node_controlled_peer",
+                reset_reasons=[current["reading"].reset_reason for current in currents],
                 wakes=len(currents), packets=len(packets), host_deadline_assertion="separate prerequisite")
 
 

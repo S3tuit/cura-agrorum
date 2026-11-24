@@ -78,7 +78,13 @@ class RemoteTransport:
             for name, expected in manifest["files"].items():
                 if digest(REPO / name) != expected:
                     raise ValueError("source changed while staging")
-                tar.add(REPO / name, arcname=name, recursive=False)
+                # Generators can atomically replace public source with a 0600
+                # tempfile. The installed-service probe uses another UID;
+                # archive permissions must not inherit that local umask.
+                entry = tar.gettarinfo(REPO / name, arcname=name)
+                entry.mode = 0o644
+                with (REPO / name).open("rb") as source:
+                    tar.addfile(entry, source)
             for name, value in (("source-manifest.json", manifest), ("rf-fixture.json", fixture)):
                 data = (json.dumps(value, indent=2, sort_keys=True) + "\n").encode()
                 entry = tarfile.TarInfo(name); entry.size = len(data); entry.mode = 0o600

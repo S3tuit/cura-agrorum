@@ -70,7 +70,8 @@ node_sensor_sample_t core_hwtest_sensor_sample(uint16_t marker) {
       .enclosure_centi_c = (int16_t)(2200 + marker),
       .enclosure_pressure_pa = UINT32_C(100000) + marker,
       .enclosure_humidity_centi_pct = (uint16_t)(5000U + marker),
-      .validity = NODE_SENSOR_VALIDITY_ALL,
+      .sensor_selection = 3U,
+      .validity = 0x1fU,
   };
 }
 

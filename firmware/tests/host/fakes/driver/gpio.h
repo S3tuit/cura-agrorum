@@ -46,3 +46,9 @@ void gpio_deep_sleep_hold_en(void);
 esp_err_t gpio_config(const gpio_config_t *configuration);
 esp_err_t gpio_set_direction(gpio_num_t gpio_num, gpio_mode_t mode);
 esp_err_t gpio_set_pull_mode(gpio_num_t gpio_num, gpio_pull_mode_t pull);
+
+#define GPIO_NUM_1 1
+#define GPIO_NUM_2 2
+#define GPIO_NUM_4 4
+#define GPIO_NUM_43 43
+esp_err_t gpio_reset_pin(gpio_num_t gpio_num);

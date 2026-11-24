@@ -13,17 +13,20 @@ FIELDS = ("sample_id run_ms soil_0_mv soil_1_mv soil_temp_0_centi_c "
           "soil_temp_1_centi_c enclosure_centi_c enclosure_pressure_pa "
           "enclosure_humidity_centi_pct reset_reason previous_current_tx_attempts "
           "previous_awake_ms previous_current_delivery_ms previous_cycle_tx_attempts "
-          "previous_cycle_accepted_readings flags").split()
-BODY = struct.Struct("<IHHHhhhIHBBHHBBH")
+          "previous_cycle_accepted_readings flags soil_0_moisture_deci_pct "
+          "soil_1_moisture_deci_pct sensor_selection reserved").split()
+BODY = struct.Struct("<IHHHhhhIHBBHHBBHHHBB")
 
 
-def verify_service(database, node_id, decoded, instance_id, baseline=None):
+def verify_service(database, node_id, decoded, instance_id, baseline=None, *, sensor_selection):
     """Require two complete accelerated wakes of one isolated service instance.
 
     SQL supplies decoded authority and per-reception outcomes; node delivery logs
     confirm acceptance/attempt counts. Normal frames and ACK bytes are not stored,
     so this check cannot independently decrypt or compare those wire bytes.
     """
+    if type(sensor_selection) is not int or sensor_selection not in (1, 3, 4, 12):
+        raise ValueError("select the actual sealed production sensor configuration")
     with sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True) as db:
         db.row_factory = sqlite3.Row
         if db.execute("PRAGMA integrity_check").fetchall()[0][0] != "ok" or db.execute("PRAGMA foreign_key_check").fetchall():
@@ -88,8 +91,33 @@ def verify_service(database, node_id, decoded, instance_id, baseline=None):
         if r["is_canonical"] != 1:
             raise ValueError("reading is not canonical")
         b = e["body"]
-        if b["flags"] & 0x00fe != 0x00fe or not all(2000 <= b[n] <= 2700 for n in ("soil_0_mv", "soil_1_mv")):
-            raise ValueError("nominal sensor flags/ranges not satisfied")
+        expected_flags = 0xe0
+        if b["sensor_selection"] != sensor_selection or b["reserved"]:
+            raise ValueError("reading selection differs from the sealed firmware")
+        for slot in (0, 1):
+            analog = bool(sensor_selection & (1 << slot))
+            digital = bool(sensor_selection & (4 << slot))
+            mv = b[f"soil_{slot}_mv"]
+            moisture = b[f"soil_{slot}_moisture_deci_pct"]
+            temperature = b[f"soil_temp_{slot}_centi_c"]
+            if analog:
+                expected_flags |= (2 | 8) << slot
+                if not 2000 <= mv <= 2700:
+                    raise ValueError("nominal air-probe voltage not satisfied")
+            elif mv:
+                raise ValueError("inactive analog measurement is nonzero")
+            if digital:
+                expected_flags |= (1024 | 8) << slot
+                # Representability is production policy; characterization of
+                # sensor-reported moisture is a separate acquisition task.
+                if not 0 <= moisture <= 65535:
+                    raise ValueError("unrepresentable moisture")
+            elif moisture:
+                raise ValueError("inactive digital measurement is nonzero")
+            if not (analog or digital) and temperature:
+                raise ValueError("inactive soil temperature is nonzero")
+        if b["flags"] & 0xfcfe != expected_flags:
+            raise ValueError("nominal sensor validity not satisfied")
     b = second["body"]
     if (b["reset_reason"] != 8 or b["flags"] & 0x301 != 0x301 or
             b["previous_current_tx_attempts"] != counts[order[0]] or
@@ -112,6 +140,7 @@ def verify_service(database, node_id, decoded, instance_id, baseline=None):
         if (finish["final_result"], finish["attempt_count"]) != (1, counts[m]):
             raise ValueError("node outcome/attempts differ from receiver evidence")
     return dict(case="service.reading_delivery", status="PASS", scope="production_node_receiver_service", sleep_seconds=10, cadence_scope="accelerated functional RF",
+                reset_reasons=[observed[m]["body"]["reset_reason"] for m in order],
                 wakes=2, profiles=len(profiles), inter_wake_us=elapsed,
                 sensor_conversion="separate sensor-carrier prerequisite",
                 evidence_scope="decoded SQL authority and node delivery outcomes; no retained normal wire bytes")

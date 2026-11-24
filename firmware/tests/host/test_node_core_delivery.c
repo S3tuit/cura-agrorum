@@ -466,9 +466,9 @@ static bool ack_retry_timestamp_boundary_is_enforced(void) {
 static bool budget_boundaries_are_inclusive_and_independent(void) {
   const uint64_t minimum_window_us = core_test_reading_min_tx_window_us();
   const uint64_t airtime_charge_us = core_test_reading_airtime_charge_us();
-  CORE_TEST_ASSERT_EQ_U64(UINT64_C(102656), core_test_reading_airtime_us());
-  CORE_TEST_ASSERT_EQ_U64(UINT64_C(112922), airtime_charge_us);
-  CORE_TEST_ASSERT_EQ_U64(UINT64_C(112704), minimum_window_us);
+  CORE_TEST_ASSERT_EQ_U64(UINT64_C(112896), core_test_reading_airtime_us());
+  CORE_TEST_ASSERT_EQ_U64(UINT64_C(124186), airtime_charge_us);
+  CORE_TEST_ASSERT_EQ_U64(UINT64_C(122938), minimum_window_us);
   CORE_TEST_ASSERT(node_core_attempt_fits(
       UINT64_C(1000), UINT64_C(1000) + minimum_window_us,
       NODE_CORE_TX_AIRTIME_BUDGET_US - airtime_charge_us));

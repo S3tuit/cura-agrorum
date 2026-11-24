@@ -284,7 +284,7 @@ static bool partial_application_append_is_recovered_after_restart(void) {
   fake_backend_partial_write_on(FAKE_BACKEND_RESOURCE_PENDING, 1U, 3U, EIO);
   TEST_ASSERT_EQ_U32(CURAG_EIO,
                      node_persistence_append_pending_reading(&second, &diag));
-  TEST_ASSERT_EQ_SIZE(49U, fake_backend_file_size(TEST_PENDING_PATH));
+  TEST_ASSERT_EQ_SIZE(55U, fake_backend_file_size(TEST_PENDING_PATH));
   const size_t trace_count = fake_backend_trace_count();
   TEST_ASSERT(trace_count > 0U);
   const fake_backend_trace_entry_t *last_write = NULL;
@@ -326,17 +326,17 @@ restart_between_quarantine_and_removal_allows_duplicates_not_loss(void) {
   node_persistence_test_snapshot_t quarantine;
   TEST_ASSERT(
       node_persistence_test_snapshot(TEST_QUARANTINE_PATH, &quarantine));
-  TEST_ASSERT_EQ_SIZE(92U, quarantine.length);
+  TEST_ASSERT_EQ_SIZE(104U, quarantine.length);
   TEST_ASSERT_EQ_U32(
       NODE_PERSISTENCE_RECORD_VALID,
       node_persistence_record_validate(node_persistence_backend(),
                                        NODE_PERSISTENCE_LOG_QUARANTINE,
-                                       quarantine.bytes, 46U));
+                                       quarantine.bytes, 52U));
   TEST_ASSERT_EQ_U32(
       NODE_PERSISTENCE_RECORD_VALID,
       node_persistence_record_validate(node_persistence_backend(),
                                        NODE_PERSISTENCE_LOG_QUARANTINE,
-                                       quarantine.bytes + 46U, 46U));
+                                       quarantine.bytes + 52U, 52U));
 
   TEST_ASSERT_EQ_U32(CURAG_OK,
                      node_persistence_remove_newest_reading(7U, &diag));

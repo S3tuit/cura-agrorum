@@ -70,7 +70,11 @@ static bool readings_equal(const cura_lora_v2_reading_t *left,
              right->previous_cycle_tx_attempts &&
          left->previous_cycle_accepted_readings ==
              right->previous_cycle_accepted_readings &&
-         left->flags == right->flags;
+         left->flags == right->flags &&
+         left->soil_0_moisture_deci_pct == right->soil_0_moisture_deci_pct &&
+         left->soil_1_moisture_deci_pct == right->soil_1_moisture_deci_pct &&
+         left->sensor_selection == right->sensor_selection &&
+         left->reserved == right->reserved;
 }
 
 static bool round_trip_reading(const cura_lora_v2_reading_t *input) {

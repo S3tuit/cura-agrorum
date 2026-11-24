@@ -1,9 +1,8 @@
 # Nominal production wiring from firmware/HARDWARE.md. Load after sdkconfig.defaults.
-# Actual DS ROMs belong in a separate local configuration input.
+# Sensor selection and DS ROMs belong in sdkconfig.sensors.
 CONFIG_CURA_SOIL_0_GPIO=1
 CONFIG_CURA_SOIL_1_GPIO=2
 CONFIG_CURA_SENSOR_POWER_GATE_GPIO=44
-CONFIG_CURA_SENSOR_POWER_STABILIZATION_MS=200
 CONFIG_CURA_DS18B20_GPIO=4
 CONFIG_CURA_I2C_SDA_GPIO=5
 CONFIG_CURA_I2C_SCL_GPIO=6

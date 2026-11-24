@@ -268,6 +268,10 @@ class CReading(ctypes.Structure):
         ("previous_cycle_tx_attempts", ctypes.c_uint8),
         ("previous_cycle_accepted_readings", ctypes.c_uint8),
         ("flags", ctypes.c_uint16),
+        ("soil_0_moisture_deci_pct", ctypes.c_uint16),
+        ("soil_1_moisture_deci_pct", ctypes.c_uint16),
+        ("sensor_selection", ctypes.c_uint8),
+        ("reserved", ctypes.c_uint8),
     ]
 
 
@@ -363,7 +367,7 @@ class CCodec:
         )
         return self._encode(
             self.library.cura_lora_v2_encode_reading,
-            32,
+            38,
             reading,
         )
 
@@ -430,7 +434,7 @@ class CFrameCrypto:
     ) -> bytes:
         if len(node_key) != 16:
             raise CryptoRejected("node_key must be 16 bytes")
-        output = (ctypes.c_uint8 * 54)()
+        output = (ctypes.c_uint8 * 60)()
         output_length = ctypes.c_size_t()
         key = self._bytes(node_key)
         body = self._bytes(plaintext_body)
@@ -456,7 +460,7 @@ class CFrameCrypto:
         if len(node_key) != 16:
             raise CryptoRejected("node_key must be 16 bytes")
         decoded_header = CHeader()
-        plaintext = (ctypes.c_uint8 * 32)()
+        plaintext = (ctypes.c_uint8 * 38)()
         plaintext_length = ctypes.c_size_t()
         key = self._bytes(node_key)
         encoded_frame = self._bytes(frame)

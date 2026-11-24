@@ -26,6 +26,7 @@ from service_probe import validate_config
 from spec import validate_fixture, service_episode
 from transport import RemoteTransport
 from verify_service import verify_service
+from sleep_observation import verify_wake_readings
 
 EPISODE = service_episode()
 
@@ -306,8 +307,13 @@ def run(args):
         service.capture_journal()
         database = service.capture_database()
         captured = node.capture_after()
-        record["results"].append(verify_service(database, node_id, captured,
-                                               bytes.fromhex(ready["instance"]), reading_baseline))
+        verified = verify_service(database, node_id, captured,
+                                  bytes.fromhex(ready["instance"]), reading_baseline,
+                                  sensor_selection=seal["sensor_selection"])
+        verified["wake_observations"] = verify_wake_readings(
+            (root / "node-uart.bin").read_bytes(), EPISODE["sleep_seconds"],
+            EPISODE["wakes"], verified["reset_reasons"])
+        record["results"].append(verified)
     record["status"] = "PASS"
     write_json(root / "run.json", record)
 

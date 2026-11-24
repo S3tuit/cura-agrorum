@@ -1,12 +1,12 @@
 # Firmware hardware
 
 Assembly wiring for the Seeed Studio XIAO ESP32S3 with the kit's B2B-connected
-Wio-SX1262 radio, two analog soil probes, two externally powered DS18B20 probes
-and a BME280. This document owns the production schematic.
+Wio-SX1262 radio and BME280, with either SEN0193/DS18B20 pairs or
+SEN0600 probes. Select one or two slots in deploy/sdkconfig.sensors. This document owns the production schematic.
 
 ## Power and configuration
 
-Bench power enters through the XIAO's USB-C connector. Take `+3V3_DUT` from its
+For the SEN0193 assembly, bench power enters through the XIAO's USB-C connector. Take `+3V3_DUT` from its
 `3V3` output pad and ground from its `GND` pad. The radio receives the same
 always-on supply through B2B. Leave the `5V`/VBUS pad and battery pads unconnected
 in this bench assembly; never feed sensors or radio from raw USB/battery voltage.
@@ -27,7 +27,7 @@ actual probe/breakout accepts 3.3 V and observe the [soil input limit](#soil-inp
 DS18B20 ROM identities remain local configuration. Logical channels follow
 configured ROMs, not discovery order, depth, wire color or deployment labels.
 
-## Sensor GPIO allocation
+## SEN0193 sensor GPIO allocation
 
 | Function | ESP32S3 GPIO | XIAO pad | Required firmware setting |
 |---|---:|---|---|
@@ -189,6 +189,56 @@ conversion and verify sleep afterward. Its board must select I2C at `0x76`.
 | JP_I2C_PULLUPS | Header and shunt | Carrier pull-up selection |
 
 R5–R8 are reserved for the optional test reference dividers.
+
+## SEN0600 assembly
+
+The final production power sources are **undefined**. Do not supply this
+assembly's sensors or switched branch from the 3V3 output of a USB-powered
+XIAO ESP32S3: that arrangement produced a brownout. The current bench supply
+is a separate Nordic PPK2 Source Meter at 3.3 V; USB powers the XIAO. Use common
+ground, and never join the PPK2 positive output to XIAO 3V3.
+
+```text
+external 3.3 V ----+---- BME280 supply and I2C pull-ups (always on)
+                  +---- AO3401A source
+                          drain ----+---- Click 3V3
+                                    +---- Pololu 4942 VIN
+                                          VOUT ---- SEN0600 brown (+6 V)
+                                                     |
+                                                   100 kohm
+                                                     |
+common GND -------------------------------- SEN0600 black
+```
+
+Keep the AO3401A 47 kohm gate-to-source pull-up. Its gate connects through
+100 ohm to a 2N3904 collector; emitter is grounded, base connects through
+10 kohm to GPIO44 and through 100 kohm to ground. GPIO44 is active-high
+push-pull for this circuit. The Click LED shares the switched supply so its
+load is removed during sleep. BME remains supplied externally while this
+branch is off; keep its GPIO5/6 bus and forced-conversion/sleep behavior.
+
+| Function | XIAO GPIO/pad | Connection |
+|---|---|---|
+| UART1 TX | 1 / D0 | Click RX (driver input D) |
+| UART1 RX | 2 / D1 | Click TX (receiver output R) |
+| Driver enable | 4 / D3 | Click DE, active high |
+| Receiver enable | 43 / D6 | Click /RE, active low |
+| Power | 44 / D7 | NPN base resistor; high enables the branch |
+
+Remove the analog ADC filter capacitors from D0/D1 and DS pull-up from D3.
+Set the MIKROE-3993 Click to 3.3 V. Sensor yellow is A and blue is B; inspect
+its fitted termination before adding resistors. Two probes share this bus and
+must have distinct configured Modbus addresses. Slots follow configuration,
+never bus discovery order. Address changes are a commissioning operation.
+
+Before rail removal, firmware completes or bounds TX, disables drive, detaches
+the UART and releases the logic pins without internal pulls to avoid a powered
+MCU feeding an unpowered transceiver. GPIO state alone does not qualify residual
+voltage, back-power or sleep current. Verify these on the actual assembly.
+The startup request delay is 450 ms. Known power-off intervals are at least ten
+seconds; unknown prior off-time is assumed longer than ten seconds by the
+operating contract. This assumption is not a measurement after an arbitrary reset.
+Adding a second probe or changing the supply requires new electrical checks.
 
 ## Radio circuit
 

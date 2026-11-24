@@ -7,10 +7,6 @@
 
 #include "node_sensors_backend.h"
 
-#ifndef CONFIG_CURA_SENSOR_POWER_STABILIZATION_MS
-#define CONFIG_CURA_SENSOR_POWER_STABILIZATION_MS 200
-#endif
-
 #define SENSOR_CONTEXT_PAIR_SIZE 8U
 
 typedef struct {
@@ -119,7 +115,7 @@ static void record_group_result(node_sensor_sample_t *sample,
 
 static size_t valid_group_count(uint8_t validity) {
   size_t count = 0U;
-  for (uint8_t mask = UINT8_C(1); mask <= NODE_SENSOR_ENCLOSURE_ENV_VALID;
+  for (uint8_t mask = UINT8_C(1); mask <= NODE_SENSOR_SOIL_MOISTURE_1_VALID;
        mask = (uint8_t)(mask << 1U)) {
     if ((validity & mask) != 0U) {
       ++count;
@@ -137,67 +133,57 @@ err_curag_t node_sensors_sample_all(node_sensor_sample_t *out_sample,
     return sensor_error(CURAG_ESENSORS_EINVALID_ARGUMENT);
   }
   memset(out_sample, 0, sizeof(*out_sample));
+  out_sample->sensor_selection = node_sensors_backend_selection();
+  uint8_t expected = NODE_SENSOR_ENCLOSURE_ENV_VALID;
+  for (unsigned slot = 0; slot < 2; ++slot) {
+    if (out_sample->sensor_selection & (1U << slot))
+      expected |= (uint8_t)((NODE_SENSOR_SOIL_0_VALID | NODE_SENSOR_SOIL_TEMP_0_VALID) << slot);
+    if (out_sample->sensor_selection & (4U << slot))
+      expected |= (uint8_t)((NODE_SENSOR_SOIL_MOISTURE_0_VALID | NODE_SENSOR_SOIL_TEMP_0_VALID) << slot);
+  }
 
   bool power_on_failed = false;
   bool power_off_failed = false;
   bool cleanup_failed = false;
 
-  const node_sensors_backend_result_t power_on =
-      node_sensors_backend_power_on();
+  const node_sensors_backend_result_t power_on = node_sensors_backend_power_on();
+  node_sensors_soil_result_t soil = {0};
   if (!result_is_success(power_on)) {
     power_on_failed = true;
     record_component_failure(&diagnostic, power_on);
-    const node_sensors_backend_result_t blocked = result_blocked();
-    diagnostic.pairs[NODE_SENSOR_CONTEXT_SOIL_0] = blocked;
-    diagnostic.pairs[NODE_SENSOR_CONTEXT_SOIL_1] = blocked;
-    diagnostic.pairs[NODE_SENSOR_CONTEXT_SOIL_TEMP_0] = blocked;
-    diagnostic.pairs[NODE_SENSOR_CONTEXT_SOIL_TEMP_1] = blocked;
+    soil.shared_acquisition = result_blocked();
   } else {
-    node_sensors_backend_delay_ms(CONFIG_CURA_SENSOR_POWER_STABILIZATION_MS);
-
-    node_sensors_backend_result_t result =
-        node_sensors_backend_read_soil(0U, &out_sample->soil_0_mv);
-    record_group_result(out_sample, &diagnostic, NODE_SENSOR_CONTEXT_SOIL_0,
-                        NODE_SENSOR_SOIL_0_VALID, result);
-    if (!result_is_success(result)) {
-      out_sample->soil_0_mv = 0U;
+    node_sensors_backend_delay_ms(node_sensors_backend_stabilization_ms());
+    node_sensors_backend_sample_soil(&soil);
+    record_component_failure(&diagnostic, soil.shared_acquisition);
+    record_component_failure(&diagnostic, soil.component_error);
+  }
+  for (unsigned slot = 0; slot < 2; ++slot) {
+    const bool analog = (out_sample->sensor_selection & (1U << slot)) != 0;
+    const bool digital = (out_sample->sensor_selection & (4U << slot)) != 0;
+    if (!analog && !digital) continue;
+    const bool shared_ok = result_is_success(soil.shared_acquisition);
+    const node_sensors_backend_result_t value_result = shared_ok ? soil.channel[slot] : result_blocked();
+    const node_sensors_backend_result_t temp_result = shared_ok ? soil.temperature[slot] : result_blocked();
+    const uint8_t value_bit = (uint8_t)((analog ? NODE_SENSOR_SOIL_0_VALID : NODE_SENSOR_SOIL_MOISTURE_0_VALID) << slot);
+    const uint8_t temp_bit = (uint8_t)(NODE_SENSOR_SOIL_TEMP_0_VALID << slot);
+    record_group_result(out_sample, &diagnostic,
+                        (node_sensor_context_pair_t)(NODE_SENSOR_CONTEXT_SOIL_0 + slot), value_bit, value_result);
+    record_group_result(out_sample, &diagnostic,
+                        (node_sensor_context_pair_t)(NODE_SENSOR_CONTEXT_SOIL_TEMP_0 + slot), temp_bit, temp_result);
+    if (result_is_success(value_result)) {
+      uint16_t *value = analog ? (slot == 0 ? &out_sample->soil_0_mv : &out_sample->soil_1_mv)
+                               : (slot == 0 ? &out_sample->soil_0_moisture_deci_pct : &out_sample->soil_1_moisture_deci_pct);
+      *value = soil.soil[slot];
     }
-
-    result = node_sensors_backend_read_soil(1U, &out_sample->soil_1_mv);
-    record_group_result(out_sample, &diagnostic, NODE_SENSOR_CONTEXT_SOIL_1,
-                        NODE_SENSOR_SOIL_1_VALID, result);
-    if (!result_is_success(result)) {
-      out_sample->soil_1_mv = 0U;
+    if (result_is_success(temp_result)) {
+      if (slot == 0) out_sample->soil_temp_0_centi_c = soil.centi_c[slot];
+      else out_sample->soil_temp_1_centi_c = soil.centi_c[slot];
     }
-
-    node_sensors_ds18b20_result_t ds = {0};
-    node_sensors_backend_sample_ds18b20(&ds);
-    if (!result_is_success(ds.shared_acquisition)) {
-      record_component_failure(&diagnostic, ds.shared_acquisition);
-      const node_sensors_backend_result_t blocked = result_blocked();
-      diagnostic.pairs[NODE_SENSOR_CONTEXT_SOIL_TEMP_0] = blocked;
-      diagnostic.pairs[NODE_SENSOR_CONTEXT_SOIL_TEMP_1] = blocked;
-    } else {
-      out_sample->soil_temp_0_centi_c = ds.centi_c[0];
-      record_group_result(out_sample, &diagnostic,
-                          NODE_SENSOR_CONTEXT_SOIL_TEMP_0,
-                          NODE_SENSOR_SOIL_TEMP_0_VALID, ds.channel[0]);
-      if (!result_is_success(ds.channel[0])) {
-        out_sample->soil_temp_0_centi_c = 0;
-      }
-
-      out_sample->soil_temp_1_centi_c = ds.centi_c[1];
-      record_group_result(out_sample, &diagnostic,
-                          NODE_SENSOR_CONTEXT_SOIL_TEMP_1,
-                          NODE_SENSOR_SOIL_TEMP_1_VALID, ds.channel[1]);
-      if (!result_is_success(ds.channel[1])) {
-        out_sample->soil_temp_1_centi_c = 0;
-      }
-    }
-    if (!result_is_success(ds.cleanup)) {
-      cleanup_failed = true;
-      record_component_failure(&diagnostic, ds.cleanup);
-    }
+  }
+  if (!result_is_success(soil.cleanup)) {
+    cleanup_failed = true;
+    record_component_failure(&diagnostic, soil.cleanup);
   }
 
   const node_sensors_backend_result_t power_off =
@@ -232,7 +218,7 @@ err_curag_t node_sensors_sample_all(node_sensor_sample_t *out_sample,
   }
 
   const size_t valid_count = valid_group_count(out_sample->validity);
-  if (valid_count == NODE_SENSOR_CONTEXT_PAIR_COUNT - 1U) {
+  if (out_sample->validity == expected) {
     return CURAG_OK;
   }
 

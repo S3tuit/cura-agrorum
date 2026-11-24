@@ -26,7 +26,7 @@ def insert(db, table, values):
     db.execute(f"INSERT INTO {table} ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})", list(values.values()))
 
 
-def transcript(path, *, interval=12_000_000, samples=(40, 41)):
+def transcript(path, *, interval=12_000_000, samples=(40, 41), selection=3):
     db = sqlite3.connect(path)
     db.executescript((REPO / "receiver/db/schema.sql").read_text())
     db.execute("PRAGMA foreign_keys=ON")
@@ -35,8 +35,13 @@ def transcript(path, *, interval=12_000_000, samples=(40, 41)):
     deliveries = []
     for i, sample in enumerate(samples):
         message = 100 + i
-        body = BODY.pack(sample, 1100, 2300, 2350, 2100, 2200, 2300, 101325, 4500,
-                         8 if i else 1, i, 1500 if i else 0, 300 if i else 0, i, i, 0x3ff if i else 0xfe)
+        sensor_flags = {1: 0xea, 3: 0xfe, 4: 0x4e8, 12: 0xcf8}[selection]
+        body = BODY.pack(sample, 1100,
+                         2300 if selection & 1 else 0, 2350 if selection & 2 else 0,
+                         2100, 2200 if selection & 10 else 0, 2300, 101325, 4500,
+                         8 if i else 1, i, 1500 if i else 0, 300 if i else 0, i, i,
+                         sensor_flags | (0x301 if i else 0),
+                         0, 65535 if selection & 8 else 0, selection, 0)
         at = 10_000_000 + i * interval
         p = {r[1]: (0 if r[3] and r[2] == "INTEGER" else None) for r in db.execute("PRAGMA table_info(packet_receptions)")}
         p.update(receiver_instance_id=INSTANCE, occurrence_sequence=i + 1, received_at_monotonic_us=at,
@@ -66,7 +71,7 @@ def test_consistent_real_sqlite_and_two_wake_node_capture(tmp_path):
     output = tmp_path / "snapshot.sqlite3"
     binding = snapshot(path, output)
     assert binding["sha256"] == digest(output)
-    assert verify_service(output, NODE, decoded, INSTANCE)["wakes"] == 2
+    assert verify_service(output, NODE, decoded, INSTANCE, sensor_selection=3)["wakes"] == 2
     observed = database_observation(path)
     assert observed["instance"] == INSTANCE.hex() and observed["samples"] == 2
     with pytest.raises(FileExistsError):
@@ -92,7 +97,7 @@ def test_incomplete_or_wrong_sqlite_cannot_pass(tmp_path, damage):
         }
         db.execute(changes[damage])
     with pytest.raises(ValueError):
-        verify_service(path, NODE, decoded, INSTANCE)
+        verify_service(path, NODE, decoded, INSTANCE, sensor_selection=3)
 
 
 @pytest.mark.parametrize("damage", ["missing_finish", "unaccepted", "attempts", "pending", "diagnostic"])
@@ -111,7 +116,7 @@ def test_node_consequences_are_required(tmp_path, damage):
     else:
         logs["diagnostic.log"] = [dict(error_code=1)]
     with pytest.raises(ValueError):
-        verify_service(path, NODE, decoded, INSTANCE)
+        verify_service(path, NODE, decoded, INSTANCE, sensor_selection=3)
 
 
 def config():
@@ -357,7 +362,30 @@ def test_accelerated_wake_bound(tmp_path, elapsed, valid):
     path = tmp_path / "receiver.sqlite3"
     decoded = transcript(path, interval=elapsed)
     if valid:
-        assert verify_service(path, NODE, decoded, INSTANCE)["wakes"] == 2
+        assert verify_service(path, NODE, decoded, INSTANCE, sensor_selection=3)["wakes"] == 2
     else:
         with pytest.raises(ValueError, match="accelerated 10-second wake"):
-            verify_service(path, NODE, decoded, INSTANCE)
+            verify_service(path, NODE, decoded, INSTANCE, sensor_selection=3)
+
+
+@pytest.mark.parametrize("selection", [1, 3, 4, 12])
+def test_service_checks_the_configured_sensor_family_and_disabled_slots(tmp_path, selection):
+    path = tmp_path / "profile.sqlite3"
+    decoded = transcript(path, selection=selection)
+    assert verify_service(path, NODE, decoded, INSTANCE, sensor_selection=selection)["status"] == "PASS"
+    with pytest.raises(ValueError, match="selection"):
+        verify_service(path, NODE, decoded, INSTANCE, sensor_selection=3 if selection != 3 else 4)
+
+
+@pytest.mark.parametrize("assignment", [
+    "soil_0_mv=1", "soil_1_mv=1", "soil_1_moisture_deci_pct=1",
+    "soil_temp_1_centi_c=1", "flags=232", "sensor_selection=12",
+])
+def test_service_nominal_single_sen0600_rejects_hidden_or_missing_channels(tmp_path, assignment):
+    path = tmp_path / "profile.sqlite3"
+    decoded = transcript(path, selection=4)
+    with sqlite3.connect(path) as db:
+        db.execute("DROP TRIGGER reading_messages_no_update")
+        db.execute("UPDATE reading_messages SET " + assignment + " WHERE message_id=100")
+    with pytest.raises(ValueError):
+        verify_service(path, NODE, decoded, INSTANCE, sensor_selection=4)

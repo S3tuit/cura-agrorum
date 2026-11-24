@@ -1,5 +1,5 @@
 /* Generated from protocol/protocol-v2-lora/schemas/protocol_v2_lora.json by protocol/protocol-v2-lora/tools/generate.py.
- * Schema SHA-256: ece4ec58bad29ddad03be41ccb257ffef960fa11a2df1d9f8650f4eb499de009. Do not edit by hand. */
+ * Schema SHA-256: 3c68e7cb4a3f803b8ee8c85e69a01623e2e7031297acc00432d0202be92b8fb1. Do not edit by hand. */
 #pragma once
 
 #include <stdbool.h>
@@ -10,16 +10,16 @@
 extern "C" {
 #endif
 
-#define CURA_LORA_V2_SCHEMA_SHA256 "ece4ec58bad29ddad03be41ccb257ffef960fa11a2df1d9f8650f4eb499de009"
+#define CURA_LORA_V2_SCHEMA_SHA256 "3c68e7cb4a3f803b8ee8c85e69a01623e2e7031297acc00432d0202be92b8fb1"
 #define CURA_LORA_V2_PROTOCOL_VERSION UINT8_C(2)
 #define CURA_LORA_V2_CONTROL UINT8_C(0x20)
 #define CURA_LORA_V2_KEY_SIZE 16u
 #define CURA_LORA_V2_NONCE_SIZE 13u
 #define CURA_LORA_V2_TAG_SIZE 8u
 #define CURA_LORA_V2_CLEAR_HEADER_SIZE 14u
-#define CURA_LORA_V2_READING_BODY_SIZE 32u
+#define CURA_LORA_V2_READING_BODY_SIZE 38u
 #define CURA_LORA_V2_ACK_BODY_SIZE 1u
-#define CURA_LORA_V2_READING_FRAME_SIZE 54u
+#define CURA_LORA_V2_READING_FRAME_SIZE 60u
 #define CURA_LORA_V2_ACK_FRAME_SIZE 23u
 
 #define CURA_LORA_V2_CLEAR_HEADER_CONTROL_OFFSET 0u
@@ -47,6 +47,10 @@ extern "C" {
 #define CURA_LORA_V2_READING_PREVIOUS_CYCLE_TX_ATTEMPTS_OFFSET 28u
 #define CURA_LORA_V2_READING_PREVIOUS_CYCLE_ACCEPTED_READINGS_OFFSET 29u
 #define CURA_LORA_V2_READING_FLAGS_OFFSET 30u
+#define CURA_LORA_V2_READING_SOIL_0_MOISTURE_DECI_PCT_OFFSET 32u
+#define CURA_LORA_V2_READING_SOIL_1_MOISTURE_DECI_PCT_OFFSET 34u
+#define CURA_LORA_V2_READING_SENSOR_SELECTION_OFFSET 36u
+#define CURA_LORA_V2_READING_RESERVED_OFFSET 37u
 
 #define CURA_LORA_V2_ACK_STATUS_OFFSET 0u
 
@@ -93,7 +97,9 @@ typedef uint16_t cura_lora_v2_reading_flags_t;
 #define CURA_LORA_V2_FLAG_ENCLOSURE_HUMIDITY_VALID UINT16_C(0x0080)
 #define CURA_LORA_V2_FLAG_PREVIOUS_CYCLE_METRICS_VALID UINT16_C(0x0100)
 #define CURA_LORA_V2_FLAG_PREVIOUS_CURRENT_ACCEPTED UINT16_C(0x0200)
-#define CURA_LORA_V2_READING_RESERVED_FLAGS_MASK UINT16_C(0xfc00)
+#define CURA_LORA_V2_FLAG_SOIL_MOISTURE_0_VALID UINT16_C(0x0400)
+#define CURA_LORA_V2_FLAG_SOIL_MOISTURE_1_VALID UINT16_C(0x0800)
+#define CURA_LORA_V2_READING_RESERVED_FLAGS_MASK UINT16_C(0xf000)
 
 typedef enum {
   CURA_LORA_V2_CODEC_OK = 0,
@@ -141,6 +147,10 @@ typedef struct {
   uint8_t previous_cycle_tx_attempts;
   uint8_t previous_cycle_accepted_readings;
   uint16_t flags;
+  uint16_t soil_0_moisture_deci_pct;
+  uint16_t soil_1_moisture_deci_pct;
+  uint8_t sensor_selection;
+  uint8_t reserved;
 } cura_lora_v2_reading_t;
 
 typedef struct {

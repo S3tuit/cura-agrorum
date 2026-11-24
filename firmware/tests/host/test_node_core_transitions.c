@@ -295,7 +295,7 @@ static bool airtime_budget_is_shared_across_backlog(void) {
     }
     fake_node_core.claimed_sample_id = 73U;
     uint64_t time_us = fake_node_core.now_us;
-    const uint32_t accepted = variant == 0U ? 69U : 68U;
+    const uint32_t accepted = variant == 0U ? 63U : 62U;
     for (uint32_t count = 0U; count < accepted; ++count) {
       CORE_TEST_ASSERT(script_ack_after(CORE_TEST_FIRST_MESSAGE_ID + count,
                                         CURA_LORA_V2_ACK_STATUS_ACCEPTED,
@@ -315,11 +315,11 @@ static bool airtime_budget_is_shared_across_backlog(void) {
 
     core_test_run(&rtc, &platform);
 
-    CORE_TEST_ASSERT_EQ_SIZE(70U, fake_node_core.transmission_count);
+    CORE_TEST_ASSERT_EQ_SIZE(64U, fake_node_core.transmission_count);
     CORE_TEST_ASSERT_EQ_SIZE(74U - accepted, fake_node_core.pending_count);
     CORE_TEST_ASSERT_EQ_U32(0U,
                             fake_node_core.pending[0].value.reading.sample_id);
-    CORE_TEST_ASSERT_EQ_U32(70U, rtc.metrics.cycle_tx_attempts);
+    CORE_TEST_ASSERT_EQ_U32(64U, rtc.metrics.cycle_tx_attempts);
     CORE_TEST_ASSERT_EQ_U32(accepted, rtc.metrics.accepted_readings);
     const node_delivery_event_t *finished =
         &fake_node_core
@@ -330,12 +330,12 @@ static bool airtime_budget_is_shared_across_backlog(void) {
                             finished->detail.finished.final_result);
     CORE_TEST_ASSERT_EQ_U32(variant == 0U ? 1U : 2U,
                             finished->detail.finished.attempt_count);
-    /* In both variants 70 charges leave less than one uplink's airtime. A
+    /* In both variants 64 charges leave less than one uplink's airtime. A
      * delivery with two completed attempts reports its own limit first. */
     CORE_TEST_ASSERT(!node_core_attempt_fits(
         fake_node_core.now_us,
         UINT64_C(1000000) + NODE_CORE_RADIO_CYCLE_LIMIT_US,
-        UINT64_C(70) * core_test_reading_airtime_charge_us()));
+        UINT64_C(64) * core_test_reading_airtime_charge_us()));
   }
   return true;
 }

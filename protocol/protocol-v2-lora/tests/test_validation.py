@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 
-READING_STRUCT = struct.Struct("<IHHHhhhIHBBHHBBH")
+READING_STRUCT = struct.Struct("<IHHHhhhIHBBHHBBHHHBB")
 READING_FIELDS = (
     "sample_id",
     "run_ms",
@@ -24,6 +24,10 @@ READING_FIELDS = (
     "previous_cycle_tx_attempts",
     "previous_cycle_accepted_readings",
     "flags",
+    "soil_0_moisture_deci_pct",
+    "soil_1_moisture_deci_pct",
+    "sensor_selection",
+    "reserved",
 )
 
 DEEP_SLEEP_BOOT = 1 << 0
@@ -94,7 +98,7 @@ def test_rejects_invalid_header_length(codec: Any, length: int) -> None:
         codec.decode_header(bytes(length))
 
 
-@pytest.mark.parametrize("length", (0, 31, 33))
+@pytest.mark.parametrize("length", (0, 32, 37, 39))
 def test_rejects_invalid_reading_length(codec: Any, length: int) -> None:
     with pytest.raises(ValueError):
         codec.decode_reading(bytes(length))
@@ -214,7 +218,7 @@ def test_rejects_delivery_time_without_previous_accepted(
     _assert_reading_rejected(codec, fields)
 
 
-@pytest.mark.parametrize("reserved_bit", range(10, 16))
+@pytest.mark.parametrize("reserved_bit", range(12, 16))
 def test_rejects_each_reserved_reading_flag(
     codec: Any,
     reading_vector: dict[str, Any],
@@ -274,3 +278,33 @@ def test_rejects_ack_status_with_unknown_domain(
     status: int,
 ) -> None:
     assert not codec.ack_status_matches_domain(77, status)
+
+
+@pytest.mark.parametrize("selection", range(16))
+def test_selection_is_configuration_not_electrical_validation(codec, reading_vector, selection):
+    fields = _cold_previous_cycle(_fields(reading_vector))
+    for name, _, _ in VALIDITY_CASES:
+        fields[name] = 0
+    fields.update(flags=0, reset_reason=1, sensor_selection=selection,
+                  soil_0_moisture_deci_pct=0, soil_1_moisture_deci_pct=0)
+    assert codec.decode_reading(codec.encode_reading(fields)) == fields
+
+
+@pytest.mark.parametrize("slot", (0, 1))
+def test_sen0600_valid_zero_and_unselected_validity(codec, reading_vector, slot):
+    fields = {name: 0 for name in READING_FIELDS}
+    fields.update(reset_reason=1, sensor_selection=4 << slot,
+                  flags=(1 << (10 + slot)) | (1 << (3 + slot)))
+    assert codec.decode_reading(codec.encode_reading(fields)) == fields
+    fields[f"soil_{slot}_moisture_deci_pct"] = 65535
+    fields[f"soil_temp_{slot}_centi_c"] = -32768
+    assert codec.decode_reading(codec.encode_reading(fields)) == fields
+    fields["sensor_selection"] = 0
+    _assert_reading_rejected(codec, fields)
+
+
+@pytest.mark.parametrize(("field", "value"), [("sensor_selection", 16), ("reserved", 1), ("reserved", 128)])
+def test_reserved_selection_and_byte(codec, reading_vector, field, value):
+    fields = _fields(reading_vector)
+    fields[field] = value
+    _assert_reading_rejected(codec, fields)

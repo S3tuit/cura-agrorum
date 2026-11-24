@@ -40,3 +40,20 @@ void node_sensors_backend_sample_ds18b20(
 
 node_sensors_backend_result_t node_sensors_backend_sample_bme280(
     node_sensors_backend_enclosure_t *out_enclosure);
+
+/* Soil units follow selection: SEN0193 millivolts or SEN0600 deci-percent.
+ * Errors remain independent so an unrepresentable temperature does not discard
+ * an acquired moisture register. Cleanup never invalidates acquired values. */
+typedef struct {
+  uint16_t soil[2];
+  int16_t centi_c[2];
+  node_sensors_backend_result_t channel[2];
+  node_sensors_backend_result_t temperature[2];
+  node_sensors_backend_result_t shared_acquisition;
+  node_sensors_backend_result_t component_error;
+  node_sensors_backend_result_t cleanup;
+} node_sensors_soil_result_t;
+
+uint8_t node_sensors_backend_selection(void);
+uint32_t node_sensors_backend_stabilization_ms(void);
+void node_sensors_backend_sample_soil(node_sensors_soil_result_t *out_result);

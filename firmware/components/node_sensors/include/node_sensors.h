@@ -14,9 +14,11 @@ typedef enum {
   NODE_SENSOR_SOIL_TEMP_0_VALID = 1U << 2,
   NODE_SENSOR_SOIL_TEMP_1_VALID = 1U << 3,
   NODE_SENSOR_ENCLOSURE_ENV_VALID = 1U << 4,
+  NODE_SENSOR_SOIL_MOISTURE_0_VALID = 1U << 5,
+  NODE_SENSOR_SOIL_MOISTURE_1_VALID = 1U << 6,
 } node_sensor_validity_t;
 
-#define NODE_SENSOR_VALIDITY_ALL UINT8_C(0x1f)
+#define NODE_SENSOR_VALIDITY_ALL UINT8_C(0x7f)
 
 /* Validity is authoritative: zero may be a valid measurement. The enclosure
  * group is atomic across all three fields. Validity certifies acquisition and
@@ -31,6 +33,9 @@ typedef struct {
   int16_t enclosure_centi_c;
   uint32_t enclosure_pressure_pa;
   uint16_t enclosure_humidity_centi_pct;
+  uint16_t soil_0_moisture_deci_pct;
+  uint16_t soil_1_moisture_deci_pct;
+  uint8_t sensor_selection;
   uint8_t validity;
 } node_sensor_sample_t;
 

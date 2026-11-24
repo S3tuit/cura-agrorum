@@ -1,240 +1,76 @@
 #include "node_sensors_backend.h"
-
-#include <math.h>
 #include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-
-#include "driver/gpio.h"
-#include "ds18b20.h"
-#include "esp_err.h"
+#include "node_sensors.h"
+#include "node_sensors_power_gate.h"
+#include "sdkconfig.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "node_sensors.h"
-#include "node_sensors_ds18b20_identity.h"
-#include "node_sensors_ds18b20_gpio.h"
-#include "node_sensors_power_gate.h"
-#include "onewire_bus.h"
-#include "onewire_device.h"
-#include "sdkconfig.h"
-#include "soil_sensor.h"
 
-#define DS18B20_CHANNEL_COUNT 2U
+#if CONFIG_CURA_SEN0600_0
+#include "node_sensors_sen0600.h"
+#endif
 
-static node_sensors_backend_result_t result_none(void) {
+static bool enabled;
+static bool off_time_known;
+static int64_t off_at_us;
+
+static node_sensors_backend_result_t esp_result(curag_operation_t operation, esp_err_t status) {
   return (node_sensors_backend_result_t){
-      .kind = NODE_SENSOR_BACKEND_STATUS_NONE,
-      .status = 0,
-      .operation = CURAG_OP_NONE,
+      .kind = status == ESP_OK ? NODE_SENSOR_BACKEND_STATUS_NONE : NODE_SENSOR_BACKEND_STATUS_ESP_ERR,
+      .status = status, .operation = status == ESP_OK ? CURAG_OP_NONE : operation,
   };
 }
 
-static node_sensors_backend_result_t result_esp(curag_operation_t operation,
-                                                esp_err_t status) {
-  if (status == ESP_OK) {
-    return result_none();
-  }
-  return (node_sensors_backend_result_t){
-      .kind = NODE_SENSOR_BACKEND_STATUS_ESP_ERR,
-      .status = status,
-      .operation = operation,
-  };
+uint8_t node_sensors_backend_selection(void) {
+  return (uint8_t)((CONFIG_CURA_SEN0193_0 ? 1U : 0U) |
+                   (CONFIG_CURA_SEN0193_1 ? 2U : 0U) |
+                   (CONFIG_CURA_SEN0600_0 ? 4U : 0U) |
+                   (CONFIG_CURA_SEN0600_1 ? 8U : 0U));
 }
 
-static node_sensors_backend_result_t result_driver(curag_operation_t operation,
-                                                   esp_err_t status) {
-  if (status == ESP_OK) {
-    return result_none();
-  }
-  return (node_sensors_backend_result_t){
-      .kind = NODE_SENSOR_BACKEND_STATUS_DRIVER,
-      .status = status,
-      .operation = operation,
-  };
-}
-
-node_sensors_backend_result_t node_sensors_backend_power_on(void) {
-  return result_esp(CURAG_OP_POWER_ON, node_sensors_power_gate_on());
-}
-
-node_sensors_backend_result_t node_sensors_backend_power_off(void) {
-  return result_esp(CURAG_OP_POWER_OFF, node_sensors_power_gate_off());
+uint32_t node_sensors_backend_stabilization_ms(void) {
+  return CONFIG_CURA_SENSOR_POWER_STABILIZATION_MS;
 }
 
 void node_sensors_backend_delay_ms(uint32_t duration_ms) {
-  const TickType_t ticks = pdMS_TO_TICKS(duration_ms);
-  vTaskDelay(ticks == 0U ? 1U : ticks);
-}
-
-node_sensors_backend_result_t node_sensors_backend_read_soil(size_t channel,
-                                                             uint16_t *out_mv) {
-  if (out_mv == NULL || channel >= 2U) {
-    return result_esp(CURAG_OP_VALIDATE, ESP_ERR_INVALID_ARG);
-  }
-  const int gpios[2] = {CONFIG_CURA_SOIL_0_GPIO, CONFIG_CURA_SOIL_1_GPIO};
-  return result_esp(CURAG_OP_READ, soil_sensor_read_mv(gpios[channel], out_mv));
-}
-
-static bool convert_centi(float value, int16_t *out_value) {
-  if (!isfinite(value)) {
-    return false;
-  }
-  const float scaled = value * 100.0F;
-  if (scaled < (float)INT16_MIN || scaled > (float)INT16_MAX) {
-    return false;
-  }
-  *out_value = (int16_t)(scaled >= 0.0F ? scaled + 0.5F : scaled - 0.5F);
-  return true;
-}
-
-static void retain_cleanup_error(esp_err_t candidate, esp_err_t *result) {
-  if (*result == ESP_OK && candidate != ESP_OK) {
-    *result = candidate;
+  /* A tick delay can wake just after the next tick, short of the requested
+   * elapsed interval. Startup, discharge and Modbus silence are lower bounds. */
+  const int64_t deadline = esp_timer_get_time() + (int64_t)duration_ms * 1000;
+  int64_t remaining;
+  while ((remaining = deadline - esp_timer_get_time()) > 0) {
+    const TickType_t ticks = pdMS_TO_TICKS((uint32_t)((remaining + 999) / 1000));
+    vTaskDelay(ticks == 0 ? 1 : ticks);
   }
 }
 
-void node_sensors_backend_sample_ds18b20(
-    node_sensors_ds18b20_result_t *out_result) {
-  if (out_result == NULL) {
-    return;
+node_sensors_backend_result_t node_sensors_backend_power_on(void) {
+#if CONFIG_CURA_SEN0600_0
+  /* Unknown history is assumed sufficiently old by the operating contract.
+   * Within one boot, repeated acquisition must respect the measured discharge. */
+  if (off_time_known) {
+    const int64_t remaining = 10000000 - (esp_timer_get_time() - off_at_us);
+    if (remaining > 0) node_sensors_backend_delay_ms((uint32_t)((remaining + 999) / 1000));
   }
-  memset(out_result, 0, sizeof(*out_result));
+#endif
+  enabled = true; /* Also clean up after an ambiguous/partial gate operation. */
+  esp_err_t status = node_sensors_power_gate_on();
+#if CONFIG_CURA_SEN0600_0
+  if (status == ESP_OK) status = node_sensors_sen0600_start();
+#endif
+  return esp_result(CURAG_OP_POWER_ON, status);
+}
 
-  uint64_t configured_roms[DS18B20_CHANNEL_COUNT] = {0U, 0U};
-  const char *const configured_text[DS18B20_CHANNEL_COUNT] = {
-      CONFIG_CURA_DS18B20_0_ROM,
-      CONFIG_CURA_DS18B20_1_ROM,
-  };
-  if (!node_sensors_ds18b20_resolve_identities(configured_text, configured_roms,
-                                               out_result->channel)) {
-    return;
+node_sensors_backend_result_t node_sensors_backend_power_off(void) {
+  esp_err_t cleanup = ESP_OK;
+#if CONFIG_CURA_SEN0600_0
+  cleanup = node_sensors_sen0600_release();
+#endif
+  const esp_err_t gate = node_sensors_power_gate_off();
+  if (gate == ESP_OK && enabled) {
+    off_at_us = esp_timer_get_time();
+    off_time_known = true;
+    enabled = false;
   }
-
-  onewire_bus_handle_t bus = NULL;
-  onewire_device_iter_handle_t iterator = NULL;
-  ds18b20_device_handle_t devices[DS18B20_CHANNEL_COUNT] = {NULL, NULL};
-  const onewire_bus_config_t bus_configuration = {
-      .bus_gpio_num = CONFIG_CURA_DS18B20_GPIO,
-      .flags = {.en_pull_up = false},
-  };
-  const onewire_bus_rmt_config_t rmt_configuration = {
-      .max_rx_bytes = 10U,
-  };
-  esp_err_t backend_status =
-      onewire_new_bus_rmt(&bus_configuration, &rmt_configuration, &bus);
-  if (backend_status != ESP_OK) {
-    out_result->shared_acquisition =
-        result_esp(CURAG_OP_INITIALIZE, backend_status);
-    esp_err_t cleanup_result = ESP_OK;
-    if (bus != NULL) {
-      retain_cleanup_error(onewire_bus_del(bus), &cleanup_result);
-    }
-    retain_cleanup_error(node_sensors_ds18b20_release_gpio(), &cleanup_result);
-    if (cleanup_result != ESP_OK) {
-      out_result->cleanup = result_esp(CURAG_OP_CLEANUP, cleanup_result);
-    }
-    return;
-  }
-
-  backend_status = onewire_new_device_iter(bus, &iterator);
-  if (backend_status != ESP_OK) {
-    out_result->shared_acquisition =
-        result_esp(CURAG_OP_INITIALIZE, backend_status);
-  } else {
-    while (true) {
-      onewire_device_t discovered = {0};
-      const esp_err_t next =
-          onewire_device_iter_get_next(iterator, &discovered);
-      if (next == ESP_ERR_NOT_FOUND) {
-        break;
-      }
-      if (next != ESP_OK) {
-        out_result->shared_acquisition = result_esp(CURAG_OP_INITIALIZE, next);
-        break;
-      }
-      for (size_t channel = 0U; channel < DS18B20_CHANNEL_COUNT; ++channel) {
-        if (configured_roms[channel] == 0U || devices[channel] != NULL ||
-            discovered.address != configured_roms[channel]) {
-          continue;
-        }
-        const ds18b20_config_t device_configuration = {};
-        const esp_err_t create_result = ds18b20_new_device_from_enumeration(
-            &discovered, &device_configuration, &devices[channel]);
-        if (create_result != ESP_OK) {
-          out_result->channel[channel] =
-              result_driver(CURAG_OP_INITIALIZE, create_result);
-        }
-      }
-    }
-  }
-
-  if (out_result->shared_acquisition.kind == NODE_SENSOR_BACKEND_STATUS_NONE) {
-    for (size_t channel = 0U; channel < DS18B20_CHANNEL_COUNT; ++channel) {
-      if (configured_roms[channel] != 0U && devices[channel] == NULL &&
-          out_result->channel[channel].kind ==
-              NODE_SENSOR_BACKEND_STATUS_NONE) {
-        out_result->channel[channel] =
-            result_driver(CURAG_OP_INITIALIZE, ESP_ERR_NOT_FOUND);
-      }
-      if (devices[channel] != NULL) {
-        const esp_err_t resolution_result =
-            ds18b20_set_resolution(devices[channel], DS18B20_RESOLUTION_12B);
-        if (resolution_result != ESP_OK) {
-          out_result->channel[channel] =
-              result_driver(CURAG_OP_INITIALIZE, resolution_result);
-        }
-      }
-    }
-
-    bool has_readable_device = false;
-    for (size_t channel = 0U; channel < DS18B20_CHANNEL_COUNT; ++channel) {
-      has_readable_device =
-          has_readable_device ||
-          (devices[channel] != NULL && out_result->channel[channel].kind ==
-                                           NODE_SENSOR_BACKEND_STATUS_NONE);
-    }
-    if (has_readable_device) {
-      backend_status = ds18b20_trigger_temperature_conversion_for_all(bus);
-      if (backend_status != ESP_OK) {
-        out_result->shared_acquisition =
-            result_driver(CURAG_OP_READ, backend_status);
-      }
-    }
-  }
-
-  if (out_result->shared_acquisition.kind == NODE_SENSOR_BACKEND_STATUS_NONE) {
-    for (size_t channel = 0U; channel < DS18B20_CHANNEL_COUNT; ++channel) {
-      if (devices[channel] == NULL || out_result->channel[channel].kind !=
-                                          NODE_SENSOR_BACKEND_STATUS_NONE) {
-        continue;
-      }
-      float temperature = 0.0F;
-      esp_err_t result =
-          ds18b20_get_temperature(devices[channel], &temperature);
-      if (result == ESP_OK &&
-          !convert_centi(temperature, &out_result->centi_c[channel])) {
-        result = ESP_ERR_INVALID_RESPONSE;
-      }
-      out_result->channel[channel] = result_driver(CURAG_OP_READ, result);
-    }
-  }
-
-  esp_err_t cleanup_result = ESP_OK;
-  for (size_t channel = 0U; channel < DS18B20_CHANNEL_COUNT; ++channel) {
-    if (devices[channel] != NULL) {
-      retain_cleanup_error(ds18b20_del_device(devices[channel]),
-                           &cleanup_result);
-    }
-  }
-  if (iterator != NULL) {
-    retain_cleanup_error(onewire_del_device_iter(iterator), &cleanup_result);
-  }
-  retain_cleanup_error(onewire_bus_del(bus), &cleanup_result);
-  retain_cleanup_error(node_sensors_ds18b20_release_gpio(), &cleanup_result);
-
-  if (cleanup_result != ESP_OK) {
-    out_result->cleanup = result_esp(CURAG_OP_CLEANUP, cleanup_result);
-  }
+  return esp_result(CURAG_OP_POWER_OFF, gate != ESP_OK ? gate : cleanup);
 }

@@ -39,7 +39,11 @@ Raspberry Pi 3                                  Modules
                          +-- 10 kohm -- +3V3
 15  GPIO22 / RESET ------+---------------------- U1.20 GP15 / RESET
                          +-- 10 kohm -- +3V3
-16  GPIO23 / DIO1 <----------------------------- U1.26 GP20 / DIO1
+16  GPIO23 / DIO1 <-----+-- 1 kohm ------------- U1.26 GP20 / DIO1
+                        |
+                     100 nF
+                        |
+                       GND
 18  GPIO24 / BUSY <----------------------------- U1.4  GP2 / BUSY
 ```
 
@@ -59,6 +63,10 @@ Raspberry Pi 3                                  Modules
   software releases its requests. Check GPIO22/23/24 for other consumers.
 - The radio socket's pin 36 directly supplies `Pico_3V3`; leave Pico/VSYS/VBUS
   circuitry unconnected. Fit the correct RF cable and antenna before transmission.
+- Place the DIO1 filter near GPIO23 with a short capacitor ground return. It
+  targets short interference pulses as one possible cause of zero-IRQ
+  `UNEXPECTED_IRQ`. [Scope and RF component checks](../../cura-agrorum-logbook/experiments/2026-10-dio1-low-pass-filter/README.md)
+  exercised IRQ handling and rearming; the field cause remains unresolved.
 - DIO2 controls the onboard RF switch and DIO3 the oscillator control network;
   neither needs another Pi wire. The backend uses the vendor's DIO2 control,
   1.7 V DIO3 setting, and 5 ms startup. The schematic separately supplies Q1 VCC
